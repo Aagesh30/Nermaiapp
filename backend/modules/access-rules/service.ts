@@ -182,8 +182,9 @@ export class AccessRulesService {
     userId: string,
     entityId: string,
     entityType: EntityType,
-    tenantId: string,
+    rawTenantId: string,
   ): Promise<AccessDecision> {
+    const tenantId = !rawTenantId || rawTenantId === 'nermaiiasacademy-519c8' || rawTenantId === 'default' ? 'default_tenant' : rawTenantId;
     const [perm, permDoc, accessCtx] = await Promise.all([
       this.resolveEffectivePermission(entityId, entityType, tenantId),
       repo.getPermission(entityId),
@@ -210,21 +211,40 @@ export class AccessRulesService {
 
     // 3. Evaluate Default Batch Capabilities
     let defaultCapabilityAllows = true;
-    if (accessCtx.batchIds.length > 0) {
-      const studentBatchId = accessCtx.batchIds[0];
-      const caps = await repo.getBatchCapabilities(studentBatchId);
-      const batchType: BatchType = (caps?.batchType ?? 'free');
-      const defaults = DEFAULT_CAPABILITIES[batchType];
-      const effectiveCaps = { ...defaults, ...(caps ?? {}) };
+    const hasRecordedStudentType = (accessCtx as any).studentTypes?.includes('recorded');
+    const hasOnlineStudentType = (accessCtx as any).studentTypes?.includes('online') || (accessCtx as any).studentTypes?.includes('live');
 
-      if (entityType === 'live_session') {
-        defaultCapabilityAllows = !!effectiveCaps.canAccessLiveClasses;
-      } else if (entityType === 'class') {
-        // Assuming 'class' entity type refers to recorded classes
-        defaultCapabilityAllows = !!effectiveCaps.canAccessRecordedClasses;
+    if (entityType === 'class' && hasRecordedStudentType) {
+      defaultCapabilityAllows = true;
+    } else if (entityType === 'live_session' && hasOnlineStudentType) {
+      defaultCapabilityAllows = true;
+    } else if (accessCtx.batchIds.length > 0) {
+      // Start pessimistic — will be set true if any batch allows it
+      defaultCapabilityAllows = false;
+
+      for (const batchId of accessCtx.batchIds) {
+        const caps = await repo.getBatchCapabilities(batchId);
+        if (!caps) continue; // No capabilities doc for this identifier — try next
+
+        const batchType: BatchType = caps.batchType ?? 'free';
+        const defaults = DEFAULT_CAPABILITIES[batchType];
+        const effectiveCaps = { ...defaults, ...caps };
+
+        let thisIdAllows = true;
+        if (entityType === 'live_session') {
+          thisIdAllows = !!effectiveCaps.canAccessLiveClasses;
+        } else if (entityType === 'class') {
+          thisIdAllows = !!effectiveCaps.canAccessRecordedClasses;
+        }
+
+        if (thisIdAllows) {
+          // At least one enrolled batch grants access — no need to check further
+          defaultCapabilityAllows = true;
+          break;
+        }
       }
     } else {
-      // Free student: Only sees 'public' content
+      // Unenrolled student: Only sees 'public' content
       if (perm.visibility !== 'public') {
         return {
           allowed: false,
@@ -472,10 +492,16 @@ export class AccessRulesService {
     let requestWindowDays = 30;
     let used = 0;
     
-    if (accessCtx.batchIds.length > 0) {
-      const caps = await repo.getBatchCapabilities(accessCtx.batchIds[0]);
-      const batchType: BatchType = caps?.batchType ?? 'free';
-      const defaults = DEFAULT_CAPABILITIES[batchType];
+    if (accessCtx.batchIds.length > 0 || accessCtx.accessProfiles.includes('batch')) {
+      let caps = null;
+      for (const bId of accessCtx.batchIds) {
+        caps = await repo.getBatchCapabilities(bId);
+        if (caps) break;
+      }
+      
+      const primaryType = accessCtx.studentTypes?.[0] as BatchType;
+      const batchType: BatchType = caps?.batchType ?? (primaryType && DEFAULT_CAPABILITIES[primaryType] ? primaryType : 'offline');
+      const defaults = DEFAULT_CAPABILITIES[batchType] || DEFAULT_CAPABILITIES.offline;
       const effectiveCaps = { ...defaults, ...(caps ?? {}) };
       
       // Enforce batch eligibility for making requests

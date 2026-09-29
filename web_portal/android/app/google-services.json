@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "587850155187",
+    "project_id": "nermaiiasacademy-519c8",
+    "storage_bucket": "nermaiiasacademy-519c8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:587850155187:android:a7f566611467a5c0391cc6",
+        "android_client_info": {
+          "package_name": "com.nermai.iasacademy"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "587850155187-4at9s3rprcuvshdfhdcjcsglaoc0hqpe.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.nermai.iasacademy",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "587850155187-bbs7vnuahanqilrq9tp397phvft5p0r8.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA4OxLP9DYZDElLvb3RnxmnL2bwijDhtMg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "587850155187-bbs7vnuahanqilrq9tp397phvft5p0r8.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

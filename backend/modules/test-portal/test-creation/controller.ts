@@ -624,19 +624,18 @@ ${chunkText}${cleanedAkText ? `\n\nAnswer Key:\n${cleanedAkText}` : ""}`;
                     const qRef = db.collection("questions").doc(qId);
                     
                     let options: string[] = [];
-                    let optionsTa: string[] = [];
+                    const dynamicLangOptions: Record<string, string[]> = {};
+                    const dynamicQuestionTexts: Record<string, string> = {};
+
+                    // Extract all question<Lang> dynamically (e.g. questionTa, questionMl, questionTe, questionHi, etc.)
+                    Object.keys(q).forEach(k => {
+                        if (/^question[A-Z][a-z0-9]*$/.test(k) && typeof q[k] === "string" && q[k].trim()) {
+                            dynamicQuestionTexts[k] = q[k].trim();
+                        }
+                    });
                     
                     if (q.options && Array.isArray(q.options)) {
                         options = q.options.map((o: any) => typeof o === "string" ? o : (o?.en || ""));
-                        optionsTa = [
-                            q["option a ta"] || "",
-                            q["option b ta"] || "",
-                            q["option c ta"] || "",
-                            q["option d ta"] || ""
-                        ];
-                        if (optionsTa.every(x => !x)) {
-                            optionsTa = q.options.map((o: any) => typeof o === "string" ? "" : (o?.ta || ""));
-                        }
                     } else if (q.options && typeof q.options === "object") {
                         options = [
                             q.options.A?.en || q.options.A || "",
@@ -644,12 +643,20 @@ ${chunkText}${cleanedAkText ? `\n\nAnswer Key:\n${cleanedAkText}` : ""}`;
                             q.options.C?.en || q.options.C || "",
                             q.options.D?.en || q.options.D || ""
                         ];
-                        optionsTa = [
-                            q.options.A?.ta || "",
-                            q.options.B?.ta || "",
-                            q.options.C?.ta || "",
-                            q.options.D?.ta || ""
-                        ];
+                        // Extract language options from nested object: e.g. q.options.A.ta, q.options.A.te, etc.
+                        ["A", "B", "C", "D"].forEach((letter, idx) => {
+                            const optVal = q.options[letter];
+                            if (optVal && typeof optVal === "object") {
+                                Object.keys(optVal).forEach(langKey => {
+                                    const lKey = langKey.toLowerCase();
+                                    if (lKey === "en") return;
+                                    const PascalLang = lKey.charAt(0).toUpperCase() + lKey.slice(1);
+                                    const optArrayKey = `options${PascalLang}`;
+                                    if (!dynamicLangOptions[optArrayKey]) dynamicLangOptions[optArrayKey] = ["", "", "", ""];
+                                    dynamicLangOptions[optArrayKey][idx] = String(optVal[langKey] || "").trim();
+                                });
+                            }
+                        });
                     } else {
                         options = [
                             q["option a"] || "",
@@ -657,13 +664,36 @@ ${chunkText}${cleanedAkText ? `\n\nAnswer Key:\n${cleanedAkText}` : ""}`;
                             q["option c"] || "",
                             q["option d"] || ""
                         ];
-                        optionsTa = [
-                            q["option a ta"] || "",
-                            q["option b ta"] || "",
-                            q["option c ta"] || "",
-                            q["option d ta"] || ""
-                        ];
                     }
+
+                    // Check explicit options<Lang> arrays (e.g. optionsTa, optionsMl, optionsTe, optionsHi, etc.)
+                    Object.keys(q).forEach(k => {
+                        if (/^options[A-Z][a-z0-9]*$/.test(k) && Array.isArray(q[k])) {
+                            const validArr = q[k].map((v: any) => String(v || "").trim());
+                            while (validArr.length < 4) validArr.push("");
+                            dynamicLangOptions[k] = validArr.slice(0, 4);
+                        }
+                    });
+
+                    // Check flat keys like optionTa_a, option a ta, optionTe_a, option a te, optionMl_a, etc.
+                    ["A", "B", "C", "D"].forEach((letter, idx) => {
+                        const lk = letter.toLowerCase();
+                        Object.keys(q).forEach(prop => {
+                            const match = prop.match(/^(?:option([A-Za-z]+)_([a-d])|option\s+([a-d])\s+([a-z]+))$/i);
+                            if (match) {
+                                const lang = (match[1] || match[4]).toLowerCase();
+                                const optLetter = (match[2] || match[3]).toLowerCase();
+                                if (optLetter === lk && lang !== "en") {
+                                    const PascalLang = lang.charAt(0).toUpperCase() + lang.slice(1);
+                                    const optArrayKey = `options${PascalLang}`;
+                                    if (!dynamicLangOptions[optArrayKey]) dynamicLangOptions[optArrayKey] = ["", "", "", ""];
+                                    if (!dynamicLangOptions[optArrayKey][idx]) {
+                                        dynamicLangOptions[optArrayKey][idx] = String(q[prop] || "").trim();
+                                    }
+                                }
+                            }
+                        });
+                    });
 
                     const dUrl2 = q.driveUrl || (typeof q.imageUrl === "string" && q.imageUrl.startsWith("http") ? q.imageUrl : "");
                     let driveId2 = q.driveFileId || q.fileId || "";
@@ -677,10 +707,18 @@ ${chunkText}${cleanedAkText ? `\n\nAnswer Key:\n${cleanedAkText}` : ""}`;
                     batch.set(qRef, {
                         id: qId,
                         question: q.questionEn || q.question || "",
-                        questionTa: q.questionTa || "",
+                        questionEn: q.questionEn || q.question || "",
+                        questionTa: q.questionTa || dynamicQuestionTexts.questionTa || "",
+                        questionMl: q.questionMl || dynamicQuestionTexts.questionMl || "",
+                        questionTe: q.questionTe || dynamicQuestionTexts.questionTe || "",
+                        ...dynamicQuestionTexts,
+                        formula: q.formula || "",
                         questionNo: q.questionNo || 0,
                         options,
-                        optionsTa,
+                        optionsTa: dynamicLangOptions.optionsTa || [],
+                        optionsMl: dynamicLangOptions.optionsMl || [],
+                        optionsTe: dynamicLangOptions.optionsTe || [],
+                        ...dynamicLangOptions,
                         correctAnswer: q.correctAnswer || null,
                         type: "MCQ",
                         marks: marksPerQuestion || 1,
@@ -812,6 +850,21 @@ ${chunkText}${cleanedAkText ? `\n\nAnswer Key:\n${cleanedAkText}` : ""}`;
                     : (creationMode === "file" ? ["English", "Tamil"] : ["English", "Tamil"]),
                 allowOfflineDirectly: !!req.body.allowOfflineDirectly,
                 allowOfflineDirectlyBatches: Array.isArray(req.body.allowOfflineDirectlyBatches) ? req.body.allowOfflineDirectlyBatches : [],
+                schedulingType: (req.body.schedulingType === "fixed" || req.body.schedulingMode === "fixed") ? "fixed" : "flexible_window",
+                schedulingMode: (req.body.schedulingType === "fixed" || req.body.schedulingMode === "fixed") ? "fixed" : "flexible_window",
+                testType: req.body.testType || "mock",
+                subject: req.body.subject || "",
+                topic: req.body.topic || "",
+                testMode: req.body.testMode || "online",
+                subjectSections: Array.isArray(req.body.subjectSections)
+                    ? req.body.subjectSections
+                        .filter((s: any) => s && String(s.subject || "").trim())
+                        .map((s: any) => ({
+                            subject: String(s.subject).trim(),
+                            fromQ: Number(s.fromQ) || 1,
+                            toQ: Number(s.toQ) || 1
+                        }))
+                    : [],
                 isDeleted: false,
                 deletedAt: null,
                 deletedBy: null

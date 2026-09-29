@@ -1,5 +1,8 @@
 import React, { useEffect, useState, lazy, Suspense } from 'react';
 import { ResourceApi } from '../core/services';
+import { db } from '../../firebaseConfig';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { getUserFromAuth } from '../core/api';
 import { X, ShieldCheck, Download, Maximize2, Minimize2, AlertTriangle, FileText, FileDown, EyeOff, ZoomIn, ZoomOut, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ResourceViewerSkeleton } from '../components/ui/Skeleton';
@@ -61,6 +64,7 @@ export const ResourceViewer: React.FC<ResourceViewerProps> = ({ resourceId, onCl
         ]);
         setResource(res.data?.data || res.data);
         setAccess(acc.data?.data || acc.data);
+        setError('');
       } catch (err: any) {
         setError(err.response?.data?.message || 'Failed to load resource or access denied.');
       } finally {
@@ -68,6 +72,31 @@ export const ResourceViewer: React.FC<ResourceViewerProps> = ({ resourceId, onCl
       }
     };
     fetchResource();
+
+    // Auto-unlock listener: when admin approves access in SACS, immediately re-check access
+    let unsub: (() => void) | null = null;
+    try {
+      const user = getUserFromAuth();
+      if (user?.userId) {
+        const qReq = query(
+          collection(db, 'access_requests'),
+          where('contentId', '==', resourceId),
+          where('studentId', '==', user.userId),
+          where('status', '==', 'APPROVED')
+        );
+        unsub = onSnapshot(qReq, (snap) => {
+          if (!snap.empty) {
+            fetchResource();
+          }
+        }, (err) => console.log('ResourceViewer access snapshot note:', err?.message));
+      }
+    } catch (e) {
+      console.warn('Real-time resource access listener note:', e);
+    }
+
+    return () => {
+      if (unsub) unsub();
+    };
   }, [resourceId]);
 
   const toggleFullscreen = () => {

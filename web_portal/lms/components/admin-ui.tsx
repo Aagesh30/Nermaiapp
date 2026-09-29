@@ -156,9 +156,10 @@ interface AdminModalProps {
   onClose: () => void;
   title: string;
   children: React.ReactNode;
+  maxWidthClass?: string;
 }
 
-export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose, title, children }) => {
+export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose, title, children, maxWidthClass = 'max-w-lg' }) => {
   return (
     <AnimatePresence>
       {isOpen && (
@@ -174,7 +175,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose, title, 
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none"
           >
-            <div className="bg-white dark:bg-[#0f0f1a] border border-gray-200 dark:border-[#8B0000]/30 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden pointer-events-auto flex flex-col max-h-[75vh]">
+            <div className={`bg-white dark:bg-[#0f0f1a] border border-gray-200 dark:border-[#8B0000]/30 w-full ${maxWidthClass} rounded-2xl shadow-2xl overflow-hidden pointer-events-auto flex flex-col max-h-[88vh]`}>
               <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-[#8B0000]/20 bg-gray-50 dark:bg-gradient-to-r dark:from-[#8B0000]/10 dark:to-transparent">
                 <h3 className="text-lg font-extrabold text-gray-900 dark:text-white">{title}</h3>
                 <button onClick={onClose} className="text-gray-400 hover:text-gray-700 dark:hover:text-white p-1 rounded-lg transition-colors cursor-pointer">

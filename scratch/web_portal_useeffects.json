@@ -1,0 +1,632 @@
+[
+  {
+    "file": "App.tsx",
+    "line": 2978,
+    "block": "  useEffect(() => {\n    if (showLiveClassModal && isAdmin) {\n      api.get('/zoom-accounts')\n        .then((res: any) => {\n          const accountsArray = Array.isArray(res) ? res : (res.data || []);\n          const mapped = accountsArray.map((za: any) => ({\n            id: za.id,\n            name: za.name,\n            provider: 'zoom'\n          }));\n          setProviderAccounts(mapped);\n        })\n        .catch(err => console.error(\"Error fetching provider accounts\", err));\n    }\n  }, [showLiveClassModal, isAdmin]);\n  const [editingLiveClass, setEditingLiveClass] = useState<any | null>(null);"
+  },
+  {
+    "file": "App.tsx",
+    "line": 3604,
+    "block": "  useEffect(() => {\n    try {\n      if (typeof window !== \"undefined\" && window.localStorage) {\n        const savedReports = window.localStorage.getItem(\"nermai_question_reports\");\n        if (savedReports) {\n          setQuestionReports(JSON.parse(savedReports));\n        }\n      }\n    } catch (e) { }\n  }, []);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 3714,
+    "block": "  useEffect(() => {\n    if (!user || isAdmin) return;\n    const studentId = user?.userId || user?.username;\n    const username = user?.username || \"\";\n    if (!studentId && !username) return;\n\n    const loggedInStudent = getLoggedInStudent(user, students);\n    const sId = loggedInStudent?.id || studentId || \"\";\n\n    const targetIds = Array.from(new Set([\n      sId,\n      user?.userId,\n      user?.username,\n      loggedInStudent?.rollNumber\n    ].filter(Boolean) as string[]));\n\n    if (targetIds.length === 0) return;\n\n    // Filter by studentId so student only syncs their own documents (0 unnecessary reads)\n    const q = query(\n      collection(db, \"offlineTestPermissionRequests\"),\n      where(\"studentId\", \"in\", targetIds)\n    );\n\n    const unsub = onSnapshot(q, (snapshot) => {\n      const reqs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));\n      setOfflineTestRequests(reqs);\n      try {\n        if (typeof localStorage !== \"undefined\") {\n          localStorage.setItem(\"nermai_offline_test_requests\", JSON.stringify(reqs));\n        }\n      } catch (storageErr) { }\n    }, (err) => {\n      console.log(\"Student offline request listener error:\", err);\n      loadOfflineTestRequests();\n    });\n\n    return () => unsub();\n  }, [user, isAdmin, students]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 3865,
+    "block": "  useEffect(() => {\n    if (!isAdmin) return;\n\n    const q = query(\n      collection(db, \"offlineTestPermissionRequests\")\n    );\n\n    const unsub = onSnapshot(q, (snapshot) => {\n      const reqs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));\n      // Sort in-memory desc by requestedAt\n      reqs.sort((a, b) => new Date(b.requestedAt || 0).getTime() - new Date(a.requestedAt || 0).getTime());\n      setOfflineTestRequests(reqs);\n    }, (err) => {\n      console.log(\"Admin offline request listener error:\", err);\n    });\n\n    return () => unsub();\n  }, [isAdmin]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 3885,
+    "block": "  useEffect(() => {\n    if (!user || activeTab !== \"test\") return;\n    loadOfflineTestRequests();\n  }, [user, activeTab]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 3927,
+    "block": "  useEffect(() => {\n    loadPageLocks();\n    loadDriveConfig();\n  }, []);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 4768,
+    "block": "  useEffect(() => {\n    if (selectedIdStudent) {\n      setIdCardExpiry(selectedIdStudent.idCardExpiry || \"31/12/2026\");\n      setIdCardRole(selectedIdStudent.idCardRole || \"IAS CANDIDATE\");\n      setIdCardTheme(selectedIdStudent.idCardTheme || \"#c62828\");\n\n      setHallTicketExamName(selectedIdStudent.hallTicketExamName || \"UPSC Civil Services Prelims Mock\");\n      setHallTicketExamDate(selectedIdStudent.hallTicketExamDate || \"24/05/2026\");\n      setHallTicketVenue(selectedIdStudent.hallTicketVenue || \"NERMAI Academy Main Hall, Floor 2\");\n      setHallTicketTime(selectedIdStudent.hallTicketTime || \"09:30 AM - 12:30 PM\");\n      setHallTicketInstructions(selectedIdStudent.hallTicketInstructions || \"1. Bring printed copy of this Hall Ticket and original ID Proof.\\n2. Standard blue/black ballpoint pen only.\\n3. Electronic gadgets are strictly prohibited.\");\n    }\n  }, [selectedIdStudent]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 5119,
+    "block": "  useEffect(() => {\n    if (erpSub !== \"marks\" || !tests || tests.length === 0) return;\n\n    const filtered = tests.filter((t: any) => {\n      let tType = t.testType || t.category || \"\";\n      if (!tType && t.title) {\n        const titleLower = t.title.toLowerCase();\n        if (titleLower.includes(\"daily\")) tType = \"daily\";\n        else if (titleLower.includes(\"weekly\")) tType = \"weekly\";\n        else tType = \"mock\";\n      }\n      if (!tType) tType = \"mock\";\n\n      if (ledgerTestTypeFilter) {\n        const tVal = tType.toLowerCase();\n        const fVal = ledgerTestTypeFilter.toLowerCase();\n        if (!tVal.includes(fVal) && !fVal.includes(tVal)) return false;\n      }\n      if (ledgerTestNameFilter.trim() !== \"\") {\n        const query = ledgerTestNameFilter.toLowerCase().trim();\n        const title = (t.title || \"\").toLowerCase();\n        if (!title.includes(query)) return false;\n      }\n      return true;\n    });\n\n    const isCurrentValid = filtered.some((t: any) => t.id === selectedErpTestId);\n    if (!isCurrentValid) {\n      if (filtered.length > 0) {\n        setSelectedErpTestId(filtered[0].id);\n        loadErpTestResults(filtered[0].id);\n      } else {\n        setSelectedErpTestId(\"\");\n        setErpTestResults([]);\n      }\n    }\n  }, [ledgerTestTypeFilter, ledgerTestNameFilter, tests, erpSub, selectedErpTestId]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 5934,
+    "block": "  useEffect(() => {\n    if (!user) {\n      loadedForUserRef.current = null;\n      setIsInitialLoading(false);\n      return;\n    }\n\n    if (!initialNav.hasExplicitSub) {\n      if (user.role === \"student\") {\n        setErpSub(\"analytics\");\n      } else {\n        setErpSub(\"students\");\n      }\n    }\n\n    // Build a key that only changes when login identity or IP changes\n    const loadKey = `${user.id || user.username || user.phone}@${hostIp}`;\n    if (loadedForUserRef.current === loadKey) return;\n    loadedForUserRef.current = loadKey;\n    if (user.role !== \"guest\") {\n      loadAnnouncements();\n      loadNotifications();\n      loadBatches();\n      loadTodayQuiz();\n      loadCourses();\n      loadLmsDailyContent();\n\n      // Only load initial data required for student vs admin role\n      if (user.role === \"student\") {\n        loadStudents(true);\n        loadTests();\n      } else {\n        loadStudents(true);\n        loadRolePermissions();\n        loadPendingApprovals();\n        loadOneTimePermissions();\n      }\n    } else {\n      loadAnnouncements();\n      loadNotifications();\n      loadGuestNotifications(user.leadId || user.userId || \"\");\n      loadCampaigns();\n      loadTests();\n      loadGuestPosters();\n      loadGuestCustomForm();\n      loadLmsDailyContent();\n      loadLmsResources();\n    }\n    setIsInitialLoading(false);\n  }, [user, hostIp]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 5986,
+    "block": "  useEffect(() => {\n    loadGuestCustomForm();\n  }, [guestContentTab, showDynamicAppModal]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 5991,
+    "block": "  useEffect(() => {\n    if (!user || user.role !== \"student\") return;\n    const myStudent = getLoggedInStudent(user, students);\n    if (myStudent) {\n      loadMyProfileRequest(myStudent.id);\n    } else {\n      const studentId = user.studentId || user.userId || user.id;\n      if (studentId) loadMyProfileRequest(studentId);\n    }\n  }, [user, students]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 6004,
+    "block": "  useEffect(() => {\n    if (!user || user.role !== \"student\" || students.length === 0) return;\n    loadTests();\n  }, [students]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 6014,
+    "block": "  useEffect(() => {\n    const userId = user?.userId || user?.user_id || user?.sub || user?.id;\n    const allowedStaffRoles = [\"admin\", \"staff\", \"teacher\", \"editor\", \"contributor\"];\n    if (!userId || !user || !user.role || !allowedStaffRoles.includes(user.role)) return;\n\n    // Data-reload mapping: featureKey → loader function\n    const getFeatureReloaders = (): Record<string, () => void> => ({\n      student_management: loadStudents,\n      staff_management: loadStaff,\n      batch_management: loadBatches,\n      fees_management: loadStudents,\n      marks_management: loadStudents,\n      lms_daily_content: loadLmsDailyContent,\n      lms_quiz_posting: loadTodayQuiz,\n      lms_live_classes: loadLiveSessions,\n      lms_recorded_videos: loadRecordedClasses,\n      lms_resources: loadLmsResources,\n      lms_courses: loadLmsCourses,\n      admissions: loadAdmissions,\n      leads: loadLeads,\n      campaigns: loadCampaigns,\n      alumni_feedback: loadFeedback,\n      test_creation: loadTests,\n      question_bank: loadQuestions,\n      examinations: loadTests,\n      test_results: loadTests,\n    });\n\n    let unsub: (() => void) | undefined;\n    try {\n      // Listen to notifications that belong strictly to this user\n      const qUserNotifs = query(collection(db, \"notifications\"), where(\"requestedByUserId\", \"==\", userId));\n      unsub = onSnapshot(qUserNotifs, (snapshot) => {\n        snapshot.docChanges().forEach((change) => {\n          if (change.type !== \"modified\") return;\n          const data = change.doc.data();\n          // Only react to our own submissions that have just been resolved\n          if (data.requestedByUserId !== userId) return;\n          if (data.status !== \"approved\" && data.status !== \"rejected\") return;\n\n          // If approved → reload relevant collection so data appears immediately\n          if (data.status === \"approved\") {\n            const reloaders = getFeatureReloaders();\n            reloaders[data.feature]?.();\n          }\n\n          // Remove from pendingSubmissions regardless of outcome\n          setPendingSubmissions(prev => prev.filter(k => k !== data.feature));\n          // Refresh the pending approvals banner\n          loadPendingApprovals();\n        });\n      });\n    } catch (e) {\n      console.log(\"[ApprovalSync] Failed to attach real-time listener:\", e);\n    }\n\n    return () => { if (unsub) unsub(); };\n  }, [user?.userId]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 6081,
+    "block": "  useEffect(() => {\n    if (!user) return;\n    if (crmSub === \"feedback\") {\n      loadFeedback();\n    } else if (crmSub === \"leads\") {\n      loadLeads();\n    } else if (crmSub === \"campaigns\") {\n      loadCampaigns();\n    } else if (crmSub === \"admissions\") {\n      loadAdmissions();\n    } else if (crmSub === \"inquiries\") {\n      loadEnquiries();\n    }\n  }, [crmSub]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 6103,
+    "block": "  useEffect(() => {\n    if (!user) return;\n    if (erpSub === \"students\") {\n      loadStudents();\n      loadBatches();\n    } else if (erpSub === \"batch\") {\n      loadBatches();\n      loadLmsCourses();\n    } else if (erpSub === \"profile-requests\") {\n      loadProfileRequests();\n    } else if (erpSub === \"device-alerts\") {\n      loadDeviceAlerts();\n    } else if (erpSub === \"staff\") {\n      loadStaff();\n    } else if (erpSub === \"fees\") {\n      loadFees();\n    } else if (erpSub === \"approvals\") {\n      loadPendingApprovals();\n      loadOneTimePermissions();\n    }\n  }, [erpSub, user]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 6125,
+    "block": "  useEffect(() => {\n    if (!user) return;\n    loadOneTimePermissions();\n    if (lmsSub === \"daily-content\") {\n      loadLmsDailyContent();\n    }\n  }, [lmsSub, user, activeTab]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 6134,
+    "block": "  useEffect(() => {\n    if (!user) return;\n    if (activeTab === \"dashboard\") {\n      loadAnnouncements();\n      loadNotifications();\n      loadLiveSessions();\n    } else if (activeTab === \"lms\") {\n      loadLiveSessions();\n      loadCourses();\n      loadLmsDailyContent();\n      loadLmsResources();\n    } else if (activeTab === \"test\") {\n      loadTests();\n    } else if (activeTab === \"erp\" && isAdmin) {\n      loadStudents();\n      loadBatches();\n    }\n  }, [activeTab, user]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 6153,
+    "block": "  useEffect(() => {\n    if (Platform.OS === \"web\" && typeof window !== \"undefined\") {\n      const syncOnFocus = () => {\n        const now = Date.now();\n        // Throttle focus sync to at most once every 5 minutes (300,000 ms)\n        if (now - lastFocusSyncRef.current < 300000) return;\n        lastFocusSyncRef.current = now;\n\n        if (user) {\n          loadNotifications();\n          loadAnnouncements();\n          loadLiveSessions();\n          if (activeTab === \"test\") loadTests();\n          if (activeTab === \"lms\") loadCourses();\n        }\n      };\n      window.addEventListener(\"focus\", syncOnFocus);\n      return () => window.removeEventListener(\"focus\", syncOnFocus);\n    }\n  }, [user, activeTab]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 6174,
+    "block": "  useEffect(() => {\n    if (!user) return;\n    if (erpSub === \"sacs\") {\n      if (sacsSub === \"requests\") {\n        loadSacsRequests();\n      } else if (sacsSub === \"history\") {\n        loadSacsHistory();\n      } else if (sacsSub === \"permanent\") {\n        loadSacsGrants();\n      }\n    }\n  }, [erpSub, sacsSub, user]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 6188,
+    "block": "  useEffect(() => {\n    if (!user) return;\n    if (testSub === \"feedback\") {\n      loadTestFeedbacks();\n    }\n  }, [testSub, user]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 6196,
+    "block": "  useEffect(() => {\n    if (!user || activeTab !== \"lms\") return;\n    if (lmsSub === \"resources\") {\n      loadLmsResources();\n    } else if (lmsSub === \"live-classes\") {\n      loadLiveSessions();\n    } else if (lmsSub === \"recorded\") {\n      loadRecordedClasses();\n      loadLmsLookups();\n    } else if (lmsSub === \"daily-content\") {\n      loadLmsDailyContent();\n    }\n  }, [lmsSub, activeTab, user]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 6235,
+    "block": "  useEffect(() => {\n    if (!user || activeTab !== \"test\" || testSub !== \"available\") return;\n    loadTests(true); // Silent load on tab focus\n  }, [user, activeTab, testSub]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 6355,
+    "block": "  useEffect(() => {\n    if (!user || user.role === \"guest\" || !user.token || Platform.OS !== \"web\") return;\n\n    const checkSessionOnFocus = async () => {\n      if (typeof document !== \"undefined\" && document.visibilityState !== \"visible\") return;\n      try {\n        const baseUrl = getBaseUrl();\n        const res = await fetch(`${baseUrl}/auth/debug`, {\n          headers: { \"Authorization\": `Bearer ${user.token}` }\n        });\n        if (!res.ok) {\n          const data = await res.json().catch(() => ({}));\n          if (\n            String(data?.message).toLowerCase().includes(\"revoked\") ||\n            String(data?.message).toLowerCase().includes(\"session\") ||\n            res.status === 401\n          ) {\n            await performLogout();\n            showToast(\"Logged out: Your account was signed in on another device.\", \"error\");\n          }\n        }\n      } catch (_) {\n        // Network error — stay logged in (offline resilience)\n      }\n    };\n\n    if (typeof document !== \"undefined\") {\n      document.addEventListener(\"visibilitychange\", checkSessionOnFocus);\n    }\n    return () => {\n      if (typeof document !== \"undefined\") {\n        document.removeEventListener(\"visibilitychange\", checkSessionOnFocus);\n      }\n    };\n  }, [user]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 6392,
+    "block": "  useEffect(() => {\n    if (!waitingRoomTest) return;\n    const tick = () => {\n      const startMs = parseTestTimeMs(waitingRoomTest.startTime);\n      const remaining = Math.max(0, Math.floor((startMs - Date.now()) / 1000));\n      setWaitingRoomTimeLeft(remaining);\n      if (remaining <= 0) {\n        // Test has started — close waiting room and auto-launch exam directly\n        const targetTest = waitingRoomTest;\n        setWaitingRoomTest(null);\n        setNowTick(Date.now()); // force live-test list refresh\n        if (targetTest) {\n          setTimeout(() => {\n            startExam(targetTest);\n          }, 300);\n        }\n      }\n    };\n    tick();\n    const timer = setInterval(tick, 1000);\n    return () => clearInterval(timer);\n  }, [waitingRoomTest]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 6649,
+    "block": "  useEffect(() => {\n    if (!activeAttempt) return;\n    const attemptId = activeAttempt.attemptId;\n\n    // Tracks a JSON snapshot of the last successfully synced answers.\n    // Scoped to this useEffect instance so it resets fresh for every new attempt.\n    let lastSyncedHash = \"\";\n\n    const syncAnswers = async () => {\n      try {\n        const draft = examLocalStorage.getDraft(attemptId);\n        if (!draft || !draft.answers) return;\n\n        // Build a stable hash of the current answer map to detect changes.\n        // JSON.stringify on a plain object is deterministic enough here since\n        // keys are question IDs (UUIDs) and values are single-letter answer strings.\n        const currentHash = JSON.stringify(draft.answers);\n\n        // Skip the API call entirely if nothing changed since the last sync.\n        // This saves Firestore writes during review phases or when the student\n        // is reading a question without having changed any answer yet.\n        if (currentHash === lastSyncedHash) return;\n\n        const formattedBatch = Object.entries(draft.answers).map(([qId, val]) => ({\n          questionId: qId,\n          answer: val\n        }));\n\n        if (formattedBatch.length > 0) {\n          // Include x-attempt-id header as bypass so this still works if JWT session expired.\n          await api.post(\n            `/test-portal/examination/autosave/${attemptId}`,\n            { answers: formattedBatch },\n            { headers: { \"user-id\": user?.userId || \"\", \"x-attempt-id\": attemptId } }\n          );\n          // Only update the hash after a successful API call.\n          // If the request fails (network drop), lastSyncedHash stays stale so the\n          // next interval will retry — ensuring no answers are silently lost.\n          lastSyncedHash = currentHash;\n          console.log(\"Automatically synchronized answers to cloud:\", formattedBatch.length);\n        }\n      } catch (e) {\n        // Do NOT update lastSyncedHash on failure — next interval will retry.\n        console.log(\"Background exam sync warning:\", e);\n      }\n    };\n\n    const intervalId = setInterval(syncAnswers, 60000);\n    return () => {\n      clearInterval(intervalId);\n      // Run a final sync on cleanup/exit regardless of dirty flag —\n      // ensures the very last answers are flushed before the component unmounts.\n      syncAnswers().catch(() => { });\n    };\n  }, [activeAttempt]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 6706,
+    "block": "  useEffect(() => {\n    if (!activeAttempt || Platform.OS !== \"web\" || typeof window === \"undefined\") return;\n\n    const handleOffline = () => {\n      showToast(\n        \"📶 Network disconnected. You can continue answering all questions — your answers are saved locally and will sync automatically once reconnected.\",\n        \"warning\"\n      );\n    };\n\n    // ── Token auto-refresh every 10 minutes during active exam ────────────────\n    // This is the primary fix for \"answers show as Unattempted\" —\n    // without refresh, the JWT session expires and all API calls return 401,\n    // silently dropping every answer save.\n    const refreshExamToken = async () => {\n      try {\n        if (typeof localStorage === \"undefined\") return;\n        const stored = JSON.parse(localStorage.getItem(\"nermai_auth_user\") || \"{}\");\n        if (!stored.refreshToken || !stored.sessionId) return;\n        const baseUrl = getBaseUrl();\n        const res = await fetch(`${baseUrl}/api/auth/refresh`, {\n          method: \"POST\",\n          headers: { \"Content-Type\": \"application/json\" },\n          body: JSON.stringify({ refreshToken: stored.refreshToken, sessionId: stored.sessionId })\n        });\n        const data = await res.json();\n        if (data?.data?.token) {\n          stored.token = data.data.token;\n          if (data.data.refreshToken) stored.refreshToken = data.data.refreshToken;\n          if (data.data.sessionId) stored.sessionId = data.data.sessionId;\n          localStorage.setItem(\"nermai_auth_user\", JSON.stringify(stored));\n          console.log(\"[ExamTokenRefresh] Token refreshed successfully during exam.\");\n        }\n      } catch (e) {\n        console.log(\"[ExamTokenRefresh] Refresh failed (non-critical, bypass will handle):\", e);\n      }\n    };\n\n    // Refresh immediately on exam start, then every 10 minutes\n    refreshExamToken();\n    const tokenRefreshInterval = setInterval(refreshExamToken, 10 * 60 * 1000);\n\n    const handleOnline = async () => {\n      showToast(\n        \"✅ Network reconnected! Syncing offline answers to server...\",\n        \"success\"\n      );\n      syncAnswers().catch(() => {});\n    };\n\n    window.addEventListener(\"offline\", handleOffline);\n    window.addEventListener(\"online\", handleOnline);\n\n    return () => {\n      clearInterval(tokenRefreshInterval);\n      window.removeEventListener(\"offline\", handleOffline);\n      window.removeEventListener(\"online\", handleOnline);\n    };\n  }, [activeAttempt, user]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 6866,
+    "block": "  useEffect(() => {\n    if (user?.role === \"student\" && erpSub === \"my-profile\") {\n      const myStudent = getLoggedInStudent(user, students);\n      if (myStudent) {\n        const nameVal = myStudent.name || (myStudent.firstName && myStudent.lastName ? `${myStudent.firstName} ${myStudent.lastName}` : \"\");\n        setProfileForm(prev => ({\n          ...prev,\n          name: prev.name || nameVal || \"\",\n          initial: prev.initial || myStudent.initial || \"\",\n          dob: prev.dob || myStudent.dob || myStudent.dateOfBirth || \"\",\n          bloodGroup: prev.bloodGroup || myStudent.bloodGroup || \"\",\n          address: prev.address || myStudent.address || \"\",\n          gender: prev.gender || myStudent.gender || \"\",\n          community: prev.community || myStudent.community || \"\",\n          fatherName: prev.fatherName || myStudent.fatherName || \"\",\n          occupation: prev.occupation || myStudent.occupation || \"\",\n          studentOccupation: prev.studentOccupation || myStudent.studentOccupation || \"\",\n          altPhone: prev.altPhone || myStudent.altPhone || \"\",\n          email: prev.email || myStudent.email || \"\",\n          qualification: prev.qualification || myStudent.qualification || \"\",\n          college: prev.college || myStudent.college || \"\",\n          referralSource: prev.referralSource || myStudent.referralSource || \"\",\n          passportPhotoBase64: prev.passportPhotoBase64 || myStudent.photoBase64 || myStudent.photoUrl || \"\",\n          photoIdBase64: prev.photoIdBase64 || myStudent.photoIdBase64 || myStudent.photoIdUrl || \"\",\n          photoIdType: prev.photoIdType || myStudent.photoIdType || \"\",\n          photoIdConfirmed: prev.photoIdConfirmed || !!myStudent.photoIdType,\n          horizontalReservation: prev.horizontalReservation || myStudent.horizontalReservation || \"\",\n          constituency: prev.constituency || myStudent.constituency || \"\",\n          constituencyOthers: prev.constituencyOthers || (myStudent.constituency === \"Others\" ? myStudent.constituencyOthers || \"\" : \"\")\n        }));\n\n        // Pre-fill password inputs with existing password to prevent re-entering\n        if (myStudent.loginPassword) {\n          setStudentOldPassword(prev => prev || myStudent.loginPassword || \"\");\n          setStudentNewPassword(prev => prev || myStudent.loginPassword || \"\");\n          setStudentConfirmPassword(prev => prev || myStudent.loginPassword || \"\");\n        }\n      }\n    }\n  }, [erpSub, students, user]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 6908,
+    "block": "  useEffect(() => {\n    if (!user || user.role !== \"student\") return;\n\n    // Load profile immediately on tab/subtab switch\n    loadStudents();\n\n    // Sync profile on window focus\n    const handleFocus = () => {\n      loadStudents();\n    };\n\n    if (typeof window !== \"undefined\" && window.addEventListener) {\n      window.addEventListener(\"focus\", handleFocus);\n    }\n\n    return () => {\n      if (typeof window !== \"undefined\" && window.removeEventListener) {\n        window.removeEventListener(\"focus\", handleFocus);\n      }\n    };\n  }, [user, activeTab, erpSub, myCardSubTab]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 6931,
+    "block": "  useEffect(() => {\n    try {\n      if (typeof localStorage !== \"undefined\") {\n        const saved = localStorage.getItem(\"played_notice_ids\");\n        if (saved) {\n          const list = JSON.parse(saved);\n          if (Array.isArray(list)) {\n            playedNoticeIdsRef.current = new Set(list);\n          }\n        }\n      }\n    } catch { }\n  }, []);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 7086,
+    "block": "  useEffect(() => {\n    if (!user || user.role !== \"student\") return;\n\n    const myStudent = getLoggedInStudent(user, students);\n    const lookupId = myStudent?.id || user.studentId || user.userId;\n    if (!lookupId) return;\n\n    const studentDocRef = doc(db, \"students\", String(lookupId));\n    const unsubscribe = onSnapshot(\n      studentDocRef,\n      (docSnap) => {\n        if (docSnap.exists()) {\n          const data = docSnap.data();\n          if (!data.isDeleted) {\n            const updatedStudent = {\n              ...data,\n              id: data.id || docSnap.id\n            };\n            setStudents(prev => {\n              if (JSON.stringify(prev) === JSON.stringify([updatedStudent])) {\n                return prev;\n              }\n              return [updatedStudent];\n            });\n          }\n        }\n      },\n      (err) => {\n        console.log(\"Real-time student profile snapshot listener note:\", err?.message);\n      }\n    );\n\n    return () => unsubscribe();\n  }, [user?.userId || user?.id]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 7122,
+    "block": "  useEffect(() => {\n    if (!user || (user.role !== \"admin\" && user.role !== \"super_admin\" && user.role !== \"staff\")) return;\n\n    const requestsQuery = query(\n      collection(db, \"profile_requests\"),\n      where(\"isDeleted\", \"==\", false)\n    );\n\n    const unsubscribe = onSnapshot(\n      requestsQuery,\n      (snapshot) => {\n        const requests = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));\n        requests.sort((a: any, b: any) => {\n          const timeA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;\n          const timeB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;\n          return timeB - timeA;\n        });\n        setProfileRequests(requests);\n      },\n      (err) => {\n        console.log(\"Real-time profile requests snapshot listener note:\", err?.message);\n      }\n    );\n\n    return () => unsubscribe();\n  }, [user]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 7150,
+    "block": "  useEffect(() => {\n    if (!user || activeTab !== \"lms\") return;\n    try {\n      const resourcesQuery = query(collection(db, \"resources\"), where(\"isDeleted\", \"==\", false));\n      const unsubscribe = onSnapshot(\n        resourcesQuery,\n        (snapshot) => {\n          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));\n          list.sort((a: any, b: any) => {\n            const timeA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;\n            const timeB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;\n            return timeB - timeA;\n          });\n          setLmsResources(list);\n        },\n        (err) => console.log(\"Real-time resources listener note:\", err?.message)\n      );\n      return () => unsubscribe();\n    } catch (_) {}\n  }, [user, activeTab]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 7172,
+    "block": "  useEffect(() => {\n    if (!user || activeTab !== \"lms\") return;\n    try {\n      const dailyContentQuery = query(collection(db, \"dailyContent\"), where(\"isDeleted\", \"==\", false));\n      const unsubscribe = onSnapshot(\n        dailyContentQuery,\n        (snapshot) => {\n          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));\n          list.sort((a: any, b: any) => {\n            const dateA = a.date || a.createdAt || \"\";\n            const dateB = b.date || b.createdAt || \"\";\n            return String(dateB).localeCompare(String(dateA));\n          });\n          setLmsDailyContent(list);\n        },\n        (err) => console.log(\"Real-time daily content listener note:\", err?.message)\n      );\n      return () => unsubscribe();\n    } catch (_) {}\n  }, [user, activeTab]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 7194,
+    "block": "  useEffect(() => {\n    if (!user || activeTab !== \"lms\") return;\n    try {\n      const recordedQuery = query(collection(db, \"recorded_classes\"), where(\"isDeleted\", \"==\", false));\n      const unsubscribe = onSnapshot(\n        recordedQuery,\n        (snapshot) => {\n          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));\n          list.sort((a: any, b: any) => {\n            const timeA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;\n            const timeB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;\n            return timeB - timeA;\n          });\n          setLmsRecordedClasses(list);\n        },\n        (err) => console.log(\"Real-time recorded classes listener note:\", err?.message)\n      );\n      return () => unsubscribe();\n    } catch (_) {}\n  }, [user, activeTab]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 7216,
+    "block": "  useEffect(() => {\n    if (!user || activeTab !== \"daily_quizzes\") return;\n    try {\n      const quizzesQuery = query(collection(db, \"dailyQuizzes\"), where(\"isDeleted\", \"==\", false));\n      const unsubscribe = onSnapshot(\n        quizzesQuery,\n        (snapshot) => {\n          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));\n          list.sort((a: any, b: any) => {\n            const dateA = a.date || a.createdAt || \"\";\n            const dateB = b.date || b.createdAt || \"\";\n            return String(dateB).localeCompare(String(dateA));\n          });\n          setAllQuizzes(list);\n        },\n        (err) => console.log(\"Real-time daily quizzes listener note:\", err?.message)\n      );\n      return () => unsubscribe();\n    } catch (_) {}\n  }, [user, activeTab]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 7238,
+    "block": "  useEffect(() => {\n    if (!user || activeTab !== \"admissions\" || (user.role !== \"admin\" && user.role !== \"super_admin\" && user.role !== \"staff\")) return;\n    try {\n      const admissionsQuery = query(collection(db, \"admissions\"), where(\"isDeleted\", \"==\", false));\n      const unsubscribe = onSnapshot(\n        admissionsQuery,\n        (snapshot) => {\n          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));\n          list.sort((a: any, b: any) => {\n            const timeA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;\n            const timeB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;\n            return timeB - timeA;\n          });\n          setAdmissions(list);\n        },\n        (err) => console.log(\"Real-time admissions listener note:\", err?.message)\n      );\n      return () => unsubscribe();\n    } catch (_) {}\n  }, [user, activeTab]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 7260,
+    "block": "  useEffect(() => {\n    if (!user || activeTab !== \"crm\" || (user.role !== \"admin\" && user.role !== \"super_admin\" && user.role !== \"staff\")) return;\n    try {\n      const leadsQuery = query(collection(db, \"leads\"), where(\"isDeleted\", \"==\", false));\n      const unsubscribe = onSnapshot(\n        leadsQuery,\n        (snapshot) => {\n          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));\n          list.sort((a: any, b: any) => {\n            const timeA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;\n            const timeB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;\n            return timeB - timeA;\n          });\n          setLeads(list);\n        },\n        (err) => console.log(\"Real-time leads listener note:\", err?.message)\n      );\n      return () => unsubscribe();\n    } catch (_) {}\n  }, [user, activeTab]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 7282,
+    "block": "  useEffect(() => {\n    try {\n      const campaignsQuery = query(collection(db, \"campaigns\"), where(\"isDeleted\", \"==\", false), where(\"showInDashboard\", \"==\", true));\n      const unsubscribe = onSnapshot(\n        campaignsQuery,\n        (snapshot) => {\n          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));\n          const filtered = list.filter((c: any) => {\n            const title = (c?.title || \"\").toLowerCase();\n            return !title.includes(\"state level test\") && !title.includes(\"free entry\");\n          });\n          setCampaigns(filtered);\n        },\n        (err) => console.log(\"Real-time campaigns listener note:\", err?.message)\n      );\n      return () => unsubscribe();\n    } catch (_) {}\n  }, []);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 7302,
+    "block": "  useEffect(() => {\n    if (!user || activeTab !== \"crm\" || (user.role !== \"admin\" && user.role !== \"super_admin\" && user.role !== \"staff\")) return;\n    try {\n      const inquiriesQuery = query(collection(db, \"inquiries\"), where(\"isDeleted\", \"==\", false));\n      const unsubscribe = onSnapshot(\n        inquiriesQuery,\n        (snapshot) => {\n          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));\n          list.sort((a: any, b: any) => {\n            const timeA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;\n            const timeB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;\n            return timeB - timeA;\n          });\n          setEnquiries(list);\n        },\n        (err) => console.log(\"Real-time inquiries listener note:\", err?.message)\n      );\n      return () => unsubscribe();\n    } catch (_) {}\n  }, [user, activeTab]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 7324,
+    "block": "  useEffect(() => {\n    const isTestTab = [\n      \"tests\", \"testPortal\", \"test_portal\", \"test-portal\", \"test\", \"practice\", \n      \"results\", \"exam\", \"onlineTest\", \"offlineTest\", \"scholarship\", \"testSeries\"\n    ].includes(activeTab) || lmsSub === \"tests\" || lmsSub === \"testPortal\";\n\n    if (!isTestTab) return;\n\n    try {\n      const testsQuery = query(collection(db, \"tests\"), where(\"isDeleted\", \"==\", false));\n      const unsubscribe = onSnapshot(\n        testsQuery,\n        (snapshot) => {\n          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));\n          list.sort((a: any, b: any) => {\n            const timeA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;\n            const timeB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;\n            return timeB - timeA;\n          });\n          setTests(list);\n        },\n        (err) => console.log(\"Real-time tests listener note:\", err?.message)\n      );\n      return () => unsubscribe();\n    } catch (_) {}\n  }, [activeTab, lmsSub]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 7351,
+    "block": "  useEffect(() => {\n    if (user) {\n      loadLmsResources();\n    }\n  }, [user, activeTab, lmsSub]);\n"
+  },
+  {
+    "file": "lms\\admin\\AccessControlPage.tsx",
+    "line": 594,
+    "block": "  useEffect(() => { load(); }, []);\n"
+  },
+  {
+    "file": "lms\\admin\\AccessControlPage.tsx",
+    "line": 861,
+    "block": "  useEffect(() => { load(); }, []);\n"
+  },
+  {
+    "file": "lms\\admin\\AccessControlPage.tsx",
+    "line": 1053,
+    "block": "  useEffect(() => {\n    AccessRulesApi.listPermanentGrants()\n      .then(res => setGrants(res.data?.data || res.data || []))\n      .catch(console.error)\n      .finally(() => setLoading(false));\n  }, []);\n"
+  },
+  {
+    "file": "lms\\admin\\AdminLiveSessions.tsx",
+    "line": 17,
+    "block": "  useEffect(() => {\n    fetchLiveSessions();\n  }, []);\n"
+  },
+  {
+    "file": "lms\\admin\\ClassesPage.tsx",
+    "line": 73,
+    "block": "  useEffect(() => {\r\n    fetchData();\r\n  }, []);\r\n\r"
+  },
+  {
+    "file": "lms\\admin\\ClassesPage.tsx",
+    "line": 78,
+    "block": "  useEffect(() => {\r\n    const timer = setInterval(() => {\r\n      const now = Date.now();\r\n      classes.forEach(cls => {\r\n        if (!cls.scheduledStartTime) return;\r\n        \r\n        const expectedDurationMs = (cls.expectedDurationMinutes || 60) * 60 * 1000;\r\n        const extensionMs = (cls.extensionMinutes || 0) * 60 * 1000;\r\n        const gracePeriodMs = 2 * 60 * 1000;\r\n        const baseStart = cls.actualStartTime ? new Date(cls.actualStartTime).getTime() : new Date(cls.scheduledStartTime).getTime();\r\n        const effectiveEnd = baseStart + expectedDurationMs + extensionMs + gracePeriodMs;\r\n        const start = baseStart;\r\n\r\n        if (now >= start && now < effectiveEnd && !cls.actualEndTime) {\r\n          const remainingSeconds = (effectiveEnd - now) / 1000;\r\n          \r\n          if (remainingSeconds <= 600 && remainingSeconds > 590) { // Around 10 mins\r\n            if (!notifiedClasses[cls.id]?.tenMin) {\r\n              setNotifiedClasses(prev => ({ ...prev, [cls.id]: { ...prev[cls.id], tenMin: true }}));\r\n              alert(`Reminder: Class \"${cls.title}\" will end in 10 minutes. Extend if necessary.`);\r\n            }\r\n          }\r\n          if (remainingSeconds <= 120 && remainingSeconds > 110) { // Around 2 mins\r\n            if (!notifiedClasses[cls.id]?.twoMin) {\r\n              setNotifiedClasses(prev => ({ ...prev, [cls.id]: { ...prev[cls.id], twoMin: true }}));\r\n              alert(`Critical: Class \"${cls.title}\" will end in 2 minutes!`);\r\n            }\r\n          }\r\n        }\r\n      });\r\n    }, 10000); // check every 10 seconds\r\n\r\n    return () => clearInterval(timer);\r\n  }, [classes, notifiedClasses]);\r\n\r"
+  },
+  {
+    "file": "lms\\admin\\CoursesPage.tsx",
+    "line": 29,
+    "block": "  useEffect(() => { fetchCourses(); }, []);\n"
+  },
+  {
+    "file": "lms\\admin\\CustomizeApplicationPage.tsx",
+    "line": 76,
+    "block": "  useEffect(() => {\n    fetchConfig();\n  }, []);\n"
+  },
+  {
+    "file": "lms\\admin\\CustomLeadsPage.tsx",
+    "line": 49,
+    "block": "  useEffect(() => {\n    fetchLeads();\n  }, []);\n"
+  },
+  {
+    "file": "lms\\admin\\KnowledgeStudio.tsx",
+    "line": 46,
+    "block": "  useEffect(() => {\n    if (activeTab === 'articles') fetchArticles();\n    if (activeTab === 'settings') fetchSettings();\n    if (activeTab === 'playground') fetchHealth();\n  }, [activeTab]);\n"
+  },
+  {
+    "file": "lms\\admin\\LiveAttendanceControlScreen.tsx",
+    "line": 46,
+    "block": "  useEffect(() => {\n    if (sessionId) {\n      // No custom headers needed — backend uses JWT for role-based authorization\n      LiveSessionApi.listGlobalBlocks().then(res => {\n        setGlobalBlocks(res.data?.data || []);\n      }).catch(() => {});\n    }\n  }, [sessionId]);\n"
+  },
+  {
+    "file": "lms\\admin\\LiveAttendanceControlScreen.tsx",
+    "line": 55,
+    "block": "  useEffect(() => {\n    if (activeSession?.status === 'LIVE' && activeSession.attendance?.status === 'LIVE') {\n      const startMs = new Date(activeSession.attendance.startedAt).getTime();\n      const int = setInterval(() => {\n        setTimer(Math.floor((Date.now() - startMs) / 1000));\n      }, 1000);\n      return () => clearInterval(int);\n    } else {\n      setTimer(0);\n    }\n  }, [activeSession?.attendance?.status]);\n"
+  },
+  {
+    "file": "lms\\admin\\LiveSessionsPage.tsx",
+    "line": 262,
+    "block": "  useEffect(() => {\n    fetchLiveSessions();\n  }, [fetchLiveSessions]);\n"
+  },
+  {
+    "file": "lms\\admin\\LiveSessionsPage.tsx",
+    "line": 266,
+    "block": "  useEffect(() => {\n    if (activeTab === 'history') fetchHistory();\n  }, [activeTab, fetchHistory]);\n"
+  },
+  {
+    "file": "lms\\admin\\MergedLeadsAdmissionsPage.tsx",
+    "line": 148,
+    "block": "  useEffect(() => {\n    fetchData();\n  }, []);\n"
+  },
+  {
+    "file": "lms\\admin\\PermissionPanel.tsx",
+    "line": 98,
+    "block": "  useEffect(() => {\n    const fetchData = async () => {\n      try {\n        const [studentsRes, batchesRes, requestsRes] = await Promise.all([\n          StudentApi.listStudents(),\n          BatchApi.listBatches(),\n          AccessRulesApi.listAccessRequests({ entityId })\n        ]);\n        \n        // Map API models to local interface if needed\n        setDbStudents(studentsRes.data?.data || []);\n        setDbBatches(batchesRes.data?.data || []);\n        \n        const reqIds = (requestsRes.data?.data || [])\n          .filter((req: any) => req.status === 'pending')\n          .map((req: any) => req.studentId);\n        setRequestedStudentIds(new Set(reqIds));\n\n        // If no pending requests, default to showing all students\n        if (reqIds.length === 0) setStudentFilterMode('all');\n      } catch (err) {\n        console.error('Failed to fetch SACS panel data', err);\n      }\n    };\n    fetchData();\n  }, [entityId]);\n"
+  },
+  {
+    "file": "lms\\admin\\ProviderAccountsPage.tsx",
+    "line": 73,
+    "block": "  useEffect(() => {\n    fetchAccounts();\n  }, []);\n"
+  },
+  {
+    "file": "lms\\admin\\QRCodePermissionsPage.tsx",
+    "line": 12,
+    "block": "  useEffect(() => {\n    const enabledAtTime = new Date(enabledAt).getTime();\n    const durationMs = duration * (unit === 'minutes' ? 60 : 3600) * 1000;\n    const expiryTime = enabledAtTime + durationMs;\n\n    const tick = () => {\n      const diff = Math.max(0, Math.floor((expiryTime - Date.now()) / 1000));\n      setTimeLeft(diff);\n    };\n\n    tick();\n    const timer = setInterval(tick, 1000);\n    return () => clearInterval(timer);\n  }, [enabledAt, duration, unit]);\n"
+  },
+  {
+    "file": "lms\\admin\\QRCodePermissionsPage.tsx",
+    "line": 104,
+    "block": "  useEffect(() => {\n    fetchData();\n\n    // Targeted real-time updates only for pending QR requests (avoids reading the entire student database)\n    const pendingStudentsQuery = query(collection(db, 'students'), where('qrCodeRequested', '==', true));\n    const unsubStudents = onSnapshot(pendingStudentsQuery, () => {\n      fetchData();\n    }, (err) => {\n      console.warn('[QRCodePermissionsPage] Realtime pending students sync error:', err);\n    });\n\n    return () => {\n      unsubStudents();\n    };\n  }, []);\n"
+  },
+  {
+    "file": "lms\\admin\\QRCodePermissionsPage.tsx",
+    "line": 120,
+    "block": "  useEffect(() => {\n    ackFilterRef.current = ackFilter;\n    fetchAcknowledgements(ackFilter);\n  }, [ackFilter]);\n"
+  },
+  {
+    "file": "lms\\admin\\QRCodePermissionsPage.tsx",
+    "line": 125,
+    "block": "  useEffect(() => {\n    // Zero-cost live updates for payment acknowledgements (mounted once)\n    const unsubAcks = onSnapshot(collection(db, 'payment_acknowledgements'), () => {\n      fetchAcknowledgements(ackFilterRef.current);\n    }, (err) => {\n      console.warn('[QRCodePermissionsPage] Realtime acks sync error:', err);\n    });\n\n    return () => {\n      unsubAcks();\n    };\n  }, []);\n"
+  },
+  {
+    "file": "lms\\admin\\ResourceForm.tsx",
+    "line": 60,
+    "block": "  useEffect(() => {\r\n    const fetchData = async () => {\r\n      try {\r\n        const [cRes, sRes, tRes, clRes, bRes] = await Promise.all([\r\n          CourseApi.listCourses(),\r\n          CourseApi.listAllSubjects(),\r\n          CourseApi.listAllTopics(),\r\n          CourseApi.listAllClasses(),\r\n          BatchApi.listBatches()\r\n        ]);\r\n        setCourses(cRes.data.data || cRes.data);\r\n        setSubjects(sRes.data.data || sRes.data);\r\n        setTopics(tRes.data.data || tRes.data);\r\n        setClasses(clRes.data.data || clRes.data);\r\n        setBatches(bRes.data.data || bRes.data);\r\n        \r\n        // Map initialData back to distributions\r\n        if (initialData) {\r\n          const initDists: any[] = [];\r\n          initialData.courseIds?.forEach((id: string) => initDists.push({ type: 'course', courseId: id }));\r\n          initialData.subjectIds?.forEach((id: string) => {\r\n            const subj = (sRes.data.data || sRes.data).find((s:any) => s.id === id);\r\n            initDists.push({ type: 'subject', courseId: subj?.courseId || '', subjectId: id });\r\n          });\r\n          initialData.topicIds?.forEach((id: string) => {\r\n            const top = (tRes.data.data || tRes.data).find((t:any) => t.id === id);\r\n            const subj = (sRes.data.data || sRes.data).find((s:any) => s.id === top?.subjectId);\r\n            initDists.push({ type: 'topic', courseId: subj?.courseId || '', subjectId: top?.subjectId || '', topicId: id });\r\n          });\r\n          initialData.classIds?.forEach((id: string) => {\r\n            const cls = (clRes.data.data || clRes.data).find((c:any) => c.id === id);\r\n            const top = (tRes.data.data || tRes.data).find((t:any) => t.id === cls?.topicId);\r\n            const subj = (sRes.data.data || sRes.data).find((s:any) => s.id === top?.subjectId);\r\n            initDists.push({ type: 'class', courseId: subj?.courseId || '', subjectId: top?.subjectId || '', topicId: cls?.topicId || '', classId: id });\r\n          });\r\n          setDistributions(initDists);\r\n        }\r\n      } catch (err) {\r\n        console.error('Failed to load lookups', err);\r\n      } finally {\r\n        setInitLoading(false);\r\n      }\r\n    };\r\n    fetchData();\r\n  }, [initialData]);\r\n\r"
+  },
+  {
+    "file": "lms\\admin\\ResourcesPage.tsx",
+    "line": 31,
+    "block": "  useEffect(() => {\r\n    fetchResources();\r\n  }, [search, categoryId]);\r\n\r"
+  },
+  {
+    "file": "lms\\admin\\SubjectsPage.tsx",
+    "line": 36,
+    "block": "  useEffect(() => {\n    fetchData();\n  }, []);\n"
+  },
+  {
+    "file": "lms\\admin\\SubtopicsPage.tsx",
+    "line": 63,
+    "block": "  useEffect(() => {\n    fetchData();\n  }, []);\n"
+  },
+  {
+    "file": "lms\\admin\\SyllabusTrackerPage.tsx",
+    "line": 68,
+    "block": "  useEffect(() => {\n    fetchData(true);\n  }, []);\n"
+  },
+  {
+    "file": "lms\\admin\\TeachersPage.tsx",
+    "line": 38,
+    "block": "  useEffect(() => {\n    fetchTeachers();\n  }, []);\n"
+  },
+  {
+    "file": "lms\\admin\\TopicsPage.tsx",
+    "line": 38,
+    "block": "  useEffect(() => { fetchData(); }, []);\n"
+  },
+  {
+    "file": "lms\\admin\\VideosPage.tsx",
+    "line": 99,
+    "block": "  useEffect(() => {\n    fetchData();\n  }, []);\n"
+  },
+  {
+    "file": "lms\\components\\DynamicApplicationModal.tsx",
+    "line": 42,
+    "block": "  useEffect(() => {\n    if (visible) {\n      loadActiveForm();\n      setSubmitted(false);\n      setErrorMessage(null);\n    }\n  }, [visible]);\n"
+  },
+  {
+    "file": "lms\\core\\auth\\AuthProvider.tsx",
+    "line": 33,
+    "block": "  useEffect(() => {\n    try {\n      const rawUserObj = localStorage.getItem('nermai_auth_user');\n      if (rawUserObj) {\n        const parsed = JSON.parse(rawUserObj);\n        if (parsed) {\n          setCurrentUser({\n            uid: parsed.userId || parsed.uid || parsed.id || 'unknown',\n            email: parsed.email || null,\n            displayName: parsed.name || parsed.fullName || 'User',\n          });\n          setRole(parsed.role || 'student');\n          setTenantId(parsed.tenantId || 'default');\n        }\n      }\n    } catch (e) {\n      console.error(\"Failed to load user in AuthProvider bridge:\", e);\n    } finally {\n      setLoading(false);\n    }\n  }, []);\n"
+  },
+  {
+    "file": "lms\\core\\shared\\src\\hooks\\useLiveSessionRealtime.ts",
+    "line": 30,
+    "block": "  useEffect(() => {\n    if (!sessionId) {\n      setActiveSession(null);\n      setParticipants([]);\n      setActivityLogs([]);\n      return;\n    }\n\n    setLoading(true);\n    setError(null);\n\n    if (!realtimeServiceRef.current) {\n      realtimeServiceRef.current = new LiveSessionRealtimeService(db, auth);\n    }\n\n    realtimeServiceRef.current.subscribe(sessionId, {\n      onSessionUpdate: (sessionData) => {\n        setActiveSession(sessionData);\n        setLoading(false);\n      },\n      onParticipantsUpdate: (parts) => {\n        setParticipants(parts);\n      },\n      onActivityUpdate: (logs) => {\n        setActivityLogs(logs);\n      },\n      onError: (err) => {\n        setError(err);\n        setJoinStatus('IDLE');\n        setLoading(false);\n      }\n    });\n\n    return () => {\n      if (realtimeServiceRef.current) {\n        realtimeServiceRef.current.cleanup();\n      }\n    };\n  }, [sessionId, db, auth]);\n"
+  },
+  {
+    "file": "lms\\developer\\ZoomAccountsPage.tsx",
+    "line": 69,
+    "block": "  useEffect(() => {\n    fetchAccounts();\n  }, []);\n"
+  },
+  {
+    "file": "lms\\features\\classes\\ClassesPage.tsx",
+    "line": 73,
+    "block": "  useEffect(() => {\r\n    fetchData();\r\n  }, []);\r\n\r"
+  },
+  {
+    "file": "lms\\features\\classes\\ClassesPage.tsx",
+    "line": 78,
+    "block": "  useEffect(() => {\r\n    const timer = setInterval(() => {\r\n      const now = Date.now();\r\n      classes.forEach(cls => {\r\n        if (!cls.scheduledStartTime) return;\r\n        \r\n        const expectedDurationMs = (cls.expectedDurationMinutes || 60) * 60 * 1000;\r\n        const extensionMs = (cls.extensionMinutes || 0) * 60 * 1000;\r\n        const gracePeriodMs = 2 * 60 * 1000;\r\n        const baseStart = cls.actualStartTime ? new Date(cls.actualStartTime).getTime() : new Date(cls.scheduledStartTime).getTime();\r\n        const effectiveEnd = baseStart + expectedDurationMs + extensionMs + gracePeriodMs;\r\n        const start = baseStart;\r\n\r\n        if (now >= start && now < effectiveEnd && !cls.actualEndTime) {\r\n          const remainingSeconds = (effectiveEnd - now) / 1000;\r\n          \r\n          if (remainingSeconds <= 600 && remainingSeconds > 590) { // Around 10 mins\r\n            if (!notifiedClasses[cls.id]?.tenMin) {\r\n              setNotifiedClasses(prev => ({ ...prev, [cls.id]: { ...prev[cls.id], tenMin: true }}));\r\n              alert(`Reminder: Class \"${cls.title}\" will end in 10 minutes. Extend if necessary.`);\r\n            }\r\n          }\r\n          if (remainingSeconds <= 120 && remainingSeconds > 110) { // Around 2 mins\r\n            if (!notifiedClasses[cls.id]?.twoMin) {\r\n              setNotifiedClasses(prev => ({ ...prev, [cls.id]: { ...prev[cls.id], twoMin: true }}));\r\n              alert(`Critical: Class \"${cls.title}\" will end in 2 minutes!`);\r\n            }\r\n          }\r\n        }\r\n      });\r\n    }, 10000); // check every 10 seconds\r\n\r\n    return () => clearInterval(timer);\r\n  }, [classes, notifiedClasses]);\r\n\r"
+  },
+  {
+    "file": "lms\\features\\live\\components\\LiveSessionControlPanel.tsx",
+    "line": 35,
+    "block": "  useEffect(() => {\n    const addEvent = (type: keyof LiveEventMap, title: string, iconType: TimelineEvent['iconType'], description?: string) => {\n      setEvents(prev => [...prev, { id: Math.random().toString(36).substring(7), timestamp: Date.now(), type, title, description, iconType }].slice(-100));\n    };\n\n    const subs = [\n      liveEventBus.on('HOST_CONNECTED', (e) => addEvent('HOST_CONNECTED', 'Host Joined', 'join', e.payload?.displayName)),\n      liveEventBus.on('HOST_DISCONNECTED', (e) => addEvent('HOST_DISCONNECTED', 'Host Disconnected', 'alert', e.payload?.reason)),\n      liveEventBus.on('PARTICIPANT_JOINED', (e) => addEvent('PARTICIPANT_JOINED', 'Participant Joined', 'join', e.payload?.displayName)),\n      liveEventBus.on('PARTICIPANT_LEFT', (e) => addEvent('PARTICIPANT_LEFT', 'Participant Left', 'leave', e.payload?.displayName)),\n      liveEventBus.on('ATTENDANCE_STARTED', () => addEvent('ATTENDANCE_STARTED', 'Attendance Opened', 'attendance', 'Admin started attendance')),\n      liveEventBus.on('ATTENDANCE_STOPPED', () => addEvent('ATTENDANCE_STOPPED', 'Attendance Closed', 'attendance', 'Admin stopped attendance')),\n      liveEventBus.on('SESSION_ENDED', () => addEvent('SESSION_ENDED', 'Meeting Ended', 'alert', 'Session forcefully ended'))\n    ];\n\n    return () => subs.forEach(unsub => unsub());\n  }, []);\n"
+  },
+  {
+    "file": "lms\\features\\live\\dashboard\\controls\\HeaderRibbon.tsx",
+    "line": 8,
+    "block": "  useEffect(() => {\n    const startTimeStr = session?.actualStartTime || (session as any)?.startedAt;\n    if (!startTimeStr) return;\n    \n    const interval = setInterval(() => {\n      const start = new Date(startTimeStr).getTime();\n      const now = Date.now();\n      const diffMs = Math.max(0, now - start);\n      \n      const hrs = Math.floor(diffMs / 3600000);\n      const mins = Math.floor((diffMs % 3600000) / 60000);\n      const secs = Math.floor((diffMs % 60000) / 1000);\n      \n      const formatted = `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;\n      setLiveSince(formatted);\n    }, 1000);\n    \n    return () => clearInterval(interval);\n  }, [session?.actualStartTime, (session as any)?.startedAt]);\n"
+  },
+  {
+    "file": "lms\\features\\live\\dashboard\\layouts\\AdminLayout.tsx",
+    "line": 16,
+    "block": "  useEffect(() => {\n    setPlugins(liveWorkspaceRegistry.getAllForContext({ academicState, zoomState, capabilities }));\n  }, [academicState, zoomState, capabilities]);\n"
+  },
+  {
+    "file": "lms\\features\\live\\dashboard\\layouts\\StudentLayout.tsx",
+    "line": 15,
+    "block": "  useEffect(() => {\n    const available = liveWorkspaceRegistry.getAllForContext({ academicState, zoomState, capabilities });\n    setPlugins(available);\n    // Default to resources for student if available\n    const hasResources = available.some(p => p.id === 'resources');\n    if (hasResources && !available.some(p => p.id === activeTab)) setActiveTab('resources');\n  }, [academicState, zoomState, capabilities, activeTab]);\n"
+  },
+  {
+    "file": "lms\\features\\live\\dashboard\\layouts\\TeacherLayout.tsx",
+    "line": 10,
+    "block": "  useEffect(() => {\n    setPlugins(liveWorkspaceRegistry.getAllForContext({ academicState, zoomState, capabilities }));\n  }, [academicState, zoomState, capabilities]);\n"
+  },
+  {
+    "file": "lms\\features\\live\\dashboard\\orchestration\\LiveSessionController.tsx",
+    "line": 21,
+    "block": "  useEffect(() => {\n    if (academicState !== 'STARTING' || !sessionId) return;\n\n    liveSessionService\n      .joinSession(sessionId, { adminOverride })\n      .then((payload) => {\n        // ── Waiting Room ───────────────────────────────────────────────────\n        // Backend returns { waiting: true } when the session has waiting room\n        // enabled and the student has not been approved yet. Do NOT launch\n        // the popup in this case — WaitingRoomLobby handles the retry loop.\n        if (payload.waiting === true) {\n          setAcademicState('WAITING_ROOM');\n          return;\n        }\n\n        // ── Launch Zoom popup ──────────────────────────────────────────────\n        meetingLauncher.launch({\n          provider: payload.provider || 'zoom',\n          token: payload.token || '',\n          sessionId: sessionId || '',\n        });\n      })\n      .catch((err: Error) => {\n        console.error('[LiveSessionController] Failed to join session:', err);\n        // Revert state so the student lobby re-appears with the error visible\n        onJoinError(err);\n      });\n  }, [academicState, sessionId]); // eslint-disable-line react-hooks/exhaustive-deps\n"
+  },
+  {
+    "file": "lms\\features\\live\\dashboard\\orchestration\\LiveSessionController.tsx",
+    "line": 51,
+    "block": "  useEffect(() => {\n    // Pass a context update function to the recovery controller\n    recoveryController.init(\n      (updates) => {\n         if (updates.academicState) setAcademicState(updates.academicState);\n      },\n      () => academicState,\n      () => sessionId\n    );\n\n    const unsubEnded = liveEventBus.on('SESSION_ENDED', (event) => {\n      // Automatically finalize session status\n      liveSessionService.handleProviderEvent({ \n         type: 'MEETING_ENDED', \n         sessionId: event.sessionId, \n         provider: event.provider, \n         role: role \n      });\n    });\n\n    const unsubHostConnected = liveEventBus.on('HOST_CONNECTED', (event) => {\n      // Sync the backend when host first arrives\n      liveSessionService.handleProviderEvent({\n         type: 'HOST_CONNECTED',\n         sessionId: event.sessionId,\n         provider: event.provider,\n         role: role\n      });\n      setHostConnected(true);\n    });\n\n    const unsubHostDisconnected = liveEventBus.on('HOST_DISCONNECTED', (event) => {\n      setHostConnected(false);\n    });\n\n    const unsubPromoted = liveEventBus.on('PARTICIPANT_PROMOTED', (event) => {\n      if (event.payload) {\n        import('@nermai/api').then(({ LiveSessionApi }) => {\n          LiveSessionApi.recordPromotion(sessionId, {\n            nermaiUserId: event.payload.nermaiUserId,\n            zoomUserId: event.payload.zoomUserId,\n            timestamp: event.payload.timestamp,\n            source: event.payload.source,\n            status: event.payload.status\n          }).catch(console.error);\n        });\n      }\n    });\n\n    return () => {\n      unsubEnded();\n      unsubHostConnected();\n      unsubHostDisconnected();\n      unsubPromoted();\n    };\n  }, [sessionId, role, setAcademicState, setHostConnected]);\n"
+  },
+  {
+    "file": "lms\\features\\live\\dashboard\\orchestration\\LiveSessionController.tsx",
+    "line": 109,
+    "block": "  useEffect(() => {\n    console.log('[LiveSessionController] Evaluating HOST_CONNECTED condition. zoomState:', zoomState, 'role:', role);\n    // When the popup successfully connects, if this user is a teacher/admin,\n    // explicitly declare the host as connected. This triggers handleProviderEvent\n    // which hits the backend to mark the session as LIVE.\n    if (zoomState === 'CONNECTED' && ['teacher', 'admin', 'super_admin', 'staff'].includes(role)) {\n      console.log('[LiveSessionController] CONDITION MET! Emitting HOST_CONNECTED');\n      liveEventBus.emit('HOST_CONNECTED', {\n        version: 1,\n        provider: provider || 'zoom', \n        sessionId: sessionId || '',\n        timestamp: Date.now(),\n        type: 'HOST_CONNECTED',\n        payload: {}\n      });\n    }\n  }, [zoomState, role, sessionId, provider]);\n"
+  },
+  {
+    "file": "lms\\features\\live\\dashboard\\workspaces\\AnalyticsWorkspace.tsx",
+    "line": 48,
+    "block": "  useEffect(() => {\n    if (!session?.actualStartTime && !session?.startTime) return;\n    \n    const start = new Date(session.actualStartTime || session.startTime).getTime();\n    \n    const interval = setInterval(() => {\n      const now = Date.now();\n      const diffMs = now - start;\n      const h = Math.floor(diffMs / 3600000).toString().padStart(2, '0');\n      const m = Math.floor((diffMs % 3600000) / 60000).toString().padStart(2, '0');\n      const s = Math.floor((diffMs % 60000) / 1000).toString().padStart(2, '0');\n      setDurationStr(`${h}:${m}:${s}`);\n    }, 1000);\n    \n    return () => clearInterval(interval);\n  }, [session?.actualStartTime, session?.startTime]);\n"
+  },
+  {
+    "file": "lms\\features\\live\\dashboard\\workspaces\\AttendanceWorkspace.tsx",
+    "line": 12,
+    "block": "  useEffect(() => {\n    if (session?.id) {\n      LiveSessionApi.listParticipants(session.id)\n        .then((res) => {\n          setParticipants(res.data?.data || []);\n        })\n        .catch(console.error);\n    }\n  }, [session?.id]);\n"
+  },
+  {
+    "file": "lms\\features\\live\\dashboard\\workspaces\\ParticipantsWorkspace.tsx",
+    "line": 22,
+    "block": "  useEffect(() => {\n    fetchParticipants();\n\n    // Subscribe to LiveEventBus to update participants in real time\n    const onParticipantJoined = () => fetchParticipants();\n    const onParticipantLeft = () => fetchParticipants();\n    const onHandRaised = (e: any) => fetchParticipants(); // Naive refresh, could optimize\n    \n    const u1 = liveEventBus.on('PARTICIPANT_JOINED', onParticipantJoined);\n    const u2 = liveEventBus.on('PARTICIPANT_LEFT', onParticipantLeft);\n    const u3 = liveEventBus.on('HAND_RAISED', onHandRaised);\n    // You could also add HOST_CONNECTED, etc.\n\n    return () => {\n      u1(); u2(); u3();\n    };\n  }, [session?.id]);\n"
+  },
+  {
+    "file": "lms\\features\\live\\dashboard\\workspaces\\TimelineWorkspace.tsx",
+    "line": 39,
+    "block": "  useEffect(() => {\n    // Initial event\n    addEvent('SESSION_CONNECTING', 'Session Initialized', {}, 'info', 'Waiting for events from LiveEventBus...');\n\n    const subs = [\n      liveEventBus.on('HOST_CONNECTED', (e) => addEvent('HOST_CONNECTED', 'Host Joined', e.payload, 'join', e.payload.displayName)),\n      liveEventBus.on('HOST_DISCONNECTED', (e) => addEvent('HOST_DISCONNECTED', 'Host Disconnected', e.payload, 'alert', e.payload.reason)),\n      liveEventBus.on('PARTICIPANT_JOINED', (e) => addEvent('PARTICIPANT_JOINED', 'Participant Joined', e.payload, 'join', e.payload.displayName)),\n      liveEventBus.on('PARTICIPANT_LEFT', (e) => addEvent('PARTICIPANT_LEFT', 'Participant Left', e.payload, 'leave', e.payload.displayName)),\n      liveEventBus.on('ATTENDANCE_STARTED', (e) => addEvent('ATTENDANCE_STARTED', 'Attendance Started', e.payload, 'attendance', 'Teacher triggered attendance.')),\n      liveEventBus.on('ATTENDANCE_STOPPED', (e) => addEvent('ATTENDANCE_STOPPED', 'Attendance Ended', e.payload, 'attendance', 'Teacher ended attendance.')),\n      liveEventBus.on('SCREEN_SHARE_STARTED', (e) => addEvent('SCREEN_SHARE_STARTED', 'Screen Share Started', e.payload, 'screen')),\n      liveEventBus.on('SCREEN_SHARE_STOPPED', (e) => addEvent('SCREEN_SHARE_STOPPED', 'Screen Share Stopped', e.payload, 'screen')),\n      liveEventBus.on('HAND_RAISED', (e) => addEvent('HAND_RAISED', 'Hand Raised', e.payload, 'info', e.payload.displayName)),\n      liveEventBus.on('SESSION_ENDED', (e) => addEvent('SESSION_ENDED', 'Meeting Ended', e.payload, 'alert', 'Session finalized.'))\n    ];\n\n    return () => {\n      subs.forEach(unsub => unsub());\n    };\n  }, []);\n"
+  },
+  {
+    "file": "lms\\features\\live\\hooks\\useSessionStatusPoller.ts",
+    "line": 43,
+    "block": "  useEffect(() => {\n    mountedRef.current = true;\n    if (!sessionId) return;\n\n    const poll = async () => {\n      try {\n        const res = await LiveSessionApi.getSession(sessionId);\n        const data = res.data?.data || res.data;\n        const status: SessionStatus = data?.status ?? data?.liveStatus ?? 'SCHEDULED';\n\n        if (!mountedRef.current) return;\n        setSessionStatus(status);\n        setError(null);\n        setLoading(false);\n\n        // Stop polling once terminal or host-ready (caller will proceed)\n        if (TERMINAL_STATUSES.includes(status)) {\n          if (timerRef.current) clearInterval(timerRef.current);\n        }\n      } catch (err: any) {\n        if (mountedRef.current) {\n          setError(err?.message || 'Failed to fetch session status');\n          setLoading(false);\n        }\n      }\n    };\n\n    setLoading(true);\n    poll(); // immediate first fetch\n    timerRef.current = setInterval(poll, intervalMs);\n\n    return () => {\n      mountedRef.current = false;\n      if (timerRef.current) clearInterval(timerRef.current);\n    };\n  }, [sessionId, intervalMs]);\n"
+  },
+  {
+    "file": "lms\\features\\live\\legacy\\LiveSessionHeader.tsx",
+    "line": 13,
+    "block": "  useEffect(() => {\n    const calculateTime = () => {\n      const start = new Date(startedAt).getTime();\n      const now = Date.now();\n      const elapsed = now - start;\n      const remaining = Math.max(0, durationMs - elapsed);\n      setTimeLeft(remaining);\n    };\n\n    calculateTime();\n    const interval = setInterval(calculateTime, 1000);\n    return () => clearInterval(interval);\n  }, [startedAt, durationMs]);\n"
+  },
+  {
+    "file": "lms\\features\\live\\LiveSessionFeature.tsx",
+    "line": 51,
+    "block": "  useEffect(() => {\n    if (!sessionId) return;\n\n    const unsubscribe = liveSessionService.subscribe((state: SessionState, session: any) => {\n      setSessionState(session);\n      if (state === 'LIVE') setAcademicState('LIVE');\n      else if (state === 'ENDED') setAcademicState('ENDED');\n    });\n\n    // Fetch initial session data so lobbies can display titles\n    liveSessionService.fetchSession(sessionId).catch(console.error);\n\n    // ── Start Bridge Adapters ────────────────────────────────────────────────\n    import('./services/WebMessageBridge').then((m) => m.webMessageBridge.start());\n    import('./services/MeetingStateBusAdapter').then((m) => m.meetingStateBusAdapter.start(sessionId));\n\n    return () => {\n      import('./services/WebMessageBridge').then((m) => m.webMessageBridge.stop());\n      import('./services/MeetingStateBusAdapter').then((m) => m.meetingStateBusAdapter.stop());\n      unsubscribe();\n      liveSessionService.leaveSession();\n    };\n  }, [sessionId]);\n"
+  },
+  {
+    "file": "lms\\features\\live\\ParticipantList.tsx",
+    "line": 9,
+    "block": "  useEffect(() => {\n    const handleJoined: LiveEventCallback = (payload) => {\n      setParticipants(prev => {\n        if (prev.find(p => p.id === payload.participant.id)) return prev;\n        return [...prev, payload.participant];\n      });\n    };\n\n    const handleLeft: LiveEventCallback = (payload) => {\n      setParticipants(prev => prev.filter(p => p.id !== payload.participant.id));\n    };\n\n    const handleHand: LiveEventCallback = (payload) => {\n      setParticipants(prev => prev.map(p => \n        p.id === payload.participant.id \n          ? { ...p, isHandRaised: payload.isRaised } \n          : p\n      ));\n    };\n\n    const sub1 = liveEventBusMobile.on(LiveEventTypeMobile.PARTICIPANT_JOINED, handleJoined);\n    const sub2 = liveEventBusMobile.on(LiveEventTypeMobile.PARTICIPANT_LEFT, handleLeft);\n    const sub3 = liveEventBusMobile.on(LiveEventTypeMobile.HAND_RAISED, handleHand);\n\n    return () => {\n      sub1();\n      sub2();\n      sub3();\n    };\n  }, []);\n"
+  },
+  {
+    "file": "lms\\features\\live\\providers\\zoom\\legacy\\ZoomMeetingPlayer.tsx",
+    "line": 40,
+    "block": "  useEffect(() => {\n    console.log('[ZoomMeetingPlayer] MOUNTED — token:', tokenPreview, '| timestamp:', Date.now());\n    return () => {\n      console.log('[ZoomMeetingPlayer] UNMOUNTED — token was:', tokenPreview, '| timestamp:', Date.now());\n    };\n  }, [joinPayload?.token]);\n"
+  },
+  {
+    "file": "lms\\features\\live\\providers\\zoom\\ZoomMeetingPlayer.tsx",
+    "line": 28,
+    "block": "  useEffect(() => {\n    console.log('[ZoomMeetingPlayer] MOUNTED — token:', tokenPreview, '| timestamp:', Date.now());\n    return () => {\n      console.log('[ZoomMeetingPlayer] UNMOUNTED — token was:', tokenPreview, '| timestamp:', Date.now());\n    };\n  }, [joinPayload?.token]);\n"
+  },
+  {
+    "file": "lms\\features\\live\\StudentLiveClassesPage.tsx",
+    "line": 20,
+    "block": "  useEffect(() => {\n    if (!targetDate) return;\n    const update = () => {\n      const diff = new Date(targetDate).getTime() - Date.now();\n      if (diff <= 0) { setText('Starting now'); return; }\n      const h = Math.floor(diff / 3600000);\n      const m = Math.floor((diff % 3600000) / 60000);\n      const s = Math.floor((diff % 60000) / 1000);\n      setText(h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m ${s}s` : `${s}s`);\n    };\n    update();\n    const id = setInterval(update, 1000);\n    return () => clearInterval(id);\n  }, [targetDate]);\n  return text;"
+  },
+  {
+    "file": "lms\\features\\live\\TimelineList.tsx",
+    "line": 16,
+    "block": "  useEffect(() => {\n    const handleEvent: LiveEventCallback = (payload) => {\n      const typeStr = (payload as any).type || 'EVENT';\n      const desc = (payload as any).participant?.name \n        ? `${(payload as any).participant.name} triggered ${typeStr}` \n        : `System triggered ${typeStr}`;\n        \n      setEvents(prev => {\n        const newEvents = [{\n          id: Math.random().toString(),\n          timestamp: Date.now(),\n          type: typeStr,\n          description: desc\n        }, ...prev];\n        return newEvents.slice(0, 500); // Prevent memory bloat\n      });\n    };\n\n    // Listen to major events\n    const s1 = liveEventBusMobile.on(LiveEventTypeMobile.PARTICIPANT_JOINED, handleEvent);\n    const s2 = liveEventBusMobile.on(LiveEventTypeMobile.PARTICIPANT_LEFT, handleEvent);\n    const s3 = liveEventBusMobile.on(LiveEventTypeMobile.SESSION_CONNECTED, handleEvent);\n    const s4 = liveEventBusMobile.on(LiveEventTypeMobile.ATTENDANCE_STARTED, handleEvent);\n    \n    return () => { s1(); s2(); s3(); s4(); };\n  }, []);\n"
+  },
+  {
+    "file": "lms\\features\\streaming\\LiveMeetingPlayerMobile.tsx",
+    "line": 27,
+    "block": "  useEffect(() => {\n    let isMounted = true;\n    const fetchToken = async () => {\n      try {\n        if (!sessionId) {\n          setError('No session ID provided');\n          return;\n        }\n        \n        // Fetch short-lived Redis Join Token\n        const res = await getApiClient().post(`/live-sessions/${sessionId}/join-token`);\n        if (isMounted) {\n          setJoinToken(res.data.token);\n        }\n      } catch (err: any) {\n        console.error('Failed to get join token', err);\n        if (isMounted) {\n          setError(err.response?.data?.message || 'Failed to initialize meeting');\n        }\n      } finally {\n        if (isMounted) setLoading(false);\n      }\n    };\n    fetchToken();\n    \n    return () => { isMounted = false; };\n  }, [sessionId]);\n"
+  },
+  {
+    "file": "lms\\features\\streaming\\MeetingRenderer.tsx",
+    "line": 24,
+    "block": "  useEffect(() => {\n    return () => {\n      // Security/Performance: Ensure the webview unloads its content completely\n      // preventing any background media playback or orphaned intervals on Android.\n      if (webViewRef.current) {\n        try {\n          webViewRef.current.injectJavaScript(\"window.location.href = 'about:blank'; true;\");\n        } catch (e) {}\n      }\n    };\n  }, []);\n"
+  },
+  {
+    "file": "lms\\features\\streaming\\providers\\zoom\\ZoomDeepLinkPlayer.tsx",
+    "line": 100,
+    "block": "  useEffect(() => {\n    // We want to fetch credentials if the session is LIVE and we don't have them yet.\n    if (screenState === 'LIVE' && !joinData && !loadingJoin) {\n      loadJoinData();\n    }\n    // eslint-disable-next-line react-hooks/exhaustive-deps\n  }, [screenState, sessionId, joinData, loadingJoin]);\n"
+  },
+  {
+    "file": "lms\\features\\streaming\\YoutubePlayer.tsx",
+    "line": 18,
+    "block": "  useEffect(() => {\n    // Start 15s Heartbeat Ping for Presence Tracking\n    const hbInterval = setInterval(() => {\n      if (classId) {\n        LiveSessionApi.studentHeartbeat(classId).catch(() => {});\n      }\n    }, 15000);\n\n    return () => {\n      clearInterval(hbInterval);\n    };\n  }, [classId]);\n"
+  },
+  {
+    "file": "lms\\features\\streaming\\ZoomWebViewPlayer.tsx",
+    "line": 21,
+    "block": "  useEffect(() => {\n    const fetchToken = async () => {\n      try {\n        if (!payload?.sessionId) return;\n        const res = await getApiClient().post(`/live-sessions/${payload.sessionId}/join-token`);\n        setJoinToken(res.data.token);\n      } catch (err) {\n        console.error('Failed to get join token', err);\n      } finally {\n        setLoading(false);\n      }\n    };\n    fetchToken();\n  }, [payload]);\n"
+  },
+  {
+    "file": "lms\\features\\streaming\\ZoomWebViewPlayer.tsx",
+    "line": 60,
+    "block": "  useEffect(() => {\n    if (Platform.OS === 'web') {\n      const handleWebMessage = async (event: MessageEvent) => {\n        try {\n          if (typeof event.data === 'string') {\n            const data = JSON.parse(event.data);\n            if (data.type === 'ZOOM_EVENT' && payload?.sessionId) {\n              await getApiClient().post(`/live-sessions/${payload.sessionId}/events`, { \n                event: data.event,\n                connectionState: data.connectionState,\n                role: data.role,\n                displayName: data.displayName,\n                providerParticipantId: data.providerParticipantId\n              });\n            }\n          }\n        } catch (e) {\n          // Ignore parse errors from other messages\n        }\n      };\n      window.addEventListener('message', handleWebMessage);\n      return () => window.removeEventListener('message', handleWebMessage);\n    }\n  }, [payload?.sessionId]);\n"
+  },
+  {
+    "file": "lms\\hooks\\useAttendanceHeartbeat.ts",
+    "line": 46,
+    "block": "  useEffect(() => {\n    if (!isLive) return; // Completely disable heartbeat effect for recorded videos\n\n    // Initial join event\n    sendEvent('JOIN');\n    startHeartbeat();\n\n    const handleVisibilityChange = () => {\n      if (document.visibilityState === 'hidden') {\n        isBackgroundRef.current = true;\n        sendEvent('BACKGROUND');\n        stopHeartbeat();\n      } else {\n        isBackgroundRef.current = false;\n        sendEvent('FOREGROUND');\n        startHeartbeat();\n      }\n    };\n\n    const handleFocus = () => {\n      if (isBackgroundRef.current) {\n        isBackgroundRef.current = false;\n        sendEvent('FOREGROUND');\n        startHeartbeat();\n      }\n    };\n\n    const handleBlur = () => {\n      if (!isBackgroundRef.current) {\n        isBackgroundRef.current = true;\n        sendEvent('BACKGROUND');\n        stopHeartbeat();\n      }\n    };\n\n    const handleBeforeUnload = () => {\n      sendEvent('LEAVE');\n    };\n\n    document.addEventListener('visibilitychange', handleVisibilityChange);\n    window.addEventListener('focus', handleFocus);\n    window.addEventListener('blur', handleBlur);\n    window.addEventListener('beforeunload', handleBeforeUnload);\n\n    return () => {\n      sendEvent('LEAVE');\n      stopHeartbeat();\n      document.removeEventListener('visibilitychange', handleVisibilityChange);\n      window.removeEventListener('focus', handleFocus);\n      window.removeEventListener('blur', handleBlur);\n      window.removeEventListener('beforeunload', handleBeforeUnload);\n    };\n  }, [sendEvent, startHeartbeat, stopHeartbeat, isLive]);\n"
+  },
+  {
+    "file": "lms\\staff\\StaffClassesPage.tsx",
+    "line": 22,
+    "block": "  useEffect(() => {\n    const fetchSessions = async () => {\n      try {\n        const response = await api.get('/staff/me/live-sessions');\n        // Sort by scheduledStartTime descending (newest first)\n        const sorted = (response.data.data || []).sort((a: any, b: any) => \n          new Date(b.scheduledStartTime || 0).getTime() - new Date(a.scheduledStartTime || 0).getTime()\n        );\n        setSessions(sorted);\n      } catch (error) {\n        console.error('Failed to fetch assigned sessions:', error);\n      } finally {\n        setLoading(false);\n      }\n    };\n\n    fetchSessions();\n  }, []);\n"
+  },
+  {
+    "file": "lms\\staff\\StaffCoursesPage.tsx",
+    "line": 17,
+    "block": "  useEffect(() => {\n    const fetchCourses = async () => {\n      try {\n        const response = await api.get('/staff/me/courses');\n        setCourses(response.data.data || []);\n      } catch (error) {\n        console.error('Failed to fetch assigned courses:', error);\n      } finally {\n        setLoading(false);\n      }\n    };\n\n    fetchCourses();\n  }, []);\n"
+  },
+  {
+    "file": "lms\\staff\\StaffLiveClassRedirect.tsx",
+    "line": 23,
+    "block": "  useEffect(() => {\n    if (!classId) {\n      setError('No class ID provided.');\n      return;\n    }\n\n    const resolve = async () => {\n      try {\n        const res = await LiveSessionApi.joinByClass(classId);\n        const data = res.data?.data;\n        const sessionId = data?.sessionId || data?.id;\n        if (sessionId) {\n          navigate(`/staff/live/${sessionId}`, { replace: true });\n        } else {\n          setError('No active live session found for this class.');\n        }\n      } catch (err: any) {\n        setError(err.response?.data?.message || 'Failed to resolve live session for this class.');\n      }\n    };\n\n    resolve();\n  }, [classId, navigate]);\n"
+  },
+  {
+    "file": "lms\\staff\\TeacherDashboard.tsx",
+    "line": 63,
+    "block": "  useEffect(() => {\n    fetchData();\n  }, []);\n"
+  },
+  {
+    "file": "lms\\student\\ClassResources.tsx",
+    "line": 20,
+    "block": "  useEffect(() => {\n    const fetchHierarchy = async () => {\n      setLoading(true);\n      try {\n        const response = await ResourceApi.getCourseHierarchy(courseId);\n        const fetchedGroups = response.data.data.groups || [];\n        setGroups(fetchedGroups);\n        \n        const initExpanded: Record<string, boolean> = {};\n        fetchedGroups.forEach((g: any) => {\n          initExpanded[g.title] = g.expanded;\n        });\n        setExpandedGroups(initExpanded);\n      } catch (err) {\n        console.error('Failed to load inherited course resources', err);\n      } finally {\n        setLoading(false);\n      }\n    };\n    if (courseId) {\n      fetchHierarchy();\n    }\n  }, [courseId]);\n"
+  },
+  {
+    "file": "lms\\student\\components\\AttendanceStatusBadge.tsx",
+    "line": 12,
+    "block": "  useEffect(() => {\n    let mounted = true;\n    let timerId: NodeJS.Timeout | null = null;\n\n    const fetchStatus = async () => {\n      try {\n        const response = await (CourseApi as any).getAttendanceStatus?.(classId) || await fetch(`/api/v1/attendance/status/${classId}`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => res.json());\n        if (mounted && response.data) {\n          setStatusData(response.data);\n          \n          // Stop polling once attendance status has finalized to save network & DB read operations\n          const st = response.data.status;\n          const fnSt = response.data.finalResult?.status;\n          const isTerminal = st === 'COMPLETED' || st === 'FINALIZED' || st === 'Present' || st === 'Absent' || st === 'Late' || fnSt === 'Present' || fnSt === 'Absent' || fnSt === 'Late';\n          if (isTerminal && timerId) {\n            clearInterval(timerId);\n          }\n        }\n      } catch (err) {\n        // Silent catch for polling\n      }\n    };\n\n    fetchStatus();\n    timerId = setInterval(fetchStatus, 30000); // poll every 30s until finalized\n    return () => {\n      mounted = false;\n      if (timerId) clearInterval(timerId);\n    };\n  }, [classId]);\n"
+  },
+  {
+    "file": "lms\\student\\CoursePlayer.tsx",
+    "line": 73,
+    "block": "  useEffect(() => {\n    const fetchCourseDetails = async () => {\n      try {\n        const response = await CourseApi.getCourse(courseId);\n        const courseData = response.data?.data || response.data;\n        setCourse(courseData);\n\n        // Fetch subjects\n        const subjRes = await CourseApi.listSubjectsByCourse(courseId);\n        const subjects = subjRes.data?.data || subjRes.data || [];\n\n        // Fetch topics and classes\n        const fullSyllabus = await Promise.all(\n          subjects.map(async (subject: any) => {\n            const topicsRes = await CourseApi.listTopicsBySubject(subject.id);\n            const topics = topicsRes.data?.data || topicsRes.data || [];\n\n            const topicsWithClasses = await Promise.all(\n              topics.map(async (topic: any) => {\n                const classesRes = await CourseApi.listClassesByTopic(topic.id);\n                const classes = classesRes.data?.data || classesRes.data || [];\n                // Attach subject/topic info to classes for easy rendering\n                return {\n                  ...topic,\n                  classes: classes.map((c: any) => ({\n                    ...c,\n                    subjectName: subject.name,\n                    chapterName: topic.name\n                  }))\n                };\n              })\n            );\n\n            return { ...subject, topics: topicsWithClasses };\n          })\n        );\n\n        setSyllabus(fullSyllabus);\n\n        // Auto-select initialClassId if provided\n        if (initialClassId) {\n          let foundClass = null;\n          for (const sub of fullSyllabus) {\n            for (const top of sub.topics || []) {\n              const match = (top.classes || []).find((c: any) => c.id === initialClassId);\n              if (match) {\n                foundClass = match;\n                break;\n              }\n            }\n            if (foundClass) break;\n          }\n          if (foundClass) {\n            setActiveVideo(foundClass);\n          }\n        }\n      } catch (error) {\n        console.error('Failed to load course details', error);\n      } finally {\n        setLoading(false);\n      }\n    };\n    fetchCourseDetails();\n  }, [courseId]);\n"
+  },
+  {
+    "file": "lms\\student\\CourseResources.tsx",
+    "line": 19,
+    "block": "  useEffect(() => {\n    const fetchHierarchy = async () => {\n      setLoading(true);\n      try {\n        const response = await ResourceApi.getCourseHierarchy(courseId);\n        const fetchedGroups = response.data.data.groups || [];\n        setGroups(fetchedGroups);\n        \n        // Initialize expanded state based on API response\n        const initExpanded: Record<string, boolean> = {};\n        fetchedGroups.forEach((g: any) => {\n          initExpanded[g.title] = g.expanded;\n        });\n        setExpandedGroups(initExpanded);\n      } catch (err) {\n        console.error('Failed to load course resources', err);\n      } finally {\n        setLoading(false);\n      }\n    };\n    if (courseId) {\n      fetchHierarchy();\n    }\n  }, [courseId]);\n"
+  },
+  {
+    "file": "lms\\student\\LCES\\InteractionOverlay.tsx",
+    "line": 20,
+    "block": "  useEffect(() => {\n    let reconnectTimer: NodeJS.Timeout;\n    \n    const connectStream = () => {\n      if (eventSourceRef.current) {\n        eventSourceRef.current.close();\n      }\n\n      const token = localStorage.getItem('token');\n      // Using standard SSE endpoint. Authentication may be via cookie or query param if required by backend SSE.\n      // Usually, a token query parameter is needed for EventSource if auth is required.\n      const url = `/api/v1/interaction/stream/live/${liveSessionId}?token=${token}`;\n      \n      const eventSource = new EventSource(url);\n      eventSourceRef.current = eventSource;\n\n      eventSource.onmessage = (event) => {\n        try {\n          const data = JSON.parse(event.data);\n          if (data.type === 'REACTION') {\n            const newEvent: InteractionEvent = {\n              id: Math.random().toString(36).substring(7),\n              type: data.type,\n              payload: data.payload,\n              timestamp: Date.now(),\n              xOffset: Math.random() * 60 - 30, // -30px to +30px\n            };\n            \n            setEvents(prev => [...prev, newEvent]);\n            \n            // Remove after 3 seconds\n            setTimeout(() => {\n              setEvents(prev => prev.filter(e => e.id !== newEvent.id));\n            }, 3000);\n          }\n        } catch (e) {\n          console.error('Failed to parse interaction SSE', e);\n        }\n      };\n\n      eventSource.onerror = (error) => {\n        console.error('Interaction SSE error:', error);\n        eventSource.close();\n        // Automatic reconnection attempt after 5 seconds\n        reconnectTimer = setTimeout(connectStream, 5000);\n      };\n    };\n\n    if (liveSessionId) {\n      connectStream();\n    }\n\n    return () => {\n      if (eventSourceRef.current) {\n        eventSourceRef.current.close();\n      }\n      clearTimeout(reconnectTimer);\n    };\n  }, [liveSessionId]);\n"
+  },
+  {
+    "file": "lms\\student\\LCES\\useLiveComments.ts",
+    "line": 31,
+    "block": "  useEffect(() => {\n    mounted.current = true;\n    if (!liveSessionId) return;\n\n    const fetchComments = async () => {\n      try {\n        const res = await LiveCommentsApi.getComments(liveSessionId);\n        if (!mounted.current) return;\n        \n        const allComments = res.data.data as CommentData[];\n        \n        const pinned = allComments.filter(c => c.isPinned);\n        const regular = allComments.filter(c => !c.isPinned);\n\n        setPinnedComments(pinned);\n        setComments(regular);\n        setError(null);\n      } catch (err: any) {\n        console.error('[useLiveComments] Fetch error:', err);\n        if (mounted.current) setError(err);\n      } finally {\n        if (mounted.current) setLoading(false);\n      }\n    };\n\n    // Initial fetch\n    fetchComments();\n\n    // Poll every 8 seconds for live updates (cost-optimized while preserving real-time feel)\n    const interval = setInterval(fetchComments, 8000);\n\n    return () => {\n      mounted.current = false;\n      clearInterval(interval);\n    };\n  }, [liveSessionId]);\n"
+  },
+  {
+    "file": "lms\\student\\MeetingPlayerFactory.tsx",
+    "line": 64,
+    "block": "  useEffect(() => {\n    // Reset state for the new classId immediately so we never show stale data\n    setAccessData(null);\n    setError('');\n    fetchAccess();\n    return () => {\n      if (fetchTimeoutRef.current) clearTimeout(fetchTimeoutRef.current);\n    };\n  }, [classId]);\n"
+  },
+  {
+    "file": "lms\\student\\MobileLiveClasses.tsx",
+    "line": 12,
+    "block": "  useEffect(() => {\n    if (!targetTime) return;\n    const update = () => {\n      const diff = new Date(targetTime).getTime() - Date.now();\n      if (diff <= 0) { setTimeLeft('Starting now'); return; }\n      const h = Math.floor(diff / 3600000);\n      const m = Math.floor((diff % 3600000) / 60000);\n      const s = Math.floor((diff % 60000) / 1000);\n      setTimeLeft(h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m ${s}s` : `${s}s`);\n    };\n    update();\n    const timer = setInterval(update, 1000);\n    return () => clearInterval(timer);\n  }, [targetTime]);\n  return timeLeft;"
+  },
+  {
+    "file": "lms\\student\\NERMAIAssistantWidget.tsx",
+    "line": 40,
+    "block": "  useEffect(() => {\n    if (isOpen && courseContext) {\n      AssistantApi.setContext({\n        activeCourseId: courseContext.courseId,\n        activeTopicId: courseContext.topicId,\n        activeVideoId: courseContext.videoId\n      }).catch(err => console.error(\"Failed to sync context\", err));\n    }\n  }, [isOpen, courseContext]);\n"
+  },
+  {
+    "file": "lms\\student\\ResourceViewer.tsx",
+    "line": 28,
+    "block": "  useEffect(() => {\n    if (access) {\n      const isImg = access?.viewerType === 'image' || \n                    ['image', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'].includes(resource?.type?.toLowerCase()) || \n                    access?.contentType?.toLowerCase()?.startsWith('image/') || \n                    resource?.mimeType?.toLowerCase()?.startsWith('image/');\n      if (isImg) {\n        let targetUrl = access.viewerUrl || access.signedUrl || resource?.sourceUrl || '';\n        \n        // Extract Google Drive ID if this is a Google Drive image asset\n        const rawDriveId = resource?.sourceUrl || (access.viewerUrl?.includes('drive.google.com') ? access.viewerUrl : '');\n        const driveMatch = rawDriveId ? rawDriveId.match(/[-\\w]{25,}/) : null;\n        if (driveMatch && driveMatch[0]) {\n          targetUrl = `https://lh3.googleusercontent.com/d/${driveMatch[0]}`;\n        } else if (targetUrl.includes('drive.google.com/file/d/')) {\n          const m = targetUrl.match(/\\/file\\/d\\/([-\\w]{25,})/);\n          if (m && m[1]) {\n            targetUrl = `https://lh3.googleusercontent.com/d/${m[1]}`;\n          }\n        }\n        setImageSrc(targetUrl);\n      } else {\n        setImageSrc(access.signedUrl || access.viewerUrl || '');\n      }\n    }\n  }, [access, resource]);\n"
+  },
+  {
+    "file": "lms\\student\\ResourceViewer.tsx",
+    "line": 55,
+    "block": "  useEffect(() => {\n    const fetchResource = async () => {\n      try {\n        const [res, acc] = await Promise.all([\n          ResourceApi.getResource(resourceId),\n          ResourceApi.getAccess(resourceId)\n        ]);\n        setResource(res.data?.data || res.data);\n        setAccess(acc.data?.data || acc.data);\n      } catch (err: any) {\n        setError(err.response?.data?.message || 'Failed to load resource or access denied.');\n      } finally {\n        setLoading(false);\n      }\n    };\n    fetchResource();\n  }, [resourceId]);\n"
+  },
+  {
+    "file": "lms\\student\\StudentCoursesPage.tsx",
+    "line": 13,
+    "block": "  useEffect(() => {\n    DashboardApi.getStudentOverview()\n      .then(res => setCourses(res.data?.data?.myCourses || []))\n      .catch(console.error)\n      .finally(() => setLoading(false));\n  }, []);\n"
+  },
+  {
+    "file": "lms\\student\\StudentLiveClassesPage.tsx",
+    "line": 23,
+    "block": "  useEffect(() => {\n    if (!targetDate) return;\n    const update = () => {\n      const diff = new Date(targetDate).getTime() - Date.now();\n      if (diff <= 0) { setText('Starting now'); return; }\n      const h = Math.floor(diff / 3600000);\n      const m = Math.floor((diff % 3600000) / 60000);\n      const s = Math.floor((diff % 60000) / 1000);\n      setText(h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m ${s}s` : `${s}s`);\n    };\n    update();\n    const id = setInterval(update, 1000);\n    return () => clearInterval(id);\n  }, [targetDate]);\n  return text;"
+  },
+  {
+    "file": "lms\\student\\StudentLiveClassesPage.tsx",
+    "line": 395,
+    "block": "  React.useEffect(() => {\n    // ── ID resolution: sessionId is the live-session doc ID; classId is the class doc ID.\n    // recordJoin writes liveSessionId = cls.sessionId || cls.id (the live-session ID).\n    // checkStudentAttendance MUST query with the same ID, so prefer sessionId.\n    const attCheckId = cls.sessionId || cls.liveSessionId || cls.id || cls.classId;\n    const fallbackClassId = cls.classId || cls.id;\n    console.log('[ATT-DEBUG] SessionCard mount — resolved IDs for attendance check:', {\n      'cls.id': cls.id,\n      'cls.classId': cls.classId,\n      'cls.sessionId': cls.sessionId,\n      'cls.liveSessionId': cls.liveSessionId,\n      'attCheckId (used for new-att)': attCheckId,\n      'fallbackClassId (used for lms-att)': fallbackClassId,\n      title: cls.title || cls.className,\n    });\n    if (!attCheckId) {\n      console.warn('[ATT-DEBUG] attCheckId is empty — skipping attendance check');\n      return;\n    }\n    console.log('[ATT-DEBUG] Calling NewAttendanceApi.checkStudentAttendance with id:', attCheckId);\n    import('../core/services').then(({ NewAttendanceApi, LmsAttendanceApi }) => {\n      NewAttendanceApi.checkStudentAttendance(attCheckId)\n        .then((res: any) => {\n          const data = res?.data?.data || res?.data || {};\n          console.log('[ATT-DEBUG] checkStudentAttendance response for', attCheckId, ':', data);\n          if (data?.joined) {\n            console.log('[ATT-DEBUG] ✅ Student HAS joined (new-attendance) — joinedAt:', data.joinedAt);\n            setHasJoined(true);\n            setAttRecord({ joinedAt: data.joinedAt || new Date().toISOString() });\n          } else {\n            console.log('[ATT-DEBUG] Not in new-attendance — falling back to LmsAttendanceApi for classId:', fallbackClassId);\n            LmsAttendanceApi.getClassAttendance(fallbackClassId)\n              .then((r: any) => {\n                const rec = r?.data?.data || r?.data || null;\n                console.log('[ATT-DEBUG] LmsAttendanceApi.getClassAttendance response:', rec);\n                setAttRecord(rec);\n                if (rec?.joinedAt) {\n                  console.log('[ATT-DEBUG] ✅ Student found in lms-attendance joinedAt:', rec.joinedAt);\n                  setHasJoined(true);\n                } else {\n                  console.log('[ATT-DEBUG] ❌ No record in either attendance system');\n                }\n              })\n              .catch((e: any) => console.warn('[ATT-DEBUG] LmsAttendanceApi.getClassAttendance failed:', e?.message));\n          }\n        })\n        .catch((e: any) => {\n          console.warn('[ATT-DEBUG] checkStudentAttendance failed:', e?.message, '— falling back to LmsAttendanceApi');\n          LmsAttendanceApi.getClassAttendance(fallbackClassId)\n            .then((r: any) => {\n              const rec = r?.data?.data || r?.data || null;\n              console.log('[ATT-DEBUG] Fallback LmsAttendanceApi response:', rec);\n              setAttRecord(rec);\n              if (rec?.joinedAt) {\n                console.log('[ATT-DEBUG] ✅ Student found in fallback lms-attendance');\n                setHasJoined(true);\n              }\n            })\n            .catch((e2: any) => console.warn('[ATT-DEBUG] Fallback LmsAttendanceApi also failed:', e2?.message));\n        });\n    });\n  }, [cls.classId, cls.id, cls.sessionId, cls.liveSessionId]);\n"
+  },
+  {
+    "file": "lms\\student\\StudentLiveClassesPage.tsx",
+    "line": 776,
+    "block": "  useEffect(() => {\n    let fallbackTimer: ReturnType<typeof setInterval> | null = null;\n\n    const startFallbackPolling = () => {\n      if (fallbackTimer) return; // already polling\n      console.info('[LiveDashboard] Firestore signal unavailable — starting 30s fallback polling.');\n      fallbackTimer = setInterval(() => {\n        queryClient.invalidateQueries({ queryKey: ['studentDashboard'] });\n      }, 30_000);\n    };\n\n    const stopFallbackPolling = () => {\n      if (fallbackTimer) {\n        clearInterval(fallbackTimer);\n        fallbackTimer = null;\n        console.info('[LiveDashboard] Firestore signal restored — stopped fallback polling.');\n      }\n    };\n\n    const unsub = onSnapshot(\n      doc(db, 'live_class_index', 'current'),\n      (_snap) => {\n        // Signal doc exists and is reachable — stop fallback polling if running\n        stopFallbackPolling();\n        queryClient.invalidateQueries({ queryKey: ['studentDashboard'] });\n      },\n      (error) => {\n        console.warn('[LiveDashboard] Firestore signal listener error:', error.code);\n        // Start 30s fallback so students still get auto-refresh\n        startFallbackPolling();\n      }\n    );\n\n    return () => {\n      unsub();\n      stopFallbackPolling();\n    };\n  }, [queryClient]);\n"
+  },
+  {
+    "file": "lms\\student\\StudentLiveClassesPage.tsx",
+    "line": 816,
+    "block": "  useEffect(() => {\n    LiveClassesApi.getMyAccessRequests()\n      .then((res: any) => {\n        const data = res?.data?.data || res?.data || [];\n        setMyRequests(Array.isArray(data) ? data : []);\n      })\n      .catch(() => {});\n  }, []);\n"
+  },
+  {
+    "file": "lms\\student\\StudentLiveClassesPage_main.tsx",
+    "line": 21,
+    "block": "  useEffect(() => {\r\n    if (!targetDate) return;\r\n    const update = () => {\r\n      const diff = new Date(targetDate).getTime() - Date.now();\r\n      if (diff <= 0) { setText('Starting now'); return; }\r\n      const h = Math.floor(diff / 3600000);\r\n      const m = Math.floor((diff % 3600000) / 60000);\r\n      const s = Math.floor((diff % 60000) / 1000);\r\n      setText(h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m ${s}s` : `${s}s`);\r\n    };\r\n    update();\r\n    const id = setInterval(update, 1000);\r\n    return () => clearInterval(id);\r\n  }, [targetDate]);\r\n  return text;\r"
+  },
+  {
+    "file": "lms\\student\\StudentPayFeesPage.tsx",
+    "line": 82,
+    "block": "  useEffect(() => {\n    if (status?.qrCodeEnabled && timeLeft > 0) {\n      if (timerRef.current) clearInterval(timerRef.current);\n      \n      const enabledAtTime = new Date(status.qrCodeEnabledAt).getTime();\n      const durationMs = status.timerDuration * (status.timerUnit === 'minutes' ? 60 : 3600) * 1000;\n      const expiryTime = enabledAtTime + durationMs;\n\n      timerRef.current = setInterval(() => {\n        const now = Date.now();\n        const diff = Math.max(0, Math.floor((expiryTime - now) / 1000));\n        \n        setTimeLeft(diff);\n        \n        if (diff <= 0) {\n          if (timerRef.current) clearInterval(timerRef.current);\n          // Set qrCodeEnabled to false locally so page updates\n          setStatus((prev: any) => ({ ...prev, qrCodeEnabled: false }));\n          if (Platform.OS === 'web') {\n            success(\"The payment QR code session has expired.\");\n          } else {\n            Alert.alert(\"Expired\", \"The payment QR code session has expired.\");\n          }\n        }\n      }, 1000);\n    }\n\n    return () => {\n      if (timerRef.current) clearInterval(timerRef.current);\n    };\n  }, [status?.qrCodeEnabled, timeLeft, status?.qrCodeEnabledAt]);\n"
+  },
+  {
+    "file": "lms\\student\\StudentPayFeesPage.tsx",
+    "line": 115,
+    "block": "  useEffect(() => {\n    let unsubStudent: (() => void) | null = null;\n    let unsubPayments: (() => void) | null = null;\n    try {\n      if (typeof localStorage !== 'undefined') {\n        const storedUser = JSON.parse(localStorage.getItem('nermai_auth_user') || '{}');\n        const studentDocId = storedUser?.studentId || storedUser?.id || storedUser?.userId;\n        if (studentDocId) {\n          unsubStudent = onSnapshot(doc(db, 'students', studentDocId), () => {\n            fetchQrStatus();\n          }, (err) => {\n            console.warn('[StudentPayFeesPage] Realtime student sync error:', err);\n          });\n\n          // Scope payment listener strictly to this student to prevent academy-wide read multiplier\n          const qPayments = query(collection(db, 'payment_acknowledgements'), where('studentId', '==', studentDocId));\n          unsubPayments = onSnapshot(qPayments, () => {\n            fetchPaymentHistory();\n          }, (err) => {\n            console.warn('[StudentPayFeesPage] Realtime payment sync error:', err);\n          });\n        }\n      }\n    } catch (e) {}\n\n    const unsubSettings = onSnapshot(doc(db, 'system_settings', 'payment_qr_code'), () => {\n      fetchQrStatus();\n    }, (err) => {\n      console.warn('[StudentPayFeesPage] Realtime qr settings sync error:', err);\n    });\n\n    return () => {\n      if (unsubStudent) unsubStudent();\n      unsubSettings();\n      if (unsubPayments) unsubPayments();\n    };\n  }, []);\n"
+  }
+]

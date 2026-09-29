@@ -184,6 +184,7 @@ export const BulkStudentUploadModal: React.FC<BulkStudentUploadModalProps> = ({
       isOpen={isOpen}
       onClose={handleClose}
       title="Bulk Student Upload (Excel)"
+      maxWidthClass="max-w-6xl"
     >
       <div className="space-y-5 max-h-[78vh] overflow-y-auto pr-1">
         {/* Upload Dropzone */}

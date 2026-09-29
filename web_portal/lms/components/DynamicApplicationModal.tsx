@@ -12,6 +12,8 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FormConfig, CustomField } from '../admin/CustomizeApplicationPage';
 import api from '../core/api';
+import { db } from '../../firebaseConfig';
+import { doc, onSnapshot } from 'firebase/firestore';
 
 interface DynamicApplicationModalProps {
   visible: boolean;
@@ -40,11 +42,28 @@ export default function DynamicApplicationModal({
   const [formValues, setFormValues] = useState<Record<string, any>>({});
 
   useEffect(() => {
+    let unsub: (() => void) | null = null;
     if (visible) {
       loadActiveForm();
       setSubmitted(false);
       setErrorMessage(null);
+
+      try {
+        unsub = onSnapshot(doc(db, 'custom_application_forms', 'mock_test_app'), (snap) => {
+          if (snap.exists()) {
+            const data = snap.data();
+            if (data && data.isActive !== false) {
+              setFormConfig(data as any);
+            }
+          }
+        }, (err) => console.log('Dynamic form onSnapshot note:', err?.message));
+      } catch (e) {
+        console.warn('Real-time dynamic form modal listener note:', e);
+      }
     }
+    return () => {
+      if (unsub) unsub();
+    };
   }, [visible]);
 
   const loadActiveForm = async () => {

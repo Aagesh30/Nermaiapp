@@ -362,7 +362,7 @@ export class EvaluationController {
                     if (leadDoc.exists) {
                         const lData = leadDoc.data()!;
                         studentName = lData.name || lData.fullName || lData.username || lData.email?.split("@")[0] || lData.phone || "";
-                        rollNumber = lData.username || lData.loginUsername || lData.phone || studentName || "";
+                        rollNumber = "Guest";
                     }
                 }
             } catch (e) {
@@ -371,10 +371,11 @@ export class EvaluationController {
             if (!studentName && req.user) {
                 const u = req.user as any;
                 studentName = u.name || u.fullName || u.username || u.email?.split("@")[0] || u.phone || "";
-                rollNumber = u.username || u.loginUsername || u.rollNumber || u.phone || studentName || "";
+                rollNumber = u.rollNumber || u.username || u.loginUsername || "Guest";
             }
             if (!studentName || studentName === "Student") studentName = attempt.studentName && attempt.studentName !== "Student" ? attempt.studentName : (attempt.username || "Guest User");
-            if (!rollNumber || rollNumber === "N/A" || rollNumber === "Guest" || rollNumber === "Student") rollNumber = studentName;
+            const isPhoneNum = (val: string) => /^\d{7,15}$/.test(String(val || "").trim().replace(/[\s\-\+\(\)]/g, ""));
+            if (!rollNumber || rollNumber === "N/A" || rollNumber === "Student" || isPhoneNum(rollNumber) || rollNumber === studentName) rollNumber = "Guest";
 
             const resultPayload = {
                 id: attemptId,
@@ -536,11 +537,11 @@ export class EvaluationController {
                         if (leadDoc.exists) {
                             const leadData = leadDoc.data()!;
                             studentName = leadData.name || leadData.fullName || leadData.username || leadData.email?.split("@")[0] || leadData.phone || studentName;
-                            rollNumber = leadData.username || leadData.rollNumber || leadData.phone || studentName;
+                            rollNumber = "Guest";
                         }
                     }
                 }
-                generalCache.set(profileCacheKey, { studentName: studentName || "Guest User", rollNumber: rollNumber || studentName || "Guest User" }, 300); // 5 min TTL
+                generalCache.set(profileCacheKey, { studentName: studentName || "Guest User", rollNumber: rollNumber || "Guest" }, 300); // 5 min TTL
             } catch (err) {
                 console.log("Error enriching result:", err);
             }
@@ -549,8 +550,9 @@ export class EvaluationController {
         if (!studentName || isGenericName(studentName)) {
             studentName = (r.studentName && !isGenericName(r.studentName)) ? r.studentName : (r.username || r.name || (r.studentId ? `Guest: ${r.studentId.substring(0, 8)}` : "Guest User"));
         }
-        if (!rollNumber || rollNumber === "N/A" || isGenericName(rollNumber)) {
-            rollNumber = studentName;
+        const isPhoneNum = (val: string) => /^\d{7,15}$/.test(String(val || "").trim().replace(/[\s\-\+\(\)]/g, ""));
+        if (!rollNumber || rollNumber === "N/A" || isGenericName(rollNumber) || isPhoneNum(rollNumber) || rollNumber === studentName) {
+            rollNumber = "Guest";
         }
 
         let tabLeaveCount = r.tabLeaveCount;

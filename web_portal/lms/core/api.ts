@@ -23,7 +23,7 @@ const getBaseUrl = (): string => {
     }
     return `https://${hostname}/api`;
   }
-  return `http://${DEFAULT_HOST_IP}:5000/api`;
+  return `https://nermaiiasacademy-519c8.web.app/api`;
 };
 
 const BASE_URL = getBaseUrl();

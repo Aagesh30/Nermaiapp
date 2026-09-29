@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import api from '../core/api';
+import { db } from '../../firebaseConfig';
+import { doc, onSnapshot } from 'firebase/firestore';
 
 export interface CustomField {
   id: string;
@@ -75,6 +77,34 @@ export default function CustomizeApplicationPage() {
 
   useEffect(() => {
     fetchConfig();
+
+    let unsub: (() => void) | null = null;
+    try {
+      unsub = onSnapshot(doc(db, 'custom_application_forms', 'mock_test_app'), (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data) {
+            const loadedFields = (data.customFields && data.customFields.length > 0)
+              ? data.customFields
+              : DEFAULT_INITIAL_FIELDS;
+            setConfig({
+              id: data.id || 'mock_test_app',
+              title: data.title || DEFAULT_CONFIG.title,
+              subtitle: data.subtitle || DEFAULT_CONFIG.subtitle,
+              bannerText: data.bannerText || DEFAULT_CONFIG.bannerText,
+              isActive: data.isActive !== undefined ? data.isActive : true,
+              customFields: loadedFields
+            });
+          }
+        }
+      }, (err) => console.log('Custom form onSnapshot note:', err?.message));
+    } catch (e) {
+      console.warn('Real-time custom form listener note:', e);
+    }
+
+    return () => {
+      if (unsub) unsub();
+    };
   }, []);
 
   const fetchConfig = async () => {

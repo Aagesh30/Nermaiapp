@@ -49,6 +49,7 @@ const StudentCoursesPage = React.lazy(() => import('./lms/student/StudentCourses
 const StudentLiveClassesPage = React.lazy(() => import('./lms/student/StudentLiveClassesPage').then(m => ({ default: m.StudentLiveClassesPage })));
 const NERMAIAssistantWidget = React.lazy(() => import('./lms/student/NERMAIAssistantWidget').then(m => ({ default: m.NERMAIAssistantWidget })));
 const ResourceViewer = React.lazy(() => import('./lms/student/ResourceViewer').then(m => ({ default: m.ResourceViewer })));
+const SecurePDFViewer = React.lazy(() => import('./lms/components/ui/SecurePDFViewer').then(m => ({ default: m.SecurePDFViewer })));
 const QRCodePermissionsPage = React.lazy(() => import('./lms/admin/QRCodePermissionsPage').then(m => ({ default: m.QRCodePermissionsPage })));
 const StudentPayFeesPage = React.lazy(() => import('./lms/student/StudentPayFeesPage').then(m => ({ default: m.StudentPayFeesPage })));
 const TeacherDashboard = React.lazy(() => import('./lms/staff/TeacherDashboard').then(m => ({ default: m.TeacherDashboard })));
@@ -68,6 +69,126 @@ const getDirectImageUrl = (url: string): string => {
     return `https://lh3.googleusercontent.com/d/${match[1]}`;
   }
   return url;
+};
+
+const TestWatermarkOverlay: React.FC = () => {
+  const logoSrc = require('./assets/watermark-logo.png');
+  return (
+    <View
+      style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        justifyContent: "center",
+        alignItems: "center",
+        zIndex: 1,
+        pointerEvents: "none"
+      }}
+      pointerEvents="none"
+    >
+      <Image
+        source={logoSrc}
+        style={{
+          width: 520,
+          height: 520,
+          opacity: 0.08,
+          resizeMode: "contain"
+        }}
+      />
+    </View>
+  );
+};
+
+// Helper component for question rendering
+const renderFormattedQuestion = (text: string, isTamil: boolean = false, baseFontSize: number = 16) => {
+  if (!text) return null;
+
+  const textColor = isTamil ? "#455a64" : "#212121";
+
+  const fontWeight = isTamil ? "500" : "bold";
+  const fontSize = isTamil ? baseFontSize - 1 : baseFontSize;
+
+  return (
+    <Text style={{ fontSize, fontWeight, color: textColor, lineHeight: fontSize * 1.45, fontStyle: isTamil ? "italic" : "normal" }}>
+      {String(text).trim()}
+    </Text>
+  );
+  rawStr = rawStr.replace(/^\d+[\.\)]\s*/, '');
+
+  // Regex to detect statement list item prefixes like "1)", "2)", "a)", "b)", "(a)", "(1)", "a."
+  const itemRegex = /(?:^|\s|\n)(?:(?::-?\s*)?(\(?[1-9a-dA-D]\s*[\)\.]))\s*/g;
+  const matches: { index: number; length: number; prefix: string }[] = [];
+  let match;
+  while ((match = itemRegex.exec(rawStr)) !== null) {
+    matches.push({
+      index: match.index,
+      length: match[0].length,
+      prefix: match[1].trim()
+    });
+  }
+
+  // If no numbered/lettered list statements found (less than 2 items), render standard clean text
+  if (matches.length < 2) {
+    return (
+      <Text style={{ fontSize, fontWeight, color: textColor, lineHeight: fontSize * 1.45, marginTop: 4 }}>
+        {rawStr}
+      </Text>
+    );
+  }
+
+  // Split into Intro Header, Points, and Outro Question
+  const firstMatch = matches[0];
+  const introHeader = rawStr.substring(0, firstMatch.index).trim();
+  const items: { num: string; text: string }[] = [];
+
+  for (let i = 0; i < matches.length; i++) {
+    const current = matches[i];
+    const startPos = current.index + current.length;
+    const endPos = (i < matches.length - 1) ? matches[i + 1].index : rawStr.length;
+    const itemContent = rawStr.substring(startPos, endPos).trim();
+    items.push({ num: current.prefix, text: itemContent });
+  }
+
+  // Extract trailing question if present in the last item
+  let lastItemText = items[items.length - 1].text;
+  let outroText = "";
+  const questionEndRegex = /(\n|\.\s+|:\s+)(Which of the|Choose the|Which among the|Select the|மேற்கண்டவற்றில்|மேலே கொடுக்கப்பட்டுள்ள|கீழ்கண்டவற்றுள்|பின்வரும் கூற்றுகளில்|எது\/எவை|எவை சரியானவை|எது சரியானது).*/i;
+  const questionMatch = lastItemText.match(questionEndRegex);
+
+  if (questionMatch && questionMatch.index !== undefined) {
+    const splitIndex = questionMatch.index + (questionMatch[1].startsWith("\n") ? 1 : questionMatch[1].length);
+    outroText = lastItemText.substring(splitIndex).trim();
+    items[items.length - 1].text = lastItemText.substring(0, questionMatch.index).trim();
+  }
+
+  return (
+    <View style={{ gap: 6, marginTop: 4, marginBottom: 4 }}>
+      {Boolean(introHeader) && (
+        <Text style={{ fontSize, fontWeight, color: textColor, lineHeight: fontSize * 1.4, marginBottom: 2 }}>
+          {introHeader}
+        </Text>
+      )}
+
+      {items.map((item, idx) => (
+        <View key={idx} style={{ flexDirection: "row", alignItems: "flex-start", paddingLeft: 6, paddingRight: 4 }}>
+          <Text style={{ fontSize: fontSize - 0.5, fontWeight: "800", color: "#c62828", minWidth: 26, marginRight: 4 }}>
+            {item.num}
+          </Text>
+          <Text style={{ flex: 1, fontSize: fontSize - 0.5, fontWeight, color: textColor, lineHeight: (fontSize - 0.5) * 1.45 }}>
+            {item.text}
+          </Text>
+        </View>
+      ))}
+
+      {Boolean(outroText) && (
+        <Text style={{ fontSize, fontWeight, color: textColor, lineHeight: fontSize * 1.4, marginTop: 4 }}>
+          {outroText}
+        </Text>
+      )}
+    </View>
+  );
 };
 
 // Custom Alert wrapper — routes to in-app modal on Web, native RNAlert on mobile
@@ -99,7 +220,7 @@ import * as ImageManipulator from "expo-image-manipulator";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { handleFirebaseGoogleSignIn, db } from "./firebaseConfig";
-import { doc, setDoc, onSnapshot, collection, deleteDoc, query, where } from "firebase/firestore";
+import { doc, setDoc, onSnapshot, collection, deleteDoc, query, where, addDoc, getDocs, orderBy, serverTimestamp } from "firebase/firestore";
 
 const USE_NATIVE_DRIVER = Platform.OS !== "web";
 
@@ -2376,16 +2497,108 @@ function MainApp() {
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [courses, setCourses] = useState<any[]>([]);
+  const [adminAlerts, setAdminAlerts] = useState<any[]>([]);
+  const [adminAlertsFilter, setAdminAlertsFilter] = useState<"all" | "test" | "profile" | "crm" | "fees">("all");
+
+  const formatAlertTime = (dateStr: any) => {
+    if (!dateStr) return "Recently";
+    try {
+      const timeMs = typeof dateStr?.toDate === "function" ? dateStr.toDate().getTime() : new Date(dateStr).getTime();
+      if (isNaN(timeMs)) return "Recently";
+      const diffSec = Math.floor((Date.now() - timeMs) / 1000);
+      if (diffSec < 60) return "Just now";
+      const diffMin = Math.floor(diffSec / 60);
+      if (diffMin < 60) return `${diffMin}m ago`;
+      const diffHours = Math.floor(diffMin / 60);
+      if (diffHours < 24) return `${diffHours}h ago`;
+      const diffDays = Math.floor(diffHours / 24);
+      if (diffDays === 1) return "Yesterday";
+      if (diffDays < 7) return `${diffDays}d ago`;
+      return new Date(timeMs).toLocaleDateString();
+    } catch {
+      return "Recently";
+    }
+  };
+
+  // ─── AUDIT LOG SYSTEM (Date-Partitioned for Super Admin) ───
+  const [selectedLogDate, setSelectedLogDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [dateLogs, setDateLogs] = useState<any[]>([]);
+  const [dateLogsLoading, setDateLogsLoading] = useState(false);
+  const [logSearchQuery, setLogSearchQuery] = useState("");
+  const [logFilterCategory, setLogFilterCategory] = useState<"all" | "admin" | "student" | "guest">("all");
+
+  const logSystemActivity = async (entry: {
+    action: string;
+    category: "admin" | "student" | "guest" | "system";
+    operatorName: string;
+    operatorRole?: string;
+    details: string;
+    targetModule?: string;
+    status?: "pending" | "approved" | "rejected" | "completed" | "created" | "updated";
+    extraData?: any;
+  }) => {
+    try {
+      const now = new Date();
+      const dateString = now.toISOString().split("T")[0]; // "YYYY-MM-DD"
+      await addDoc(collection(db, "system_activity_logs"), {
+        ...entry,
+        dateString,
+        timestamp: now.toISOString(),
+        createdAt: serverTimestamp()
+      });
+    } catch (e) {
+      console.log("Failed to write system log:", e);
+    }
+  };
+
+  const loadDateLogs = async (dateStr: string) => {
+    setDateLogsLoading(true);
+    try {
+      const q = query(
+        collection(db, "system_activity_logs"),
+        where("dateString", "==", dateStr),
+        orderBy("timestamp", "desc")
+      );
+      const snap = await getDocs(q);
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+      setDateLogs(list);
+    } catch (err) {
+      console.log("Error loading date logs:", err);
+      // Fallback: load without orderBy in case composite index is building
+      try {
+        const q2 = query(
+          collection(db, "system_activity_logs"),
+          where("dateString", "==", dateStr)
+        );
+        const snap2 = await getDocs(q2);
+        const list2 = snap2.docs.map(d => ({ id: d.id, ...d.data() as any }));
+        list2.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+        setDateLogs(list2);
+      } catch {
+        setDateLogs([]);
+      }
+    } finally {
+      setDateLogsLoading(false);
+    }
+  };
 
 
   const getStudentName = (s: any) => {
     if (!s) return "";
-    if (s.name && String(s.name).trim()) return String(s.name).trim();
     if (s.fullName && String(s.fullName).trim()) return String(s.fullName).trim();
+    if (s.name && String(s.name).trim()) return String(s.name).trim();
+    if (s.studentName && String(s.studentName).trim()) return String(s.studentName).trim();
+    if (s.candidateName && String(s.candidateName).trim()) return String(s.candidateName).trim();
+    if (s.nameInEnglish && String(s.nameInEnglish).trim()) return String(s.nameInEnglish).trim();
+    if (s.nameInTamil && String(s.nameInTamil).trim()) return String(s.nameInTamil).trim();
     const first = s.firstName || "";
     const last = s.lastName || "";
     const full = `${first} ${last}`.trim();
-    return full || s.loginUsername || s.rollNumber || "";
+    if (full) return full;
+    if (s.fatherName && String(s.fatherName).trim()) {
+      return s.initial ? `${s.fatherName} ${s.initial}`.trim() : String(s.fatherName).trim();
+    }
+    return s.loginUsername || s.rollNumber || "";
   };
   const formatDobForDisplay = (rawDob: any) => {
     if (!rawDob || typeof rawDob !== "string") return rawDob ? String(rawDob) : "—";
@@ -3340,6 +3553,7 @@ function MainApp() {
   const [filterDirBatch, setFilterDirBatch] = useState("all");
   const [filterDirType, setFilterDirType] = useState("all");
   const [filterDirStatus, setFilterDirStatus] = useState<"all" | "active" | "pending">("all");
+  const [dirCurrentPage, setDirCurrentPage] = useState(1);
   const [newBatch, setNewBatch] = useState({ batchName: "", course: "", year: String(new Date().getFullYear()), description: "", isSpecial: false, subBatches: [] as string[], enableSpecialRollNo: false });
   const [batchTab, setBatchTab] = useState<"general" | "special">("general");
   const [editingBatch, setEditingBatch] = useState<any>(null);
@@ -3350,7 +3564,7 @@ function MainApp() {
     const end = new Date(start.getTime() + 60 * 60 * 1000);
     const startStr = start.getFullYear() + "-" + String(start.getMonth() + 1).padStart(2, "0") + "-" + String(start.getDate()).padStart(2, "0") + "T" + String(start.getHours()).padStart(2, "0") + ":" + String(Math.floor(start.getMinutes() / 5) * 5).padStart(2, "0");
     const endStr = end.getFullYear() + "-" + String(end.getMonth() + 1).padStart(2, "0") + "-" + String(end.getDate()).padStart(2, "0") + "T" + String(end.getHours()).padStart(2, "0") + ":" + String(Math.floor(end.getMinutes() / 5) * 5).padStart(2, "0");
-    return { title: "", startTime: startStr, endTime: endStr, marksPerQ: "", negMarks: "", unattendedMarks: "", totalMarks: "", targetAudience: "", targetBatch: "", requireFeedback: false, testType: "mock", subject: "", topic: "", testMode: "online", allowOfflineDirectly: false };
+    return { title: "", duration: "", startTime: startStr, endTime: endStr, marksPerQ: "", negMarks: "", unattendedMarks: "", totalMarks: "", targetAudience: "", targetBatch: "", requireFeedback: false, testType: "mock", subject: "", topic: "", testMode: "online", allowOfflineDirectly: false, subjectSections: [] as any[], schedulingMode: "fixed" };
   });
   const [pdfBase64, setPdfBase64] = useState("");
   const [akBase64, setAkBase64] = useState("");
@@ -3426,10 +3640,10 @@ function MainApp() {
   const [editingQData, setEditingQData] = useState<any | null>(null);
   const [editingQIdx, setEditingQIdx] = useState<number | null>(null);
   const [activePermissionRole, setActivePermissionRole] = useState("admin");
-  const [lmsTabsCollapsed, setLmsTabsCollapsed] = useState(true);
-  const [erpSidebarCollapsed, setErpSidebarCollapsed] = useState(true);
-  const [crmSidebarCollapsed, setCrmSidebarCollapsed] = useState(true);
-  const [testSidebarCollapsed, setTestSidebarCollapsed] = useState(true);
+  const [lmsTabsCollapsed, setLmsTabsCollapsed] = useState(false);
+  const [erpSidebarCollapsed, setErpSidebarCollapsed] = useState(false);
+  const [crmSidebarCollapsed, setCrmSidebarCollapsed] = useState(false);
+  const [testSidebarCollapsed, setTestSidebarCollapsed] = useState(false);
   const changeErpSub = (sub: string) => {
     const lockKey = "erp-" + sub;
     if (isPageLocked(lockKey)) {
@@ -3442,7 +3656,7 @@ function MainApp() {
       return;
     }
     setErpSub(sub);
-    setErpSidebarCollapsed(true);
+    if (isMobile) setErpSidebarCollapsed(true);
   };
   const changeLmsSub = (sub: string) => {
     const lockKey = "lms-" + sub;
@@ -3456,7 +3670,7 @@ function MainApp() {
       return;
     }
     setLmsSub(sub);
-    setLmsTabsCollapsed(true);
+    if (isMobile) setLmsTabsCollapsed(true);
   };
   const changeCrmSub = (sub: string) => {
     const lockKey = "crm-" + sub;
@@ -3470,7 +3684,7 @@ function MainApp() {
       return;
     }
     setCrmSub(sub);
-    setCrmSidebarCollapsed(true);
+    if (isMobile) setCrmSidebarCollapsed(true);
   };
   const changeTestSub = (sub: string) => {
     const lockKey = "test-" + sub;
@@ -3484,7 +3698,7 @@ function MainApp() {
       return;
     }
     setTestSub(sub);
-    setTestSidebarCollapsed(true);
+    if (isMobile) setTestSidebarCollapsed(true);
   };
   const [testSub, setTestSub] = useState(initialNav.testSubVal);
   const [testFilterQuery, setTestFilterQuery] = useState("");
@@ -3600,6 +3814,12 @@ function MainApp() {
     }
   };
   const [reportsModalTestTitle, setReportsModalTestTitle] = useState<string>("");
+  const [testDiagnosticsMap, setTestDiagnosticsMap] = useState<Record<string, any>>({});
+  const [loadingDiagnosticsTestId, setLoadingDiagnosticsTestId] = useState<string | null>(null);
+  const [selectedSubjectTabMap, setSelectedSubjectTabMap] = useState<Record<string, string>>({});
+  const [diagnosticSubTabMap, setDiagnosticSubTabMap] = useState<Record<string, "wrong" | "skipped" | "all">>({});
+  const [expandedQuestionMap, setExpandedQuestionMap] = useState<Record<string, boolean>>({});
+  const [expandedClosedTestDiagId, setExpandedClosedTestDiagId] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -3891,6 +4111,156 @@ function MainApp() {
     setOfflineTestRequests(newList);
   };
 
+  // ─── ADMIN ALERTS REAL-TIME ENGINE (Option A: Dynamic Action Center) ───
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    try {
+      const q = query(
+        collection(db, "admin_alerts"),
+        where("isDismissed", "==", false)
+      );
+
+      const unsub = onSnapshot(q, (snapshot) => {
+        const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
+        list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+        setAdminAlerts(list);
+      }, (err) => {
+        console.log("Admin alerts listener note:", err?.message);
+      });
+
+      return () => unsub();
+    } catch (e) {
+      console.log("Failed to attach admin alerts listener:", e);
+    }
+  }, [isAdmin]);
+
+  // Sync existing pending requests into admin_alerts if not already dismissed by admin
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    let dismissedList: string[] = [];
+    try {
+      dismissedList = JSON.parse(localStorage.getItem("nermai_dismissed_admin_alerts") || "[]");
+    } catch {}
+    const dismissedSet = new Set(dismissedList);
+
+    // 1. Sync pending offline test requests
+    (offlineTestRequests || []).forEach((req: any) => {
+      if (req && req.status === "pending" && !isRequestInvalidOrCompleted(req)) {
+        const alertId = `offline_test_${req.id}`;
+        if (!dismissedSet.has(alertId) && !adminAlerts.some(a => a.id === alertId)) {
+          setDoc(doc(db, "admin_alerts", alertId), {
+            id: alertId,
+            type: "offline_test",
+            title: "Offline Test Attendance Request",
+            subtitle: `${req.studentName || "Student"} (${req.rollNumber || "Offline"})`,
+            message: `Requested to attend offline exam: "${req.testTitle || 'Scheduled Test'}"`,
+            studentId: req.studentId || "",
+            studentName: req.studentName || "Student",
+            rollNumber: req.rollNumber || "—",
+            sourceDocId: req.id,
+            sourceCollection: "offlineTestPermissionRequests",
+            targetTab: "test",
+            targetSub: "offline-requests",
+            createdAt: req.requestedAt || new Date().toISOString(),
+            isDismissed: false
+          }, { merge: true }).catch(() => {});
+        }
+      }
+    });
+
+    // 2. Sync pending profile verification requests
+    (profileRequests || []).forEach((req: any) => {
+      if (req && req.status === "pending") {
+        const alertId = `profile_req_${req.id}`;
+        if (!dismissedSet.has(alertId) && !adminAlerts.some(a => a.id === alertId)) {
+          setDoc(doc(db, "admin_alerts", alertId), {
+            id: alertId,
+            type: "profile_submission",
+            title: "Student Profile Verification",
+            subtitle: `${req.name || "Student"} (${req.rollNumber || "New"})`,
+            message: `Submitted complete profile and identity verification documents awaiting review.`,
+            studentId: req.studentId || req.id,
+            studentName: req.name || "Student",
+            rollNumber: req.rollNumber || "—",
+            sourceDocId: req.id,
+            sourceCollection: "profile_requests",
+            targetTab: "erp",
+            targetSub: "profile-requests",
+            createdAt: req.submittedAt || req.createdAt || new Date().toISOString(),
+            isDismissed: false
+          }, { merge: true }).catch(() => {});
+        }
+      }
+    });
+  }, [isAdmin, offlineTestRequests, profileRequests]);
+
+  const handleViewAdminAlert = async (alertItem: any) => {
+    if (!alertItem) return;
+
+    // 1. Mark as dismissed in localStorage so sync engine won't re-create it
+    try {
+      const saved = JSON.parse(localStorage.getItem("nermai_dismissed_admin_alerts") || "[]");
+      saved.push(alertItem.id);
+      localStorage.setItem("nermai_dismissed_admin_alerts", JSON.stringify(Array.from(new Set(saved))));
+    } catch {}
+
+    // 2. Delete the alert document from admin_alerts in Firestore (clean Option A deletion)
+    try {
+      await deleteDoc(doc(db, "admin_alerts", alertItem.id));
+    } catch (err) {
+      console.log("Error deleting alert doc:", err);
+    }
+
+    // 3. Immediately remove from state for instant response
+    setAdminAlerts(prev => prev.filter(a => a.id !== alertItem.id));
+
+    // 4. Navigate to the target module & sub-tab
+    if (alertItem.targetTab) {
+      setActiveTab(alertItem.targetTab);
+      if (alertItem.targetTab === "erp") {
+        if (alertItem.targetSub) changeErpSub(alertItem.targetSub);
+        if (alertItem.targetSub === "profile-requests") setProfileRequestsTab("requests");
+      } else if (alertItem.targetTab === "crm") {
+        if (alertItem.targetSub) changeCrmSub(alertItem.targetSub);
+      } else if (alertItem.targetTab === "lms") {
+        if (alertItem.targetSub) changeLmsSub(alertItem.targetSub);
+      }
+    }
+  };
+
+  const handleDismissAdminAlert = async (alertId: string) => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("nermai_dismissed_admin_alerts") || "[]");
+      saved.push(alertId);
+      localStorage.setItem("nermai_dismissed_admin_alerts", JSON.stringify(Array.from(new Set(saved))));
+    } catch {}
+
+    try {
+      await deleteDoc(doc(db, "admin_alerts", alertId));
+    } catch (err) {
+      console.log("Error deleting alert doc:", err);
+    }
+
+    setAdminAlerts(prev => prev.filter(a => a.id !== alertId));
+  };
+
+  const handleClearAllAdminAlerts = async () => {
+    const ids = adminAlerts.map(a => a.id);
+    try {
+      const saved = JSON.parse(localStorage.getItem("nermai_dismissed_admin_alerts") || "[]");
+      localStorage.setItem("nermai_dismissed_admin_alerts", JSON.stringify(Array.from(new Set([...saved, ...ids]))));
+    } catch {}
+
+    setAdminAlerts([]);
+    for (const id of ids) {
+      try {
+        await deleteDoc(doc(db, "admin_alerts", id));
+      } catch {}
+    }
+  };
+
 
 
   // Page Lock state — developer can lock any page with a custom maintenance message
@@ -3927,6 +4297,23 @@ function MainApp() {
   useEffect(() => {
     loadPageLocks();
     loadDriveConfig();
+
+    let unsub: (() => void) | null = null;
+    try {
+      unsub = onSnapshot(doc(db, "settings", "page_locks"), (snap) => {
+        if (snap.exists()) {
+          const locks = snap.data()?.lockedPages || {};
+          setLockedPages(locks);
+          try { localStorage.setItem("nermai_locked_pages", JSON.stringify(locks)); } catch { }
+        }
+      }, (err) => console.log("Real-time page locks snapshot note:", err?.message));
+    } catch (e) {
+      console.warn("Real-time page locks listener note:", e);
+    }
+
+    return () => {
+      if (unsub) unsub();
+    };
   }, []);
 
   const isPageLocked = (tabKey: string): boolean => {
@@ -4066,7 +4453,10 @@ function MainApp() {
       }
       return `https://${hostname}/api`;
     }
-    return `http://${hostIpRef.current || DEFAULT_HOST_IP}:5000/api`;
+    if (hostIpRef.current && hostIpRef.current !== DEFAULT_HOST_IP) {
+      return `http://${hostIpRef.current}:5000/api`;
+    }
+    return "https://nermaiiasacademy-519c8.web.app/api";
   };
   const extractionAbortRef = useRef<AbortController | null>(null);
   // Auth token ref — always holds the latest JWT so api methods can inject without stale closures
@@ -4205,6 +4595,22 @@ function MainApp() {
       }
     }
   }).current;
+
+  const fetchTestDiagnostics = async (testId: string) => {
+    if (!testId) return;
+    setLoadingDiagnosticsTestId(testId);
+    try {
+      const res = await api.get(`/test-portal/review/diagnostics/${testId}`);
+      const payload = res?.data !== undefined ? res.data : res;
+      if (payload && (payload.subjectAnalytics || payload.totalQuestions !== undefined)) {
+        setTestDiagnosticsMap(prev => ({ ...prev, [testId]: payload }));
+      }
+    } catch (e) {
+      console.log("Failed to fetch test diagnostics:", e);
+    } finally {
+      setLoadingDiagnosticsTestId(null);
+    }
+  };
 
   const [calendarTarget, setCalendarTarget] = useState<"newStudent" | "editingStudent" | "profileForm">("newStudent");
   const [calendarDate, setCalendarDate] = useState(new Date());
@@ -4628,7 +5034,7 @@ function MainApp() {
     const end = new Date(start.getTime() + 60 * 60 * 1000);
     const startStr = start.getFullYear() + "-" + String(start.getMonth() + 1).padStart(2, "0") + "-" + String(start.getDate()).padStart(2, "0") + "T" + String(start.getHours()).padStart(2, "0") + ":" + String(Math.floor(start.getMinutes() / 5) * 5).padStart(2, "0");
     const endStr = end.getFullYear() + "-" + String(end.getMonth() + 1).padStart(2, "0") + "-" + String(end.getDate()).padStart(2, "0") + "T" + String(end.getHours()).padStart(2, "0") + ":" + String(Math.floor(end.getMinutes() / 5) * 5).padStart(2, "0");
-    return { title: "", description: "", duration: "", passingMarks: "", startTime: startStr, endTime: endStr, selectedQIds: [] as string[], targetAudience: "", targetBatch: "", requireFeedback: false, testType: "mock", subject: "", topic: "", testMode: "online" };
+    return { title: "", description: "", duration: "", passingMarks: "", startTime: startStr, endTime: endStr, selectedQIds: [] as string[], targetAudience: "", targetBatch: "", requireFeedback: false, testType: "mock", subject: "", topic: "", testMode: "online", subjectSections: [] as any[], schedulingMode: "fixed" };
   });
 
   // Test Feedback Modal & list states
@@ -4647,6 +5053,9 @@ function MainApp() {
   const tabLeaveCountRef = useRef<number>(0);
   const tabLeaveStartTimeRef = useRef<number | null>(null);
   const lastViolationTimeRef = useRef<number>(0);
+  const qNavScrollViewRef = useRef<any>(null);
+  const loadTestsInProgressRef = useRef(false);
+  const [studentAttempts, setStudentAttempts] = useState<any[]>([]);
   const submitTestAttemptRef = useRef<((isTimeout?: boolean) => Promise<void>) | null>(null);
   const [proctorWarning, setProctorWarning] = useState<{
     visible: boolean;
@@ -4676,14 +5085,17 @@ function MainApp() {
     if (Platform.OS === "web" && typeof document !== "undefined") {
       try {
         const elem = document.documentElement as any;
-        if (elem.requestFullscreen) {
-          elem.requestFullscreen().catch(() => {});
-        } else if (elem.webkitRequestFullscreen) {
-          elem.webkitRequestFullscreen();
-        } else if (elem.mozRequestFullScreen) {
-          elem.mozRequestFullScreen();
-        } else if (elem.msRequestFullscreen) {
-          elem.msRequestFullscreen();
+        if (elem && elem.requestFullscreen) {
+          const res = elem.requestFullscreen();
+          if (res && typeof res.catch === "function") {
+            res.catch(() => {});
+          }
+        } else if (elem && elem.webkitRequestFullscreen) {
+          try { elem.webkitRequestFullscreen(); } catch (_) {}
+        } else if (elem && elem.mozRequestFullScreen) {
+          try { elem.mozRequestFullScreen(); } catch (_) {}
+        } else if (elem && elem.msRequestFullscreen) {
+          try { elem.msRequestFullscreen(); } catch (_) {}
         }
       } catch (_) {}
     }
@@ -4735,6 +5147,8 @@ function MainApp() {
   const [quizAnswers, setQuizAnswers] = useState<Record<number, number>>({});
   const [quizFeedbackQuestions, setQuizFeedbackQuestions] = useState<any[]>([]);
   const [showAnswers, setShowAnswers] = useState(true);
+  const [studyShowAnswers, setStudyShowAnswers] = useState(true);
+  const [reviewQuestionFilter, setReviewQuestionFilter] = useState<'all' | 'correct' | 'wrong' | 'unattempted'>('all');
 
   // Create Quiz Form (LMS Admin)
   const [quizDateInput, setQuizDateInput] = useState(new Date().toISOString().split("T")[0]);
@@ -5434,14 +5848,14 @@ function MainApp() {
     const remainingStrikes = Math.max(0, maxStrikes - strikes);
     const duration = proctorWarning.durationAway || 10;
 
-    let warningTitle = "⚠️ Exam Proctoring Warning";
+    let warningTitle = "⚠️ Exam AI Proctoring Warning";
     let warningBody = "";
 
     if (proctorWarning.isSubmitting || strikes >= maxStrikes) {
       warningTitle = `🔒 Exam Locked & Auto-Submitting (${strikes} of ${maxStrikes} Strikes)`;
       warningBody = `Maximum violation limit reached (${strikes} of ${maxStrikes} strikes)! You switched tabs, exited fullscreen, or left the exam window. Your exam attempt has been eliminated and your test is submitting right now.`;
     } else {
-      warningTitle = `🚨 PROCTORING WARNING: Strike ${strikes} of ${maxStrikes}`;
+      warningTitle = `🚨 AI PROCTORING WARNING: Strike ${strikes} of ${maxStrikes}`;
       warningBody = `You switched tabs, exited fullscreen, or left the exam window (${proctorWarning.reason || `away for ${duration}s`}). You have ${remainingStrikes} warning strike${remainingStrikes === 1 ? "" : "s"} remaining! If you reach ${maxStrikes} strikes, your exam will be eliminated and automatically submitted immediately.`;
     }
 
@@ -6094,10 +6508,12 @@ function MainApp() {
   }, [crmSub]);
 
   useEffect(() => {
-    setErpSidebarCollapsed(true);
-    setLmsTabsCollapsed(true);
-    setCrmSidebarCollapsed(true);
-    setTestSidebarCollapsed(true);
+    if (isMobile) {
+      setErpSidebarCollapsed(true);
+      setLmsTabsCollapsed(true);
+      setCrmSidebarCollapsed(true);
+      setTestSidebarCollapsed(true);
+    }
   }, [activeTab]);
 
   useEffect(() => {
@@ -6481,7 +6897,9 @@ function MainApp() {
     });
 
     // Enter fullscreen when starting/resuming exam
-    enterFullscreen();
+    // NOTE: requestFullscreen() cannot be called from useEffect (not a user gesture).
+    // The fullscreenGateRequired gate modal shows a button the user must click,
+    // which then calls enterFullscreen() as a valid user gesture.
     if (!isWebFullscreen()) {
       setFullscreenGateRequired(true);
     } else {
@@ -6927,14 +7345,29 @@ function MainApp() {
     };
   }, [user, activeTab, erpSub, myCardSubTab]);
 
-  const [playedNoticeIds, setPlayedNoticeIds] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem("played_notice_ids");
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
+  // Auto-scroll Questions Navigator whenever currentQIdx changes during an active exam attempt
+  useEffect(() => {
+    if (activeAttempt && qNavScrollViewRef.current) {
+      const itemWidth = 38;
+      const targetX = Math.max(0, currentQIdx * itemWidth - 100);
+      qNavScrollViewRef.current.scrollTo({ x: targetX, animated: true });
     }
-  });
+  }, [activeAttempt, currentQIdx]);
+
+  const playedNoticeIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    try {
+      if (typeof localStorage !== "undefined") {
+        const saved = localStorage.getItem("played_notice_ids");
+        if (saved) {
+          const list = JSON.parse(saved);
+          if (Array.isArray(list)) {
+            playedNoticeIdsRef.current = new Set(list);
+          }
+        }
+      }
+    } catch { }
+  }, []);
 
   const playNoticeSound = (priority: string) => {
     try {
@@ -7039,11 +7472,12 @@ function MainApp() {
         if (notices.length > 0) {
           let hasNewHigh = false;
           let hasNewNormal = false;
-          const newlyPlayed: string[] = [];
+          let hasNewlyPlayed = false;
 
           notices.forEach((n: any) => {
-            if (!playedNoticeIds.includes(n.id)) {
-              newlyPlayed.push(n.id);
+            if (!playedNoticeIdsRef.current.has(n.id)) {
+              playedNoticeIdsRef.current.add(n.id);
+              hasNewlyPlayed = true;
               if (n.priority === "high") {
                 hasNewHigh = true;
               } else {
@@ -7052,14 +7486,12 @@ function MainApp() {
             }
           });
 
-          if (newlyPlayed.length > 0) {
-            setPlayedNoticeIds(prev => {
-              const next = [...prev, ...newlyPlayed];
-              try {
-                localStorage.setItem("played_notice_ids", JSON.stringify(next));
-              } catch { }
-              return next;
-            });
+          if (hasNewlyPlayed) {
+            try {
+              if (typeof localStorage !== "undefined") {
+                localStorage.setItem("played_notice_ids", JSON.stringify(Array.from(playedNoticeIdsRef.current)));
+              }
+            } catch { }
 
             if (hasNewHigh) {
               playNoticeSound("high");
@@ -7075,7 +7507,7 @@ function MainApp() {
     );
 
     return () => unsubscribe();
-  }, [user, students, playedNoticeIds]);
+  }, [user?.userId || user?.id, user?.role, user?.batch]);
 
   // True Real-Time (0-second delay) Snapshot Listener for Student Profile Updates (Student View)
   useEffect(() => {
@@ -7111,7 +7543,7 @@ function MainApp() {
     );
 
     return () => unsubscribe();
-  }, [user]);
+  }, [user?.userId || user?.id]);
 
   // True Real-Time (0-second delay) Snapshot Listener for Admin Profile Requests Queue
   useEffect(() => {
@@ -7141,9 +7573,36 @@ function MainApp() {
     return () => unsubscribe();
   }, [user]);
 
+  // True Real-Time (0-second delay) Snapshot Listener for Role Permissions Matrix
+  useEffect(() => {
+    if (!user || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "staff" && user.role !== "developer")) return;
+
+    let unsub: (() => void) | null = null;
+    try {
+      unsub = onSnapshot(collection(db, "role_permissions"), (snapshot) => {
+        if (!snapshot.empty) {
+          const perms: Record<string, any> = {};
+          snapshot.docs.forEach(docSnap => {
+            perms[docSnap.id] = docSnap.data();
+          });
+          setRolePermissions(perms);
+          const defaultRoleKeys = ["super_admin", "admin", "editor", "contributor"];
+          const detected = Object.keys(perms).filter(k => !defaultRoleKeys.includes(k));
+          if (detected.length > 0) setCustomRoles(detected);
+        }
+      }, (err) => console.log("Real-time role permissions snapshot note:", err?.message));
+    } catch (e) {
+      console.warn("Real-time role permissions listener note:", e);
+    }
+
+    return () => {
+      if (unsub) unsub();
+    };
+  }, [user?.role]);
+
   // True Real-Time (0-second delay) Snapshot Listener for LMS Resources (PDFs & Documents)
   useEffect(() => {
-    if (!user) return;
+    if (!user || activeTab !== "lms") return;
     try {
       const resourcesQuery = query(collection(db, "resources"), where("isDeleted", "==", false));
       const unsubscribe = onSnapshot(
@@ -7161,11 +7620,11 @@ function MainApp() {
       );
       return () => unsubscribe();
     } catch (_) {}
-  }, [user]);
+  }, [user, activeTab]);
 
   // True Real-Time (0-second delay) Snapshot Listener for Daily Content
   useEffect(() => {
-    if (!user) return;
+    if (!user || activeTab !== "lms") return;
     try {
       const dailyContentQuery = query(collection(db, "dailyContent"), where("isDeleted", "==", false));
       const unsubscribe = onSnapshot(
@@ -7183,7 +7642,7 @@ function MainApp() {
       );
       return () => unsubscribe();
     } catch (_) {}
-  }, [user]);
+  }, [user, activeTab]);
 
   // True Real-Time (0-second delay) Snapshot Listener for Recorded Classes
   useEffect(() => {
@@ -7253,7 +7712,7 @@ function MainApp() {
 
   // True Real-Time (0-second delay) Snapshot Listener for Leads & Custom Leads
   useEffect(() => {
-    if (!user || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "staff")) return;
+    if (!user || activeTab !== "crm" || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "staff")) return;
     try {
       const leadsQuery = query(collection(db, "leads"), where("isDeleted", "==", false));
       const unsubscribe = onSnapshot(
@@ -7271,12 +7730,12 @@ function MainApp() {
       );
       return () => unsubscribe();
     } catch (_) {}
-  }, [user]);
+  }, [user, activeTab]);
 
   // True Real-Time (0-second delay) Snapshot Listener for Campaigns & Banners
   useEffect(() => {
     try {
-      const campaignsQuery = query(collection(db, "campaigns"), where("isDeleted", "==", false));
+      const campaignsQuery = query(collection(db, "campaigns"), where("isDeleted", "==", false), where("showInDashboard", "==", true));
       const unsubscribe = onSnapshot(
         campaignsQuery,
         (snapshot) => {
@@ -7295,7 +7754,7 @@ function MainApp() {
 
   // True Real-Time (0-second delay) Snapshot Listener for Website Inquiries
   useEffect(() => {
-    if (!user || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "staff")) return;
+    if (!user || activeTab !== "crm" || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "staff")) return;
     try {
       const inquiriesQuery = query(collection(db, "inquiries"), where("isDeleted", "==", false));
       const unsubscribe = onSnapshot(
@@ -7313,28 +7772,61 @@ function MainApp() {
       );
       return () => unsubscribe();
     } catch (_) {}
-  }, [user]);
+  }, [user, activeTab]);
 
   // True Real-Time (0-second delay) Snapshot Listener for Tests & Exams in Test Portal (Guests & Students)
   useEffect(() => {
+    const isTestTab = [
+      "tests", "testPortal", "test_portal", "test-portal", "test", "practice", 
+      "results", "exam", "onlineTest", "offlineTest", "scholarship", "testSeries"
+    ].includes(activeTab) || lmsSub === "tests" || lmsSub === "testPortal";
+
+    if (!isTestTab) return;
+
     try {
       const testsQuery = query(collection(db, "tests"), where("isDeleted", "==", false));
       const unsubscribe = onSnapshot(
         testsQuery,
         (snapshot) => {
-          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-          list.sort((a: any, b: any) => {
-            const timeA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;
-            const timeB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;
+          const rawList = snapshot.docs
+            .map(d => ({ id: d.id, ...d.data() }))
+            .filter((t: any) => t.status !== "draft_extraction" && t.status !== "processed");
+
+          rawList.sort((a: any, b: any) => {
+            const timeA = parseTestTimeMs(a.createdAt);
+            const timeB = parseTestTimeMs(b.createdAt);
             return timeB - timeA;
           });
-          setTests(list);
+
+          // Role & audience based filtering matching loadTests()
+          let filteredList: any[] = [];
+          if (user?.role === "student") {
+            const myStudent = getLoggedInStudent(user, students);
+            const studentBatchName = myStudent?.batch || user?.batch || "";
+            filteredList = rawList.filter((t: any) => {
+              if (t.published === false) return false;
+              if (t.targetAudience === "all" || !t.targetAudience) return true;
+              if (t.targetAudience === "paid") return true;
+              if (t.targetAudience === "batch") {
+                const tBatch = String(t.targetBatch || "").trim().toLowerCase();
+                const sBatch = String(studentBatchName).trim().toLowerCase();
+                return tBatch !== "" && sBatch !== "" && tBatch === sBatch;
+              }
+              return false;
+            });
+          } else if (user?.role === "guest") {
+            filteredList = rawList.filter((t: any) => (t.published !== false) && (t.targetAudience === "free" || t.targetAudience === "all"));
+          } else {
+            filteredList = rawList;
+          }
+
+          setTests(filteredList);
         },
         (err) => console.log("Real-time tests listener note:", err?.message)
       );
       return () => unsubscribe();
     } catch (_) {}
-  }, []);
+  }, [activeTab, lmsSub, user, students]);
 
   useEffect(() => {
     if (user) {
@@ -7349,7 +7841,14 @@ function MainApp() {
       const myStudent = getLoggedInStudent(user, students);
       const batch = myStudent?.batch || "";
       const res = await api.get(`/announcement?role=${role}&batch=${batch}`);
-      let notices = res || [];
+      const rawData = res?.data !== undefined ? res.data : res;
+      let notices: any[] = Array.isArray(rawData)
+        ? rawData
+        : Array.isArray(rawData?.announcements)
+        ? rawData.announcements
+        : Array.isArray(rawData?.data)
+        ? rawData.data
+        : [];
       if (role === "student") {
         const myStudentName = myStudent ? getStudentName(myStudent) : "";
         const myUsername = user?.username || "";
@@ -7380,7 +7879,7 @@ function MainApp() {
         const newlyPlayed: string[] = [];
 
         notices.forEach((n: any) => {
-          if (!playedNoticeIds.includes(n.id)) {
+          if (n?.id && !playedNoticeIdsRef.current.has(n.id)) {
             newlyPlayed.push(n.id);
             if (n.priority === "high") {
               hasNewHigh = true;
@@ -7391,13 +7890,12 @@ function MainApp() {
         });
 
         if (newlyPlayed.length > 0) {
-          setPlayedNoticeIds(prev => {
-            const next = [...prev, ...newlyPlayed];
-            try {
-              localStorage.setItem("played_notice_ids", JSON.stringify(next));
-            } catch { }
-            return next;
-          });
+          newlyPlayed.forEach(id => playedNoticeIdsRef.current.add(id));
+          try {
+            if (typeof localStorage !== "undefined") {
+              localStorage.setItem("played_notice_ids", JSON.stringify(Array.from(playedNoticeIdsRef.current)));
+            }
+          } catch { }
 
           if (hasNewHigh) {
             playNoticeSound("high");
@@ -7415,12 +7913,12 @@ function MainApp() {
   const loadNotifications = async () => {
     try {
       const role = user?.role || "guest";
-      let studentList = students;
-      if (role === "student" && (!studentList || studentList.length === 0)) {
+      let studentList = Array.isArray(students) ? students : [];
+      if (role === "student" && studentList.length === 0) {
         try {
           const res = await api.get("/erp/student/profile/me");
-          const meData = res?.data || res || {};
-          studentList = Array.isArray(meData) ? meData : [meData];
+          const meData = res?.data !== undefined ? res.data : res;
+          studentList = Array.isArray(meData) ? meData : (meData && typeof meData === "object" ? [meData] : []);
           setStudents(studentList);
         } catch (e) {
           console.log("Failed loading student profile in loadNotifications:", e);
@@ -7430,7 +7928,14 @@ function MainApp() {
       const batch = myStudent?.batch || "";
       const studentId = myStudent?.id || user?.studentId || user?.userId || "";
       const res = await api.get(`/notification?role=${role}&batch=${batch}&studentId=${studentId}`);
-      let notifs = res?.data || res || [];
+      const rawNotifs = res?.data !== undefined ? res.data : res;
+      let notifs: any[] = Array.isArray(rawNotifs)
+        ? rawNotifs
+        : Array.isArray(rawNotifs?.notifications)
+        ? rawNotifs.notifications
+        : Array.isArray(rawNotifs?.data)
+        ? rawNotifs.data
+        : [];
       if (role === "student") {
         const myStudentName = myStudent ? getStudentName(myStudent) : "";
         const myUsername = user?.username || "";
@@ -7458,15 +7963,25 @@ function MainApp() {
   };
 
   const loadStudents = async (force: boolean = false) => {
+    // Guests are not ERP students — the admin-only endpoint returns 403 for guests and crashes the UI
+    if (user?.role === "guest") return;
     if (force) {
       loadedCollectionsRef.current.delete("students");
     } else if (loadedCollectionsRef.current.has("students")) {
       return;
     }
     try {
-      const endpoint = user?.role === "student" ? "/erp/student/profile/me" : "/erp/student";
+      const endpoint = user?.role === "student" ? "/erp/student/profile/me" : "/erp/student?limit=5000";
       const res = await api.get(endpoint);
-      setStudents(res?.data || res || []);
+      const rawData = res?.data !== undefined ? res.data : res;
+      let list = Array.isArray(rawData)
+        ? rawData
+        : Array.isArray(rawData?.students)
+        ? rawData.students
+        : Array.isArray(rawData?.data)
+        ? rawData.data
+        : (rawData && typeof rawData === "object" && rawData.id ? [rawData] : []);
+      setStudents(list);
       loadedCollectionsRef.current.add("students");
     } catch (e) {
       console.log("Failed loading students:", e);
@@ -7477,7 +7992,15 @@ function MainApp() {
   const loadBatches = async () => {
     try {
       const res = await api.get("/erp/batch");
-      setBatches(res?.data || res || []);
+      const rawData = res?.data !== undefined ? res.data : res;
+      let list = Array.isArray(rawData)
+        ? rawData
+        : Array.isArray(rawData?.batches)
+        ? rawData.batches
+        : Array.isArray(rawData?.data)
+        ? rawData.data
+        : [];
+      setBatches(list);
     } catch (e) {
       console.log("Failed loading batches:", e);
       setBatches([]);
@@ -7487,7 +8010,15 @@ function MainApp() {
   const loadProfileRequests = async () => {
     try {
       const res = await api.get("/erp/profile-request");
-      setProfileRequests(res?.data || res || []);
+      const rawData = res?.data !== undefined ? res.data : res;
+      let list = Array.isArray(rawData)
+        ? rawData
+        : Array.isArray(rawData?.requests)
+        ? rawData.requests
+        : Array.isArray(rawData?.data)
+        ? rawData.data
+        : [];
+      setProfileRequests(list);
     } catch (e) {
       console.log("Failed loading profile requests:", e);
       setProfileRequests([]);
@@ -7498,7 +8029,15 @@ function MainApp() {
     setDeviceAlertsLoading(true);
     try {
       const res = await api.get("/erp/device-alerts");
-      setDeviceAlerts(res?.data || res || []);
+      const rawData = res?.data !== undefined ? res.data : res;
+      let list = Array.isArray(rawData)
+        ? rawData
+        : Array.isArray(rawData?.alerts)
+        ? rawData.alerts
+        : Array.isArray(rawData?.data)
+        ? rawData.data
+        : [];
+      setDeviceAlerts(list);
     } catch (e) {
       console.log("Failed loading device alerts:", e);
       setDeviceAlerts([]);
@@ -7781,9 +8320,6 @@ function MainApp() {
     }
   };
 
-  const loadTestsInProgressRef = useRef(false);
-  const [studentAttempts, setStudentAttempts] = useState<any[]>([]);
-
   const loadTests = async (isSilent = false) => {
     if (!user) {
       setTests([]);
@@ -7796,12 +8332,24 @@ function MainApp() {
       setTestsLoading(true);
     }
     try {
-      const res = await api.get("/test-portal/test-creation");
-      const allTests = res?.data || res || [];
+      const isStudentOrGuest = user && (user.role === "student" || user.role === "guest");
+      const myStudent = isStudentOrGuest ? getLoggedInStudent(user, students) : null;
+      const lookupId = myStudent?.id || user?.studentId || user?.userId;
+
+      const [testsRes, attemptsRes] = await Promise.all([
+        api.get("/test-portal/test-creation"),
+        isStudentOrGuest && lookupId
+          ? api.get(`/test-portal/review/history/${lookupId}`).catch(err => {
+              console.log("Failed to load user attempts:", err);
+              return null;
+            })
+          : Promise.resolve(null)
+      ]);
+
+      const allTests = testsRes?.data || testsRes || [];
       let newTests: any[] = [];
 
       if (user?.role === "student") {
-        const myStudent = getLoggedInStudent(user, students);
         const studentBatchName = myStudent?.batch || user?.batch || "";
         newTests = allTests.filter((t: any) => {
           if (!t.published) return false;
@@ -7823,29 +8371,20 @@ function MainApp() {
         }
       }
 
+      if (attemptsRes) {
+        const newAttempts = attemptsRes?.data || attemptsRes || [];
+        setStudentAttempts(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(newAttempts)) return prev;
+          return newAttempts;
+        });
+      }
+
       setTests(prev => {
         if (JSON.stringify(prev) === JSON.stringify(newTests)) {
           return prev;
         }
         return newTests;
       });
-
-      if (user && (user.role === "student" || user.role === "guest")) {
-        try {
-          const myStudent = getLoggedInStudent(user, students);
-          const lookupId = myStudent?.id || user.studentId || user.userId;
-          const attemptsRes = await api.get(`/test-portal/review/history/${lookupId}`);
-          const newAttempts = attemptsRes?.data || attemptsRes || [];
-          setStudentAttempts(prev => {
-            if (JSON.stringify(prev) === JSON.stringify(newAttempts)) {
-              return prev;
-            }
-            return newAttempts;
-          });
-        } catch (err) {
-          console.log("Failed to load user attempts:", err);
-        }
-      }
     } catch (e) {
       console.log("Failed loading tests:", e);
       if (!isSilent) {
@@ -8632,12 +9171,32 @@ function MainApp() {
   };
 
   const handleSaveLiveClass = async () => {
-    const { title, description, topicId, provider, accessLevel, batchTargetType, selectedBatchIds, startDate, startTime, expectedDurationMinutes, meetingMode, providerAccountId, customProviderId, providerPasscode, hostUrl, participantUrl, hostKey, meetingCode, youtubeUrl } = liveClassForm;
-    if (!editingLiveClass && (!title || !description || !topicId)) {
-      Alert.alert("Required", "Please provide Title, Description, and select a Topic.");
+    const { title, description, courseId, subjectId, topicId, provider, accessLevel, batchTargetType, selectedBatchIds, startDate, startTime, expectedDurationMinutes, meetingMode, providerAccountId, customProviderId, providerPasscode, hostUrl, participantUrl, hostKey, meetingCode, youtubeUrl } = liveClassForm;
+    const effectiveTopicId = topicId;
+    const effectiveDescription = description || "";
+
+    if (!title || !title.trim()) {
+      Alert.alert("Required", "Please provide Session Title.");
       return;
-    } else if (editingLiveClass && (!title || !topicId)) {
-      Alert.alert("Required", "Please provide Title and select a Topic.");
+    }
+
+    if (!courseId) {
+      Alert.alert("Required", "Please select a Course.");
+      return;
+    }
+
+    if (!subjectId) {
+      Alert.alert("Required", "Please select a Subject.");
+      return;
+    }
+
+    if (!topicId) {
+      Alert.alert("Required", "Please select a Topic.");
+      return;
+    }
+
+    if (!startDate || !startTime) {
+      Alert.alert("Required", "Please select Date and Time.");
       return;
     }
 
@@ -8664,8 +9223,8 @@ function MainApp() {
         const classId = editingLiveClass.classId || editingLiveClass.id;
         await api.put(`/classes/${classId}`, {
           title,
-          description,
-          topicId,
+          description: effectiveDescription,
+          topicId: effectiveTopicId,
           accessLevel,
           targetBatchIds: batchIds,
           scheduledStartTime: scheduledStartTimeIso,
@@ -8703,10 +9262,10 @@ function MainApp() {
         Alert.alert("Success", "Live class session updated successfully.");
       } else {
         // Create Class Node
-        const res = await api.post(`/topics/${topicId}/classes`, {
+        const res = await api.post(`/topics/${effectiveTopicId}/classes`, {
           title,
-          description,
-          topicId,
+          description: effectiveDescription,
+          topicId: effectiveTopicId,
           classType: "live",
           accessLevel,
           targetBatchIds: batchIds,
@@ -8749,12 +9308,27 @@ function MainApp() {
   };
 
   const handleSaveRecordedClass = async () => {
-    const { title, description, topicId, uploadMode, youtubeUrl, file, accessLevel, batchTargetType, selectedBatchIds } = recordedClassForm;
-    if (!editingRecordedClass && (!title || !description || !topicId)) {
-      Alert.alert("Required", "Please fill in Title, Description, and select a Topic.");
+    const { title, description, courseId, subjectId, topicId, uploadMode, youtubeUrl, file, accessLevel, batchTargetType, selectedBatchIds } = recordedClassForm;
+    const effectiveTopicId = topicId;
+    const effectiveDescription = description || "";
+
+    if (!title || !title.trim()) {
+      Alert.alert("Required", "Please fill in Lecture Title.");
       return;
-    } else if (editingRecordedClass && (!title || !topicId)) {
-      Alert.alert("Required", "Please fill in Title, and select a Topic.");
+    }
+
+    if (!courseId) {
+      Alert.alert("Required", "Please select a Course.");
+      return;
+    }
+
+    if (!subjectId) {
+      Alert.alert("Required", "Please select a Subject.");
+      return;
+    }
+
+    if (!topicId) {
+      Alert.alert("Required", "Please select a Topic.");
       return;
     }
 
@@ -8772,8 +9346,8 @@ function MainApp() {
         // Update Class info
         await api.put(`/classes/${editingRecordedClass.id}`, {
           title,
-          description,
-          topicId,
+          description: effectiveDescription,
+          topicId: effectiveTopicId,
           accessLevel,
           targetBatchIds: batchIds,
           minimumAttendancePercentage: 50
@@ -8793,10 +9367,10 @@ function MainApp() {
         }
 
         // Create Class Node
-        const res = await api.post(`/topics/${topicId}/classes`, {
+        const res = await api.post(`/topics/${effectiveTopicId}/classes`, {
           title,
-          description,
-          topicId,
+          description: effectiveDescription,
+          topicId: effectiveTopicId,
           classType: "recorded",
           youtubeUrl,
           accessLevel,
@@ -8950,6 +9524,23 @@ function MainApp() {
         email: admissionForm.email || user?.email || "",
         createdBy: user?.email || "guest"
       });
+
+      // Emit live admin alert for new admission application
+      try {
+        const admissionAlertId = `crm_admission_${Date.now()}`;
+        await setDoc(doc(db, "admin_alerts", admissionAlertId), {
+          id: admissionAlertId,
+          type: "crm_admission",
+          title: "New Admission Application",
+          subtitle: `${admissionForm.name} (${admissionForm.phone})`,
+          message: `Applied for ${admissionForm.preferredCourse} (${admissionForm.preferredMode || "General"})`,
+          targetTab: "crm",
+          targetSub: "admissions",
+          createdAt: new Date().toISOString(),
+          isDismissed: false
+        }, { merge: true });
+      } catch (_) {}
+
       setAdmissionSubmitted(true);
       setShowAdmissionForm(false);
       Alert.alert("Submitted Successfully", "Your admission application has been submitted successfully!");
@@ -9089,6 +9680,23 @@ function MainApp() {
       await api.post("/crm/inquiry", {
         ...enquiryForm
       });
+
+      // Emit live admin alert for new inquiry
+      try {
+        const inquiryAlertId = `crm_inquiry_${Date.now()}`;
+        await setDoc(doc(db, "admin_alerts", inquiryAlertId), {
+          id: inquiryAlertId,
+          type: "crm_inquiry",
+          title: "New CRM Website Inquiry",
+          subtitle: `${enquiryForm.name} (${enquiryForm.phone})`,
+          message: `Inquiry details: "${enquiryForm.message.substring(0, 100)}${enquiryForm.message.length > 100 ? '...' : ''}"`,
+          targetTab: "crm",
+          targetSub: "inquiries",
+          createdAt: new Date().toISOString(),
+          isDismissed: false
+        }, { merge: true });
+      } catch (_) {}
+
       setEnquirySubmitted(true);
       setEnquiryForm({ name: "", phone: "", subject: "", message: "" });
       Alert.alert("Submitted Successfully", "Your inquiry has been submitted successfully!");
@@ -9200,11 +9808,22 @@ function MainApp() {
       if (!Array.isArray(parsed)) {
         throw new Error("JSON must be an array of questions.");
       }
+      // Helper to sanitize Telugu fields and strip any accidental Tamil script characters (\u0B80-\u0BFF)
+      const sanitizeTelugu = (txt: string): string => {
+        if (!txt) return "";
+        let cleaned = txt;
+        // If string contains Tamil characters mixed into Telugu, strip out Tamil words
+        if (/[\u0B80-\u0BFF]/.test(cleaned)) {
+          cleaned = cleaned.replace(/[\u0B80-\u0BFF]+/g, "").replace(/\s+/g, " ").trim();
+        }
+        return cleaned;
+      };
+
       const normalized = parsed.map((q: any) => {
         const questionEn = q.questionEn || q.questionText || q.question || "";
         const questionTa = q.questionTa || "";
         const questionMl = q.questionMl || "";
-        const questionTe = q.questionTe || "";
+        const questionTe = sanitizeTelugu(q.questionTe || "");
         const formula = q.formula || "";
         const explanation = q.explanation || "";
 
@@ -9238,10 +9857,38 @@ function MainApp() {
           if (flatTe && !optionsObj[k].te) optionsObj[k].te = flatTe;
         });
 
+        // Dynamically detect any language option fields (e.g. optionTe_a, optionHi_a, option_te_a, option a te, optionsTe, etc.)
+        const dynamicLangOptions: Record<string, string[]> = {};
+        ["A", "B", "C", "D"].forEach((k, idx) => {
+          const lk = k.toLowerCase();
+          Object.keys(q).forEach(prop => {
+            const match = prop.match(/^(?:option([A-Za-z]+)_([a-d])|option\s+([a-d])\s+([a-z]+)|option([a-d])([A-Za-z]+))$/i);
+            if (match) {
+              const lang = (match[1] || match[4] || match[6]).toLowerCase();
+              const optLetter = (match[2] || match[3] || match[5]).toLowerCase();
+              if (optLetter === lk && lang !== "en") {
+                const PascalLang = lang.charAt(0).toUpperCase() + lang.slice(1);
+                const optKey = `options${PascalLang}`;
+                if (!dynamicLangOptions[optKey]) dynamicLangOptions[optKey] = ["", "", "", ""];
+                dynamicLangOptions[optKey][idx] = String(q[prop] || "").trim();
+              }
+            }
+          });
+        });
+
+        // Also extract explicit option arrays like optionsTe, optionsHi, optionsMl, optionsTa
+        Object.keys(q).forEach(k => {
+          if (/^options[A-Z][a-z0-9]*$/.test(k) && Array.isArray(q[k])) {
+            const arr = q[k].map((v: any) => String(v || "").trim());
+            while (arr.length < 4) arr.push("");
+            dynamicLangOptions[k] = arr.slice(0, 4);
+          }
+        });
+
         // Generate optionsTa, optionsMl, optionsTe lists for convenient access
-        const optionsTa = ["A", "B", "C", "D"].map(k => optionsObj[k].ta).filter(Boolean);
-        const optionsMl = ["A", "B", "C", "D"].map(k => optionsObj[k].ml).filter(Boolean);
-        const optionsTe = ["A", "B", "C", "D"].map(k => optionsObj[k].te).filter(Boolean);
+        const optionsTa = dynamicLangOptions.optionsTa || ["A", "B", "C", "D"].map(k => optionsObj[k].ta).filter(Boolean);
+        const optionsMl = dynamicLangOptions.optionsMl || ["A", "B", "C", "D"].map(k => optionsObj[k].ml).filter(Boolean);
+        const optionsTe = (dynamicLangOptions.optionsTe || ["A", "B", "C", "D"].map(k => optionsObj[k].te).filter(Boolean)).map(sanitizeTelugu);
 
         let correctAnswer = q.correctAnswer || q.correctOption || q["correct option"] || q.answer || "";
         correctAnswer = correctAnswer.toString().trim().toUpperCase();
@@ -9257,9 +9904,10 @@ function MainApp() {
           formula,
           explanation,
           options: optionsObj,
-          optionsTa: optionsTa.length > 0 ? optionsTa : q.optionsTa,
-          optionsMl: optionsMl.length > 0 ? optionsMl : q.optionsMl,
-          optionsTe: optionsTe.length > 0 ? optionsTe : q.optionsTe,
+          optionsTa: optionsTa.length > 0 ? optionsTa : (q.optionsTa || []),
+          optionsMl: optionsMl.length > 0 ? optionsMl : (q.optionsMl || []),
+          optionsTe: optionsTe.length > 0 ? optionsTe : (q.optionsTe || []),
+          ...dynamicLangOptions,
           correctAnswer
         };
       });
@@ -9453,7 +10101,7 @@ function MainApp() {
     }
     try {
       const correctVal = parseFloat(newPdfTest.marksPerQ) || 1;
-      const wrongVal = Math.abs(parseFloat(newPdfTest.negMarks) || 0.33);
+      const wrongVal = Math.abs(parseFloat(newPdfTest.negMarks) || 0.25);
       const unattendedVal = parseFloat(newPdfTest.unattendedMarks) || 0;
 
       await api.post("/test-portal/test-creation", {
@@ -9462,6 +10110,7 @@ function MainApp() {
         questions: extractedQuestions, // Send edited questions array!
         startTime: newPdfTest.startTime || null,
         endTime: newPdfTest.endTime || null,
+        durationMinutes: Number(newPdfTest.duration) || (newPdfTest.startTime && newPdfTest.endTime ? Math.max(1, Math.round((new Date(newPdfTest.endTime).getTime() - new Date(newPdfTest.startTime).getTime()) / 60000)) : 60),
         marksPerQuestion: correctVal,
         negativeMarks: wrongVal,
         unattendedMarks: unattendedVal,
@@ -9476,8 +10125,18 @@ function MainApp() {
         subject: newPdfTest.subject || "",
         topic: newPdfTest.topic || "",
         testMode: newPdfTest.testMode || "online",
-        creationMode: genMode,
-        targetLanguages: genMode === "file" ? ["English", "Tamil"] : (targetLangs && targetLangs.length > 0 ? targetLangs : ["English", "Tamil"])
+        schedulingMode: newPdfTest.schedulingMode || "fixed",
+        schedulingType: newPdfTest.schedulingMode || "fixed",
+        subjectSections: (newPdfTest.testType === "mock" && Array.isArray(newPdfTest.subjectSections))
+          ? newPdfTest.subjectSections
+              .filter((s: any) => s && String(s.subject || s.customSubject || "").trim())
+              .map((s: any) => ({
+                subject: String(s.customSubject || s.subject || "").trim(),
+                fromQ: Number(s.fromQ) || 1,
+                toQ: Number(s.toQ) || 1
+              }))
+          : [],
+        targetLanguages: (targetLangs && targetLangs.length > 0) ? targetLangs : ["English", "Tamil"]
       });
       if (newPdfTest.subject) {
         setKnownSubjects(prev => prev.includes(newPdfTest.subject) ? prev : [...prev, newPdfTest.subject]);
@@ -9497,7 +10156,7 @@ function MainApp() {
       const end = new Date(start.getTime() + 60 * 60 * 1000);
       const startStr = start.getFullYear() + "-" + String(start.getMonth() + 1).padStart(2, "0") + "-" + String(start.getDate()).padStart(2, "0") + "T" + String(start.getHours()).padStart(2, "0") + ":" + String(Math.floor(start.getMinutes() / 5) * 5).padStart(2, "0");
       const endStr = end.getFullYear() + "-" + String(end.getMonth() + 1).padStart(2, "0") + "-" + String(end.getDate()).padStart(2, "0") + "T" + String(end.getHours()).padStart(2, "0") + ":" + String(Math.floor(end.getMinutes() / 5) * 5).padStart(2, "0");
-      setNewPdfTest({ title: "", startTime: startStr, endTime: endStr, marksPerQ: "", negMarks: "", unattendedMarks: "", totalMarks: "", targetAudience: "", targetBatch: "", requireFeedback: false, testType: "mock", subject: "", topic: "", testMode: "online", allowOfflineDirectly: false });
+      setNewPdfTest({ title: "", startTime: startStr, endTime: endStr, marksPerQ: "", negMarks: "", unattendedMarks: "", totalMarks: "", targetAudience: "", targetBatch: "", requireFeedback: false, testType: "mock", subject: "", topic: "", testMode: "online", allowOfflineDirectly: false, subjectSections: [] });
       setTestSub("available");
       loadTests();
     } catch (e: any) {
@@ -10244,6 +10903,27 @@ function MainApp() {
       // 3. Mark profile as submitted and lock editing permission
       await api.put("/erp/student/profile/me", { profileEditPermission: false, isProfileSubmitted: true });
 
+      // Emit live admin alert for profile completion
+      try {
+        const profileAlertId = `profile_req_${studentTargetId}`;
+        await setDoc(doc(db, "admin_alerts", profileAlertId), {
+          id: profileAlertId,
+          type: "profile_submission",
+          title: "Student Profile Verification",
+          subtitle: `${profileForm.name || myStudent?.name || user?.name || "Student"} (${myStudent?.rollNumber || "New"})`,
+          message: "Submitted complete student profile with identity verification documents for review.",
+          studentId: studentTargetId,
+          studentName: profileForm.name || myStudent?.name || user?.name || "Student",
+          rollNumber: myStudent?.rollNumber || "—",
+          sourceDocId: studentTargetId,
+          sourceCollection: "profile_requests",
+          targetTab: "erp",
+          targetSub: "profile-requests",
+          createdAt: new Date().toISOString(),
+          isDismissed: false
+        }, { merge: true });
+      } catch (_) {}
+
       setIsSubmittingProfile(false);
       setShowProfileReviewModal(false);
       setProfileForm({ name: "", initial: "", dob: "", bloodGroup: "", address: "", gender: "", community: "", fatherName: "", occupation: "", studentOccupation: "", altPhone: "", email: "", qualification: "", college: "", referralSource: "", passportPhotoBase64: "", photoIdBase64: "", photoIdType: "", photoIdConfirmed: false, horizontalReservation: "", constituency: "", constituencyOthers: "" });
@@ -10510,7 +11190,19 @@ function MainApp() {
         testType: newTest.testType || "mock",
         subject: newTest.subject || "",
         topic: newTest.topic || "",
-        testMode: newTest.testMode || "online"
+        testMode: newTest.testMode || "online",
+        schedulingMode: newTest.schedulingMode || "fixed",
+        schedulingType: newTest.schedulingMode || "fixed",
+        subjectSections: (newTest.testType === "mock" && Array.isArray(newTest.subjectSections))
+          ? newTest.subjectSections
+              .filter((s: any) => s && String(s.subject || s.customSubject || "").trim())
+              .map((s: any) => ({
+                subject: String(s.customSubject || s.subject || "").trim(),
+                fromQ: Number(s.fromQ) || 1,
+                toQ: Number(s.toQ) || 1
+              }))
+          : [],
+        targetLanguages: (targetLangs && targetLangs.length > 0) ? targetLangs : ["English", "Tamil"]
       });
       if (newTest.subject) {
         setKnownSubjects(prev => prev.includes(newTest.subject) ? prev : [...prev, newTest.subject]);
@@ -10519,7 +11211,7 @@ function MainApp() {
         }
       }
       Alert.alert("Success", "Mock Test created & published!");
-      setNewTest({ title: "", description: "", duration: "", passingMarks: "", startTime: "", endTime: "", selectedQIds: [], targetAudience: "", targetBatch: "", requireFeedback: false, testType: "mock", subject: "", topic: "", testMode: "online" });
+      setNewTest({ title: "", description: "", duration: "", passingMarks: "", startTime: "", endTime: "", selectedQIds: [], targetAudience: "", targetBatch: "", requireFeedback: false, testType: "mock", subject: "", topic: "", testMode: "online", subjectSections: [] });
       setManualQuestionsJson("");
       setManualNumQuestions("");
       loadTests();
@@ -10875,17 +11567,916 @@ function MainApp() {
     );
   };
 
-  // IST-Aware time parser: appends +05:30 if no timezone info so dates stored as "2026-08-04T12:40" are correctly parsed
+  // IST-Aware time parser: handles numbers, Date objects, Firestore Timestamps (both client & admin SDKs), and ISO strings
   const parseTestTimeMs = (val: any): number => {
     if (!val) return 0;
-    if (typeof val === "number") return val;
-    if (typeof val === "object" && typeof val.toDate === "function") return val.toDate().getTime();
-    if (typeof val === "object" && val._seconds) return val._seconds * 1000;
-    const str = String(val);
-    if (str.includes("T") && !str.endsWith("Z") && !/[+-]\d{2}:\d{2}$/.test(str)) {
-      return new Date(str + "+05:30").getTime();
+    if (typeof val === "number") return isNaN(val) ? 0 : val;
+    if (typeof val === "object") {
+      if (typeof val.toDate === "function") {
+        const t = val.toDate().getTime();
+        return isNaN(t) ? 0 : t;
+      }
+      if (typeof val.getTime === "function") {
+        const t = val.getTime();
+        return isNaN(t) ? 0 : t;
+      }
+      if (val._seconds !== undefined) {
+        const t = Number(val._seconds) * 1000;
+        return isNaN(t) ? 0 : t;
+      }
+      if (val.seconds !== undefined) {
+        const t = Number(val.seconds) * 1000;
+        return isNaN(t) ? 0 : t;
+      }
+      return 0;
     }
-    return new Date(str).getTime();
+    const str = String(val).trim();
+    if (!str || str === "[object Object]") return 0;
+    let t = 0;
+    if (str.includes("T") && !str.endsWith("Z") && !/[+-]\d{2}:\d{2}$/.test(str)) {
+      t = new Date(str + "+05:30").getTime();
+    } else {
+      t = new Date(str).getTime();
+    }
+    return isNaN(t) ? 0 : t;
+  };
+
+  // Helper for Mock Test Multi-Subject & Question Range Section Configurator
+  const renderMockSubjectSectionsConfigurator = (
+    sections: Array<{ subject: string; fromQ: number; toQ: number; customSubject?: string; isCustom?: boolean }>,
+    onChange: (updated: Array<{ subject: string; fromQ: number; toQ: number; customSubject?: string; isCustom?: boolean }>) => void
+  ) => {
+    const currentSections = Array.isArray(sections) ? sections : [];
+    const uniqueSubjects = [...new Set(lmsSubjects.map(s => s.name || s.title || ""))].filter(Boolean);
+
+    const addSection = () => {
+      let nextFrom = 1;
+      if (currentSections.length > 0) {
+        const lastTo = Number(currentSections[currentSections.length - 1].toQ) || 0;
+        nextFrom = lastTo + 1;
+      }
+      const nextTo = nextFrom + 24;
+      onChange([
+        ...currentSections,
+        { subject: uniqueSubjects[0] || "General Studies", fromQ: nextFrom, toQ: nextTo, isCustom: false, customSubject: "" }
+      ]);
+    };
+
+    const updateSection = (index: number, patch: Partial<{ subject: string; fromQ: number; toQ: number; customSubject?: string; isCustom?: boolean }>) => {
+      const next = currentSections.map((sec, i) => (i === index ? { ...sec, ...patch } : sec));
+      onChange(next);
+    };
+
+    const removeSection = (index: number) => {
+      onChange(currentSections.filter((_, i) => i !== index));
+    };
+
+    return (
+      <View style={{
+        marginBottom: 16,
+        padding: 14,
+        borderRadius: 10,
+        backgroundColor: darkMode ? "#1a1a1a" : "#f8fafc",
+        borderWidth: 1,
+        borderColor: darkMode ? "#333" : "#e2e8f0"
+      }}>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 6 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <Ionicons name="library" size={16} color="#c62828" />
+            <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#f1f5f9" : "#1e293b" }}>
+              Mock Test Subject Sections & Question Ranges
+            </Text>
+          </View>
+          <TouchableOpacity
+            onPress={addSection}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 4,
+              backgroundColor: "#c62828",
+              paddingHorizontal: 10,
+              paddingVertical: 5,
+              borderRadius: 6
+            }}
+          >
+            <Ionicons name="add-circle-outline" size={14} color="#ffffff" />
+            <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "bold" }}>Add Subject</Text>
+          </TouchableOpacity>
+        </View>
+
+        <Text style={{ fontSize: 11, color: darkMode ? "#94a3b8" : "#64748b", marginBottom: 12 }}>
+          Define question ranges for each subject in this mock test (e.g. History Q1–25, Geography Q26–50, Reasoning Q51–75, Polity Q76–100).
+        </Text>
+
+        {currentSections.length === 0 ? (
+          <TouchableOpacity
+            onPress={addSection}
+            style={{
+              padding: 14,
+              borderRadius: 8,
+              borderWidth: 1,
+              borderStyle: "dashed",
+              borderColor: darkMode ? "#475569" : "#cbd5e1",
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: darkMode ? "#111827" : "#f1f5f9"
+            }}
+          >
+            <Ionicons name="add-circle" size={24} color="#c62828" style={{ marginBottom: 4 }} />
+            <Text style={{ fontSize: 12, fontWeight: "bold", color: "#c62828" }}>+ Click to Add Subject Section (e.g., History Q1–25)</Text>
+            <Text style={{ fontSize: 10, color: darkMode ? "#94a3b8" : "#64748b", marginTop: 2 }}>Optional: Leave empty for standard single-paper mock tests.</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={{ gap: 10 }}>
+            {currentSections.map((sec, idx) => {
+              const isCustom = sec.isCustom || (sec.subject === "__NEW_CUSTOM__");
+              const qCount = (Number(sec.toQ) >= Number(sec.fromQ)) ? (Number(sec.toQ) - Number(sec.fromQ) + 1) : 0;
+
+              return (
+                <View
+                  key={idx}
+                  style={{
+                    padding: 10,
+                    borderRadius: 8,
+                    backgroundColor: darkMode ? "#242424" : "#ffffff",
+                    borderWidth: 1,
+                    borderColor: darkMode ? "#3a3a3a" : "#e2e8f0",
+                    gap: 8
+                  }}
+                >
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: "#c62828", justifyContent: "center", alignItems: "center" }}>
+                        <Text style={{ color: "#ffffff", fontSize: 10, fontWeight: "bold" }}>{idx + 1}</Text>
+                      </View>
+                      <Text style={{ fontSize: 12, fontWeight: "bold", color: darkMode ? "#e2e8f0" : "#334155" }}>
+                        Section {idx + 1} {qCount > 0 ? `(${qCount} Questions)` : ""}
+                      </Text>
+                    </View>
+
+                    <TouchableOpacity
+                      onPress={() => removeSection(idx)}
+                      style={{ padding: 4 }}
+                    >
+                      <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Subject Selection */}
+                  <View style={{ flexDirection: "column", gap: 4 }}>
+                    <Text style={{ fontSize: 11, fontWeight: "600", color: darkMode ? "#94a3b8" : "#475569" }}>Subject Name:</Text>
+                    <select
+                      value={isCustom ? "__NEW_CUSTOM__" : sec.subject}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === "__NEW_CUSTOM__") {
+                          updateSection(idx, { isCustom: true, subject: sec.customSubject || "" });
+                        } else {
+                          updateSection(idx, { isCustom: false, subject: val, customSubject: "" });
+                        }
+                      }}
+                      style={{
+                        width: "100%",
+                        height: 36,
+                        borderRadius: 6,
+                        paddingLeft: 8,
+                        paddingRight: 8,
+                        fontSize: 13,
+                        backgroundColor: darkMode ? "#2d2d2d" : "#f8fafc",
+                        color: darkMode ? "#f1f5f9" : "#1e293b",
+                        border: "1px solid " + (darkMode ? "#4b5563" : "#cbd5e1"),
+                        outline: "none"
+                      }}
+                    >
+                      <option value="">-- Select Subject --</option>
+                      {uniqueSubjects.map((sName) => (
+                        <option key={sName} value={sName}>{sName}</option>
+                      ))}
+                      <option value="__NEW_CUSTOM__">➕ Add New / Custom Subject...</option>
+                    </select>
+
+                    {isCustom && (
+                      <TextInput
+                        style={[
+                          styles.input,
+                          darkMode && styles.inputDark,
+                          { height: 36, fontSize: 12, marginTop: 4, borderColor: "#c62828", borderWidth: 1 }
+                        ]}
+                        placeholder="Type custom subject name (e.g. Current Affairs, Reasoning)"
+                        placeholderTextColor="#999"
+                        value={sec.subject === "__NEW_CUSTOM__" ? (sec.customSubject || "") : sec.subject}
+                        onChangeText={(v) => updateSection(idx, { subject: v, customSubject: v })}
+                      />
+                    )}
+                  </View>
+
+                  {/* Question Range */}
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 11, fontWeight: "600", color: darkMode ? "#94a3b8" : "#475569", marginBottom: 2 }}>From Q#:</Text>
+                      <TextInput
+                        style={[styles.input, darkMode && styles.inputDark, { height: 36, fontSize: 13, textAlign: "center" }]}
+                        keyboardType="numeric"
+                        placeholder="1"
+                        placeholderTextColor="#999"
+                        value={String(sec.fromQ ?? "")}
+                        onChangeText={(v) => {
+                          const num = parseInt(v.replace(/[^0-9]/g, ""), 10) || 0;
+                          updateSection(idx, { fromQ: num });
+                        }}
+                      />
+                    </View>
+
+                    <Text style={{ alignSelf: "center", marginTop: 16, fontWeight: "bold", color: "#64748b" }}>TO</Text>
+
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 11, fontWeight: "600", color: darkMode ? "#94a3b8" : "#475569", marginBottom: 2 }}>To Q#:</Text>
+                      <TextInput
+                        style={[styles.input, darkMode && styles.inputDark, { height: 36, fontSize: 13, textAlign: "center" }]}
+                        keyboardType="numeric"
+                        placeholder="25"
+                        placeholderTextColor="#999"
+                        value={String(sec.toQ ?? "")}
+                        onChangeText={(v) => {
+                          const num = parseInt(v.replace(/[^0-9]/g, ""), 10) || 0;
+                          updateSection(idx, { toQ: num });
+                        }}
+                      />
+                    </View>
+                  </View>
+                </View>
+              );
+            })}
+
+            <TouchableOpacity
+              onPress={addSection}
+              style={{
+                paddingVertical: 8,
+                borderRadius: 6,
+                borderWidth: 1,
+                borderColor: "#c62828",
+                backgroundColor: darkMode ? "#2a1515" : "#fff5f5",
+                alignItems: "center",
+                flexDirection: "row",
+                justifyContent: "center",
+                gap: 6
+              }}
+            >
+              <Ionicons name="add" size={16} color="#c62828" />
+              <Text style={{ fontSize: 12, fontWeight: "bold", color: "#c62828" }}>Add Another Subject Section</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  // ==========================================
+  // SUBJECT PIE CHART & 30% DIAGNOSTICS COMPONENT (ADMIN ONLY)
+  // ==========================================
+  const renderSubjectAnalyticsDiagnosticPanel = (testLog: any) => {
+    const testId = testLog.testId || testLog.id;
+    const diagData = testDiagnosticsMap[testId];
+    const isLoading = loadingDiagnosticsTestId === testId;
+
+    if (isLoading) {
+      return (
+        <View style={{ padding: 24, alignItems: "center", justifyContent: "center", backgroundColor: darkMode ? "#1a1a1a" : "#f8fafc", borderRadius: 12, margin: 12, borderWidth: 1, borderColor: darkMode ? "#333" : "#e2e8f0" }}>
+          <ActivityIndicator size="large" color="#c62828" />
+          <Text style={{ marginTop: 10, fontSize: 13, fontWeight: "600", color: darkMode ? "#aaa" : "#666" }}>
+            Computing Subject-Wise Analytics & 30% Question Diagnostics...
+          </Text>
+        </View>
+      );
+    }
+
+    if (!diagData || !diagData.subjectAnalytics || diagData.subjectAnalytics.length === 0) {
+      return (
+        <View style={{ padding: 20, alignItems: "center", backgroundColor: darkMode ? "#1a1a1a" : "#f8fafc", borderRadius: 12, margin: 12, borderWidth: 1, borderColor: darkMode ? "#333" : "#e2e8f0" }}>
+          <TouchableOpacity
+            onPress={() => fetchTestDiagnostics(testId)}
+            style={{ backgroundColor: "#c62828", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8, flexDirection: "row", alignItems: "center", gap: 6 }}
+          >
+            <Ionicons name="pie-chart-outline" size={16} color="#fff" />
+            <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 12 }}>Load Subject Analytics & Diagnostics</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    const { subjectAnalytics, totalQuestions, totalSubmissions, overallClassAvg } = diagData;
+    const activeSubjectId = selectedSubjectTabMap[testId] || subjectAnalytics[0]?.id;
+    const activeSection = subjectAnalytics.find((s: any) => s.id === activeSubjectId) || subjectAnalytics[0];
+    const activeSubTab = diagnosticSubTabMap[testId] || "wrong";
+
+    const SUBJECT_PALETTE = [
+      "#0284c7", "#059669", "#7c3aed", "#d97706", "#db2777",
+      "#0891b2", "#4f46e5", "#ea580c", "#16a34a", "#64748b"
+    ];
+
+    // Compute Pie / Donut slices
+    let cumulativeAngle = -Math.PI / 2; // start at top (12 o'clock)
+    const slices = subjectAnalytics.map((sec: any, idx: number) => {
+      const fraction = totalQuestions > 0 ? (sec.questionCount / totalQuestions) : (1 / subjectAnalytics.length);
+      const sliceAngle = fraction * 2 * Math.PI;
+      const startAngle = cumulativeAngle;
+      const endAngle = cumulativeAngle + sliceAngle;
+      cumulativeAngle += sliceAngle;
+
+      const color = sec.isOthers ? "#64748b" : (SUBJECT_PALETTE[idx % SUBJECT_PALETTE.length]);
+      const isSelected = sec.id === activeSection.id;
+
+      // SVG Donut Path calculations
+      const cx = 110;
+      const cy = 110;
+      const R = isSelected ? 92 : 88; // Slight expand on active selection
+      const r = 52; // Inner donut radius
+
+      const x1 = cx + R * Math.cos(startAngle);
+      const y1 = cy + R * Math.sin(startAngle);
+      const x2 = cx + R * Math.cos(endAngle);
+      const y2 = cy + R * Math.sin(endAngle);
+
+      const x3 = cx + r * Math.cos(endAngle);
+      const y3 = cy + r * Math.sin(endAngle);
+      const x4 = cx + r * Math.cos(startAngle);
+      const y4 = cy + r * Math.sin(startAngle);
+
+      const largeArc = sliceAngle > Math.PI ? 1 : 0;
+      const pathData = (sliceAngle >= 2 * Math.PI - 0.001)
+        ? `M ${cx} ${cy - R} A ${R} ${R} 0 1 1 ${cx - 0.01} ${cy - R} M ${cx} ${cy - r} A ${r} ${r} 0 1 0 ${cx - 0.01} ${cy - r} Z`
+        : `M ${x1} ${y1} A ${R} ${R} 0 ${largeArc} 1 ${x2} ${y2} L ${x3} ${y3} A ${r} ${r} 0 ${largeArc} 0 ${x4} ${y4} Z`;
+
+      return {
+        ...sec,
+        color,
+        fraction,
+        percentage: Math.round(fraction * 100),
+        pathData,
+        isSelected
+      };
+    });
+
+    return (
+      <View style={{
+        margin: 10,
+        padding: 16,
+        borderRadius: 12,
+        backgroundColor: darkMode ? "#141414" : "#ffffff",
+        borderWidth: 1,
+        borderColor: darkMode ? "#2a2a2a" : "#e2e8f0",
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.06,
+        shadowRadius: 8,
+        elevation: 2
+      }}>
+        {/* Panel Header */}
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8, borderBottomWidth: 1, borderBottomColor: darkMode ? "#262626" : "#f1f5f9", paddingBottom: 12 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: "#c62828", justifyContent: "center", alignItems: "center" }}>
+              <Ionicons name="pie-chart" size={18} color="#ffffff" />
+            </View>
+            <View>
+              <Text style={{ fontSize: 15, fontWeight: "bold", color: darkMode ? "#ffffff" : "#0f172a" }}>
+                Subject Analytics & 30% Question Diagnostics
+              </Text>
+              <Text style={{ fontSize: 11, color: darkMode ? "#a1a1aa" : "#64748b" }}>
+                Interactive subject breakdown ({slices.length} Sections · {totalQuestions} Questions · {totalSubmissions} Candidates)
+              </Text>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            onPress={() => fetchTestDiagnostics(testId)}
+            style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6, backgroundColor: darkMode ? "#262626" : "#f1f5f9" }}
+          >
+            <Ionicons name="refresh" size={14} color={darkMode ? "#cbd5e1" : "#475569"} />
+            <Text style={{ fontSize: 11, fontWeight: "600", color: darkMode ? "#cbd5e1" : "#475569" }}>Recalculate</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Donut Chart & Subject Cards Container */}
+        <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 20, marginBottom: 18 }}>
+          {/* SVG Donut Chart */}
+          <View style={{ alignItems: "center", justifyContent: "center", width: 220, height: 220 }}>
+            {Platform.OS === 'web' ? (
+              <svg width="220" height="220" viewBox="0 0 220 220" style={{ cursor: "pointer" }}>
+                <defs>
+                  <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+                    <feDropShadow dx="0" dy="2" stdDeviation="3" floodOpacity="0.15" />
+                  </filter>
+                </defs>
+                {slices.map((slice: any, idx: number) => (
+                  <path
+                    key={slice.id || idx}
+                    d={slice.pathData}
+                    fill={slice.color}
+                    opacity={slice.isSelected ? 1 : 0.85}
+                    stroke={slice.isSelected ? "#ffffff" : (darkMode ? "#141414" : "#ffffff")}
+                    strokeWidth={slice.isSelected ? 3 : 1.5}
+                    style={{
+                      transition: "all 0.25s ease",
+                      filter: slice.isSelected ? "url(#shadow)" : "none"
+                    }}
+                    onClick={() => setSelectedSubjectTabMap(prev => ({ ...prev, [testId]: slice.id }))}
+                  >
+                    <title>{`${slice.subject} (Q${slice.fromQ}–${slice.toQ}): ${slice.questionCount} Questions (${slice.percentage}% of test) | Class Avg: ${slice.avgAccuracy}%`}</title>
+                  </path>
+                ))}
+                {/* Center Donut Label */}
+                <circle cx="110" cy="110" r="46" fill={darkMode ? "#1e1e1e" : "#ffffff"} />
+                <text x="110" y="104" textAnchor="middle" fontSize="22" fontWeight="bold" fill={overallClassAvg >= 70 ? "#10b981" : overallClassAvg >= 40 ? "#f59e0b" : "#ef4444"}>
+                  {overallClassAvg}%
+                </text>
+                <text x="110" y="122" textAnchor="middle" fontSize="10" fontWeight="600" fill={darkMode ? "#94a3b8" : "#64748b"}>
+                  CLASS AVG
+                </text>
+              </svg>
+            ) : (
+              <View style={{ alignItems: "center", justifyContent: "center", width: 140, height: 140, borderRadius: 70, backgroundColor: darkMode ? "#222" : "#f1f5f9" }}>
+                <Text style={{ fontSize: 24, fontWeight: "bold", color: "#c62828" }}>{overallClassAvg}%</Text>
+                <Text style={{ fontSize: 10, color: "#666" }}>Class Avg</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Subject Cards Grid */}
+          <View style={{ flex: 1, minWidth: 260, gap: 8 }}>
+            <Text style={{ fontSize: 12, fontWeight: "bold", color: darkMode ? "#cbd5e1" : "#334155", marginBottom: 2 }}>
+              Subject Breakdown & Diagnostic Summary (Click to Inspect):
+            </Text>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+              {slices.map((sec: any) => {
+                const isSelected = sec.id === activeSection.id;
+                return (
+                  <TouchableOpacity
+                    key={sec.id}
+                    onPress={() => setSelectedSubjectTabMap(prev => ({ ...prev, [testId]: sec.id }))}
+                    style={{
+                      flex: 1,
+                      minWidth: 170,
+                      padding: 10,
+                      borderRadius: 8,
+                      backgroundColor: isSelected ? (darkMode ? "#1e293b" : "#eff6ff") : (darkMode ? "#1e1e1e" : "#f8fafc"),
+                      borderWidth: isSelected ? 2 : 1,
+                      borderColor: isSelected ? sec.color : (darkMode ? "#333" : "#e2e8f0"),
+                      position: "relative"
+                    }}
+                  >
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                      <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: sec.color }} />
+                      <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: "bold", color: isSelected ? (darkMode ? "#93c5fd" : "#1d4ed8") : (darkMode ? "#e2e8f0" : "#1e293b"), flex: 1 }}>
+                        {sec.subject}
+                      </Text>
+                      {sec.isOthers && (
+                        <View style={{ backgroundColor: "#94a3b8", borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 }}>
+                          <Text style={{ fontSize: 9, color: "#fff", fontWeight: "bold" }}>Unassigned</Text>
+                        </View>
+                      )}
+                    </View>
+
+                    <Text style={{ fontSize: 10, color: darkMode ? "#94a3b8" : "#64748b", marginBottom: 6 }}>
+                      Q{sec.fromQ}–{sec.toQ} ({sec.questionCount} Qs · {sec.percentage}%)
+                    </Text>
+
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                      <View style={{ backgroundColor: sec.perfColor + "20", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+                        <Text style={{ fontSize: 11, fontWeight: "bold", color: sec.perfColor }}>
+                          Avg: {sec.avgAccuracy}%
+                        </Text>
+                      </View>
+
+                      <View style={{ flexDirection: "row", gap: 4 }}>
+                        {sec.repeatedWrongCount > 0 && (
+                          <View style={{ backgroundColor: "#fee2e2", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, flexDirection: "row", alignItems: "center", gap: 2 }}>
+                            <Text style={{ fontSize: 10, fontWeight: "bold", color: "#dc2626" }}>⚠️ {sec.repeatedWrongCount}</Text>
+                          </View>
+                        )}
+                        {sec.repeatedSkippedCount > 0 && (
+                          <View style={{ backgroundColor: "#fef3c7", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, flexDirection: "row", alignItems: "center", gap: 2 }}>
+                            <Text style={{ fontSize: 10, fontWeight: "bold", color: "#b45309" }}>🚫 {sec.repeatedSkippedCount}</Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        </View>
+
+        {/* ================================================= */}
+        {/* DEEP-DIVE 30% DIAGNOSTIC DRAWER (ACTIVE SUBJECT) */}
+        {/* ================================================= */}
+        <View style={{
+          marginTop: 10,
+          borderRadius: 10,
+          backgroundColor: darkMode ? "#18181b" : "#f8fafc",
+          borderWidth: 1,
+          borderColor: darkMode ? "#27272a" : "#e2e8f0",
+          overflow: "hidden"
+        }}>
+          {/* Drawer Subject Title Bar & Sub-Tabs */}
+          <View style={{
+            padding: 12,
+            backgroundColor: darkMode ? "#27272a" : "#f1f5f9",
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 10,
+            borderBottomWidth: 1,
+            borderBottomColor: darkMode ? "#3f3f46" : "#e2e8f0"
+          }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Ionicons name="folder-open" size={16} color="#c62828" />
+              <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#f4f4f5" : "#0f172a" }}>
+                {activeSection.subject} Diagnostics (Q{activeSection.fromQ}–{activeSection.toQ} · {activeSection.questionCount} Questions)
+              </Text>
+              <View style={{ backgroundColor: activeSection.perfColor + "20", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 }}>
+                <Text style={{ fontSize: 11, fontWeight: "bold", color: activeSection.perfColor }}>
+                  Section Avg: {activeSection.avgAccuracy}%
+                </Text>
+              </View>
+            </View>
+
+            {/* Diagnostic Sub-Tabs */}
+            <View style={{ flexDirection: "row", gap: 6 }}>
+              <TouchableOpacity
+                onPress={() => setDiagnosticSubTabMap(prev => ({ ...prev, [testId]: "wrong" }))}
+                style={{
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  borderRadius: 6,
+                  backgroundColor: activeSubTab === "wrong" ? "#dc2626" : (darkMode ? "#3f3f46" : "#e2e8f0"),
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 4
+                }}
+              >
+                <Ionicons name="alert-circle" size={13} color={activeSubTab === "wrong" ? "#ffffff" : (darkMode ? "#d4d4d8" : "#475569")} />
+                <Text style={{ fontSize: 11, fontWeight: "bold", color: activeSubTab === "wrong" ? "#ffffff" : (darkMode ? "#d4d4d8" : "#475569") }}>
+                  ⚠️ Repeated Wrong ({activeSection.repeatedWrongCount})
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => setDiagnosticSubTabMap(prev => ({ ...prev, [testId]: "skipped" }))}
+                style={{
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  borderRadius: 6,
+                  backgroundColor: activeSubTab === "skipped" ? "#d97706" : (darkMode ? "#3f3f46" : "#e2e8f0"),
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 4
+                }}
+              >
+                <Ionicons name="remove-circle-outline" size={13} color={activeSubTab === "skipped" ? "#ffffff" : (darkMode ? "#d4d4d8" : "#475569")} />
+                <Text style={{ fontSize: 11, fontWeight: "bold", color: activeSubTab === "skipped" ? "#ffffff" : (darkMode ? "#d4d4d8" : "#475569") }}>
+                  🚫 Repeated Skips ({activeSection.repeatedSkippedCount})
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => setDiagnosticSubTabMap(prev => ({ ...prev, [testId]: "all" }))}
+                style={{
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  borderRadius: 6,
+                  backgroundColor: activeSubTab === "all" ? (darkMode ? "#64748b" : "#334155") : (darkMode ? "#3f3f46" : "#e2e8f0"),
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 4
+                }}
+              >
+                <Ionicons name="list" size={13} color={activeSubTab === "all" ? "#ffffff" : (darkMode ? "#d4d4d8" : "#475569")} />
+                <Text style={{ fontSize: 11, fontWeight: "bold", color: activeSubTab === "all" ? "#ffffff" : (darkMode ? "#d4d4d8" : "#475569") }}>
+                  All Questions ({activeSection.questionCount})
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Drawer Content */}
+          <View style={{ padding: 12 }}>
+            {/* 1. REPEATED WRONG ANSWERS (>= 30% Error Rate) */}
+            {activeSubTab === "wrong" && (
+              <View style={{ gap: 10 }}>
+                {activeSection.repeatedWrongQuestions.length === 0 ? (
+                  <View style={{ padding: 20, alignItems: "center", backgroundColor: darkMode ? "#064e3b20" : "#f0fdf4", borderRadius: 8, borderWidth: 1, borderColor: "#86efac" }}>
+                    <Ionicons name="checkmark-circle" size={32} color="#16a34a" />
+                    <Text style={{ fontSize: 13, fontWeight: "bold", color: "#16a34a", marginTop: 6 }}>
+                      🎉 Excellent Performance!
+                    </Text>
+                    <Text style={{ fontSize: 11, color: darkMode ? "#a7f3d0" : "#166534", marginTop: 2, textAlign: "center" }}>
+                      No questions in this subject exceeded the 30% error threshold across all candidate submissions.
+                    </Text>
+                  </View>
+                ) : (
+                  <>
+                    <View style={{ padding: 8, backgroundColor: darkMode ? "#450a0a20" : "#fff1f2", borderRadius: 6, borderWidth: 1, borderColor: "#fecdd3" }}>
+                      <Text style={{ fontSize: 11, fontWeight: "bold", color: "#be123c" }}>
+                        📌 Rule: Showing {activeSection.repeatedWrongQuestions.length} questions where ≥30% of candidates answered incorrectly, sorted from highest error rate to lowest.
+                      </Text>
+                    </View>
+
+                    {activeSection.repeatedWrongQuestions.map((q: any) => {
+                      const qKey = `${testId}_${q.qNum}`;
+                      const isExpanded = !!expandedQuestionMap[qKey];
+                      return (
+                        <View
+                          key={qKey}
+                          style={{
+                            padding: 12,
+                            borderRadius: 8,
+                            backgroundColor: darkMode ? "#18181b" : "#ffffff",
+                            borderWidth: 1,
+                            borderColor: darkMode ? "#3f3f46" : "#e4e4e7"
+                          }}
+                        >
+                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                            <View style={{ flex: 1 }}>
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+                                <View style={{ backgroundColor: "#dc2626", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+                                  <Text style={{ fontSize: 11, fontWeight: "bold", color: "#ffffff" }}>Question #{q.qNum}</Text>
+                                </View>
+                                <View style={{ backgroundColor: "#fee2e2", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+                                  <Text style={{ fontSize: 11, fontWeight: "bold", color: "#991b1b" }}>
+                                    🔴 {q.errorRate}% Wrong ({q.wrongCount} / {q.totalSubmissions} students)
+                                  </Text>
+                                </View>
+                                <View style={{ backgroundColor: q.difficulty === "Hard" ? "#fef2f2" : "#fefce8", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+                                  <Text style={{ fontSize: 10, fontWeight: "bold", color: q.difficulty === "Hard" ? "#991b1b" : "#854d0e" }}>
+                                    {q.difficulty} Difficulty
+                                  </Text>
+                                </View>
+                                {q.correctAnswer && (
+                                  <View style={{ backgroundColor: "#dcfce7", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+                                    <Text style={{ fontSize: 10, fontWeight: "bold", color: "#166534" }}>
+                                      Correct Ans: {q.correctAnswer}
+                                    </Text>
+                                  </View>
+                                )}
+                              </View>
+
+                              {/* Question Preview */}
+                              <Text numberOfLines={isExpanded ? undefined : 2} style={{ fontSize: 12, color: darkMode ? "#e4e4e7" : "#18181b", lineHeight: 18 }}>
+                                {q.questionText}
+                              </Text>
+
+                              {/* Trap Option Distractor Banner */}
+                              {q.trapOption && q.trapCount > 0 && (
+                                <View style={{ marginTop: 8, padding: 8, backgroundColor: darkMode ? "#3b1a08" : "#fff7ed", borderRadius: 6, borderWidth: 1, borderColor: "#ffedd5", flexDirection: "row", alignItems: "center", gap: 6 }}>
+                                  <Ionicons name="warning" size={16} color="#ea580c" />
+                                  <Text style={{ fontSize: 11, color: darkMode ? "#fed7aa" : "#9a3412", flex: 1, fontWeight: "500" }}>
+                                    <Text style={{ fontWeight: "bold" }}>🚨 Trap Alert:</Text> Option <Text style={{ fontWeight: "bold" }}>({q.trapOption})</Text> was chosen by <Text style={{ fontWeight: "bold" }}>{q.trapCount}</Text> students ({q.trapPercentage}% of all wrong attempts)!
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
+
+                            {/* Toggle Question Solution Button */}
+                            <TouchableOpacity
+                              onPress={() => setExpandedQuestionMap(prev => ({ ...prev, [qKey]: !prev[qKey] }))}
+                              style={{ padding: 6, borderRadius: 6, backgroundColor: darkMode ? "#27272a" : "#f4f4f5" }}
+                            >
+                              <Ionicons name={isExpanded ? "chevron-up" : "chevron-down"} size={16} color={darkMode ? "#a1a1aa" : "#71717a"} />
+                            </TouchableOpacity>
+                          </View>
+
+                          {/* Expanded Solution & Options Breakdown */}
+                          {isExpanded && (
+                            <View style={{ marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: darkMode ? "#27272a" : "#f4f4f5", gap: 8 }}>
+                              <Text style={{ fontSize: 11, fontWeight: "bold", color: darkMode ? "#a1a1aa" : "#52525b" }}>Options & Class Responses:</Text>
+                              <View style={{ gap: 6 }}>
+                                {(Array.isArray(q.options) ? q.options : []).map((opt: string, optIdx: number) => {
+                                  const optLetter = String.fromCharCode(65 + optIdx);
+                                  const isCorrect = String(q.correctAnswer).trim().toUpperCase() === optLetter;
+                                  const isTrap = q.trapOption === optLetter;
+                                  const count = q.optionCounts?.[optLetter] || 0;
+                                  const pct = q.totalSubmissions > 0 ? Math.round((count / q.totalSubmissions) * 100) : 0;
+
+                                  return (
+                                    <View
+                                      key={optIdx}
+                                      style={{
+                                        padding: 8,
+                                        borderRadius: 6,
+                                        backgroundColor: isCorrect ? (darkMode ? "#052e16" : "#f0fdf4") : isTrap ? (darkMode ? "#3b1a08" : "#fff7ed") : (darkMode ? "#27272a" : "#f8fafc"),
+                                        borderWidth: 1,
+                                        borderColor: isCorrect ? "#22c55e" : isTrap ? "#f97316" : (darkMode ? "#3f3f46" : "#e2e8f0"),
+                                        flexDirection: "row",
+                                        justifyContent: "space-between",
+                                        alignItems: "center"
+                                      }}
+                                    >
+                                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1, marginRight: 8 }}>
+                                        <Text style={{ fontWeight: "bold", color: isCorrect ? "#16a34a" : isTrap ? "#ea580c" : (darkMode ? "#d4d4d8" : "#3f3f46") }}>
+                                          ({optLetter})
+                                        </Text>
+                                        <Text style={{ fontSize: 12, color: darkMode ? "#f4f4f5" : "#18181b", flex: 1 }}>
+                                          {opt}
+                                        </Text>
+                                      </View>
+                                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                                        {isCorrect && (
+                                          <View style={{ backgroundColor: "#16a34a", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                                            <Text style={{ fontSize: 9, fontWeight: "bold", color: "#fff" }}>CORRECT</Text>
+                                          </View>
+                                        )}
+                                        {isTrap && (
+                                          <View style={{ backgroundColor: "#ea580c", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                                            <Text style={{ fontSize: 9, fontWeight: "bold", color: "#fff" }}>TRAP</Text>
+                                          </View>
+                                        )}
+                                        <Text style={{ fontSize: 11, fontWeight: "bold", color: darkMode ? "#a1a1aa" : "#71717a" }}>
+                                          {count} ({pct}%)
+                                        </Text>
+                                      </View>
+                                    </View>
+                                  );
+                                })}
+                              </View>
+
+                              {q.explanation ? (
+                                <View style={{ marginTop: 6, padding: 8, borderRadius: 6, backgroundColor: darkMode ? "#1c1917" : "#fafaf9", borderWidth: 1, borderColor: darkMode ? "#292524" : "#e7e5e4" }}>
+                                  <Text style={{ fontSize: 11, fontWeight: "bold", color: "#c62828", marginBottom: 2 }}>💡 Explanation / Solution:</Text>
+                                  <Text style={{ fontSize: 11, color: darkMode ? "#d6d3d1" : "#44403c", lineHeight: 16 }}>{q.explanation}</Text>
+                                </View>
+                              ) : null}
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })}
+                  </>
+                )}
+              </View>
+            )}
+
+            {/* 2. REPEATEDLY SKIPPED QUESTIONS (>= 30% Skip Rate) */}
+            {activeSubTab === "skipped" && (
+              <View style={{ gap: 10 }}>
+                {activeSection.repeatedSkippedQuestions.length === 0 ? (
+                  <View style={{ padding: 20, alignItems: "center", backgroundColor: darkMode ? "#064e3b20" : "#f0fdf4", borderRadius: 8, borderWidth: 1, borderColor: "#86efac" }}>
+                    <Ionicons name="checkmark-circle" size={32} color="#16a34a" />
+                    <Text style={{ fontSize: 13, fontWeight: "bold", color: "#16a34a", marginTop: 6 }}>
+                      🎉 Strong Attempt Ratio!
+                    </Text>
+                    <Text style={{ fontSize: 11, color: darkMode ? "#a7f3d0" : "#166534", marginTop: 2, textAlign: "center" }}>
+                      No questions were skipped by ≥30% of students in this subject.
+                    </Text>
+                  </View>
+                ) : (
+                  <>
+                    <View style={{ padding: 8, backgroundColor: darkMode ? "#451a0320" : "#fefce8", borderRadius: 6, borderWidth: 1, borderColor: "#fef08a" }}>
+                      <Text style={{ fontSize: 11, fontWeight: "bold", color: "#a16207" }}>
+                        📌 Rule: Showing {activeSection.repeatedSkippedQuestions.length} questions where ≥30% of candidates left the answer blank, sorted by highest abandonment rate.
+                      </Text>
+                    </View>
+
+                    {activeSection.repeatedSkippedQuestions.map((q: any) => {
+                      const qKey = `${testId}_skip_${q.qNum}`;
+                      const isExpanded = !!expandedQuestionMap[qKey];
+                      return (
+                        <View
+                          key={qKey}
+                          style={{
+                            padding: 12,
+                            borderRadius: 8,
+                            backgroundColor: darkMode ? "#18181b" : "#ffffff",
+                            borderWidth: 1,
+                            borderColor: darkMode ? "#3f3f46" : "#e4e4e7"
+                          }}
+                        >
+                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                            <View style={{ flex: 1 }}>
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+                                <View style={{ backgroundColor: "#d97706", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+                                  <Text style={{ fontSize: 11, fontWeight: "bold", color: "#ffffff" }}>Question #{q.qNum}</Text>
+                                </View>
+                                <View style={{ backgroundColor: "#fef3c7", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+                                  <Text style={{ fontSize: 11, fontWeight: "bold", color: "#92400e" }}>
+                                    🚫 {q.skipRate}% Skipped ({q.skippedCount} / {q.totalSubmissions} students)
+                                  </Text>
+                                </View>
+                                <View style={{ backgroundColor: "#f1f5f9", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+                                  <Text style={{ fontSize: 10, fontWeight: "bold", color: "#475569" }}>
+                                    Attempted: {q.attemptedCount}
+                                  </Text>
+                                </View>
+                              </View>
+
+                              <Text numberOfLines={isExpanded ? undefined : 2} style={{ fontSize: 12, color: darkMode ? "#e4e4e7" : "#18181b", lineHeight: 18 }}>
+                                {q.questionText}
+                              </Text>
+                            </View>
+
+                            <TouchableOpacity
+                              onPress={() => setExpandedQuestionMap(prev => ({ ...prev, [qKey]: !prev[qKey] }))}
+                              style={{ padding: 6, borderRadius: 6, backgroundColor: darkMode ? "#27272a" : "#f4f4f5" }}
+                            >
+                              <Ionicons name={isExpanded ? "chevron-up" : "chevron-down"} size={16} color={darkMode ? "#a1a1aa" : "#71717a"} />
+                            </TouchableOpacity>
+                          </View>
+
+                          {isExpanded && (
+                            <View style={{ marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: darkMode ? "#27272a" : "#f4f4f5", gap: 6 }}>
+                              <Text style={{ fontSize: 11, fontWeight: "bold", color: darkMode ? "#a1a1aa" : "#52525b" }}>Options & Correct Answer:</Text>
+                              {(Array.isArray(q.options) ? q.options : []).map((opt: string, optIdx: number) => {
+                                const optLetter = String.fromCharCode(65 + optIdx);
+                                const isCorrect = String(q.correctAnswer).trim().toUpperCase() === optLetter;
+                                return (
+                                  <View
+                                    key={optIdx}
+                                    style={{
+                                      padding: 6,
+                                      borderRadius: 4,
+                                      backgroundColor: isCorrect ? (darkMode ? "#052e16" : "#f0fdf4") : "transparent",
+                                      borderWidth: 1,
+                                      borderColor: isCorrect ? "#22c55e" : (darkMode ? "#333" : "#eee"),
+                                      flexDirection: "row",
+                                      alignItems: "center",
+                                      gap: 6
+                                    }}
+                                  >
+                                    <Text style={{ fontWeight: "bold", color: isCorrect ? "#16a34a" : (darkMode ? "#888" : "#666") }}>({optLetter})</Text>
+                                    <Text style={{ fontSize: 12, color: darkMode ? "#fff" : "#222" }}>{opt}</Text>
+                                  </View>
+                                );
+                              })}
+                              {q.explanation && (
+                                <View style={{ marginTop: 6, padding: 8, borderRadius: 6, backgroundColor: darkMode ? "#1c1917" : "#fafaf9", borderWidth: 1, borderColor: darkMode ? "#292524" : "#e7e5e4" }}>
+                                  <Text style={{ fontSize: 11, fontWeight: "bold", color: "#c62828", marginBottom: 2 }}>💡 Solution / Explanation:</Text>
+                                  <Text style={{ fontSize: 11, color: darkMode ? "#d6d3d1" : "#44403c", lineHeight: 16 }}>{q.explanation}</Text>
+                                </View>
+                              )}
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })}
+                  </>
+                )}
+              </View>
+            )}
+
+            {/* 3. ALL QUESTIONS MATRIX IN RANGE */}
+            {activeSubTab === "all" && (
+              <View style={{ gap: 8 }}>
+                <View style={{ flexDirection: "row", backgroundColor: darkMode ? "#27272a" : "#f1f5f9", padding: 8, borderRadius: 6 }}>
+                  <Text style={{ width: 45, fontWeight: "bold", fontSize: 11, color: darkMode ? "#a1a1aa" : "#475569" }}>#</Text>
+                  <Text style={{ flex: 2, fontWeight: "bold", fontSize: 11, color: darkMode ? "#a1a1aa" : "#475569" }}>Question Snippet</Text>
+                  <Text style={{ width: 70, textAlign: "center", fontWeight: "bold", fontSize: 11, color: "#16a34a" }}>Correct</Text>
+                  <Text style={{ width: 70, textAlign: "center", fontWeight: "bold", fontSize: 11, color: "#dc2626" }}>Wrong</Text>
+                  <Text style={{ width: 70, textAlign: "center", fontWeight: "bold", fontSize: 11, color: "#d97706" }}>Skipped</Text>
+                  <Text style={{ width: 70, textAlign: "center", fontWeight: "bold", fontSize: 11, color: darkMode ? "#a1a1aa" : "#475569" }}>Accuracy</Text>
+                </View>
+
+                {activeSection.allQuestions.map((q: any) => (
+                  <View
+                    key={q.qNum}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      padding: 8,
+                      borderRadius: 6,
+                      borderBottomWidth: 1,
+                      borderBottomColor: darkMode ? "#27272a" : "#f4f4f5",
+                      backgroundColor: q.isRepeatedWrong ? (darkMode ? "#450a0a15" : "#fff1f2") : q.isRepeatedSkip ? (darkMode ? "#451a0315" : "#fefce8") : "transparent"
+                    }}
+                  >
+                    <Text style={{ width: 45, fontWeight: "bold", fontSize: 12, color: q.isRepeatedWrong ? "#dc2626" : q.isRepeatedSkip ? "#d97706" : (darkMode ? "#fff" : "#18181b") }}>
+                      Q{q.qNum}
+                    </Text>
+                    <Text numberOfLines={1} style={{ flex: 2, fontSize: 11, color: darkMode ? "#d4d4d8" : "#3f3f46" }}>
+                      {q.questionText}
+                    </Text>
+                    <Text style={{ width: 70, textAlign: "center", fontSize: 11, fontWeight: "bold", color: "#16a34a" }}>
+                      {q.correctCount}
+                    </Text>
+                    <Text style={{ width: 70, textAlign: "center", fontSize: 11, fontWeight: "bold", color: q.wrongCount > 0 ? "#dc2626" : "#71717a" }}>
+                      {q.wrongCount}
+                    </Text>
+                    <Text style={{ width: 70, textAlign: "center", fontSize: 11, fontWeight: "bold", color: q.skippedCount > 0 ? "#d97706" : "#71717a" }}>
+                      {q.skippedCount}
+                    </Text>
+                    <View style={{ width: 70, alignItems: "center" }}>
+                      <Text style={{ fontSize: 11, fontWeight: "bold", color: q.accuracyRate >= 70 ? "#16a34a" : q.accuracyRate >= 40 ? "#d97706" : "#dc2626" }}>
+                        {q.accuracyRate}%
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        </View>
+      </View>
+    );
   };
 
   // Exam Operations
@@ -10902,7 +12493,9 @@ function MainApp() {
       return { status: "completed", label: "Review Answers", attemptId: attempt.id || attempt.attemptId, disabled: false };
     }
 
-    if (startTimeMs && now < startTimeMs) {
+    // Flexible mode: skip waiting room — student can start anytime within the window
+    const isFlexible = (test.schedulingMode === "flexible" || test.schedulingType === "flexible" || test.schedulingType === "flexible_window");
+    if (!isFlexible && startTimeMs && now < startTimeMs) {
       return { status: "scheduled", label: "Enter Waiting Room", disabled: false };
     }
 
@@ -11026,8 +12619,6 @@ function MainApp() {
       setWaitingRoomTest(test);
       return;
     }
-    // Attempt fullscreen immediately on direct click gesture
-    enterFullscreen();
     setStartingTestId(test.id);
     if (statusInfo.status === "ongoing") {
       try {
@@ -11080,9 +12671,11 @@ function MainApp() {
         setActiveAttempt({
           ...attemptRes,
           targetLanguages: test?.targetLanguages || attemptRes?.targetLanguages,
-          creationMode: test?.creationMode || attemptRes?.creationMode
+          creationMode: test?.creationMode || attemptRes?.creationMode,
+          subjectSections: test?.subjectSections || attemptRes?.subjectSections || []
         });
-        enterFullscreen();
+        // enterFullscreen() cannot be called post-await (not a direct user gesture).
+        // The proctoring useEffect and gate modal will handle fullscreen on activeAttempt set.
       } catch (e: any) {
         // Clear the local draft so the button resets — the attempt may be expired or deleted
         if (statusInfo.attemptId) {
@@ -11106,9 +12699,11 @@ function MainApp() {
       setActiveAttempt({
         ...attemptData,
         targetLanguages: test?.targetLanguages || attemptData?.targetLanguages,
-        creationMode: test?.creationMode || attemptData?.creationMode
+        creationMode: test?.creationMode || attemptData?.creationMode,
+        subjectSections: test?.subjectSections || attemptData?.subjectSections || []
       });
-      enterFullscreen();
+      // enterFullscreen() cannot be called post-await (not a direct user gesture).
+      // The proctoring useEffect and gate modal will handle fullscreen once activeAttempt is set.
 
       const remSec = attemptData.remainingTime ?? (attemptData.durationMinutes * 60);
       setTimeLeft(remSec);
@@ -12488,7 +14083,7 @@ function MainApp() {
 
                   <Text style={[styles.label, darkMode && styles.labelDark]}>Test Mode:</Text>
                   <View style={{ flexDirection: "row", gap: 6, marginBottom: 15 }}>
-                    {[{ label: "🌐 Online", value: "online" }, { label: "🎥 Recorded", value: "recorded" }].map(modeOpt => (
+                    {[{ label: "🌐 Online", value: "online" }, { label: "🎥 Recorded", value: "recorded" }, { label: "🌐+🎥 Both (Online + Recorded)", value: "both" }].map(modeOpt => (
                       <TouchableOpacity key={modeOpt.value} onPress={() => setNewTest({ ...newTest, testMode: modeOpt.value })} style={{ flex: 1, paddingVertical: 10, borderRadius: 8, backgroundColor: (newTest.testMode || "online") === modeOpt.value ? "#c62828" : (darkMode ? "#2a2a2a" : "#f5f5f5"), borderWidth: 1, borderColor: (newTest.testMode || "online") === modeOpt.value ? "#c62828" : (darkMode ? "#444" : "#e0e0e0"), alignItems: "center" }}>
                         <Text style={{ fontSize: 11, fontWeight: "bold", color: (newTest.testMode || "online") === modeOpt.value ? "#fff" : (darkMode ? "#aaa" : "#555") }}>{modeOpt.label}</Text>
                       </TouchableOpacity>
@@ -12565,6 +14160,14 @@ function MainApp() {
                         );
                       })()}
                     </>
+                  )}
+
+                  {/* Show Subject Sections & Question Ranges ONLY for Mock Test */}
+                  {(newTest.testType || "daily") === "mock" && (
+                    renderMockSubjectSectionsConfigurator(
+                      newTest.subjectSections || [],
+                      (updated) => setNewTest({ ...newTest, subjectSections: updated })
+                    )
                   )}
 
                   <Text style={[styles.label, darkMode && styles.labelDark]}>Test Description:</Text>
@@ -12705,6 +14308,61 @@ function MainApp() {
                     onChange={(t: string) => setNewTest({ ...newTest, endTime: t })}
                     darkMode={darkMode}
                   />
+
+                  {/* Scheduling Mode: Fixed vs Flexible */}
+                  <View style={{ backgroundColor: darkMode ? "#1a1a2e" : "#f0f4ff", padding: 12, borderRadius: 10, marginBottom: 15, borderLeftWidth: 3, borderLeftColor: "#5c6bc0" }}>
+                    <Text style={{ fontWeight: "bold", color: darkMode ? "#9fa8da" : "#3949ab", fontSize: 12, marginBottom: 4 }}>SCHEDULING MODE</Text>
+                    <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#555", marginBottom: 10 }}>
+                      {(newTest.schedulingMode || "fixed") === "fixed"
+                        ? "Fixed: Students must wait until the exact start time (Waiting Room). Test expires at end time."
+                        : "Flexible: Students can start anytime within the window. Each student gets the full duration from when they begin."}
+                    </Text>
+                    <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
+                      {[{ label: "🔒 Fixed", value: "fixed" }, { label: "🕐 Flexible", value: "flexible" }].map(opt => (
+                        <TouchableOpacity
+                          key={opt.value}
+                          onPress={() => setNewTest({ ...newTest, schedulingMode: opt.value })}
+                          style={{
+                            flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: "center",
+                            backgroundColor: (newTest.schedulingMode || "fixed") === opt.value ? "#5c6bc0" : (darkMode ? "#2a2a2a" : "#fff"),
+                            borderWidth: 1,
+                            borderColor: (newTest.schedulingMode || "fixed") === opt.value ? "#5c6bc0" : (darkMode ? "#444" : "#ddd")
+                          }}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: "bold", color: (newTest.schedulingMode || "fixed") === opt.value ? "#fff" : (darkMode ? "#aaa" : "#555") }}>{opt.label}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    {/* Individual Test Duration Input Box - Only for Flexible mode */}
+                    {(newTest.schedulingMode || "fixed") === "flexible" && (
+                      <View style={{ marginTop: 6, paddingTop: 10, borderTopWidth: 1, borderTopColor: darkMode ? "#333" : "#e0e0e0" }}>
+                      <Text style={{ fontSize: 11, fontWeight: "bold", color: darkMode ? "#9fa8da" : "#3949ab", marginBottom: 4 }}>
+                        Test Duration (in Minutes):
+                      </Text>
+                      <TextInput
+                        style={{
+                          backgroundColor: darkMode ? "#2a2a2a" : "#fff",
+                          borderColor: darkMode ? "#444" : "#ccc",
+                          borderWidth: 1,
+                          borderRadius: 6,
+                          paddingHorizontal: 10,
+                          paddingVertical: 8,
+                          color: darkMode ? "#fff" : "#000",
+                          fontSize: 13
+                        }}
+                        placeholder="e.g. 120 (for 2 hours)"
+                        placeholderTextColor={darkMode ? "#888" : "#999"}
+                        keyboardType="numeric"
+                        value={newTest.duration ? String(newTest.duration) : ""}
+                        onChangeText={(t) => setNewTest({ ...newTest, duration: t })}
+                      />
+                      <Text style={{ fontSize: 10, color: darkMode ? "#aaa" : "#777", marginTop: 4 }}>
+                        For flexible tests, students get this exact duration (e.g. 120 mins) from the moment they click Start within the availability window.
+                      </Text>
+                    </View>
+                  )}
+                  </View>
 
                   {/* Feedback Settings */}
                   <View style={{ backgroundColor: darkMode ? "#1a1a1a" : "#f5f5f5", padding: 12, borderRadius: 10, marginBottom: 15, borderLeftWidth: 3, borderLeftColor: "#e65100", flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
@@ -13618,7 +15276,7 @@ function MainApp() {
                     onChangeText={txt => setLiveClassForm({ ...liveClassForm, title: txt })}
                   />
 
-                  <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Description *</Text>
+                  <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Description (Optional)</Text>
                   <TextInput
                     style={[styles.input, { height: 50 }, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444", color: "#e0e0e0" }]}
                     placeholder="Provide details about the session..."
@@ -14101,7 +15759,7 @@ function MainApp() {
                     onChangeText={txt => setRecordedClassForm({ ...recordedClassForm, title: txt })}
                   />
 
-                  <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Description *</Text>
+                  <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Description (Optional)</Text>
                   <TextInput
                     style={[styles.input, { height: 50 }, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444", color: "#e0e0e0" }]}
                     placeholder="Summarize the lecture content..."
@@ -15096,7 +16754,7 @@ function MainApp() {
                     onChangeText={txt => setLiveClassForm({ ...liveClassForm, title: txt })}
                   />
 
-                  <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Description *</Text>
+                  <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Description (Optional)</Text>
                   <TextInput
                     style={[styles.input, { height: 50 }, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444", color: "#e0e0e0" }]}
                     placeholder="Provide details about the session..."
@@ -15418,7 +17076,7 @@ function MainApp() {
                     onChangeText={txt => setRecordedClassForm({ ...recordedClassForm, title: txt })}
                   />
 
-                  <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Description *</Text>
+                  <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Description (Optional)</Text>
                   <TextInput
                     style={[styles.input, { height: 50 }, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444", color: "#e0e0e0" }]}
                     placeholder="Summarize the lecture content..."
@@ -16958,17 +18616,28 @@ function MainApp() {
                       );
                     }
 
-                    if (selectedDailyContentPreview.type === "pdf" && !isAdmin && !displaySrc.includes("drive.google.com")) {
-                      displaySrc = `${displaySrc}#toolbar=0`;
-                    }
                     if (selectedDailyContentPreview.type === "image") {
                       const imgSrc = driveId
                         ? `https://lh3.googleusercontent.com/d/${driveId}`
                         : displaySrc;
                       return <WebDailyImageZoomView imgSrc={imgSrc} alt={selectedDailyContentPreview.title} driveId={driveId} darkMode={darkMode} />;
                     }
+                    if (selectedDailyContentPreview.type === "pdf") {
+                      return (
+                        <View style={{ flex: 1, width: "100%", height: "100%" }}>
+                          <Suspense fallback={
+                            <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: darkMode ? "#111" : "#2a2a2a" }}>
+                              <ActivityIndicator size="large" color="#c62828" />
+                              <Text style={{ color: "#fff", marginTop: 10 }}>Loading Secure PDF Viewer...</Text>
+                            </View>
+                          }>
+                            <SecurePDFViewer url={displaySrc} />
+                          </Suspense>
+                        </View>
+                      );
+                    }
 
-                    // Ensure Google Drive file URLs are converted to /preview embed format
+                    // Fallback for non-PDF files / embeds
                     const isDriveUrl = displaySrc.includes("drive.google.com") || displaySrc.includes("docs.google.com");
                     if (isDriveUrl && !displaySrc.includes("/preview") && !displaySrc.includes("/embeddedfolderview")) {
                       displaySrc = formatGoogleDriveUrl(displaySrc);
@@ -16984,17 +18653,6 @@ function MainApp() {
                           allowFullScreen
                           referrerPolicy="no-referrer-when-downgrade"
                         />
-                        {isDriveUrl && (
-                          <View style={{ position: "absolute", bottom: 12, right: 12 }}>
-                            <TouchableOpacity
-                              onPress={() => { if (typeof window !== "undefined") window.open(displaySrc.replace("/preview", "/view"), "_blank"); }}
-                              style={{ backgroundColor: "#1a73e8", paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8, flexDirection: "row", alignItems: "center", gap: 6 }}
-                            >
-                              <Ionicons name="open-outline" size={14} color="#fff" />
-                              <Text style={{ color: "#fff", fontSize: 12, fontWeight: "bold" }}>Open in Google Drive</Text>
-                            </TouchableOpacity>
-                          </View>
-                        )}
                       </View>
                     );
                   })()}
@@ -17031,16 +18689,29 @@ function MainApp() {
     const navigateTo = (idx: number) => {
       setCurrentQIdx(idx);
       setExploredQuestions(prev => { const s = new Set(prev); s.add(idx); return s; });
+      if (qNavScrollViewRef.current) {
+        const itemWidth = 38;
+        const targetX = Math.max(0, idx * itemWidth - 100);
+        qNavScrollViewRef.current.scrollTo({ x: targetX, animated: true });
+      }
     };
 
     return (
-      <SafeAreaView style={[styles.modalContainer, { flex: 1, backgroundColor: "#ffffff" }]}>
+      <SafeAreaView style={[styles.modalContainer, { flex: 1, backgroundColor: "#ffffff", position: "relative" }]}>
         <StatusBar style="light" />
+        <TestWatermarkOverlay />
 
         {/* ── EXAM HEADER ─────────────────────────────────── */}
         <View style={[styles.header, { backgroundColor: "#c62828", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 14, paddingVertical: 10, flexWrap: "wrap", gap: 8, zIndex: 99999, elevation: 99999, overflow: "visible" }]}>
-          <View style={{ flex: 1, minWidth: 150, marginRight: 8 }}>
-            <Text style={[styles.headerTitle, { fontSize: 13 }]} numberOfLines={1}>{activeAttempt.title || "Examination in Progress"}</Text>
+          <View style={{ flex: 1, minWidth: 220, marginRight: 8 }}>
+            <Text style={[styles.headerTitle, { fontSize: 13, fontWeight: "800" }]} numberOfLines={1}>
+              Nermai IAS Academy — {activeAttempt.title || "Examination in Progress"}
+            </Text>
+            {user && (
+              <Text style={{ fontSize: 11, color: "rgba(255, 255, 255, 0.95)", fontWeight: "600", marginTop: 2 }} numberOfLines={1}>
+                Student: {user.name || user.fullName || user.username || "Student"} {user.rollNumber ? `(${user.rollNumber})` : ''}
+              </Text>
+            )}
           </View>
 
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -17048,38 +18719,36 @@ function MainApp() {
             {(() => {
               // Determine allowed target languages
               let allowedLangs: string[] = [];
-              if (activeAttempt?.creationMode === "file") {
-                allowedLangs = ["English", "Tamil"];
-              } else if (activeAttempt?.targetLanguages && Array.isArray(activeAttempt.targetLanguages) && activeAttempt.targetLanguages.length > 0) {
-                allowedLangs = activeAttempt.targetLanguages;
-              } else {
-                // Dynamically detect genuine non-empty content from attemptQuestions
-                const hasEn = attemptQuestions.some((q: any) => {
-                  const txt = (q.questionEn || q.question || "").trim();
-                  const opt = (q.options?.[0] || "").trim();
-                  return txt.length > 0 || (opt.length > 0 && !opt.startsWith("Option"));
-                });
-                const hasTa = attemptQuestions.some((q: any) => {
-                  const txt = (q.questionTa || "").trim();
-                  const opt = (q.optionsTa?.[0] || "").trim();
-                  return txt.length > 0 || (opt.length > 0 && opt !== "விடை A" && opt !== (q.options?.[0] || ""));
-                });
-                const hasMl = attemptQuestions.some((q: any) => {
-                  const txt = (q.questionMl || "").trim();
-                  const opt = (q.optionsMl?.[0] || "").trim();
-                  return txt.length > 0 && opt.length > 0 && opt !== (q.options?.[0] || "") && opt !== (q.optionsTa?.[0] || "");
-                });
-                const hasTe = attemptQuestions.some((q: any) => {
-                  const txt = (q.questionTe || "").trim();
-                  const opt = (q.optionsTe?.[0] || "").trim();
-                  return txt.length > 0 && opt.length > 0 && opt !== (q.options?.[0] || "") && opt !== (q.optionsTa?.[0] || "");
-                });
-                
-                if (hasEn) allowedLangs.push("English");
-                if (hasTa) allowedLangs.push("Tamil");
-                if (hasMl) allowedLangs.push("Malayalam");
-                if (hasTe) allowedLangs.push("Telugu");
+              if (activeAttempt?.targetLanguages && Array.isArray(activeAttempt.targetLanguages) && activeAttempt.targetLanguages.length > 0) {
+                allowedLangs = [...activeAttempt.targetLanguages];
               }
+
+              // Dynamically detect genuine non-empty content from attemptQuestions
+              const hasEn = attemptQuestions.some((q: any) => {
+                const txt = (q.questionEn || q.question || "").trim();
+                const opt = (q.options?.[0] || "").trim();
+                return txt.length > 0 || (opt.length > 0 && !opt.startsWith("Option"));
+              });
+              const hasTa = attemptQuestions.some((q: any) => {
+                const txt = (q.questionTa || "").trim();
+                const opt = (q.optionsTa?.[0] || "").trim();
+                return txt.length > 0 || opt.length > 0;
+              });
+              const hasMl = attemptQuestions.some((q: any) => {
+                const txt = (q.questionMl || "").trim();
+                const opt = (q.optionsMl?.[0] || "").trim();
+                return txt.length > 0 || opt.length > 0;
+              });
+              const hasTe = attemptQuestions.some((q: any) => {
+                const txt = (q.questionTe || "").trim();
+                const opt = (q.optionsTe?.[0] || "").trim();
+                return txt.length > 0 || opt.length > 0;
+              });
+              
+              if (hasEn && !allowedLangs.includes("English")) allowedLangs.push("English");
+              if (hasTa && !allowedLangs.includes("Tamil")) allowedLangs.push("Tamil");
+              if (hasMl && !allowedLangs.includes("Malayalam")) allowedLangs.push("Malayalam");
+              if (hasTe && !allowedLangs.includes("Telugu")) allowedLangs.push("Telugu");
 
               if (allowedLangs.length === 0) {
                 allowedLangs = ["English", "Tamil"];
@@ -17092,12 +18761,16 @@ function MainApp() {
               const isTe = allowedSet.has("Telugu");
 
               const allPossibleOptions = [
+                { key: "all", label: "All Selected Languages 🌐", req: allowedSet.size >= 3 },
+                { key: "en-ta-ml-te", label: "All 4 Languages (EN+TA+ML+TE) 🇮🇳", req: isEn && isTa && isMl && isTe },
+                { key: "en-ta-ml", label: "English + Tamil + Malayalam 🇮🇳", req: isEn && isTa && isMl },
+                { key: "en-ta-te", label: "English + Tamil + Telugu 🇮🇳", req: isEn && isTa && isTe },
                 { key: "en-ta", label: "English + Tamil 🇮🇳", req: isEn && isTa },
+                { key: "en-ml", label: "English + Malayalam 🇮🇳", req: isEn && isMl },
+                { key: "en-te", label: "English + Telugu 🇮🇳", req: isEn && isTe },
                 { key: "en", label: "English Only 🇬🇧", req: isEn },
                 { key: "ta", label: "Tamil Only 🇮🇳", req: isTa },
-                { key: "en-ml", label: "English + Malayalam 🇮🇳", req: isEn && isMl },
                 { key: "ml", label: "Malayalam Only 🇮🇳", req: isMl },
-                { key: "en-te", label: "English + Telugu 🇮🇳", req: isEn && isTe },
                 { key: "te", label: "Telugu Only 🇮🇳", req: isTe }
               ];
 
@@ -17108,6 +18781,10 @@ function MainApp() {
               const activeLangKey = validOptionKeys.includes(testLangFilter) ? testLangFilter : (validOptionKeys[0] || "en-ta");
 
               const mapping: Record<string, string> = {
+                "all": "All Selected Languages 🌐",
+                "en-ta-ml-te": "All 4 Languages 🇮🇳",
+                "en-ta-ml": "English + Tamil + Malayalam 🇮🇳",
+                "en-ta-te": "English + Tamil + Telugu 🇮🇳",
                 "en-ta": "English + Tamil 🇮🇳",
                 "en": "English Only 🇬🇧",
                 "ta": "Tamil Only 🇮🇳",
@@ -17241,7 +18918,64 @@ function MainApp() {
         </Modal>
 
         {attemptQuestions[currentQIdx] ? (
-          <View style={{ flex: 1, padding: 20, backgroundColor: "#ffffff" }}>
+          <View style={{ flex: 1, padding: 20, backgroundColor: "#ffffff", position: "relative" }}>
+            {/* Sections / Subjects Top Bar if Mock Test has Subject Sections */}
+            {(() => {
+              const activeSections: Array<{ subject: string; fromQ: number; toQ: number }> =
+                (activeAttempt?.subjectSections && Array.isArray(activeAttempt.subjectSections) && activeAttempt.subjectSections.length > 0)
+                  ? activeAttempt.subjectSections
+                  : (tests.find((t: any) => t.id === activeAttempt?.testId)?.subjectSections || []);
+
+              if (!activeSections || activeSections.length === 0) return null;
+
+              const currentQNum = currentQIdx + 1;
+
+              return (
+                <View style={{ marginBottom: 12, paddingBottom: 8, borderBottomWidth: 1, borderColor: "#f1f5f9" }}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <Text style={{ fontSize: 11, fontWeight: "bold", color: "#64748b" }}>SECTIONS / SUBJECTS:</Text>
+                    <Text style={{ fontSize: 10, color: "#94a3b8", fontWeight: "600" }}>Tap section to jump</Text>
+                  </View>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: "row" }}>
+                    {activeSections.map((sec, secI) => {
+                      const isSecActive = currentQNum >= Number(sec.fromQ) && currentQNum <= Number(sec.toQ);
+                      return (
+                        <TouchableOpacity
+                          key={secI}
+                          onPress={() => navigateTo(Math.max(0, Number(sec.fromQ) - 1))}
+                          style={{
+                            paddingHorizontal: 12,
+                            paddingVertical: 6,
+                            borderRadius: 20,
+                            backgroundColor: isSecActive ? "#c62828" : "#f1f5f9",
+                            borderWidth: 1,
+                            borderColor: isSecActive ? "#c62828" : "#cbd5e1",
+                            flexDirection: "row",
+                            alignItems: "center",
+                            gap: 6,
+                            marginRight: 8
+                          }}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: "bold", color: isSecActive ? "#ffffff" : "#1e293b" }}>
+                            {sec.subject}
+                          </Text>
+                          <View style={{
+                            backgroundColor: isSecActive ? "rgba(255,255,255,0.25)" : "#e2e8f0",
+                            paddingHorizontal: 6,
+                            paddingVertical: 2,
+                            borderRadius: 10
+                          }}>
+                            <Text style={{ fontSize: 10, fontWeight: "bold", color: isSecActive ? "#ffffff" : "#475569" }}>
+                              Q{sec.fromQ}–{sec.toQ}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              );
+            })()}
 
             {/* Question Quick Navigation Grid */}
             <View style={{ marginBottom: 12 }}>
@@ -17251,7 +18985,7 @@ function MainApp() {
                   {exploredQuestions.size}/{attemptQuestions.length} visited
                 </Text>
               </View>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: "row", maxHeight: 40 }}>
+              <ScrollView ref={qNavScrollViewRef} horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: "row", maxHeight: 40 }}>
                 {attemptQuestions.map((_, qIdx) => {
                   const isAnswered = selectedAnswers[attemptQuestions[qIdx].id] !== undefined;
                   const isActive = qIdx === currentQIdx;
@@ -17288,10 +19022,29 @@ function MainApp() {
             <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={true} contentContainerStyle={{ paddingBottom: 20 }}>
 
 
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <Text style={{ color: "#c62828", fontWeight: "bold", fontSize: 13 }}>
-                  QUESTION {currentQIdx + 1} OF {attemptQuestions.length}
-                </Text>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 6 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <Text style={{ color: "#c62828", fontWeight: "bold", fontSize: 13 }}>
+                    QUESTION {currentQIdx + 1} OF {attemptQuestions.length}
+                  </Text>
+                  {(() => {
+                    const activeSections: Array<{ subject: string; fromQ: number; toQ: number }> =
+                      (activeAttempt?.subjectSections && Array.isArray(activeAttempt.subjectSections) && activeAttempt.subjectSections.length > 0)
+                        ? activeAttempt.subjectSections
+                        : (tests.find((t: any) => t.id === activeAttempt?.testId)?.subjectSections || []);
+                    const currentQNum = currentQIdx + 1;
+                    const matchedSec = activeSections.find(s => currentQNum >= Number(s.fromQ) && currentQNum <= Number(s.toQ));
+                    if (!matchedSec) return null;
+                    return (
+                      <View style={{ backgroundColor: "#eff6ff", borderColor: "#bfdbfe", borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 4 }}>
+                        <Ionicons name="bookmark" size={11} color="#1d4ed8" />
+                        <Text style={{ color: "#1d4ed8", fontSize: 11, fontWeight: "bold" }}>
+                          {matchedSec.subject} (Q{matchedSec.fromQ}–{matchedSec.toQ})
+                        </Text>
+                      </View>
+                    );
+                  })()}
+                </View>
                 <TouchableOpacity
                   onPress={() => handleReportQuestion(activeAttempt.testId, currentQIdx)}
                   style={{
@@ -17317,37 +19070,24 @@ function MainApp() {
               {(() => {
                 const currentQ = attemptQuestions[currentQIdx];
                 const filter = testLangFilter || "en-ta";
-                const showEn = filter.includes("en");
-                const showTa = filter.includes("ta");
-                const showMl = filter.includes("ml");
-                const showTe = filter.includes("te");
+                const showEn = filter === "all" || filter.includes("en");
+                const showTa = filter === "all" || filter.includes("ta");
+                const showMl = filter === "all" || filter.includes("ml");
+                const showTe = filter === "all" || filter.includes("te");
 
                 return (
-                  <View style={{ marginBottom: 12, gap: 4 }}>
+                  <View style={{ marginBottom: 14, gap: 10 }}>
                     {showEn && (currentQ.question || currentQ.questionEn) && (
-                      <Text style={{ fontSize: 17, fontWeight: "bold", color: "#212121" }}>
-                        {currentQ.questionEn || currentQ.question}
-                      </Text>
+                      renderFormattedQuestion(currentQ.questionEn || currentQ.question, false, 17)
                     )}
                     {showTa && currentQ.questionTa && (
-                      <Text style={{ fontSize: 15, fontWeight: "500", color: "#455a64", fontStyle: "italic" }}>
-                        {currentQ.questionTa}
-                      </Text>
+                      renderFormattedQuestion(currentQ.questionTa, true, 16)
                     )}
                     {showMl && currentQ.questionMl && (
-                      <Text style={{ fontSize: 15, fontWeight: "500", color: "#00838f", fontStyle: "italic" }}>
-                        {currentQ.questionMl}
-                      </Text>
+                      renderFormattedQuestion(currentQ.questionMl, true, 16)
                     )}
                     {showTe && currentQ.questionTe && (
-                      <Text style={{ fontSize: 15, fontWeight: "500", color: "#f57f17", fontStyle: "italic" }}>
-                        {currentQ.questionTe}
-                      </Text>
-                    )}
-                    {currentQ.formula && (
-                      <Text style={{ fontSize: 13, fontWeight: "bold", color: "#512da8", marginTop: 4 }}>
-                        Formula: {currentQ.formula}
-                      </Text>
+                      renderFormattedQuestion(currentQ.questionTe, true, 16)
                     )}
                   </View>
                 );
@@ -17380,10 +19120,10 @@ function MainApp() {
                   const currentQ = attemptQuestions[currentQIdx];
                   const selected = selectedAnswers[currentQ.id] === opt;
                   const filter = testLangFilter || "en-ta";
-                  const showEn = filter.includes("en");
-                  const showTa = filter.includes("ta");
-                  const showMl = filter.includes("ml");
-                  const showTe = filter.includes("te");
+                  const showEn = filter === "all" || filter.includes("en");
+                  const showTa = filter === "all" || filter.includes("ta");
+                  const showMl = filter === "all" || filter.includes("ml");
+                  const showTe = filter === "all" || filter.includes("te");
 
                   const optTa = currentQ.optionsTa?.[oIdx];
                   const optMl = currentQ.optionsMl?.[oIdx];
@@ -17402,7 +19142,7 @@ function MainApp() {
                           </Text>
                         )}
                         {showTa && optTa && (
-                          <Text style={{ color: selected ? "#e0f2f1" : "#546e7a", fontSize: 13, fontStyle: "italic" }}>
+                          <Text style={{ color: selected ? "#ffffff" : "#455a64", fontSize: 13, fontStyle: "italic" }}>
                             {!showEn ? `${String.fromCharCode(65 + oIdx)}. ${optTa}` : optTa}
                           </Text>
                         )}
@@ -17524,9 +19264,15 @@ function MainApp() {
   // ────────────────────────────────────────────────
   if (studyModalVisible && studyModeData) {
     const sqs: any[] = studyModeData.questions || [];
+    const studySections: Array<{ subject: string; fromQ: number; toQ: number }> =
+      (studyModeData?.subjectSections && Array.isArray(studyModeData.subjectSections) && studyModeData.subjectSections.length > 0)
+        ? studyModeData.subjectSections
+        : (tests.find((t: any) => t.id === studyModeData?.testId)?.subjectSections || []);
+
     return (
-      <SafeAreaView style={[styles.modalContainer, { flex: 1, backgroundColor: "#ffffff" }]}>
+      <SafeAreaView style={[styles.modalContainer, { flex: 1, backgroundColor: "#ffffff", position: "relative" }]}>
         <StatusBar style="dark" />
+        <TestWatermarkOverlay />
         <View style={{ backgroundColor: "#5c6bc0", padding: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
           <View style={{ flex: 1 }}>
             <Text style={{ color: "#fff", fontWeight: "900", fontSize: 15 }} numberOfLines={1}>{studyModeData.testTitle || "Past Test Study"}</Text>
@@ -17542,7 +19288,40 @@ function MainApp() {
           </TouchableOpacity>
         </View>
 
+        {/* Mode Toggle Bar: With Answers / Without Answers */}
+        <View style={{ backgroundColor: "#e8eaf6", paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderColor: "#c5cae9", flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+          <Text style={{ fontSize: 12, fontWeight: "bold", color: "#3f51b5" }}>Mode:</Text>
+          <View style={{ flexDirection: "row", borderRadius: 20, overflow: "hidden", borderWidth: 1.5, borderColor: "#3f51b5", backgroundColor: "#fff" }}>
+            <TouchableOpacity
+              onPress={() => setStudyShowAnswers(true)}
+              style={{ paddingHorizontal: 16, paddingVertical: 6, backgroundColor: studyShowAnswers ? "#3f51b5" : "transparent" }}
+            >
+              <Text style={{ fontSize: 11, fontWeight: "bold", color: studyShowAnswers ? "#fff" : "#3f51b5" }}>With Answers</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setStudyShowAnswers(false)}
+              style={{ paddingHorizontal: 16, paddingVertical: 6, backgroundColor: !studyShowAnswers ? "#3f51b5" : "transparent" }}
+            >
+              <Text style={{ fontSize: 11, fontWeight: "bold", color: !studyShowAnswers ? "#fff" : "#3f51b5" }}>Without Answers</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         <ScrollView style={{ flex: 1, backgroundColor: "#f8f8ff" }} contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+          {studySections.length > 0 && (
+            <View style={{ marginBottom: 14, backgroundColor: "#ffffff", padding: 12, borderRadius: 10, borderWidth: 1, borderColor: "#e0e0e0" }}>
+              <Text style={{ fontSize: 11, fontWeight: "bold", color: "#5c6bc0", marginBottom: 6 }}>SUBJECT SECTIONS:</Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                {studySections.map((sec: any, secI: number) => (
+                  <View key={secI} style={{ backgroundColor: "#ede7f6", borderColor: "#d1c4e9", borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 14, flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Text style={{ fontSize: 11, fontWeight: "bold", color: "#4527a0" }}>{sec.subject}</Text>
+                    <Text style={{ fontSize: 10, color: "#673ab7", fontWeight: "600" }}>Q{sec.fromQ}–{sec.toQ}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
           {sqs.length === 0 ? (
             <View style={{ padding: 40, alignItems: "center" }}>
               <Ionicons name="document-text-outline" size={48} color="#9e9e9e" />
@@ -17553,18 +19332,28 @@ function MainApp() {
               const correct = q.correctAnswer || "";
               const correctIdx = q.options ? q.options.findIndex((o: string) => o === correct || String.fromCharCode(65 + q.options.indexOf(o)) === correct) : -1;
               const correctLetter = correct.length === 1 && /^[A-D]$/i.test(correct) ? correct.toUpperCase() : null;
+              const qNum = idx + 1;
+              const matchedStudySec = studySections.find((s: any) => qNum >= Number(s.fromQ) && qNum <= Number(s.toQ));
 
               return (
                 <View key={q.id || idx} style={{ backgroundColor: "#ffffff", borderRadius: 12, marginBottom: 16, padding: 16, shadowColor: "#000", shadowOpacity: 0.06, shadowOffset: { width: 0, height: 2 }, shadowRadius: 4, elevation: 2, borderLeftWidth: 4, borderLeftColor: "#5c6bc0" }}>
+                  {matchedStudySec && (
+                    <View style={{ backgroundColor: "#ede7f6", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, alignSelf: "flex-start", marginBottom: 8, flexDirection: "row", alignItems: "center", gap: 4 }}>
+                      <Ionicons name="book-outline" size={11} color="#4527a0" />
+                      <Text style={{ color: "#4527a0", fontSize: 11, fontWeight: "bold" }}>
+                        {matchedStudySec.subject} (Q{matchedStudySec.fromQ}–{matchedStudySec.toQ})
+                      </Text>
+                    </View>
+                  )}
                   {/* Question header */}
                   <View style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: 10 }}>
                     <View style={{ backgroundColor: "#5c6bc0", borderRadius: 16, width: 28, height: 28, alignItems: "center", justifyContent: "center", marginRight: 10, marginTop: 1 }}>
                       <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 12 }}>{idx + 1}</Text>
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 15, fontWeight: "700", color: "#212121", lineHeight: 22 }}>{q.question}</Text>
+                      {renderFormattedQuestion(q.question, false, 15)}
                       {q.questionTa ? (
-                        <Text style={{ fontSize: 13, color: "#546e7a", fontStyle: "italic", marginTop: 4, lineHeight: 20 }}>{q.questionTa}</Text>
+                        renderFormattedQuestion(q.questionTa, true, 14)
                       ) : null}
                     </View>
                   </View>
@@ -17576,6 +19365,7 @@ function MainApp() {
                       const isCorrect = correctLetter
                         ? letter === correctLetter
                         : opt === correct;
+                      const showGreenOption = studyShowAnswers && isCorrect;
                       return (
                         <View
                           key={oIdx}
@@ -17584,28 +19374,28 @@ function MainApp() {
                             alignItems: "flex-start",
                             padding: 10,
                             borderRadius: 8,
-                            backgroundColor: isCorrect ? "#e8f5e9" : "#f5f5f5",
-                            borderWidth: isCorrect ? 1.5 : 1,
-                            borderColor: isCorrect ? "#2e7d32" : "#e0e0e0"
+                            backgroundColor: showGreenOption ? "#e8f5e9" : "#f5f5f5",
+                            borderWidth: showGreenOption ? 1.5 : 1,
+                            borderColor: showGreenOption ? "#2e7d32" : "#e0e0e0"
                           }}
                         >
-                          <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: isCorrect ? "#2e7d32" : "#e0e0e0", alignItems: "center", justifyContent: "center", marginRight: 8, marginTop: 1 }}>
-                            <Text style={{ fontSize: 11, fontWeight: "bold", color: isCorrect ? "#fff" : "#757575" }}>{letter}</Text>
+                          <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: showGreenOption ? "#2e7d32" : "#e0e0e0", alignItems: "center", justifyContent: "center", marginRight: 8, marginTop: 1 }}>
+                            <Text style={{ fontSize: 11, fontWeight: "bold", color: showGreenOption ? "#fff" : "#757575" }}>{letter}</Text>
                           </View>
                           <View style={{ flex: 1 }}>
-                            <Text style={{ fontSize: 13, fontWeight: isCorrect ? "700" : "400", color: isCorrect ? "#1b5e20" : "#333" }}>{opt}</Text>
+                            <Text style={{ fontSize: 13, fontWeight: showGreenOption ? "700" : "400", color: showGreenOption ? "#1b5e20" : "#333" }}>{opt}</Text>
                             {q.optionsTa && q.optionsTa[oIdx] ? (
-                              <Text style={{ fontSize: 12, color: isCorrect ? "#2e7d32" : "#757575", fontStyle: "italic", marginTop: 2 }}>{q.optionsTa[oIdx]}</Text>
+                              <Text style={{ fontSize: 12, color: showGreenOption ? "#2e7d32" : "#757575", fontStyle: "italic", marginTop: 2 }}>{q.optionsTa[oIdx]}</Text>
                             ) : null}
                           </View>
-                          {isCorrect && <Ionicons name="checkmark-circle" size={20} color="#2e7d32" style={{ marginLeft: 4 }} />}
+                          {showGreenOption && <Ionicons name="checkmark-circle" size={20} color="#2e7d32" style={{ marginLeft: 4 }} />}
                         </View>
                       );
                     })}
                   </View>
 
                   {/* Correct Answer Badge */}
-                  {correct ? (
+                  {studyShowAnswers && correct ? (
                     <View style={{ marginTop: 10, backgroundColor: "#e8f5e9", borderRadius: 8, padding: 8, flexDirection: "row", alignItems: "center", gap: 6 }}>
                       <Ionicons name="checkmark-circle" size={16} color="#2e7d32" />
                       <Text style={{ fontSize: 12, color: "#1b5e20", fontWeight: "700" }}>Correct Answer: {correct}</Text>
@@ -17613,7 +19403,7 @@ function MainApp() {
                   ) : null}
 
                   {/* Explanation */}
-                  {q.explanation ? (
+                  {studyShowAnswers && q.explanation ? (
                     <View style={{ marginTop: 8, backgroundColor: "#fff8e1", borderRadius: 8, padding: 10, borderLeftWidth: 3, borderLeftColor: "#f9a825" }}>
                       <Text style={{ fontSize: 11, fontWeight: "700", color: "#f57f17", marginBottom: 4 }}>💡 EXPLANATION</Text>
                       <Text style={{ fontSize: 13, color: "#5d4037", lineHeight: 19 }}>{q.explanation}</Text>
@@ -17637,8 +19427,9 @@ function MainApp() {
     const status = reviewData.status || "fail";
 
     return (
-      <SafeAreaView style={[styles.modalContainer, { flex: 1, backgroundColor: "#ffffff" }]}>
+      <SafeAreaView style={[styles.modalContainer, { flex: 1, backgroundColor: "#ffffff", position: "relative" }]}>
         <StatusBar style="light" />
+        <TestWatermarkOverlay />
         <View style={[styles.header, { backgroundColor: "#2e7d32" }]}>
           <Text style={styles.headerTitle}>{reviewData.testTitle || "Review Answers"}</Text>
           <TouchableOpacity onPress={() => { setReviewMode(false); setReviewData(null); }} style={{ padding: 8 }}>
@@ -17680,22 +19471,117 @@ function MainApp() {
               </TouchableOpacity>
             </View>
           </View>
+
+          {/* Quick Filter Tabs: All, Correct, Wrong, Unattempted */}
+          {(() => {
+            const allQs = reviewData.questions || [];
+            const totalCount = allQs.length;
+            const correctCount = allQs.filter((q: any) => q.isCorrect && q.selectedAnswer !== null && q.selectedAnswer !== undefined && q.selectedAnswer !== '').length;
+            const wrongCount = allQs.filter((q: any) => !q.isCorrect && q.selectedAnswer !== null && q.selectedAnswer !== undefined && q.selectedAnswer !== '').length;
+            const unattemptedCount = allQs.filter((q: any) => q.selectedAnswer === null || q.selectedAnswer === undefined || q.selectedAnswer === '').length;
+
+            return (
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
+                <TouchableOpacity
+                  onPress={() => setReviewQuestionFilter('all')}
+                  style={{
+                    paddingHorizontal: 12,
+                    paddingVertical: 5,
+                    borderRadius: 16,
+                    backgroundColor: reviewQuestionFilter === 'all' ? '#1565c0' : '#ffffff',
+                    borderWidth: 1,
+                    borderColor: reviewQuestionFilter === 'all' ? '#1565c0' : '#cbd5e1'
+                  }}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: "bold", color: reviewQuestionFilter === 'all' ? '#ffffff' : '#334155' }}>
+                    All ({totalCount})
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => setReviewQuestionFilter('correct')}
+                  style={{
+                    paddingHorizontal: 12,
+                    paddingVertical: 5,
+                    borderRadius: 16,
+                    backgroundColor: reviewQuestionFilter === 'correct' ? '#2e7d32' : '#ffffff',
+                    borderWidth: 1,
+                    borderColor: reviewQuestionFilter === 'correct' ? '#2e7d32' : '#a7f3d0'
+                  }}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: "bold", color: reviewQuestionFilter === 'correct' ? '#ffffff' : '#065f46' }}>
+                    Correct ({correctCount}) ✅
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => setReviewQuestionFilter('wrong')}
+                  style={{
+                    paddingHorizontal: 12,
+                    paddingVertical: 5,
+                    borderRadius: 16,
+                    backgroundColor: reviewQuestionFilter === 'wrong' ? '#c62828' : '#ffffff',
+                    borderWidth: 1,
+                    borderColor: reviewQuestionFilter === 'wrong' ? '#c62828' : '#fca5a5'
+                  }}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: "bold", color: reviewQuestionFilter === 'wrong' ? '#ffffff' : '#991b1b' }}>
+                    Wrong ({wrongCount}) ❌
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => setReviewQuestionFilter('unattempted')}
+                  style={{
+                    paddingHorizontal: 12,
+                    paddingVertical: 5,
+                    borderRadius: 16,
+                    backgroundColor: reviewQuestionFilter === 'unattempted' ? '#616161' : '#ffffff',
+                    borderWidth: 1,
+                    borderColor: reviewQuestionFilter === 'unattempted' ? '#616161' : '#cbd5e1'
+                  }}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: "bold", color: reviewQuestionFilter === 'unattempted' ? '#ffffff' : '#475569' }}>
+                    Unattempted ({unattemptedCount}) ⚪
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            );
+          })()}
         </View>
 
         <ScrollView style={{ flex: 1, backgroundColor: "#ffffff" }} contentContainerStyle={{ padding: 15 }}>
-          {!reviewData.questions || reviewData.questions.length === 0 ? (
-            <View style={{ padding: 20, alignItems: "center" }}>
-              <Text style={{ color: "#757575" }}>No questions available for review.</Text>
-            </View>
-          ) : (
-            reviewData.questions.map((q: any, idx: number) => {
+          {(() => {
+            const allQs = reviewData.questions || [];
+            const filteredQuestions = allQs.filter((q: any) => {
+              const isSkipped = q.selectedAnswer === null || q.selectedAnswer === undefined || q.selectedAnswer === "";
+              const isCorrect = q.isCorrect;
+              if (reviewQuestionFilter === 'correct') return isCorrect && !isSkipped;
+              if (reviewQuestionFilter === 'wrong') return !isCorrect && !isSkipped;
+              if (reviewQuestionFilter === 'unattempted') return isSkipped;
+              return true;
+            });
+
+            if (filteredQuestions.length === 0) {
+              return (
+                <View style={{ padding: 30, alignItems: "center" }}>
+                  <Text style={{ color: "#757575", fontWeight: "bold", fontSize: 13 }}>
+                    No questions found matching "{reviewQuestionFilter.toUpperCase()}" filter.
+                  </Text>
+                </View>
+              );
+            }
+
+            return filteredQuestions.map((q: any, idx: number) => {
+              const qOriginalIndex = allQs.findIndex((origQ: any) => origQ === q);
+              const displayQNum = qOriginalIndex !== -1 ? qOriginalIndex + 1 : idx + 1;
               const isCorrect = q.isCorrect;
               const isSkipped = q.selectedAnswer === null || q.selectedAnswer === undefined || q.selectedAnswer === "";
               const showGreenBorder = showAnswers && isCorrect && !isSkipped;
               const showRedBorder = showAnswers && !isCorrect && !isSkipped;
 
               return (
-                <View key={idx} style={{
+                <View key={q.id || idx} style={{
                   marginBottom: 20,
                   padding: 15,
                   borderRadius: 12,
@@ -17705,7 +19591,7 @@ function MainApp() {
                 }}>
                   <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                     <Text style={{ fontWeight: "bold", color: "#212121", fontSize: 13 }}>
-                      Question {idx + 1}
+                      Question {displayQNum}
                     </Text>
                     <View style={{
                       paddingHorizontal: 8,
@@ -17719,13 +19605,15 @@ function MainApp() {
                     </View>
                   </View>
 
-                  <Text style={{ fontSize: 15, fontWeight: "bold", color: "#212121", marginBottom: 6 }}>
-                    {q.questionText}
-                  </Text>
+                  {renderFormattedQuestion(q.questionText || q.question, false, 15)}
                   {q.questionTa ? (
-                    <Text style={{ fontSize: 14, fontWeight: "500", color: "#455a64", marginBottom: 10, fontStyle: "italic" }}>
-                      {q.questionTa}
-                    </Text>
+                    renderFormattedQuestion(q.questionTa, true, 14)
+                  ) : null}
+                  {q.questionMl ? (
+                    renderFormattedQuestion(q.questionMl, true, 14)
+                  ) : null}
+                  {q.questionTe ? (
+                    renderFormattedQuestion(q.questionTe, true, 14)
                   ) : null}
 
                   <View style={{ gap: 8, marginBottom: 10 }}>
@@ -17734,6 +19622,8 @@ function MainApp() {
                       const isSelected = q.selectedAnswer === letter || q.selectedAnswer === opt;
                       const isCorrectOption = q.correctAnswer === letter || q.correctAnswer === opt;
                       const optTa = q.optionsTa?.[oIdx];
+                      const optMl = q.optionsMl?.[oIdx];
+                      const optTe = q.optionsTe?.[oIdx];
 
                       let borderC = "#e0e0e0";
                       let bgC = "#ffffff";
@@ -17779,6 +19669,16 @@ function MainApp() {
                                 {optTa}
                               </Text>
                             ) : null}
+                            {optMl ? (
+                              <Text style={{ color: (showAnswers && isCorrectOption) ? "#00838f" : isSelected ? "#c62828" : "#00838f", fontSize: 13, marginTop: 2, fontStyle: "italic" }}>
+                                {optMl}
+                              </Text>
+                            ) : null}
+                            {optTe ? (
+                              <Text style={{ color: (showAnswers && isCorrectOption) ? "#f57f17" : isSelected ? "#c62828" : "#f57f17", fontSize: 13, marginTop: 2, fontStyle: "italic" }}>
+                                {optTe}
+                              </Text>
+                            ) : null}
                           </View>
                           {showAnswers && isCorrectOption && (
                             <Ionicons name="checkmark-circle" size={16} color="#2e7d32" />
@@ -17799,8 +19699,8 @@ function MainApp() {
                   )}
                 </View>
               );
-            })
-          )}
+            });
+          })()}
         </ScrollView>
         {renderTestFeedbackModal()}
         {renderUniversalImagePreviewModal()}
@@ -18684,9 +20584,199 @@ function MainApp() {
 
                 {isAdmin ? (
                   <View style={{ marginVertical: 12 }}>
+                    {/* ══════════════════════════════════════════════════════════════════
+                        1. LIVE STUDENT REQUESTS & ACTION CENTER (Option A - Real-Time)
+                    ══════════════════════════════════════════════════════════════════ */}
+                    <View style={{ marginBottom: 20 }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12, paddingHorizontal: 4 }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                          <View style={{
+                            width: 10, height: 10, borderRadius: 5,
+                            backgroundColor: adminAlerts.length > 0 ? "#e65100" : "#2e7d32"
+                          }} />
+                          <Ionicons name="notifications-outline" size={20} color={darkMode ? "#ffffff" : "#c62828"} />
+                          <Text style={{ fontSize: 16, fontWeight: "bold", color: darkMode ? "#ffffff" : "#1a237e" }}>
+                            Live Student Requests &amp; Actions
+                          </Text>
+                          <View style={{
+                            backgroundColor: adminAlerts.length > 0 ? "#c62828" : "#2e7d32",
+                            paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12
+                          }}>
+                            <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "bold" }}>
+                              {adminAlerts.length > 0 ? `${adminAlerts.length} Active` : "All Caught Up"}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {adminAlerts.length > 1 && (
+                          <TouchableOpacity
+                            onPress={handleClearAllAdminAlerts}
+                            style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, backgroundColor: darkMode ? "#333" : "#f5f5f5" }}
+                          >
+                            <Ionicons name="trash-outline" size={14} color="#757575" />
+                            <Text style={{ fontSize: 11, color: "#757575", fontWeight: "600" }}>Clear All</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+
+                      {/* Filter Chips if alerts exist */}
+                      {adminAlerts.length > 0 && (() => {
+                        const testCount = adminAlerts.filter(a => a.type === "offline_test").length;
+                        const profileCount = adminAlerts.filter(a => a.type === "profile_submission" || a.type === "profile_edit").length;
+                        const crmCount = adminAlerts.filter(a => a.type === "crm_inquiry" || a.type === "crm_admission").length;
+                        const feesCount = adminAlerts.filter(a => a.type === "payment").length;
+
+                        return (
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                            <View style={{ flexDirection: "row", gap: 8 }}>
+                              {[
+                                { key: "all", label: `All (${adminAlerts.length})` },
+                                { key: "test", label: `Test Requests (${testCount})`, count: testCount },
+                                { key: "profile", label: `Profiles (${profileCount})`, count: profileCount },
+                                { key: "crm", label: `CRM (${crmCount})`, count: crmCount },
+                                { key: "fees", label: `Fees (${feesCount})`, count: feesCount }
+                              ].map(f => {
+                                const active = adminAlertsFilter === f.key;
+                                return (
+                                  <TouchableOpacity
+                                    key={f.key}
+                                    onPress={() => setAdminAlertsFilter(f.key as any)}
+                                    style={{
+                                      paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16,
+                                      backgroundColor: active ? (darkMode ? "#c62828" : "#c62828") : (darkMode ? "#2a2a2a" : "#f0f0f0"),
+                                      borderWidth: 1, borderColor: active ? "#c62828" : (darkMode ? "#444" : "#e0e0e0")
+                                    }}
+                                  >
+                                    <Text style={{ fontSize: 12, fontWeight: active ? "bold" : "normal", color: active ? "#ffffff" : (darkMode ? "#b0bec5" : "#616161") }}>
+                                      {f.label}
+                                    </Text>
+                                  </TouchableOpacity>
+                                );
+                              })}
+                            </View>
+                          </ScrollView>
+                        );
+                      })()}
+
+                      {/* Dynamic Alert Cards */}
+                      {(() => {
+                        const filtered = adminAlerts.filter(a => {
+                          if (adminAlertsFilter === "test") return a.type === "offline_test";
+                          if (adminAlertsFilter === "profile") return a.type === "profile_submission" || a.type === "profile_edit";
+                          if (adminAlertsFilter === "crm") return a.type === "crm_inquiry" || a.type === "crm_admission";
+                          if (adminAlertsFilter === "fees") return a.type === "payment";
+                          return true;
+                        });
+
+                        if (filtered.length === 0) {
+                          return (
+                            <View style={{
+                              padding: 20, borderRadius: 14,
+                              backgroundColor: darkMode ? "#192d24" : "#e8f5e9",
+                              borderWidth: 1.5, borderColor: darkMode ? "#2e7d32" : "#c8e6c9",
+                              flexDirection: "row", alignItems: "center", gap: 14,
+                              marginBottom: 10
+                            }}>
+                              <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: "#2e7d32", alignItems: "center", justifyContent: "center" }}>
+                                <Ionicons name="checkmark-done" size={24} color="#ffffff" />
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <Text style={{ fontSize: 14, fontWeight: "bold", color: darkMode ? "#a5d6a7" : "#1b5e20" }}>
+                                  All Caught Up! No Pending Requests
+                                </Text>
+                                <Text style={{ fontSize: 12, color: darkMode ? "#c8e6c9" : "#388e3c", marginTop: 2, lineHeight: 17 }}>
+                                  When students request offline test attendance, submit complete profile verifications, or ask website inquiries, they will appear right here in real time. Once you review or dismiss them, they automatically clear.
+                                </Text>
+                              </View>
+                            </View>
+                          );
+                        }
+
+                        return (
+                          <View style={{ gap: 10, marginBottom: 10 }}>
+                            {filtered.map((alert: any) => {
+                              const isTest = alert.type === "offline_test";
+                              const isProfile = alert.type === "profile_submission" || alert.type === "profile_edit";
+                              const isCrm = alert.type === "crm_inquiry" || alert.type === "crm_admission";
+                              const isFee = alert.type === "payment";
+
+                              const themeColor = isTest ? "#7b1fa2" : isProfile ? "#e65100" : isCrm ? "#0288d1" : isFee ? "#2e7d32" : "#c62828";
+                              const bgColor = darkMode
+                                ? (isTest ? "#2a1b38" : isProfile ? "#332219" : isCrm ? "#192a3a" : isFee ? "#1b2e1e" : "#2a1a1a")
+                                : (isTest ? "#f3e5f5" : isProfile ? "#fff3e0" : isCrm ? "#e1f5fe" : isFee ? "#e8f5e9" : "#fff5f5");
+                              const borderColor = isTest ? "#ce93d8" : isProfile ? "#ffcc80" : isCrm ? "#81d4fa" : isFee ? "#a5d6a7" : "#ef9a9a";
+                              const iconName: any = isTest ? "school-outline" : isProfile ? "person-add-outline" : isCrm ? "chatbubble-ellipses-outline" : isFee ? "cash-outline" : "alert-circle-outline";
+                              const badgeLabel = isTest ? "TEST ATTENDANCE REQUEST" : (alert.type === "profile_edit" ? "PROFILE EDIT REQUEST" : isProfile ? "PROFILE VERIFICATION" : (alert.type === "crm_admission" ? "ADMISSION APPLICATION" : "CRM INQUIRY"));
+
+                              return (
+                                <View
+                                  key={alert.id}
+                                  style={{
+                                    backgroundColor: bgColor, borderRadius: 12, padding: 14,
+                                    borderLeftWidth: 5, borderLeftColor: themeColor,
+                                    borderWidth: 1, borderColor: borderColor,
+                                    shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1
+                                  }}
+                                >
+                                  {/* Top Row: Module Badge + Time + Dismiss */}
+                                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                                      <Ionicons name={iconName} size={15} color={themeColor} />
+                                      <Text style={{ fontWeight: "800", color: themeColor, fontSize: 10, letterSpacing: 0.5 }}>
+                                        {badgeLabel}
+                                      </Text>
+                                    </View>
+                                    <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                                      <Text style={{ fontSize: 11, color: darkMode ? "#bbb" : "#757575", fontWeight: "500" }}>
+                                        {formatAlertTime(alert.createdAt)}
+                                      </Text>
+                                      <TouchableOpacity
+                                        onPress={() => handleDismissAdminAlert(alert.id)}
+                                        style={{ padding: 4, borderRadius: 12, backgroundColor: darkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.06)" }}
+                                      >
+                                        <Ionicons name="close" size={14} color={darkMode ? "#ccc" : "#666"} />
+                                      </TouchableOpacity>
+                                    </View>
+                                  </View>
+
+                                  {/* Content Row */}
+                                  <Text style={{ fontSize: 14, fontWeight: "bold", color: darkMode ? "#ffffff" : "#212121", marginBottom: 2 }}>
+                                    {alert.title} — {alert.subtitle || alert.studentName || "Applicant"}
+                                  </Text>
+                                  <Text style={{ fontSize: 12, color: darkMode ? "#cfd8dc" : "#424242", lineHeight: 18, marginBottom: 10 }}>
+                                    {alert.message}
+                                  </Text>
+
+                                  {/* Bottom Actions Row */}
+                                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 8, borderTopWidth: 1, borderTopColor: darkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.06)", paddingTop: 8 }}>
+                                    <TouchableOpacity
+                                      onPress={() => handleDismissAdminAlert(alert.id)}
+                                      style={{ paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6, backgroundColor: darkMode ? "rgba(255,255,255,0.1)" : "#f0f0f0" }}
+                                    >
+                                      <Text style={{ fontSize: 11, fontWeight: "600", color: darkMode ? "#ccc" : "#616161" }}>Dismiss</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                      onPress={() => handleViewAdminAlert(alert)}
+                                      style={{ paddingVertical: 6, paddingHorizontal: 14, borderRadius: 6, backgroundColor: themeColor, flexDirection: "row", alignItems: "center", gap: 4 }}
+                                    >
+                                      <Text style={{ fontSize: 11, fontWeight: "bold", color: "#ffffff" }}>Review &amp; Action</Text>
+                                      <Ionicons name="arrow-forward" size={12} color="#ffffff" />
+                                    </TouchableOpacity>
+                                  </View>
+                                </View>
+                              );
+                            })}
+                          </View>
+                        );
+                      })()}
+                    </View>
+
+                    {/* ══════════════════════════════════════════════════════════════════
+                        2. ACADEMY MODULE SHORTCUTS & QUICK NAVIGATION (Preserved 100%)
+                    ══════════════════════════════════════════════════════════════════ */}
                     <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12, paddingHorizontal: 4 }}>
-                      <Ionicons name="flash-outline" size={18} color="#c62828" style={{ marginRight: 6 }} />
-                      <Text style={{ fontSize: 15, fontWeight: "bold", color: "#c62828" }}>Quick Access</Text>
+                      <Ionicons name="apps-outline" size={17} color="#c62828" style={{ marginRight: 6 }} />
+                      <Text style={{ fontSize: 14, fontWeight: "bold", color: darkMode ? "#ffffff" : "#424242" }}>Module Shortcuts &amp; Quick Access</Text>
                     </View>
                     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
                       <TouchableOpacity
@@ -19535,25 +21625,29 @@ function MainApp() {
                         });
 
                         const liveTests = filteredTests.filter((t: any) => {
-                          const startMs = t.startTime ? parseTestTimeMs(t.startTime) : 0;
+                          const startMs = t.startTime ? parseTestTimeMs(t.startTime) : (t.createdAt ? parseTestTimeMs(t.createdAt) : 0);
                           const durationMs = (t.durationMinutes ? Number(t.durationMinutes) : 60) * 60 * 1000;
-                          const endMs = t.endTime ? parseTestTimeMs(t.endTime) : (startMs ? startMs + durationMs : (t.createdAt ? parseTestTimeMs(t.createdAt) + durationMs : 0));
-                          if (startMs && now < startMs) return false; // not started yet
-                          if (endMs && now > endMs) return false; // already ended
-                          if (!isAdmin) {
-                            const hasCompleted = studentAttempts.some((a: any) =>
-                              String(a.testId) === String(t.id || t._id) && (a.status === "submitted" || a.status === "evaluated" || a.isSubmitted)
-                            );
-                            if (hasCompleted) return false;
-                          }
+                          const endMs = t.endTime ? parseTestTimeMs(t.endTime) : (startMs ? startMs + durationMs : 0);
+                          
+                          // If end time is past, it's ended (never LIVE)
+                          if (endMs > 0 && now > endMs) return false;
+                          
+                          // If start time is in future, it's scheduled (not LIVE)
+                          if (startMs > 0 && now < startMs) return false;
+
+                          // Must have at least a valid start or end timestamp
+                          if (startMs <= 0 && endMs <= 0) return false;
+
                           return true;
                         });
                         const scheduledTests = filteredTests.filter((t: any) => {
                           const startMs = t.startTime ? parseTestTimeMs(t.startTime) : 0;
-                          return startMs && now < startMs;
+                          return startMs > 0 && now < startMs;
                         });
                         const pastTests = !isAdmin ? filteredTests.filter((t: any) => {
-                          const endMs = t.endTime ? parseTestTimeMs(t.endTime) : 0;
+                          const startMs = t.startTime ? parseTestTimeMs(t.startTime) : (t.createdAt ? parseTestTimeMs(t.createdAt) : 0);
+                          const durationMs = (t.durationMinutes ? Number(t.durationMinutes) : 60) * 60 * 1000;
+                          const endMs = t.endTime ? parseTestTimeMs(t.endTime) : (startMs ? startMs + durationMs : 0);
                           return endMs > 0 && now > endMs;
                         }) : [];
 
@@ -19803,6 +21897,18 @@ function MainApp() {
                                             )}
                                           </View>
 
+                                          {t.subjectSections && t.subjectSections.length > 0 && (
+                                            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 4, marginBottom: 4 }}>
+                                              {t.subjectSections.map((sec: any, secIdx: number) => (
+                                                <View key={secIdx} style={{ backgroundColor: darkMode ? "#2d2d2d" : "#eff6ff", borderColor: darkMode ? "#3a3a3a" : "#bfdbfe", borderWidth: 1, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                                                  <Text style={{ fontSize: 10, fontWeight: "600", color: darkMode ? "#93c5fd" : "#1e40af" }}>
+                                                    📚 {sec.subject} ({sec.fromQ}–{sec.toQ})
+                                                  </Text>
+                                                </View>
+                                              ))}
+                                            </View>
+                                          )}
+
                                           <Text style={styles.noticeMeta}>Duration: {t.durationMinutes} Mins | Passing: {t.passingMarks}</Text>
 
                                           {isAdmin ? (
@@ -19857,6 +21963,23 @@ function MainApp() {
                                                     await api.post("/test-portal/test-creation/permission-requests", reqObj);
                                                     try {
                                                       await setDoc(doc(db, "offlineTestPermissionRequests", reqDocId), reqObj, { merge: true });
+                                                      const alertDocId = `offline_test_${reqDocId}`;
+                                                      await setDoc(doc(db, "admin_alerts", alertDocId), {
+                                                        id: alertDocId,
+                                                        type: "offline_test",
+                                                        title: "Offline Test Attendance Request",
+                                                        subtitle: `${reqObj.studentName} (${reqObj.rollNumber})`,
+                                                        message: `Requested permission to attend: "${reqObj.testTitle}"`,
+                                                        studentId: reqObj.studentId,
+                                                        studentName: reqObj.studentName,
+                                                        rollNumber: reqObj.rollNumber,
+                                                        sourceDocId: reqDocId,
+                                                        sourceCollection: "offlineTestPermissionRequests",
+                                                        targetTab: "test",
+                                                        targetSub: "offline-requests",
+                                                        createdAt: reqObj.requestedAt,
+                                                        isDismissed: false
+                                                      }, { merge: true });
                                                     } catch (_) { }
                                                     setOfflineTestRequests(prev => [reqObj, ...prev.filter((r: any) => !(String(r.testId || '') === String(t.id || '') && (r.studentId === reqObj.studentId || r.rollNumber === reqObj.rollNumber || r.id === reqDocId)))]);
                                                     Alert.alert("Permission Requested", "Your request to attend this test has been sent to Super Admin / Admin for approval.");
@@ -20007,14 +22130,31 @@ function MainApp() {
                                                      status: "pending",
                                                      requestedAt: new Date().toISOString()
                                                    };
-                                                   try {
-                                                     await api.post("/test-portal/test-creation/permission-requests", reqObj);
-                                                     try {
-                                                       await setDoc(doc(db, "offlineTestPermissionRequests", reqDocId), reqObj, { merge: true });
-                                                     } catch (_) { }
-                                                     setOfflineTestRequests(prev => [reqObj, ...prev.filter((r: any) => !(String(r.testId || '') === String(t.id || '') && (r.studentId === reqObj.studentId || r.rollNumber === reqObj.rollNumber || r.id === reqDocId)))]);
-                                                     Alert.alert("Permission Requested", "Your request to attend this test has been sent to Super Admin / Admin for approval.");
-                                                   } catch (e: any) {
+                                                    try {
+                                                      await api.post("/test-portal/test-creation/permission-requests", reqObj);
+                                                      try {
+                                                        await setDoc(doc(db, "offlineTestPermissionRequests", reqDocId), reqObj, { merge: true });
+                                                        const alertDocId = `offline_test_${reqDocId}`;
+                                                        await setDoc(doc(db, "admin_alerts", alertDocId), {
+                                                          id: alertDocId,
+                                                          type: "offline_test",
+                                                          title: "Offline Test Attendance Request",
+                                                          subtitle: `${reqObj.studentName} (${reqObj.rollNumber})`,
+                                                          message: `Requested permission to attend: "${reqObj.testTitle}"`,
+                                                          studentId: reqObj.studentId,
+                                                          studentName: reqObj.studentName,
+                                                          rollNumber: reqObj.rollNumber,
+                                                          sourceDocId: reqDocId,
+                                                          sourceCollection: "offlineTestPermissionRequests",
+                                                          targetTab: "test",
+                                                          targetSub: "offline-requests",
+                                                          createdAt: reqObj.requestedAt,
+                                                          isDismissed: false
+                                                        }, { merge: true });
+                                                      } catch (_) { }
+                                                      setOfflineTestRequests(prev => [reqObj, ...prev.filter((r: any) => !(String(r.testId || '') === String(t.id || '') && (r.studentId === reqObj.studentId || r.rollNumber === reqObj.rollNumber || r.id === reqDocId)))]);
+                                                      Alert.alert("Permission Requested", "Your request to attend this test has been sent to Super Admin / Admin for approval.");
+                                                    } catch (e: any) {
                                                      Alert.alert("Error", e.message || "Failed to send permission request. Please check your connection.");
                                                    }
                                                  }}
@@ -20120,7 +22260,7 @@ function MainApp() {
 
                               <Text style={[styles.label, darkMode && styles.labelDark]}>Test Mode:</Text>
                               <View style={{ flexDirection: "row", gap: 6, marginBottom: 15 }}>
-                                {[{ label: "🌐 Online", value: "online" }, { label: "🎥 Recorded", value: "recorded" }].map(modeOpt => (
+                                {[{ label: "🌐 Online", value: "online" }, { label: "🎥 Recorded", value: "recorded" }, { label: "🌐+🎥 Both (Online + Recorded)", value: "both" }].map(modeOpt => (
                                   <TouchableOpacity key={modeOpt.value} onPress={() => setNewPdfTest({ ...newPdfTest, testMode: modeOpt.value })} style={{ flex: 1, paddingVertical: 10, borderRadius: 8, backgroundColor: (newPdfTest.testMode || "online") === modeOpt.value ? "#c62828" : (darkMode ? "#2a2a2a" : "#f5f5f5"), borderWidth: 1, borderColor: (newPdfTest.testMode || "online") === modeOpt.value ? "#c62828" : (darkMode ? "#444" : "#e0e0e0"), alignItems: "center" }}>
                                     <Text style={{ fontSize: 11, fontWeight: "bold", color: (newPdfTest.testMode || "online") === modeOpt.value ? "#fff" : (darkMode ? "#aaa" : "#555") }}>{modeOpt.label}</Text>
                                   </TouchableOpacity>
@@ -20197,6 +22337,14 @@ function MainApp() {
                                     );
                                   })()}
                                 </>
+                              )}
+
+                              {/* Show Subject Sections & Question Ranges ONLY for Mock Test */}
+                              {(newPdfTest.testType || "daily") === "mock" && (
+                                renderMockSubjectSectionsConfigurator(
+                                  newPdfTest.subjectSections || [],
+                                  (updated) => setNewPdfTest({ ...newPdfTest, subjectSections: updated })
+                                )
                               )}
 
                               {genMode !== "json" && (
@@ -20308,14 +22456,1008 @@ function MainApp() {
                                         if (t && !allSelectedLangs.includes(t)) allSelectedLangs.push(t);
                                       });
                                     }
-                                    const targetLangsStr = "[" + (allSelectedLangs.length > 0 ? allSelectedLangs.join(", ") : "English, Tamil") + "]";
+                                    const targetLangsStr = "[" + (allSelectedLangs.length > 0 ? allSelectedLangs.join(", ") : "English") + "]";
 
-                                    const rawP1 = "You are an expert at extracting, translating, and converting MCQ question papers into structured JSON.\n\nThe user will provide a question paper containing multiple-choice questions. The paper may be written in one or more languages.\n\nTARGET LANGUAGES:\n[TARGET_LANGUAGES]\n\nThe languages listed above are the REQUIRED FINAL OUTPUT LANGUAGES.\n\nSUPPORTED LANGUAGES:\n- English\n- Tamil\n- Malayalam\n- Telugu\n\n==================================================\n1. TARGET LANGUAGE RULE\n==================================================\n\nThe final JSON MUST contain every language specified in [TARGET_LANGUAGES].\n\nThe source question paper may contain one or more languages.\n\nFor every question:\n\n1. If a selected target language is present in the source:\n   - Extract that language faithfully.\n   - Do not unnecessarily rewrite or paraphrase it.\n\n2. If a selected target language is NOT present in the source:\n   - Translate the question and all four options into that target language.\n   - Preserve the exact meaning of the original question.\n   - Do not omit the selected language.\n\n3. If multiple source languages contain the same question:\n   - Treat them as ONE MCQ.\n   - Do NOT create duplicate questions.\n\n4. Every selected target language MUST be present for every question.\n\nExample:\n\nTARGET_LANGUAGES:\n[English, Tamil, Malayalam]\n\nIf the source contains only English + Tamil:\n\nEnglish → extract\nTamil → extract\nMalayalam → translate\n\nThe final JSON MUST contain all three languages.\n\n==================================================\n2. LANGUAGE FIELD NAMES\n==================================================\n\nEnglish:\n\"question\"\n\"option a\"\n\"option b\"\n\"option c\"\n\"option d\"\n\nTamil:\n\"questionTa\"\n\"optionTa_a\"\n\"optionTa_b\"\n\"optionTa_c\"\n\"optionTa_d\"\n\nMalayalam:\n\"questionMl\"\n\"optionMl_a\"\n\"optionMl_b\"\n\"optionMl_c\"\n\"optionMl_d\"\n\nTelugu:\n\"questionTe\"\n\"optionTe_a\"\n\"optionTe_b\"\n\"optionTe_c\"\n\"optionTe_d\"\n\nOnly include fields belonging to the selected target languages.\n\nDo NOT create fields for unselected languages.\n\n==================================================\n3. EXACT JSON STRUCTURE\n==================================================\n\nFor English only:\n\n[\n  {\n    \"question\": \"Question text in English\",\n    \"option a\": \"Option A\",\n    \"option b\": \"Option B\",\n    \"option c\": \"Option C\",\n    \"option d\": \"Option D\",\n    \"correct option\": \"A\",\n    \"explanation\": \"Brief explanation in English of why the answer is correct\"\n  }\n]\n\nFor multiple target languages, add the corresponding language fields to the SAME JSON object.\n\nDo NOT create separate JSON objects for different language versions of the same question.\n\n==================================================\n4. LANGUAGE ORDER\n==================================================\n\nWhen multiple target languages are selected, use this order:\n\n1. English\n2. Tamil\n3. Malayalam\n4. Telugu\n\nOnly include selected languages.\n\n==================================================\n5. QUESTION EXTRACTION\n==================================================\n\n- Extract ALL distinct MCQ questions from the source.\n- Do NOT create new questions.\n- Do NOT delete questions.\n- Do NOT paraphrase the original source unnecessarily.\n- Do NOT combine unrelated questions.\n- Do NOT split one MCQ into multiple questions.\n- Maintain the original question order.\n- Preserve question numbering when it is part of the source.\n- Extract all four answer options.\n- Preserve numerical values exactly.\n- Preserve units exactly.\n- Preserve names, dates, terminology, and factual information.\n- Preserve punctuation and special characters wherever possible.\n\n==================================================\n6. BILINGUAL / MULTILINGUAL QUESTIONS\n==================================================\n\nIf the same question appears in multiple languages:\n\n- Recognize them as ONE MCQ.\n- Put each language version into its corresponding field.\n- Do NOT create duplicates.\n\nIf a selected target language is missing from the source:\n\n- Translate the question and all options into that language.\n- Keep the same question meaning.\n- Keep the same option order.\n- Keep the same correct option.\n\n==================================================\n7. TRANSLATION RULES\n==================================================\n\nWhen generating a missing target language:\n\n- Translate accurately and naturally.\n- Preserve the exact meaning.\n- Preserve numerical values.\n- Preserve units.\n- Preserve names.\n- Preserve technical terminology.\n- Preserve option order.\n- Do NOT change the correct answer.\n- Do NOT add information that is absent from the source.\n- Do NOT simplify the question in a way that changes its meaning.\n\nUse the best available source-language version as the translation source.\n\nTranslation priority:\n\n1. English, if available.\n2. Otherwise another reliable language version available in the source.\n\n==================================================\n8. CORRECT OPTION\n==================================================\n\n\"correct option\" MUST be exactly:\n\n\"A\"\n\"B\"\n\"C\"\n\"D\"\n\nIf the answer is explicitly provided in the source, use it.\n\nIf it is not provided, determine the correct answer from the question and options.\n\nDo NOT guess.\n\nThe correct option MUST remain identical across all language versions.\n\n==================================================\n9. EXPLANATION\n==================================================\n\nThe explanation MUST always be in English.\n\n- Keep it brief and clear.\n- Explain why the selected answer is correct.\n- For numerical questions, show the essential calculation.\n- For conceptual questions, briefly explain the relevant concept.\n- Do not modify the source question or options inside the explanation.\n\n==================================================\n10. SOURCE FIDELITY\n==================================================\n\nThe uploaded/pasted question paper is the source for the original question and answer options.\n\nGeneral knowledge may be used ONLY for:\n\n- Determining the correct option\n- Writing the explanation\n\nGeneral knowledge MUST NOT be used to:\n\n- Create questions\n- Invent options\n- Reconstruct missing source text\n- Silently correct source errors\n- Invent missing information\n\nIf the source contains an obvious spelling, numerical, factual, or formatting error:\n\n- Preserve the source content.\n- Report the issue in the verification notes.\n\n==================================================\n11. UNCERTAIN CONTENT\n==================================================\n\nIf any question, option, number, symbol, or other content is unclear:\n\n- Do NOT silently guess.\n- Preserve the readable content.\n- Identify the affected question number.\n- Explain what should be manually verified.\n- Do not fabricate missing information.\n\n==================================================\n12. LARGE QUESTION PAPERS / CHUNK PROCESSING\n==================================================\n\nThis rule is extremely important.\n\nIf the question paper contains a large number of questions and generating the complete JSON in one response may exceed the reliable output limit:\n\nDO NOT attempt to force the entire paper into one response.\n\nFirst inform the user that the question paper is large and should be generated in chunks.\n\nThen determine a practical chunk size.\n\nExample:\n\n\"The question paper contains 100 questions. To ensure reliable JSON generation, I recommend splitting it into 5 chunks of 20 questions each:\n\nChunk 1: Questions 1–20\nChunk 2: Questions 21–40\nChunk 3: Questions 41–60\nChunk 4: Questions 61–80\nChunk 5: Questions 81–100\n\nYou can request each chunk one by one and paste each JSON block into your question bank.\"\n\nIMPORTANT:\n\n- Do NOT generate all chunks automatically in the same response if doing so risks truncation.\n- Wait for the user to request the next chunk.\n- Maintain the exact original question order.\n- Never skip or duplicate questions between chunks.\n- Each chunk must contain complete JSON objects.\n- A question must NEVER be split between chunks.\n- Keep the same target languages for every chunk.\n- Keep the same JSON structure for every chunk.\n\nWhen the user requests a specific chunk:\n\n- Generate ONLY that chunk.\n- Clearly identify the requested question range before generating ONLY if necessary.\n- The JSON itself must remain valid.\n- Do not include questions belonging to another chunk.\n\nIMPORTANT CHUNK ENDING RULE:\n\nFor intermediate chunks, do NOT provide final verification notes.\n\nEach intermediate chunk should end after its JSON array.\n\nOnly the FINAL chunk should contain:\n\nEND OF JSON\n\nVERIFICATION NOTES:\n\nThis ensures that verification issues are reported only after the entire question paper has been processed.\n\n==================================================\n13. CHUNK CONSISTENCY\n==================================================\n\nWhen processing chunks:\n\n- Use exactly the same extraction rules for every chunk.\n- Maintain the same target languages.\n- Maintain the same field names.\n- Maintain the original numbering.\n- Do not renumber questions.\n- Do not change translations between chunks unless correcting an identified error.\n- Do not repeat questions from previous chunks.\n- Do not skip questions.\n\nExample:\n\nChunk 1:\nQuestions 1–20\n\nChunk 2:\nQuestions 21–40\n\nChunk 3:\nQuestions 41–60\n\nNever output Question 20 again in Chunk 2.\n\n==================================================\n14. OUTPUT VALIDATION\n==================================================\n\nBefore returning the output, verify:\n\n1. Every requested question in the current chunk is included.\n2. No duplicate question exists.\n3. Question order is preserved.\n4. Every selected target language is present.\n5. Every selected language has its question and four options.\n6. Correct option is A/B/C/D only.\n7. Correct option is consistent across languages.\n8. No unselected language fields are present.\n9. Missing target languages have been translated.\n10. JSON syntax is valid.\n11. No question or option has been invented.\n12. No question has been accidentally omitted.\n\n==================================================\n15. VERIFICATION NOTES\n==================================================\n\nONLY AFTER THE FINAL CHUNK, output:\n\nEND OF JSON\n\nVERIFICATION NOTES:\n\nList ONLY genuine issues requiring manual verification.\n\nFor each issue include:\n\n- Question number\n- What is unclear or potentially incorrect\n- What should be verified\n\nExamples:\n\n- Question 9: One word in the source is unclear. Verify against the original paper.\n- Question 15: The source option appears incomplete. Verify against the original paper.\n- Question 25: Malayalam was generated by translation because Malayalam was not present in the source.\n- Question 38: A numerical value appears unclear and should be verified.\n\nDo NOT list normal translations as issues.\n\nIf there are no issues:\n\nEND OF JSON\n\nVERIFICATION NOTES:\nNo obvious extraction or translation issues found.\n\n==================================================\n16. FINAL OUTPUT RULE\n==================================================\n\nFor a normal single-response paper:\n\nReturn:\n\nJSON ARRAY\n\nEND OF JSON\n\nVERIFICATION NOTES:\n\nFor an intermediate chunk:\n\nReturn ONLY:\n\nJSON ARRAY\n\nDo NOT include final verification notes.\n\nFor the final chunk:\n\nReturn:\n\nJSON ARRAY\n\nEND OF JSON\n\nVERIFICATION NOTES:\n\nDo NOT add any other text.\n\nDo NOT use markdown.\n\nDo NOT use ```json.\n\nDo NOT add conversational text.\n\nSOURCE QUESTION PAPER:\n[PASTED QUESTION PAPER TEXT]";
-                                    const rawP2 = "You are an expert at extracting, translating, solving, and converting Mathematics and Science MCQ question papers into structured JSON.\n\nThe user will provide a Mathematics or Science question paper.\n\nThe paper may contain:\n\n- Mathematics\n- Physics\n- Chemistry\n- Biology\n- General Science\n- Mathematical equations\n- Scientific formulas\n- Chemical formulas\n- Chemical equations\n- Fractions\n- Square roots\n- Powers\n- Superscripts\n- Subscripts\n- Greek symbols\n- Scientific notation\n- Units\n- Ionic charges\n- Mathematical operators\n\nTARGET LANGUAGES:\n[TARGET_LANGUAGES]\n\nThe languages listed above are the REQUIRED FINAL OUTPUT LANGUAGES.\n\nSUPPORTED LANGUAGES:\n- English\n- Tamil\n- Malayalam\n- Telugu\n\n==================================================\n1. TARGET LANGUAGE RULE\n==================================================\n\nThe final JSON MUST contain every language specified in [TARGET_LANGUAGES].\n\nFor every question:\n\n1. If the selected language exists in the source:\n   Extract it faithfully.\n\n2. If the selected language does NOT exist in the source:\n   Translate the question and all options into that target language.\n\n3. Do NOT omit a selected target language.\n\n4. If the same question appears in multiple source languages:\n   Treat it as ONE MCQ.\n\n5. Do NOT create duplicate questions.\n\nExample:\n\nTARGET_LANGUAGES:\n[English, Tamil, Malayalam]\n\nSource:\nEnglish + Tamil\n\nOutput:\nEnglish → extracted\nTamil → extracted\nMalayalam → generated by translation\n\n==================================================\n2. LANGUAGE FIELD NAMES\n==================================================\n\nEnglish:\n\"question\"\n\"option a\"\n\"option b\"\n\"option c\"\n\"option d\"\n\nTamil:\n\"questionTa\"\n\"optionTa_a\"\n\"optionTa_b\"\n\"optionTa_c\"\n\"optionTa_d\"\n\nMalayalam:\n\"questionMl\"\n\"optionMl_a\"\n\"optionMl_b\"\n\"optionMl_c\"\n\"optionMl_d\"\n\nTelugu:\n\"questionTe\"\n\"optionTe_a\"\n\"optionTe_b\"\n\"optionTe_c\"\n\"optionTe_d\"\n\nOnly include selected languages.\n\n==================================================\n3. JSON STRUCTURE\n==================================================\n\nEvery question MUST follow this structure:\n\n[\n  {\n    \"question\": \"English question\",\n    \"questionTa\": \"Tamil question\",\n    \"questionMl\": \"Malayalam question\",\n    \"questionTe\": \"Telugu question\",\n    \"option a\": \"English option A\",\n    \"option b\": \"English option B\",\n    \"option c\": \"English option C\",\n    \"option d\": \"English option D\",\n    \"optionTa_a\": \"Tamil option A\",\n    \"optionTa_b\": \"Tamil option B\",\n    \"optionTa_c\": \"Tamil option C\",\n    \"optionTa_d\": \"Tamil option D\",\n    \"optionMl_a\": \"Malayalam option A\",\n    \"optionMl_b\": \"Malayalam option B\",\n    \"optionMl_c\": \"Malayalam option C\",\n    \"optionMl_d\": \"Malayalam option D\",\n    \"optionTe_a\": \"Telugu option A\",\n    \"optionTe_b\": \"Telugu option B\",\n    \"optionTe_c\": \"Telugu option C\",\n    \"optionTe_d\": \"Telugu option D\",\n    \"formula\": \"Relevant formula or equation\",\n    \"correct option\": \"A\",\n    \"explanation\": \"Step-by-step solution in English\"\n  }\n]\n\nIMPORTANT:\n\nThe above is the maximum possible structure.\n\nOnly include language fields corresponding to languages selected in [TARGET_LANGUAGES].\n\nDo NOT include unselected language fields.\n\n==================================================\n4. EXTRACTION RULES\n==================================================\n\n- Extract ALL distinct MCQs.\n- Do NOT create new questions.\n- Do NOT delete questions.\n- Do NOT split one question into multiple questions.\n- Do NOT combine unrelated questions.\n- Maintain exact question order.\n- Preserve original question numbering when applicable.\n- Preserve numerical values.\n- Preserve units.\n- Preserve formulas.\n- Preserve scientific notation.\n- Preserve option order.\n\n==================================================\n5. BILINGUAL / MULTILINGUAL QUESTIONS\n==================================================\n\nIf the same question appears in multiple languages:\n\n- Treat all versions as ONE MCQ.\n- Extract each available source language.\n- Generate missing selected languages through translation.\n- Never create duplicates.\n\n==================================================\n6. TRANSLATION OF MATHS / SCIENCE\n==================================================\n\nWhen generating a missing target language:\n\nTranslate the natural-language portion while preserving:\n\n- Mathematical expressions\n- Variables\n- Numbers\n- Units\n- Chemical formulas\n- Scientific notation\n- Symbols\n- Equations\n- Option order\n- Mathematical/scientific meaning\n\nExample:\n\nEnglish:\n\"Find the value of x² + 5.\"\n\nTamil:\n\"x² + 5 இன் மதிப்பைக் காண்க.\"\n\nMalayalam:\n\"x² + 5 ന്റെ മൂല്യം കണ്ടെത്തുക.\"\n\nThe expression:\n\nx² + 5\n\nmust remain unchanged.\n\n==================================================\n7. MATHEMATICAL NOTATION\n==================================================\n\nPreserve:\n\n√ ² ³ ⁴ ⁵ ₁ ₂ ₃ ⁻ π α β γ Δ θ λ μ σ ρ Ω ± × ÷ ≤ ≥ ≠ ≈ ∞ ∠ °\n\nExamples:\n\nx² + y² = z²\n\n√25\n\nπr²\n\n45°\n\n10⁻³\n\na₁\n\nΔABC\n\nDo NOT convert:\n\nx² → x2\n\n√ → sqrt\n\nπ → pi\n\n² → 2\n\n³ → 3\n\n× → x\n\n≤ → <\n\n≥ → >\n\n° → o\n\n==================================================\n8. SCIENTIFIC / CHEMICAL NOTATION\n==================================================\n\nPreserve:\n\nH₂O\n\nCO₂\n\nH₂SO₄\n\nCa²⁺\n\nCl⁻\n\nNa⁺\n\n6.022 × 10²³\n\nm/s²\n\nN\n\nJ\n\nPa\n\nΩ\n\nλ\n\nΔT\n\n2H₂ + O₂ → 2H₂O\n\nDo NOT unnecessarily convert these to ASCII.\n\n==================================================\n9. WORD EQUATIONS\n==================================================\n\nThe source may contain Microsoft Word Equation Editor objects.\n\nIf an equation is present:\n\n- Interpret it accurately.\n- Preserve mathematical meaning.\n- Preserve superscripts.\n- Preserve subscripts.\n- Preserve roots.\n- Preserve fractions.\n- Preserve Greek symbols.\n- Preserve operators.\n- Preserve chemical charges.\n- Preserve reaction arrows.\n- Preserve brackets and parentheses.\n\nIf necessary, convert the equation into an unambiguous plain-text representation.\n\nExample:\n\nx = (-b ± √(b² - 4ac)) / 2a\n\nDo NOT convert it to:\n\nx = (-b +- sqrt(b2 - 4ac)) / 2a\n\n==================================================\n10. FRACTIONS\n==================================================\n\nPreserve fractions whenever possible.\n\n½ → preserve as ½\n\nIf a structured fraction cannot be represented directly:\n\n1/2\n\nDo NOT change the mathematical value.\n\n3/4 must never become 4/3.\n\n==================================================\n11. FORMULA FIELD\n==================================================\n\nEvery question MUST contain:\n\n\"formula\": \"...\"\n\nThe formula may be:\n\n- Mathematical formula\n- Physics equation\n- Chemistry equation\n- Scientific relationship\n- Law or principle\n\nExamples:\n\n\"KE = 1/2 mv^2\"\n\n\"F = ma\"\n\n\"v = u + at\"\n\n\"V = IR\"\n\n\"P = VI\"\n\n\"PV = nRT\"\n\n\"A = πr^2\"\n\n\"D = b^2 − 4ac\"\n\n\"pH = −log[H⁺]\"\n\n\"Sum = −b/a, Product = c/a\"\n\nIf no specific formula applies:\n\n\"formula\": \"\"\n\nDo NOT invent a formula.\n\n==================================================\n12. SOURCE FIDELITY\n==================================================\n\nThe source document is the source for the original question and options.\n\nGeneral mathematical/scientific knowledge may ONLY be used for:\n\n- Calculating the answer\n- Selecting the correct option\n- Identifying the formula\n- Writing the explanation\n- Translating missing target languages\n\nIt MUST NOT be used to:\n\n- Invent questions\n- Invent options\n- Silently correct source errors\n- Guess missing numbers\n- Guess missing symbols\n- Reconstruct lost equations\n\n==================================================\n13. NO RECONSTRUCTION OF LOST SYMBOLS\n==================================================\n\nIf a symbol, variable, number, exponent, subscript, root, Greek letter, or equation is missing or unclear:\n\nDO NOT guess it merely because the mathematical answer appears obvious.\n\nFor example:\n\n\"If ___ and ___ are the roots...\"\n\nDo NOT automatically convert this to:\n\n\"If α and β are the roots...\"\n\nunless α and β are actually present in the source.\n\nInstead, preserve the available source content and report the issue in the verification notes.\n\n==================================================\n14. CORRECT OPTION\n==================================================\n\n\"correct option\" MUST be exactly:\n\n\"A\"\n\"B\"\n\"C\"\n\"D\"\n\nIf explicitly provided, use it.\n\nOtherwise determine it mathematically/scientifically.\n\nDo NOT guess.\n\nThe correct option must remain identical across all language versions.\n\n==================================================\n15. EXPLANATION\n==================================================\n\nThe explanation MUST be in English.\n\nFor numerical questions:\n\n1. Identify given values.\n2. State formula.\n3. Substitute values.\n4. Calculate.\n5. State final answer.\n6. Identify correct option.\n\nFor conceptual Science questions:\n\n- Identify the relevant scientific principle.\n- Briefly explain why the answer is correct.\n\n==================================================\n16. LARGE QUESTION PAPERS / CHUNK PROCESSING\n==================================================\n\nThis rule is extremely important.\n\nIf the paper contains many questions and the complete JSON cannot be generated reliably in one response:\n\nDO NOT attempt to generate the entire paper at once.\n\nFirst inform the user that the paper is large and should be generated in chunks.\n\nDetermine a practical chunk size.\n\nExample:\n\n\"The question paper contains 100 questions. To ensure reliable generation without truncation, it will be split into 5 chunks of 20 questions:\n\nChunk 1: Questions 1–20\nChunk 2: Questions 21–40\nChunk 3: Questions 41–60\nChunk 4: Questions 61–80\nChunk 5: Questions 81–100\n\nYou can request each chunk one by one and paste each JSON block into your question bank.\"\n\nDo NOT generate all chunks automatically if doing so risks truncation.\n\nWait for the user to request a chunk.\n\nWhen the user requests a chunk:\n\n- Generate ONLY that chunk.\n- Preserve exact question order.\n- Do NOT skip questions.\n- Do NOT duplicate questions.\n- Do NOT split a question between chunks.\n- Use the same target languages.\n- Use the same JSON structure.\n- Use the same translations consistently.\n\n==================================================\n17. CHUNK CONSISTENCY\n==================================================\n\nExample:\n\nChunk 1:\nQuestions 1–20\n\nChunk 2:\nQuestions 21–40\n\nChunk 3:\nQuestions 41–60\n\nChunk 4:\nQuestions 61–80\n\nChunk 5:\nQuestions 81–100\n\nNever repeat Question 20 in Chunk 2.\n\nNever skip Question 21.\n\nDo not renumber questions.\n\n==================================================\n18. VERIFICATION NOTES AND FINAL CHUNK\n==================================================\n\nFor intermediate chunks:\n\nReturn ONLY the JSON array.\n\nDo NOT output:\n\nEND OF JSON\n\nDo NOT output verification notes.\n\nOnly AFTER the FINAL CHUNK, output:\n\nEND OF JSON\n\nVERIFICATION NOTES:\n\nThen list ONLY genuine issues found across the entire question paper.\n\nThe verification notes must appear AFTER the final JSON array of the FINAL CHUNK.\n\nExamples:\n\nEND OF JSON\n\nVERIFICATION NOTES:\n- Question 9: A mathematical variable appears missing in the source. Verify against the original paper.\n- Question 15: The equation appears incomplete and should be manually verified.\n- Question 27: Malayalam was generated by translation because Malayalam was not present in the source.\n\nDo NOT report normal translations as issues.\n\nIf there are no issues:\n\nEND OF JSON\n\nVERIFICATION NOTES:\nNo obvious extraction, mathematical, scientific, or translation issues found.\n\n==================================================\n19. OUTPUT VALIDATION\n==================================================\n\nBefore returning each chunk, verify:\n\n1. Every question in the requested range is included.\n2. No question is duplicated.\n3. No question is skipped.\n4. Question order is preserved.\n5. Every selected target language is present.\n6. Every selected language has the correct fields.\n7. Mathematical/scientific notation is preserved.\n8. Formula field exists.\n9. Correct option is A/B/C/D only.\n10. Correct option is consistent across languages.\n11. JSON syntax is valid.\n12. No source content was silently invented.\n\n==================================================\n20. FINAL OUTPUT RULE\n==================================================\n\nIf the paper fits in one response:\n\nReturn:\n\nJSON ARRAY\n\nEND OF JSON\n\nVERIFICATION NOTES:\n\nIf the paper requires chunks:\n\nFIRST RESPONSE:\nInform the user that the paper is large and provide the chunk plan.\n\nDo NOT generate the entire paper.\n\nINTERMEDIATE CHUNK:\nReturn ONLY the JSON array.\n\nFINAL CHUNK:\nReturn:\n\nJSON ARRAY\n\nEND OF JSON\n\nVERIFICATION NOTES:\n\nDo NOT add any other text after the verification notes.\n\nDo NOT use markdown.\n\nDo NOT use ```json.\n\nDo NOT add conversational text around the JSON when generating a chunk.\n\nSOURCE QUESTION PAPER:\n[PASTED QUESTION PAPER TEXT]";
-                                    const p1 = rawP1.replace("[TARGET_LANGUAGES]", targetLangsStr);
-                                    const p2 = rawP2.replace("[TARGET_LANGUAGES]", targetLangsStr);
+                                    const rawUniversalPrompt = `You are an expert at extracting, translating, solving, formatting, and converting MCQ question papers into structured JSON.
 
-                                    const currentPrompt = selectedPromptType === "formula" ? p2 : p1;
+The user will upload or provide a question paper containing multiple-choice questions.
+
+The question paper may contain ANY subject or a combination of subjects, including but not limited to:
+
+- Mathematics
+- Physics
+- Chemistry
+- Biology
+- General Science
+- English
+- Tamil
+- Malayalam
+- Telugu
+- History
+- Geography
+- Economics
+- Political Science
+- General Knowledge
+- Computer Science
+- Reasoning
+- Aptitude
+- Current Affairs
+- Any other academic or competitive-examination subject
+
+The paper may contain one subject or multiple subjects in the same test.
+
+IMPORTANT:
+This is a UNIVERSAL MCQ EXTRACTION PROMPT.
+
+Do NOT assume that the paper is a Mathematics/Science paper.
+
+Automatically identify and process each question according to the subject and question type present in the source.
+
+==================================================
+1. TARGET LANGUAGES
+==================================================
+
+TARGET LANGUAGES:
+[TARGET_LANGUAGES]
+
+SUPPORTED LANGUAGES:
+- English
+- Tamil
+- Malayalam
+- Telugu
+
+The languages listed in [TARGET_LANGUAGES] are the REQUIRED FINAL OUTPUT LANGUAGES.
+
+Example:
+
+[TARGET_LANGUAGES]
+
+may contain:
+
+[English]
+
+or:
+
+[English, Tamil]
+
+or:
+
+[English, Tamil, Malayalam]
+
+or:
+
+[English, Tamil, Malayalam, Telugu]
+
+If no target language is provided, use:
+
+[English]
+
+==================================================
+2. TARGET LANGUAGE GENERATION
+==================================================
+
+The final JSON MUST contain every language specified in [TARGET_LANGUAGES].
+
+The source question paper may contain some, all, or none of the selected target languages.
+
+For every question:
+
+1. If a selected target language is present in the source:
+   - Extract that language faithfully.
+   - Preserve the original wording as closely as possible.
+   - Do not unnecessarily paraphrase.
+
+2. If a selected target language is NOT present in the source:
+   - Translate the question into that target language.
+   - Translate all answer options into that target language.
+   - Preserve the exact meaning of the original question and options.
+   - Do NOT omit the selected language.
+
+3. If the same question appears in multiple languages in the source:
+   - Treat all language versions as ONE MCQ.
+   - Do NOT create duplicate questions.
+
+4. Every selected target language MUST be present for EVERY question.
+
+Translation must never change:
+
+- Meaning
+- Numerical values
+- Dates
+- Names
+- Technical terms
+- Mathematical expressions
+- Scientific formulas
+- Units
+- Option order
+- Correct answer
+
+==================================================
+3. LANGUAGE FIELD NAMES
+==================================================
+
+English:
+
+"question"
+"option a"
+"option b"
+"option c"
+"option d"
+
+Tamil:
+
+"questionTa"
+"optionTa_a"
+"optionTa_b"
+"optionTa_c"
+"optionTa_d"
+
+Malayalam:
+
+"questionMl"
+"optionMl_a"
+"optionMl_b"
+"optionMl_c"
+"optionMl_d"
+
+Telugu:
+
+"questionTe"
+"optionTe_a"
+"optionTe_b"
+"optionTe_c"
+"optionTe_d"
+
+Only include fields belonging to languages listed in [TARGET_LANGUAGES].
+
+Do NOT include fields for unselected languages.
+
+Use this language order:
+
+1. English
+2. Tamil
+3. Malayalam
+4. Telugu
+
+==================================================
+4. JSON STRUCTURE
+==================================================
+
+Each question MUST be represented as ONE JSON object.
+
+Maximum structure:
+
+[
+  {
+    "question": "English question",
+    "questionTa": "Tamil question",
+    "questionMl": "Malayalam question",
+    "questionTe": "Telugu question",
+    "option a": "English option A",
+    "option b": "English option B",
+    "option c": "English option C",
+    "option d": "English option D",
+    "optionTa_a": "Tamil option A",
+    "optionTa_b": "Tamil option B",
+    "optionTa_c": "Tamil option C",
+    "optionTa_d": "Tamil option D",
+    "optionMl_a": "Malayalam option A",
+    "optionMl_b": "Malayalam option B",
+    "optionMl_c": "Malayalam option C",
+    "optionMl_d": "Malayalam option D",
+    "optionTe_a": "Telugu option A",
+    "optionTe_b": "Telugu option B",
+    "optionTe_c": "Telugu option C",
+    "optionTe_d": "Telugu option D",
+    "formula": "Relevant formula or equation, or empty string if not applicable",
+    "correct option": "A",
+    "explanation": "Brief explanation in English"
+  }
+]
+
+IMPORTANT:
+
+- Only include language fields for selected target languages.
+- "formula" MUST always be present.
+- If no formula applies, use:
+  "formula": ""
+- Do NOT add any fields other than the defined fields.
+- Do NOT create separate objects for different language versions of the same question.
+
+==================================================
+5. UNIVERSAL SUBJECT HANDLING
+==================================================
+
+Automatically identify the subject and question type of each question.
+
+The same paper may contain:
+
+Question 1 → English
+Question 2 → Mathematics
+Question 3 → History
+Question 4 → Physics
+Question 5 → Biology
+Question 6 → Reasoning
+
+All must be processed using the SAME prompt.
+
+Do NOT reject or skip a question because the subject changes.
+
+Do NOT assume that all questions belong to the same subject.
+
+==================================================
+6. QUESTION EXTRACTION
+==================================================
+
+- Extract ALL distinct MCQ questions from the source.
+- Do NOT create new questions.
+- Do NOT delete questions.
+- Do NOT combine unrelated questions.
+- Do NOT split one MCQ into multiple questions.
+- Maintain the exact original question order.
+- Preserve question numbering when it is part of the source.
+- Extract all answer options.
+- Preserve numerical values exactly.
+- Preserve units exactly.
+- Preserve names, dates, terminology, and factual information.
+- Preserve punctuation and special characters wherever possible.
+- Preserve the original meaning.
+
+The source question paper is the primary source for question and option content.
+
+==================================================
+7. QUESTION FORMAT AND LINE BREAKS
+==================================================
+
+When a question contains multiple statements, clauses, conditions, or related lines that are presented as separate statements in the source or are clearly intended as separate statements, preserve or create proper line breaks between them.
+
+NEVER place multiple independent statements directly one after another on the same line when they are intended to be read separately.
+
+For example:
+
+Source:
+
+Statement 1: The Earth revolves around the Sun.
+Statement 2: The Earth rotates on its axis.
+Statement 3: The Moon is a satellite of the Earth.
+
+Represent the question text as:
+
+"Statement 1: The Earth revolves around the Sun.
+Statement 2: The Earth rotates on its axis.
+Statement 3: The Moon is a satellite of the Earth."
+
+Use "\n" inside the JSON string for line breaks.
+
+Example:
+
+"question": "Statement 1: The Earth revolves around the Sun.\nStatement 2: The Earth rotates on its axis.\nStatement 3: The Moon is a satellite of the Earth."
+
+IMPORTANT:
+
+Do NOT remove meaningful line breaks.
+
+Do NOT convert multiple statements into one continuous paragraph.
+
+==================================================
+8. QUESTION TYPES REQUIRING LINE BREAKS
+==================================================
+
+Apply appropriate line breaks whenever the question contains structurally separate parts.
+
+This includes, but is not limited to:
+
+1. Statement-based questions
+
+Statement 1: ...
+Statement 2: ...
+Statement 3: ...
+
+2. Assertion–Reason questions
+
+Assertion: ...
+
+Reason: ...
+
+The Reason MUST appear on a new line after the Assertion.
+
+Example:
+
+"question": "Assertion: The sky appears blue.\nReason: Blue light is scattered more than other visible wavelengths."
+
+3. Match-the-following questions
+
+Column I:
+...
+
+Column II:
+...
+
+4. Multiple premises or conditions
+
+Condition 1: ...
+Condition 2: ...
+Condition 3: ...
+
+5. Case-based questions
+
+Case:
+...
+
+Question:
+...
+
+6. Passage-based questions
+
+Passage:
+...
+
+Question:
+...
+
+7. English grammar questions containing separate sentences
+
+Sentence 1: ...
+Sentence 2: ...
+
+8. Active/Passive Voice questions
+
+Original:
+...
+
+Required form:
+...
+
+9. Direct/Indirect Speech questions
+
+Direct speech:
+...
+
+Required form:
+...
+
+10. Sentence correction questions
+
+Sentence:
+...
+
+Error:
+...
+
+Correction:
+...
+
+11. Fill-in-the-blank questions containing multiple sentences
+
+Sentence 1: ...
+Sentence 2: ...
+
+12. Mathematical or scientific questions containing multiple given conditions
+
+Given:
+...
+
+Condition 1:
+...
+
+Condition 2:
+...
+
+13. Questions containing multiple equations or expressions
+
+Equation 1:
+...
+
+Equation 2:
+...
+
+14. Questions containing multiple examples, alternatives, or sub-parts where separate lines improve readability.
+
+GENERAL RULE:
+
+If two or more logically independent statements, assertions, reasons, sentences, conditions, equations, or sub-parts are present, separate them using "\n".
+
+Do NOT insert unnecessary line breaks into a normal single-sentence question.
+
+The goal is clear readability while preserving the original structure and meaning.
+
+==================================================
+9. OPTIONS WITH MULTIPLE PARTS
+==================================================
+
+If an answer option itself contains multiple statements, preserve the internal structure using "\n".
+
+Example:
+
+"option a": "Statement 1 is correct.\nStatement 2 is incorrect."
+
+Do NOT flatten clearly separate statements into one continuous line.
+
+==================================================
+10. MATHEMATICAL NOTATION
+==================================================
+
+If Mathematics or mathematical expressions appear anywhere in the paper, preserve their notation accurately.
+
+Preserve symbols such as:
+
+√ ² ³ ⁴ ⁵ ₁ ₂ ₃ ⁻ π α β γ Δ θ λ μ σ ρ Ω ± × ÷ ≤ ≥ ≠ ≈ ∞ ∠ °
+
+Examples:
+
+x² + y² = z²
+
+√25
+
+πr²
+
+45°
+
+10⁻³
+
+a₁
+
+ΔABC
+
+Do NOT convert:
+
+x² → x2
+
+√ → sqrt
+
+π → pi
+
+² → 2
+
+³ → 3
+
+× → x
+
+≤ → <
+
+≥ → >
+
+° → o
+
+Preserve the mathematical representation available in the source.
+
+==================================================
+11. SCIENCE AND CHEMICAL NOTATION
+==================================================
+
+If Science questions or scientific notation appear anywhere in the paper, preserve:
+
+H₂O
+
+CO₂
+
+H₂SO₄
+
+Ca²⁺
+
+Cl⁻
+
+Na⁺
+
+6.022 × 10²³
+
+m/s²
+
+N
+
+J
+
+Pa
+
+Ω
+
+λ
+
+ΔT
+
+2H₂ + O₂ → 2H₂O
+
+Do NOT unnecessarily convert scientific notation into ASCII.
+
+==================================================
+12. WORD EQUATIONS
+==================================================
+
+The source may contain Microsoft Word Equation Editor objects.
+
+If an equation is present:
+
+- Interpret it accurately.
+- Preserve mathematical/scientific meaning.
+- Preserve superscripts.
+- Preserve subscripts.
+- Preserve roots.
+- Preserve fractions.
+- Preserve Greek symbols.
+- Preserve operators.
+- Preserve chemical charges.
+- Preserve reaction arrows.
+- Preserve brackets and parentheses.
+
+If necessary, convert the equation into an unambiguous plain-text representation.
+
+Example:
+
+x = (-b ± √(b² - 4ac)) / 2a
+
+Do NOT convert it to:
+
+x = (-b +- sqrt(b2 - 4ac)) / 2a
+
+==================================================
+13. FRACTIONS
+==================================================
+
+Preserve fractions whenever possible.
+
+½
+
+should remain:
+
+"½"
+
+If a structured fraction cannot be represented directly:
+
+"1/2"
+
+Do NOT change the mathematical value.
+
+3/4 must never become 4/3.
+
+==================================================
+14. FORMULA FIELD
+==================================================
+
+The "formula" field MUST always be present.
+
+For Mathematics and Science questions, provide the relevant formula, equation, law, principle, or relationship used to determine the answer.
+
+Examples:
+
+"KE = 1/2 mv^2"
+
+"F = ma"
+
+"v = u + at"
+
+"V = IR"
+
+"P = VI"
+
+"PV = nRT"
+
+"A = πr²"
+
+"D = b² − 4ac"
+
+"pH = −log[H⁺]"
+
+For non-mathematical/non-scientific questions where no formula applies:
+
+"formula": ""
+
+Do NOT invent a formula.
+
+==================================================
+15. CORRECT OPTION
+==================================================
+
+"correct option" MUST be exactly one of:
+
+"A"
+"B"
+"C"
+"D"
+
+If the answer is explicitly provided in the source, use it.
+
+If it is not provided:
+
+- Determine the correct answer using the question and options.
+- Use mathematical/scientific reasoning where applicable.
+- Use appropriate subject knowledge where necessary.
+
+Do NOT guess.
+
+The correct option MUST remain identical across all language versions.
+
+==================================================
+16. EXPLANATION
+==================================================
+
+The "explanation" field MUST always be in English.
+
+For numerical questions:
+
+1. Identify the given values.
+2. State the relevant formula.
+3. Substitute the values.
+4. Perform the calculation.
+5. State the final answer.
+6. Identify the correct option.
+
+For conceptual questions:
+
+- Identify the relevant concept or principle.
+- Briefly explain why the selected option is correct.
+
+For language questions:
+
+- Briefly explain the relevant grammatical or linguistic rule.
+
+For History, Geography, Economics, General Knowledge, or other theory-based questions:
+
+- Briefly explain the factual or conceptual basis for the answer.
+
+Keep explanations concise but sufficient to justify the correct option.
+
+==================================================
+17. SOURCE FIDELITY
+==================================================
+
+The uploaded question paper is the source for the original question and answer options.
+
+Do NOT silently correct source content.
+
+Preserve:
+
+- Original wording
+- Numerical values
+- Units
+- Names
+- Dates
+- Formulas
+- Equations
+- Chemical notation
+- Symbols
+- Option order
+
+General knowledge may be used only when necessary to:
+
+- Determine the correct option.
+- Write the explanation.
+- Translate missing target languages.
+
+Do NOT use general knowledge to invent missing source content.
+
+==================================================
+18. UNCERTAIN CONTENT
+==================================================
+
+If any question, option, number, word, symbol, formula, equation, or other content is unclear:
+
+- Do NOT silently guess.
+- Preserve whatever can be reliably extracted.
+- Identify the affected question number.
+- State what needs manual verification in the verification notes.
+
+Do NOT reconstruct missing content merely because the expected answer appears obvious.
+
+==================================================
+19. LARGE QUESTION PAPERS / OPTIONAL CHUNK PROCESSING
+==================================================
+
+CHUNKING IS OPTIONAL AND SHOULD BE USED ONLY WHEN NECESSARY.
+
+If the complete question paper can be reliably generated in ONE response:
+
+- Generate ALL questions in one response.
+- Do NOT split the paper into chunks.
+- Close the JSON array normally.
+- Then provide END OF JSON and verification notes.
+
+Only use chunk processing when the paper is too large for a reliable single response or there is a substantial risk of output truncation.
+
+If chunking is necessary:
+
+1. Determine the approximate total number of questions.
+2. Select a practical chunk size.
+3. Inform the user that the paper is too large for one reliable response.
+4. Show the complete chunk plan.
+5. Do NOT generate questions in the same response as the chunk plan.
+6. Ask the user to request the first chunk.
+
+Example:
+
+"The question paper contains approximately 100 questions and is too large to reliably generate in one response.
+
+I will process it in 5 continuous chunks:
+
+Chunk 1: Questions 1–20
+Chunk 2: Questions 21–40
+Chunk 3: Questions 41–60
+Chunk 4: Questions 61–80
+Chunk 5: Questions 81–100
+
+The chunks form ONE continuous JSON array.
+
+Request Chunk 1 to begin."
+
+==================================================
+20. CONTINUOUS JSON CHUNK FORMAT
+==================================================
+
+When chunks are necessary, the chunks MUST be directly concatenatable.
+
+FIRST CHUNK:
+
+- Begin with:
+[
+
+- Generate the first group of complete question objects.
+- The final question object MUST end with:
+},
+
+- Do NOT close the JSON array.
+- Do NOT output "]".
+- Do NOT output "END OF JSON".
+- Do NOT output verification notes.
+
+Example:
+
+[
+  {
+    "question": "Question 1",
+    ...
+  },
+  {
+    "question": "Question 2",
+    ...
+  },
+
+SECOND / MIDDLE CHUNKS:
+
+- Begin directly with:
+{
+
+- Generate the next complete question objects.
+- The final question object MUST end with:
+},
+
+- Do NOT begin with "[".
+- Do NOT close with "]".
+- Do NOT output "END OF JSON".
+- Do NOT output verification notes.
+
+Example:
+
+  {
+    "question": "Question 21",
+    ...
+  },
+  {
+    "question": "Question 22",
+    ...
+  },
+
+FINAL CHUNK:
+
+- Begin directly with:
+{
+
+- Generate the remaining question objects.
+- The final question object MUST NOT have a trailing comma.
+- Close the complete JSON array with:
+]
+
+- Then output:
+
+END OF JSON
+
+VERIFICATION NOTES:
+
+Example:
+
+  {
+    "question": "Question 100",
+    ...
+  }
+]
+
+END OF JSON
+
+VERIFICATION NOTES:
+...
+
+IMPORTANT:
+
+The user must be able to concatenate the chunks directly.
+
+Do NOT require the user to manually add:
+
+[
+or
+
+]
+
+or commas between chunks.
+
+==================================================
+21. CHUNK CONTINUITY
+==================================================
+
+Never skip or duplicate questions.
+
+Example:
+
+Chunk 1:
+Questions 1–20
+
+Chunk 2:
+Questions 21–40
+
+Chunk 3:
+Questions 41–60
+
+Chunk 4:
+Questions 61–80
+
+Chunk 5:
+Questions 81–100
+
+If Chunk 1 ends with Question 20, Chunk 2 MUST begin with Question 21.
+
+Do NOT repeat Question 20.
+
+Do NOT skip Question 21.
+
+Never split an individual question object between chunks.
+
+Maintain:
+
+- Same target languages
+- Same field names
+- Same translation style
+- Same question order
+- Same JSON structure
+
+==================================================
+22. CHUNK REQUESTS
+==================================================
+
+If the user says:
+
+"Chunk 1"
+
+generate ONLY Chunk 1.
+
+If the user says:
+
+"Chunk 2"
+
+generate ONLY Chunk 2.
+
+If the user says:
+
+"Next"
+
+generate the next unprocessed chunk.
+
+If the user requests a specific chunk number, generate ONLY that chunk.
+
+Do NOT generate multiple chunks unless explicitly requested.
+
+==================================================
+23. VERIFICATION NOTES
+==================================================
+
+For a paper generated in ONE response:
+
+After the closing "]", output:
+
+END OF JSON
+
+VERIFICATION NOTES:
+
+For a paper processed in chunks:
+
+- Do NOT provide verification notes after intermediate chunks.
+- Only the FINAL chunk may contain verification notes.
+- The FINAL chunk MUST close the JSON array with "]".
+- Then output END OF JSON.
+- Then output verification notes.
+
+Verification notes must contain ONLY genuine issues requiring manual verification.
+
+Examples:
+
+- Question 9: One word in the source is unclear. Verify against the original paper.
+- Question 15: One option appears incomplete. Verify against the original paper.
+- Question 24: A mathematical symbol is unclear. Verify against the original document.
+- Question 31: Malayalam was generated by translation because Malayalam was not present in the source.
+
+Do NOT list normal translations as issues.
+
+If there are no issues:
+
+END OF JSON
+
+VERIFICATION NOTES:
+No obvious extraction, translation, mathematical, scientific, or formatting issues found.
+
+==================================================
+24. OUTPUT VALIDATION
+==================================================
+
+Before returning the response, verify:
+
+1. All questions have been extracted.
+2. No question has been invented.
+3. No question has been skipped.
+4. No question has been duplicated.
+5. Original question order is preserved.
+6. Every selected target language is present.
+7. Every selected language has the correct question and option fields.
+8. Correct option is A/B/C/D only.
+9. Correct option is consistent across languages.
+10. "formula" exists for every question.
+11. Mathematical/scientific notation is preserved.
+12. Required line breaks are preserved using \n.
+13. JSON syntax is valid.
+14. Chunk boundaries are valid if chunking is being used.
+15. No unnecessary chunking was performed.
+16. Verification notes appear only after the final question/final chunk.
+
+==================================================
+25. FINAL OUTPUT RULE
+==================================================
+
+IF THE PAPER FITS IN ONE RESPONSE:
+
+Return:
+
+[
+  complete JSON objects
+]
+
+END OF JSON
+
+VERIFICATION NOTES:
+...
+
+IF THE PAPER IS TOO LARGE:
+
+FIRST CHUNK:
+
+[
+  complete JSON objects
+  final object ends with },
+ 
+MIDDLE CHUNK:
+
+  {
+    ...
+  },
+
+FINAL CHUNK:
+
+  {
+    ...
+  }
+]
+
+END OF JSON
+
+VERIFICATION NOTES:
+...
+
+Do NOT use markdown.
+
+Do NOT use \`\`\`json.
+
+Do NOT add conversational text when generating the actual JSON.
+
+Do NOT add any text after the verification notes.
+
+SOURCE QUESTION PAPER:
+[UPLOADED OR PASTED QUESTION PAPER]`;
+
+                                    const currentPrompt = rawUniversalPrompt.replace("[TARGET_LANGUAGES]", targetLangsStr);
 
                                     const toggleLang = (lang: string) => {
                                       if (targetLangs.includes(lang)) {
@@ -20329,47 +23471,8 @@ function MainApp() {
 
                                     return (
                                       <View style={{ backgroundColor: darkMode ? "#111a11" : "#f1f8e9", borderRadius: 10, padding: 14, marginBottom: 15, borderWidth: 1, borderColor: darkMode ? "#2d4a2d" : "#c8e6c9" }}>
-                                        <Text style={{ fontSize: 11, fontWeight: "bold", color: darkMode ? "#81c784" : "#2e7d32", marginBottom: 6 }}>STEP 1: SELECT PROMPT TYPE & TARGET LANGUAGES:</Text>
-
-                                        {/* 2 Generalized Prompts */}
-                                        <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
-                                          <TouchableOpacity
-                                            onPress={() => setSelectedPromptType("normal")}
-                                            style={{
-                                              flex: 1,
-                                              padding: 10,
-                                              borderRadius: 8,
-                                              borderWidth: 2,
-                                              borderColor: selectedPromptType === "normal" ? "#2e7d32" : (darkMode ? "#333" : "#e0e0e0"),
-                                              backgroundColor: selectedPromptType === "normal" ? (darkMode ? "#1b3a1b" : "#e8f5e9") : (darkMode ? "#1a1a1a" : "#ffffff"),
-                                              alignItems: "center"
-                                            }}
-                                          >
-                                            <Text style={{ fontSize: 16 }}>📋</Text>
-                                            <Text style={{ fontWeight: "bold", fontSize: 11, color: selectedPromptType === "normal" ? "#2e7d32" : (darkMode ? "#aaa" : "#555"), marginTop: 2 }}>Prompt 1: Normal / General</Text>
-                                            <Text style={{ fontSize: 9, color: darkMode ? "#777" : "#888", textAlign: "center" }}>Extract & Translate MCQs faithfully across selected languages</Text>
-                                          </TouchableOpacity>
-
-                                          <TouchableOpacity
-                                            onPress={() => setSelectedPromptType("formula")}
-                                            style={{
-                                              flex: 1,
-                                              padding: 10,
-                                              borderRadius: 8,
-                                              borderWidth: 2,
-                                              borderColor: selectedPromptType === "formula" ? "#2e7d32" : (darkMode ? "#333" : "#e0e0e0"),
-                                              backgroundColor: selectedPromptType === "formula" ? (darkMode ? "#1b3a1b" : "#e8f5e9") : (darkMode ? "#1a1a1a" : "#ffffff"),
-                                              alignItems: "center"
-                                            }}
-                                          >
-                                            <Text style={{ fontSize: 16 }}>🔬</Text>
-                                            <Text style={{ fontWeight: "bold", fontSize: 11, color: selectedPromptType === "formula" ? "#2e7d32" : (darkMode ? "#aaa" : "#555"), marginTop: 2 }}>Prompt 2: Maths & Science</Text>
-                                            <Text style={{ fontSize: 9, color: darkMode ? "#777" : "#888", textAlign: "center" }}>Preserves formulas, equations, symbols, & calculation steps</Text>
-                                          </TouchableOpacity>
-                                        </View>
-
                                         {/* Target Languages Toggle Buttons */}
-                                        <Text style={{ fontSize: 11, fontWeight: "bold", color: darkMode ? "#ccc" : "#424242", marginBottom: 6 }}>TARGET LANGUAGES (Select all required):</Text>
+                                        <Text style={{ fontSize: 11, fontWeight: "bold", color: darkMode ? "#81c784" : "#2e7d32", marginBottom: 6 }}>SELECT TARGET LANGUAGES (Select all required):</Text>
                                         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
                                           {[
                                             { key: "English", flag: "🇬🇧" },
@@ -20461,7 +23564,7 @@ function MainApp() {
                                     );
                                   })()}
 
-                                  <Text style={[styles.label, darkMode && styles.labelDark]}>Paste Questions JSON Array *:</Text>
+                                                                    <Text style={[styles.label, darkMode && styles.labelDark]}>Paste Questions JSON Array *:</Text>
                                   <TextInput
                                     style={[styles.input, darkMode && styles.inputDark, { minHeight: 220, maxHeight: 400, textAlignVertical: "top", padding: 12, fontFamily: "monospace", fontSize: 11 }]}
                                     placeholder={`[\n  {\n    "question": "Question text...",\n    "option a": "Choice 1",\n    "option b": "Choice 2",\n    ... \n  }\n]`}
@@ -20552,6 +23655,61 @@ function MainApp() {
                                   onChange={(t: string) => setNewPdfTest({ ...newPdfTest, endTime: t })}
                                   darkMode={darkMode}
                                 />
+
+                                {/* Scheduling Mode: Fixed vs Flexible */}
+                                <View style={{ backgroundColor: darkMode ? "#1a1a2e" : "#f0f4ff", padding: 10, borderRadius: 8, marginTop: 6, borderLeftWidth: 3, borderLeftColor: "#5c6bc0" }}>
+                                  <Text style={{ fontWeight: "bold", color: darkMode ? "#9fa8da" : "#3949ab", fontSize: 11, marginBottom: 4 }}>SCHEDULING MODE</Text>
+                                  <Text style={{ fontSize: 10, color: darkMode ? "#aaa" : "#555", marginBottom: 8 }}>
+                                    {(newPdfTest.schedulingMode || "fixed") === "fixed"
+                                      ? "Fixed: Students wait in room until exact start time. Expires at end time."
+                                      : "Flexible: Students start anytime within the window. Each gets full duration from their start."}
+                                  </Text>
+                                  <View style={{ flexDirection: "row", gap: 8 }}>
+                                    {[{ label: "🔒 Fixed", value: "fixed" }, { label: "🕐 Flexible", value: "flexible" }].map(opt => (
+                                      <TouchableOpacity
+                                        key={opt.value}
+                                        onPress={() => setNewPdfTest({ ...newPdfTest, schedulingMode: opt.value })}
+                                        style={{
+                                          flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: "center",
+                                          backgroundColor: (newPdfTest.schedulingMode || "fixed") === opt.value ? "#5c6bc0" : (darkMode ? "#2a2a2a" : "#fff"),
+                                          borderWidth: 1,
+                                          borderColor: (newPdfTest.schedulingMode || "fixed") === opt.value ? "#5c6bc0" : (darkMode ? "#444" : "#ddd")
+                                        }}
+                                      >
+                                        <Text style={{ fontSize: 11, fontWeight: "bold", color: (newPdfTest.schedulingMode || "fixed") === opt.value ? "#fff" : (darkMode ? "#aaa" : "#555") }}>{opt.label}</Text>
+                                      </TouchableOpacity>
+                                    ))}
+                                  </View>
+                                
+
+                                  {/* Individual Test Duration Input Box - Only for Flexible mode */}
+                                  {(newPdfTest.schedulingMode || "fixed") === "flexible" && (
+                                    <View style={{ marginTop: 4, paddingTop: 8, borderTopWidth: 1, borderTopColor: darkMode ? "#333" : "#e0e0e0" }}>
+                                    <Text style={{ fontSize: 10, fontWeight: "bold", color: darkMode ? "#9fa8da" : "#3949ab", marginBottom: 4 }}>
+                                      Test Duration (in Minutes):
+                                    </Text>
+                                    <TextInput
+                                      style={{
+                                        backgroundColor: darkMode ? "#2a2a2a" : "#fff",
+                                        borderColor: darkMode ? "#444" : "#ccc",
+                                        borderWidth: 1,
+                                        borderRadius: 6,
+                                        paddingHorizontal: 10,
+                                        paddingVertical: 6,
+                                        color: darkMode ? "#fff" : "#000",
+                                        fontSize: 12
+                                      }}
+                                      placeholder="e.g. 120 (for 2 hours)"
+                                      placeholderTextColor={darkMode ? "#888" : "#999"}
+                                      keyboardType="numeric"
+                                      value={newPdfTest.duration ? String(newPdfTest.duration) : ""}
+                                      onChangeText={(t) => setNewPdfTest({ ...newPdfTest, duration: t })}
+                                    />
+                                    <Text style={{ fontSize: 9, color: darkMode ? "#aaa" : "#777", marginTop: 3 }}>
+                                      For flexible tests, students get this exact duration (e.g. 120 mins) from the moment they click Start within the availability window.
+                                    </Text>
+                                  </View>
+                                )}</View>
                               </View>
 
                               {/* Target Audience Fields */}
@@ -20752,16 +23910,18 @@ function MainApp() {
                                 {/* Settings Panel */}
                                 <View style={{ backgroundColor: darkMode ? "#222" : "#f9f9f9", padding: 15, borderRadius: 12, marginBottom: 15, borderLeftWidth: 4, borderLeftColor: "#2e7d32" }}>
                                   <Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#212121", marginBottom: 10 }}>Test Settings (Marking Scheme)</Text>
-                                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
-                                    <View style={{ flex: 1, minWidth: 100 }}>
+                                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12, alignItems: "flex-start" }}>
+                                    
+                                    {/* Correct Answer Marks */}
+                                    <View style={{ flex: 1, minWidth: 140 }}>
                                       <Text style={[styles.label, darkMode && styles.labelDark]}>Correct Answer Marks:</Text>
                                       <TextInput
-                                        style={[styles.input, darkMode && styles.inputDark]}
+                                        style={[styles.input, darkMode && styles.inputDark, { fontWeight: "bold", color: "#2e7d32" }]}
                                         placeholder="+1"
                                         placeholderTextColor="#999"
-                                        value={newPdfTest.marksPerQ}
+                                        value={newPdfTest.marksPerQ !== undefined && newPdfTest.marksPerQ !== "" ? newPdfTest.marksPerQ : "+1"}
                                         onChangeText={v => {
-                                          let clean = v.replace(/[+]/g, "");
+                                          let clean = v.replace(/[+]/g, "").trim();
                                           let formatted = clean;
                                           const parseFloatVal = parseFloat(clean);
                                           if (!isNaN(parseFloatVal) && parseFloatVal > 0) {
@@ -20773,31 +23933,63 @@ function MainApp() {
                                         }}
                                       />
                                     </View>
-                                    <View style={{ flex: 1, minWidth: 100 }}>
+
+                                    {/* Wrong Answer Marks */}
+                                    <View style={{ flex: 1.5, minWidth: 220 }}>
                                       <Text style={[styles.label, darkMode && styles.labelDark]}>Wrong Answer Marks:</Text>
                                       <TextInput
-                                        style={[styles.input, darkMode && styles.inputDark]}
-                                        placeholder="-0.33"
+                                        style={[styles.input, darkMode && styles.inputDark, { fontWeight: "bold", color: "#c62828" }]}
+                                        placeholder="-0.25"
                                         placeholderTextColor="#999"
-                                        value={newPdfTest.negMarks}
+                                        value={newPdfTest.negMarks !== undefined && newPdfTest.negMarks !== "" ? newPdfTest.negMarks : "-0.25"}
                                         onChangeText={v => {
-                                          let clean = v.replace(/[+]/g, "");
+                                          let clean = v.replace(/[+]/g, "").trim();
                                           let formatted = clean;
-                                          const parseFloatVal = parseFloat(clean);
-                                          if (!isNaN(parseFloatVal) && parseFloatVal > 0) {
-                                            formatted = "+" + clean;
-                                          } else if (parseFloatVal < 0) {
-                                            formatted = clean;
+                                          if (clean === "") {
+                                            formatted = "";
+                                          } else if (clean === "-") {
+                                            formatted = "-";
                                           } else if (clean === "0") {
                                             formatted = "0";
-                                          } else if (clean && !clean.startsWith("-")) {
+                                          } else if (clean.startsWith("-")) {
+                                            formatted = clean;
+                                          } else {
+                                            // Auto-prefix negative sign for any positive custom input
                                             formatted = "-" + clean;
                                           }
                                           setNewPdfTest({ ...newPdfTest, negMarks: formatted });
                                         }}
                                       />
+                                      {/* Quick Presets for Wrong Answer Marks */}
+                                      <View style={{ flexDirection: "row", gap: 6, marginTop: 6, alignItems: "center" }}>
+                                        <Text style={{ fontSize: 11, color: "#757575", fontWeight: "600" }}>Presets:</Text>
+                                        {["-0.25", "-0.33", "-0.66"].map((preset) => {
+                                          const currentVal = newPdfTest.negMarks !== undefined && newPdfTest.negMarks !== "" ? newPdfTest.negMarks : "-0.25";
+                                          const isSelected = currentVal === preset;
+                                          return (
+                                            <TouchableOpacity
+                                              key={preset}
+                                              onPress={() => setNewPdfTest({ ...newPdfTest, negMarks: preset })}
+                                              style={{
+                                                paddingHorizontal: 8,
+                                                paddingVertical: 3,
+                                                borderRadius: 6,
+                                                backgroundColor: isSelected ? "#c62828" : (darkMode ? "#333" : "#e0e0e0"),
+                                                borderWidth: 1,
+                                                borderColor: isSelected ? "#b71c1c" : "#ccc"
+                                              }}
+                                            >
+                                              <Text style={{ fontSize: 11, fontWeight: "bold", color: isSelected ? "#fff" : (darkMode ? "#ccc" : "#333") }}>
+                                                {preset}
+                                              </Text>
+                                            </TouchableOpacity>
+                                          );
+                                        })}
+                                      </View>
                                     </View>
-                                    <View style={{ flex: 1, minWidth: 100 }}>
+
+                                    {/* Unattended Marks */}
+                                    <View style={{ flex: 1, minWidth: 140 }}>
                                       <Text style={[styles.label, darkMode && styles.labelDark]}>Unattended Marks:</Text>
                                       <TextInput
                                         style={[styles.input, darkMode && styles.inputDark]}
@@ -20805,7 +23997,7 @@ function MainApp() {
                                         placeholderTextColor="#999"
                                         value={newPdfTest.unattendedMarks || "0"}
                                         onChangeText={v => {
-                                          let clean = v.replace(/[+]/g, "");
+                                          let clean = v.replace(/[+]/g, "").trim();
                                           let formatted = clean;
                                           const parseFloatVal = parseFloat(clean);
                                           if (clean === "0") {
@@ -20817,6 +24009,7 @@ function MainApp() {
                                         }}
                                       />
                                     </View>
+
                                   </View>
                                 </View>
 
@@ -21535,20 +24728,52 @@ function MainApp() {
                                     </View>
                                     {closedTests.map((t: any) => {
                                       const hasAttempt = studentAttempts.find((a: any) => a.testId === t.id);
+                                      const tType = (t.testType || t.category || "").toLowerCase();
+                                      const isWeeklyOrMock = tType === "weekly" || tType === "mock" || String(t.title || "").toLowerCase().includes("weekly") || String(t.title || "").toLowerCase().includes("mock");
+                                      const hasSubjects = isWeeklyOrMock && Array.isArray(t.subjectSections) && t.subjectSections.length > 0;
+                                      const isDiagExpanded = expandedClosedTestDiagId === t.id;
+
                                       return (
-                                        <View key={t.id} style={{ backgroundColor: "#fafafa", borderRadius: 10, padding: 12, marginBottom: 8, borderLeftWidth: 3, borderLeftColor: "#c62828" }}>
+                                        <View key={t.id} style={{ backgroundColor: darkMode ? "#18181b" : "#fafafa", borderRadius: 10, padding: 12, marginBottom: 8, borderLeftWidth: 3, borderLeftColor: "#c62828", borderWidth: 1, borderColor: darkMode ? "#27272a" : "#e2e8f0" }}>
                                           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
-                                            <Text style={{ fontWeight: "bold", color: "#212121", fontSize: 13, flex: 1 }}>{t.title}</Text>
+                                            <Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#212121", fontSize: 13, flex: 1 }}>{t.title}</Text>
                                             <View style={{ backgroundColor: "#ffebee", borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 }}>
                                               <Text style={{ fontSize: 10, color: "#c62828", fontWeight: "800" }}>ENDED</Text>
                                             </View>
                                           </View>
-                                          <Text style={{ fontSize: 11, color: "#757575", marginTop: 3 }}>
+                                          <Text style={{ fontSize: 11, color: darkMode ? "#a1a1aa" : "#757575", marginTop: 3 }}>
                                             Closed: {new Date(t.endTime).toLocaleString()}
                                           </Text>
+
+                                          {/* Subject Section Pills */}
+                                          {hasSubjects && (
+                                            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+                                              {t.subjectSections.map((sec: any, secIdx: number) => (
+                                                <View key={secIdx} style={{ backgroundColor: darkMode ? "#27272a" : "#eff6ff", borderColor: darkMode ? "#3f3f46" : "#bfdbfe", borderWidth: 1, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                                                  <Text style={{ fontSize: 10, fontWeight: "600", color: darkMode ? "#93c5fd" : "#1e40af" }}>
+                                                    📚 {sec.subject} ({sec.fromQ}–{sec.toQ})
+                                                  </Text>
+                                                </View>
+                                              ))}
+                                            </View>
+                                          )}
+
                                           <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
                                             {isAdmin ? (
                                               <>
+                                                {hasSubjects && (
+                                                  <TouchableOpacity
+                                                    onPress={() => {
+                                                      const nextId = isDiagExpanded ? null : t.id;
+                                                      setExpandedClosedTestDiagId(nextId);
+                                                      if (nextId) fetchTestDiagnostics(t.id);
+                                                    }}
+                                                    style={{ backgroundColor: isDiagExpanded ? "#0369a1" : "#0284c7", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 4 }}
+                                                  >
+                                                    <Ionicons name="pie-chart-outline" size={14} color="#fff" />
+                                                    <Text style={{ color: "#fff", fontSize: 11, fontWeight: "700" }}>{isDiagExpanded ? "Hide Analytics" : "Analytics"}</Text>
+                                                  </TouchableOpacity>
+                                                )}
                                                 <TouchableOpacity
                                                   onPress={() => {
                                                     setReportsModalTestId(t.id);
@@ -21631,6 +24856,13 @@ function MainApp() {
                                               </>
                                             )}
                                           </View>
+
+                                          {/* In-Line Subject Pie Chart & 30% Diagnostics for Closed Tests */}
+                                          {isAdmin && hasSubjects && isDiagExpanded && (
+                                            <View style={{ marginTop: 10 }}>
+                                              {renderSubjectAnalyticsDiagnosticPanel(t)}
+                                            </View>
+                                          )}
                                         </View>
                                       );
                                     })}
@@ -21649,7 +24881,13 @@ function MainApp() {
                                   <View key={testLog.testId} style={[styles.card, { padding: 0, overflow: "hidden" }]}>
                                     {/* Test Header */}
                                     <TouchableOpacity
-                                      onPress={() => setExpandedTestId(expandedTestId === testLog.testId ? null : testLog.testId)}
+                                      onPress={() => {
+                                        const nextId = expandedTestId === testLog.testId ? null : testLog.testId;
+                                        setExpandedTestId(nextId);
+                                        if (nextId && isAdmin) {
+                                          fetchTestDiagnostics(testLog.testId);
+                                        }
+                                      }}
                                       style={{ backgroundColor: "#c62828", padding: 14, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
                                     >
                                       <View style={{ flex: 1 }}>
@@ -21657,6 +24895,28 @@ function MainApp() {
                                         <Text style={{ color: "rgba(255,255,255,0.8)", fontSize: 11, marginTop: 2 }}>
                                           {testLog.createdAt ? new Date(testLog.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : ""} · {testLog.totalParticipants} participants
                                         </Text>
+
+                                        {/* Subject Section Pills */}
+                                        {(() => {
+                                          const resolvedTest = tests.find((t: any) => t.id === testLog.testId || t.id === testLog.id);
+                                          const secList = (resolvedTest?.subjectSections && resolvedTest.subjectSections.length > 0)
+                                            ? resolvedTest.subjectSections
+                                            : (testLog.subjectSections && testLog.subjectSections.length > 0)
+                                              ? testLog.subjectSections
+                                              : [];
+                                          if (secList.length === 0) return null;
+                                          return (
+                                            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+                                              {secList.map((sec: any, secIdx: number) => (
+                                                <View key={secIdx} style={{ backgroundColor: "rgba(255,255,255,0.2)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                                                  <Text style={{ fontSize: 10, fontWeight: "600", color: "#ffffff" }}>
+                                                    📚 {sec.subject} ({sec.fromQ}–{sec.toQ})
+                                                  </Text>
+                                                </View>
+                                              ))}
+                                            </View>
+                                          );
+                                        })()}
                                       </View>
                                       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                                         {/* PDF Export Button */}
@@ -21690,13 +24950,60 @@ function MainApp() {
                                         >
                                           <Ionicons name="download-outline" size={18} color="#fff" />
                                         </TouchableOpacity>
+                                        {isAdmin && (
+                                          <TouchableOpacity
+                                            onPress={() => {
+                                              const targetId = testLog.testId || testLog.id;
+                                              executeDelete("tests", targetId, async () => {
+                                                try {
+                                                  await api.delete(`/test-portal/test-creation/${targetId}`);
+                                                  Alert.alert("Success", "Test deleted successfully.");
+                                                  setAllTestResults(prev => prev.filter((r: any) => r.testId !== targetId && r.id !== targetId));
+                                                  loadTests();
+                                                } catch (e: any) {
+                                                  Alert.alert("Error", e.message || "Failed to delete test.");
+                                                }
+                                              });
+                                            }}
+                                            style={{ backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 6, padding: 6 }}
+                                          >
+                                            <Ionicons name="trash-outline" size={18} color="#fff" />
+                                          </TouchableOpacity>
+                                        )}
                                         <Ionicons name={expandedTestId === testLog.testId ? "chevron-up" : "chevron-down"} size={18} color="#fff" />
                                       </View>
                                     </TouchableOpacity>
 
-                                    {/* Expandable Leaderboard Table */}
-                                    {expandedTestId === testLog.testId && (
-                                      isMobile ? (
+                                    {/* Expandable Section: Subject Analytics + Leaderboard Table */}
+                                    {expandedTestId === testLog.testId && (() => {
+                                      const resolvedTest = tests.find((t: any) => t.id === testLog.testId || t.id === testLog.id);
+                                      const tType = (resolvedTest?.testType || testLog.testType || testLog.category || "").toLowerCase();
+                                      const isWeeklyOrMock = tType === "weekly" || tType === "mock" || String(testLog.testTitle || "").toLowerCase().includes("weekly") || String(testLog.testTitle || "").toLowerCase().includes("mock");
+                                      const testSubjectSections = (resolvedTest?.subjectSections && resolvedTest.subjectSections.length > 0)
+                                        ? resolvedTest.subjectSections
+                                        : (testLog.subjectSections && testLog.subjectSections.length > 0)
+                                          ? testLog.subjectSections
+                                          : [];
+                                      const hasSubjects = isWeeklyOrMock && testSubjectSections.length > 0;
+
+                                      return (
+                                        <View>
+                                          {/* Subject Section Pie Chart & 30% Diagnostic Panel (Admin Only, Weekly & Mock Tests with Subjects) */}
+                                          {isAdmin && hasSubjects && (
+                                            renderSubjectAnalyticsDiagnosticPanel(testLog)
+                                          )}
+
+                                          {/* Section Header */}
+                                          <View style={{ paddingHorizontal: 14, paddingTop: 10, paddingBottom: 4, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                                            <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#1e293b" }}>
+                                              🏆 Student Rankings & Performance Ledger
+                                            </Text>
+                                            <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#64748b" }}>
+                                              {testLog.totalParticipants} Candidates Evaluated
+                                            </Text>
+                                          </View>
+
+                                          {isMobile ? (
                                         <View style={{ padding: 8 }}>
                                           {(testLog.entries || []).map((entry: any, idx: number) => {
                                             const isGenericName = (name: string) => {
@@ -21736,9 +25043,6 @@ function MainApp() {
                                                       {displayRoll}
                                                     </Text>
                                                   </View>
-                                                  <View style={{ backgroundColor: perf.bgColor, borderColor: perf.borderColor, borderWidth: 1, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
-                                                    <Text style={{ fontSize: 10, fontWeight: "bold", color: perf.color }}>{perf.label}</Text>
-                                                  </View>
                                                 </View>
 
                                                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 8, paddingTop: 6, borderTopWidth: 1, borderTopColor: darkMode ? "#2a2a2a" : "#f0f0f0" }}>
@@ -21753,18 +25057,18 @@ function MainApp() {
                                         </View>
                                       ) : (
                                         <ScrollView horizontal showsHorizontalScrollIndicator={true}>
-                                          <View style={{ minWidth: isAdmin ? 840 : 780 }}>
+                                          <View style={{ minWidth: isAdmin ? 840 : 650 }}>
                                             {/* Table Header */}
                                             <View style={{ flexDirection: "row", backgroundColor: darkMode ? "#2a2a2a" : "#f5f5f5", paddingVertical: 8, paddingHorizontal: 10, borderBottomWidth: 1, borderColor: darkMode ? "#333" : "#e0e0e0" }}>
                                               {(isAdmin
                                                 ? ["#", "Roll No", "Name", "Correct", "Wrong", "Skipped", "Marks", "%", "Status"]
-                                                : ["#", "Roll No", "Attended", "Not Attended", "Correct Ans", "Wrong Ans", "Total Marks", "Status"]
+                                                : ["#", "Roll No", "Attended", "Not Attended", "Correct Ans", "Wrong Ans", "Total Marks"]
                                               ).map((h, i) => (
                                                 <Text key={i} style={{
-                                                  fontWeight: "bold", fontSize: 11, color: darkMode ? "#fff" : "#555", textAlign: (!isAdmin && i >= 2 && i < 7) || (isAdmin && i >= 3 && i < 8) ? "center" : i === 8 || (!isAdmin && i === 7) ? "center" : "left",
+                                                  fontWeight: "bold", fontSize: 11, color: darkMode ? "#fff" : "#555", textAlign: (!isAdmin && i >= 2 && i < 7) || (isAdmin && i >= 3 && i < 8) ? "center" : i === 8 ? "center" : "left",
                                                   width: isAdmin
                                                     ? (i === 0 ? 36 : i === 1 ? 90 : i === 2 ? 130 : i === 3 ? 64 : i === 4 ? 64 : i === 5 ? 64 : i === 6 ? 90 : i === 7 ? 50 : 130)
-                                                    : (i === 0 ? 45 : i === 1 ? 120 : i === 2 ? 85 : i === 3 ? 95 : i === 4 ? 85 : i === 5 ? 85 : i === 6 ? 95 : 130)
+                                                    : (i === 0 ? 45 : i === 1 ? 120 : i === 2 ? 85 : i === 3 ? 95 : i === 4 ? 85 : i === 5 ? 85 : 95)
                                                 }}>{h}</Text>
                                               ))}
                                             </View>
@@ -21796,11 +25100,6 @@ function MainApp() {
                                                     <Text style={{ width: 85, fontSize: 12, color: "#2e7d32", fontWeight: "bold", textAlign: "center" }}>{correct}</Text>
                                                     <Text style={{ width: 85, fontSize: 12, color: "#c62828", fontWeight: "bold", textAlign: "center" }}>{wrong}</Text>
                                                     <Text style={{ width: 95, fontSize: 12, fontWeight: "bold", color: darkMode ? "#81c784" : "#1a237e", textAlign: "center" }}>{entry.obtainedMarks} / {entry.totalMarks}</Text>
-                                                    <View style={{ width: 130, alignItems: "center", justifyContent: "center" }}>
-                                                      <View style={{ backgroundColor: perf.bgColor, borderColor: perf.borderColor, borderWidth: 1, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
-                                                        <Text style={{ fontSize: 10, fontWeight: "bold", color: perf.color, textAlign: "center" }}>{perf.label}</Text>
-                                                      </View>
-                                                    </View>
                                                   </View>
                                                 );
                                               }
@@ -21824,7 +25123,10 @@ function MainApp() {
                                           })}
                                         </View>
                                       </ScrollView>
-                                    ))}
+                                    )}
+                                        </View>
+                                      );
+                                    })()}
                                   </View>
                                 ))}
                               </>
@@ -22750,7 +26052,50 @@ function MainApp() {
                                                 <Text style={{ fontSize: 12, color: newStudent.courseDuration === d ? "#c62828" : "#757575", fontWeight: newStudent.courseDuration === d ? "bold" : "normal" }}>{d}</Text>
                                               </TouchableOpacity>
                                             ))}
+                                            {/* + Custom Duration Option */}
+                                            <TouchableOpacity
+                                              onPress={() => {
+                                                const standardPresets = ["3 Months", "6 Months", "9 Months", "12 Months", "18 Months", "24 Months"];
+                                                if (standardPresets.includes(newStudent.courseDuration)) {
+                                                  setNewStudent({ ...newStudent, courseDuration: "1 Month" });
+                                                }
+                                              }}
+                                              style={{
+                                                paddingHorizontal: 14,
+                                                paddingVertical: 8,
+                                                borderRadius: 20,
+                                                borderWidth: 2,
+                                                borderColor: !["3 Months", "6 Months", "9 Months", "12 Months", "18 Months", "24 Months"].includes(newStudent.courseDuration) ? "#c62828" : "#0288d1",
+                                                backgroundColor: !["3 Months", "6 Months", "9 Months", "12 Months", "18 Months", "24 Months"].includes(newStudent.courseDuration) ? "#ffebee" : "#e1f5fe"
+                                              }}
+                                            >
+                                              <Text style={{ fontSize: 12, color: !["3 Months", "6 Months", "9 Months", "12 Months", "18 Months", "24 Months"].includes(newStudent.courseDuration) ? "#c62828" : "#0288d1", fontWeight: "bold" }}>
+                                                ✏️ Custom
+                                              </Text>
+                                            </TouchableOpacity>
                                           </View>
+
+                                          {/* Custom Duration Input Field (shown when custom duration is selected) */}
+                                          {!["3 Months", "6 Months", "9 Months", "12 Months", "18 Months", "24 Months"].includes(newStudent.courseDuration) && (
+                                            <View style={{ marginBottom: 12, backgroundColor: "#fff8e1", padding: 10, borderRadius: 8, borderWidth: 1, borderColor: "#ffe082" }}>
+                                              <Text style={{ fontSize: 12, color: "#f57f17", fontWeight: "bold", marginBottom: 4 }}>Enter Custom Duration (e.g. 1 Month, 45 Days, 2 Years):</Text>
+                                              <TextInput
+                                                style={{
+                                                  padding: 10,
+                                                  borderRadius: 6,
+                                                  borderWidth: 1,
+                                                  borderColor: "#ffa000",
+                                                  backgroundColor: "#ffffff",
+                                                  fontSize: 13,
+                                                  color: "#333"
+                                                }}
+                                                placeholder="e.g. 1 Month, 5 Months, 45 Days, 2 Years"
+                                                placeholderTextColor="#999"
+                                                value={newStudent.courseDuration}
+                                                onChangeText={v => setNewStudent({ ...newStudent, courseDuration: v })}
+                                              />
+                                            </View>
+                                          )}
 
                                           {/* Joining Date */}
                                           <Text style={{ fontWeight: "bold", color: "#c62828", marginBottom: 6, marginTop: 6, fontSize: 13 }}>📅 Joining Date</Text>
@@ -22844,10 +26189,10 @@ function MainApp() {
                                     placeholder="Search student name or roll number..."
                                     placeholderTextColor="#999"
                                     value={searchDirQuery}
-                                    onChangeText={setSearchDirQuery}
+                                    onChangeText={txt => { setSearchDirQuery(txt); setDirCurrentPage(1); }}
                                   />
                                   {searchDirQuery ? (
-                                    <TouchableOpacity onPress={() => setSearchDirQuery("")} style={{ padding: 10, backgroundColor: "#eeeeee", borderRadius: 8, justifyContent: "center" }}>
+                                    <TouchableOpacity onPress={() => { setSearchDirQuery(""); setDirCurrentPage(1); }} style={{ padding: 10, backgroundColor: "#eeeeee", borderRadius: 8, justifyContent: "center" }}>
                                       <Text style={{ fontSize: 11, color: "#333" }}>Clear</Text>
                                     </TouchableOpacity>
                                   ) : null}
@@ -23033,7 +26378,14 @@ function MainApp() {
                                         return <Text style={styles.emptyText}>No matching students found.</Text>;
                                       }
 
-                                      return filtered.map((s) => {
+                                      const DIR_ITEMS_PER_PAGE = 20;
+                                      const totalFilteredCount = filtered.length;
+                                      const totalDirPages = Math.ceil(totalFilteredCount / DIR_ITEMS_PER_PAGE) || 1;
+                                      const safeDirPage = Math.max(1, Math.min(dirCurrentPage, totalDirPages));
+                                      const startDirIndex = (safeDirPage - 1) * DIR_ITEMS_PER_PAGE;
+                                      const paginatedList = filtered.slice(startDirIndex, startDirIndex + DIR_ITEMS_PER_PAGE);
+
+                                      return paginatedList.map((s) => {
                                         const isSelected = selectedDirectoryStudent?.id === s.id;
                                         const isPending = s.status === "pending";
                                         return (
@@ -23083,6 +26435,60 @@ function MainApp() {
                                       });
                                     })()}
                                   </ScrollView>
+                                  {(() => {
+                                    const q = searchDirQuery.trim().toLowerCase();
+                                    const filtered = students.filter((s) => {
+                                      const name = (s.name || s.fullName || "").toLowerCase();
+                                      const roll = (s.rollNumber || s.rollNo || s.regNo || "").toLowerCase();
+                                      if (q && !name.includes(q) && !roll.includes(q)) return false;
+                                      if (filterDirBatch !== "all" && s.batch !== filterDirBatch) return false;
+                                      if (filterDirType !== "all") {
+                                        const typeLower = filterDirType.toLowerCase();
+                                        const hasDirectType = String(s.type || "").toLowerCase() === typeLower;
+                                        let hasBatchMode = false;
+                                        if (s.batchModes) {
+                                          for (const key of Object.keys(s.batchModes)) {
+                                            const modes = s.batchModes[key];
+                                            if (Array.isArray(modes) && modes.map((m: string) => String(m).toLowerCase()).includes(typeLower)) {
+                                              hasBatchMode = true;
+                                              break;
+                                            }
+                                          }
+                                        }
+                                        if (!hasDirectType && !hasBatchMode) return false;
+                                      }
+                                      if (filterDirStatus !== "all") {
+                                        const isPending = s.status === "pending";
+                                        if (filterDirStatus === "pending" && !isPending) return false;
+                                        if (filterDirStatus === "active" && isPending) return false;
+                                      }
+                                      return true;
+                                    });
+
+                                    const DIR_ITEMS_PER_PAGE = 20;
+                                    const totalDirPages = Math.ceil(filtered.length / DIR_ITEMS_PER_PAGE) || 1;
+                                    const safeDirPage = Math.max(1, Math.min(dirCurrentPage, totalDirPages));
+
+                                    if (totalDirPages <= 1) return null;
+
+                                    return (
+                                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8, paddingHorizontal: 6, borderTopWidth: 1, borderTopColor: darkMode ? "#444" : "#eee", marginTop: 8 }}>
+                                        <TouchableOpacity disabled={safeDirPage <= 1} onPress={() => setDirCurrentPage(safeDirPage - 1)} style={{ paddingHorizontal: 8, paddingVertical: 4, opacity: safeDirPage <= 1 ? 0.4 : 1 }}>
+                                          <Text style={{ fontSize: 12, fontWeight: "bold", color: darkMode ? "#ffffff" : "#333333" }}>‹ Prev</Text>
+                                        </TouchableOpacity>
+                                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 4, alignItems: "center", paddingHorizontal: 4 }}>
+                                          {Array.from({ length: totalDirPages }, (_, i) => i + 1).map((p) => (
+                                            <TouchableOpacity key={p} onPress={() => setDirCurrentPage(p)} style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: p === safeDirPage ? "#c62828" : (darkMode ? "#444" : "#e0e0e0"), backgroundColor: p === safeDirPage ? "#c62828" : (darkMode ? "#2a2a2a" : "#ffffff") }}>
+                                              <Text style={{ fontSize: 12, color: p === safeDirPage ? "#ffffff" : (darkMode ? "#cccccc" : "#333333"), fontWeight: p === safeDirPage ? "bold" : "normal" }}>{p}</Text>
+                                            </TouchableOpacity>
+                                          ))}
+                                        </ScrollView>
+                                        <TouchableOpacity disabled={safeDirPage >= totalDirPages} onPress={() => setDirCurrentPage(safeDirPage + 1)} style={{ paddingHorizontal: 8, paddingVertical: 4, opacity: safeDirPage >= totalDirPages ? 0.4 : 1 }}>
+                                          <Text style={{ fontSize: 12, fontWeight: "bold", color: darkMode ? "#ffffff" : "#333333" }}>Next ›</Text>
+                                        </TouchableOpacity>
+                                      </View>
+                                    );
+                                  })()}
                                 </View>
 
                                 {/* Student Details Modal */}
@@ -23173,7 +26579,7 @@ function MainApp() {
                                                       }
                                                       return bList.map((bName: string) => {
                                                         const modes = (s.batchModes || {})[bName] || [];
-                                                        const modesStr = modes.length > 0 ? modes.map((m: any) => String(m).toUpperCase()).join(", ") : (s.type || "offline").toUpperCase();
+                                                        const modesStr = modes.length > 0 ? modes.map((m: any) => String(m).toUpperCase()).join(", ") : String(s.type || "offline").split(/[\/\,\+]/).map((m: any) => m.trim().toUpperCase()).filter(Boolean).join(", ");
                                                         return (
                                                           <View key={bName} style={{ flexDirection: "row", gap: 4, alignItems: "center", marginBottom: 2 }}>
                                                             <View style={{ backgroundColor: darkMode ? "#2e7d3220" : "#e8f5e9", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 }}>
@@ -28161,88 +31567,92 @@ function MainApp() {
                               return (
                                 <View style={{ gap: 5, marginTop: 10 }}>
                                   {/* Table Header */}
-                                  <View style={[
-                                    styles.tableRow,
-                                    {
-                                      backgroundColor: darkMode ? "#252525" : "#f9f9f9",
-                                      paddingVertical: 10,
-                                      paddingHorizontal: 12,
-                                      borderTopWidth: 1,
-                                      borderTopColor: darkMode ? "#444" : "#e0e0e0",
-                                      borderBottomWidth: 2,
-                                      borderBottomColor: darkMode ? "#555" : "#bdbdbd",
-                                      borderTopLeftRadius: 8,
-                                      borderTopRightRadius: 8,
-                                    }
-                                  ]}>
-                                    <Text style={[styles.th, { flex: 2.5, color: darkMode ? "#ff8a80" : "#c62828" }]}>Student Name</Text>
-                                    <Text style={[styles.th, { flex: 1, textAlign: "center", color: darkMode ? "#ff8a80" : "#c62828" }]}>Score</Text>
-                                    {user.role !== "student" && (
-                                      <Text style={[styles.th, { flex: 1.2, textAlign: "center", color: darkMode ? "#ff8a80" : "#c62828" }]}>Tab Exits</Text>
-                                    )}
-                                    <Text style={[styles.th, { flex: 0.8, textAlign: "center", color: darkMode ? "#ff8a80" : "#c62828" }]}>Rank</Text>
-                                    <Text style={[styles.th, { flex: 1, textAlign: "right", color: darkMode ? "#ff8a80" : "#c62828" }]}>Status</Text>
-                                  </View>
+                                   <View style={[
+                                     styles.tableRow,
+                                     {
+                                       backgroundColor: darkMode ? "#252525" : "#f9f9f9",
+                                       paddingVertical: 10,
+                                       paddingHorizontal: 12,
+                                       borderTopWidth: 1,
+                                       borderTopColor: darkMode ? "#444" : "#e0e0e0",
+                                       borderBottomWidth: 2,
+                                       borderBottomColor: darkMode ? "#555" : "#bdbdbd",
+                                       borderTopLeftRadius: 8,
+                                       borderTopRightRadius: 8,
+                                     }
+                                   ]}>
+                                     <Text style={[styles.th, { flex: 2.5, color: darkMode ? "#ff8a80" : "#c62828" }]}>Student Name</Text>
+                                     <Text style={[styles.th, { flex: 1, textAlign: "center", color: darkMode ? "#ff8a80" : "#c62828" }]}>Score</Text>
+                                     {user.role !== "student" && (
+                                       <Text style={[styles.th, { flex: 1.2, textAlign: "center", color: darkMode ? "#ff8a80" : "#c62828" }]}>Tab Exits</Text>
+                                     )}
+                                     <Text style={[styles.th, { flex: 0.8, textAlign: "center", color: darkMode ? "#ff8a80" : "#c62828" }]}>Rank</Text>
+                                     {user.role !== "student" && (
+                                       <Text style={[styles.th, { flex: 1, textAlign: "right", color: darkMode ? "#ff8a80" : "#c62828" }]}>Status</Text>
+                                     )}
+                                   </View>
 
-                                  {/* Table Body */}
-                                  {displayResults.map((r, idx) => {
-                                    const stud = students.find((s) => s.id === r.studentId || s.userId === r.studentId || s.loginUsername === r.rollNumber || s.rollNumber === r.rollNumber);
-                                    const lead = leads.find((ld) => ld.id === r.studentId || ld.userId === r.studentId);
-                                    const resolvedName = r.studentName || (stud ? getStudentName(stud) : (lead ? lead.name : (r.studentId ? `Student (${String(r.studentId).substring(0, 8)})` : "Student")));
-                                    const resolvedRoll = (r.rollNumber && r.rollNumber !== "N/A") ? r.rollNumber : (stud ? (stud.rollNumber || stud.loginUsername) : "");
-                                    const rollLabel = resolvedRoll ? ` (${resolvedRoll})` : "";
-                                    const name = user.role === "student" ? `My Score${rollLabel}` : `${resolvedName}${rollLabel}`;
-                                    const isPass = r.status === "pass" && (r.obtainedMarks || 0) > 0;
-                                    const isLast = idx === displayResults.length - 1;
-                                    return (
-                                      <View
-                                        key={r.id}
-                                        style={[
-                                          styles.tableRow,
-                                          {
-                                            paddingVertical: 12,
-                                            paddingHorizontal: 12,
-                                            borderColor: darkMode ? "#444" : "#e0e0e0",
-                                            borderBottomWidth: isLast ? 0 : 1,
-                                            backgroundColor: darkMode ? "#1e1e1e" : "#ffffff",
-                                            borderBottomLeftRadius: isLast ? 8 : 0,
-                                            borderBottomRightRadius: isLast ? 8 : 0,
-                                          }
-                                        ]}
-                                      >
-                                        <Text style={{ flex: 2.5, color: darkMode ? "#e0e0e0" : "#212121", fontSize: 13, fontWeight: "500" }} numberOfLines={1} ellipsizeMode="tail">
-                                          {name}
-                                        </Text>
-                                        <Text style={{ flex: 1, textAlign: "center", color: darkMode ? "#e0e0e0" : "#212121", fontSize: 13 }}>
-                                          {r.obtainedMarks} / {r.totalMarks}
-                                        </Text>
-                                        {user.role !== "student" && (
-                                          <Text style={{
-                                            flex: 1.2,
-                                            textAlign: "center",
-                                            color: (r.tabLeaveCount || 0) > 0 ? "#e53935" : (darkMode ? "#e0e0e0" : "#212121"),
-                                            fontWeight: (r.tabLeaveCount || 0) > 0 ? "bold" : "normal",
-                                            fontSize: 13
-                                          }}>
-                                            {r.tabLeaveCount || 0}
-                                          </Text>
-                                        )}
-                                        <Text style={{ flex: 0.8, textAlign: "center", color: darkMode ? "#b0bec5" : "#616161", fontSize: 13, fontWeight: "bold" }}>
-                                          #{r.rank || 1}
-                                        </Text>
-                                        <Text style={{ flex: 1, textAlign: "right" }}>
-                                          {(() => {
-                                            const perf = getPerformanceStatus(r.obtainedMarks || 0, r.totalMarks || 0, r.percentage);
-                                            return (
-                                              <Text style={{ color: perf.color, fontWeight: "bold", fontSize: 11 }}>
-                                                {perf.label}
-                                              </Text>
-                                            );
-                                          })()}
-                                        </Text>
-                                      </View>
-                                    );
-                                  })}
+                                   {/* Table Body */}
+                                   {displayResults.map((r, idx) => {
+                                     const stud = students.find((s) => s.id === r.studentId || s.userId === r.studentId || s.loginUsername === r.rollNumber || s.rollNumber === r.rollNumber);
+                                     const lead = leads.find((ld) => ld.id === r.studentId || ld.userId === r.studentId);
+                                     const resolvedName = r.studentName || (stud ? getStudentName(stud) : (lead ? lead.name : (r.studentId ? `Student (${String(r.studentId).substring(0, 8)})` : "Student")));
+                                     const resolvedRoll = (r.rollNumber && r.rollNumber !== "N/A") ? r.rollNumber : (stud ? (stud.rollNumber || stud.loginUsername) : "");
+                                     const rollLabel = resolvedRoll ? ` (${resolvedRoll})` : "";
+                                     const name = user.role === "student" ? `My Score${rollLabel}` : `${resolvedName}${rollLabel}`;
+                                     const isPass = r.status === "pass" && (r.obtainedMarks || 0) > 0;
+                                     const isLast = idx === displayResults.length - 1;
+                                     return (
+                                       <View
+                                         key={r.id}
+                                         style={[
+                                           styles.tableRow,
+                                           {
+                                             paddingVertical: 12,
+                                             paddingHorizontal: 12,
+                                             borderColor: darkMode ? "#444" : "#e0e0e0",
+                                             borderBottomWidth: isLast ? 0 : 1,
+                                             backgroundColor: darkMode ? "#1e1e1e" : "#ffffff",
+                                             borderBottomLeftRadius: isLast ? 8 : 0,
+                                             borderBottomRightRadius: isLast ? 8 : 0,
+                                           }
+                                         ]}
+                                       >
+                                         <Text style={{ flex: 2.5, color: darkMode ? "#e0e0e0" : "#212121", fontSize: 13, fontWeight: "500" }} numberOfLines={1} ellipsizeMode="tail">
+                                           {name}
+                                         </Text>
+                                         <Text style={{ flex: 1, textAlign: "center", color: darkMode ? "#e0e0e0" : "#212121", fontSize: 13 }}>
+                                           {r.obtainedMarks} / {r.totalMarks}
+                                         </Text>
+                                         {user.role !== "student" && (
+                                           <Text style={{
+                                             flex: 1.2,
+                                             textAlign: "center",
+                                             color: (r.tabLeaveCount || 0) > 0 ? "#e53935" : (darkMode ? "#e0e0e0" : "#212121"),
+                                             fontWeight: (r.tabLeaveCount || 0) > 0 ? "bold" : "normal",
+                                             fontSize: 13
+                                           }}>
+                                             {r.tabLeaveCount || 0}
+                                           </Text>
+                                         )}
+                                         <Text style={{ flex: 0.8, textAlign: "center", color: darkMode ? "#b0bec5" : "#616161", fontSize: 13, fontWeight: "bold" }}>
+                                           #{r.rank || 1}
+                                         </Text>
+                                         {user.role !== "student" && (
+                                           <Text style={{ flex: 1, textAlign: "right" }}>
+                                             {(() => {
+                                               const perf = getPerformanceStatus(r.obtainedMarks || 0, r.totalMarks || 0, r.percentage);
+                                               return (
+                                                 <Text style={{ color: perf.color, fontWeight: "bold", fontSize: 11 }}>
+                                                   {perf.label}
+                                                 </Text>
+                                               );
+                                             })()}
+                                           </Text>
+                                         )}
+                                       </View>
+                                     );
+                                   })}
                                 </View>
                               );
                             })()}
@@ -33133,9 +36543,10 @@ function MainApp() {
                       studentName = entry.username || entry.name || (user?.name ? user.name : "Guest User");
                     }
 
-                    let rollNo = (entry.rollNumber && !isGenericName(entry.rollNumber)) ? entry.rollNumber : "";
+                    const isPhoneNum = (val: string) => /^\d{7,15}$/.test(String(val || "").trim().replace(/[\s\-\+\(\)]/g, ""));
+                    let rollNo = (entry.rollNumber && !isGenericName(entry.rollNumber) && !isPhoneNum(entry.rollNumber)) ? entry.rollNumber : "";
                     if (!rollNo && resolvedStudent) rollNo = resolvedStudent.rollNumber || resolvedStudent.rollNo || resolvedStudent.loginUsername;
-                    if (!rollNo || isGenericName(rollNo)) rollNo = studentName;
+                    if (!rollNo || isGenericName(rollNo) || isPhoneNum(rollNo) || rollNo === studentName || resolvedLead) rollNo = "Guest";
 
                     return (
                       <View key={entry.id || index} style={{
@@ -34298,10 +37709,6 @@ function MainApp() {
                     );
                   }
 
-                  // Don't append #toolbar=0 to Drive URLs — it breaks the preview
-                  if (selectedDailyContentPreview.type === "pdf" && !isAdmin && !displaySrc.includes("drive.google.com")) {
-                    displaySrc = `${displaySrc}#toolbar=0`;
-                  }
                   if (selectedDailyContentPreview.type === "image") {
                     const imgSrc = driveId
                       ? `https://lh3.googleusercontent.com/d/${driveId}`
@@ -34309,7 +37716,22 @@ function MainApp() {
                     return <WebDailyImageZoomView imgSrc={imgSrc} alt={selectedDailyContentPreview.title} driveId={driveId} darkMode={darkMode} />;
                   }
 
-                  // Ensure Google Drive file URLs are converted to /preview embed format
+                  if (selectedDailyContentPreview.type === "pdf") {
+                    return (
+                      <View style={{ flex: 1, width: "100%", height: "100%" }}>
+                        <Suspense fallback={
+                          <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: darkMode ? "#111" : "#2a2a2a" }}>
+                            <ActivityIndicator size="large" color="#c62828" />
+                            <Text style={{ color: "#fff", marginTop: 10 }}>Loading Secure PDF Viewer...</Text>
+                          </View>
+                        }>
+                          <SecurePDFViewer url={displaySrc} />
+                        </Suspense>
+                      </View>
+                    );
+                  }
+
+                  // Fallback for non-PDF files / embeds
                   const isDriveUrl = displaySrc.includes("drive.google.com") || displaySrc.includes("docs.google.com");
                   if (isDriveUrl && !displaySrc.includes("/preview") && !displaySrc.includes("/embeddedfolderview")) {
                     displaySrc = formatGoogleDriveUrl(displaySrc);
@@ -34325,17 +37747,6 @@ function MainApp() {
                         allowFullScreen
                         referrerPolicy="no-referrer-when-downgrade"
                       />
-                      {isDriveUrl && (
-                        <View style={{ position: "absolute", bottom: 12, right: 12 }}>
-                          <TouchableOpacity
-                            onPress={() => { if (typeof window !== "undefined") window.open(displaySrc.replace("/preview", "/view"), "_blank"); }}
-                            style={{ backgroundColor: "#1a73e8", paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8, flexDirection: "row", alignItems: "center", gap: 6 }}
-                          >
-                            <Ionicons name="open-outline" size={14} color="#fff" />
-                            <Text style={{ color: "#fff", fontSize: 12, fontWeight: "bold" }}>Open in Google Drive</Text>
-                          </TouchableOpacity>
-                        </View>
-                      )}
                     </View>
                   );
                 })()}
@@ -34513,11 +37924,12 @@ function MainApp() {
                                 : resolvedUser ? (resolvedUser.name || resolvedUser.username || resolvedUser.email?.split("@")[0])
                                 : (entry.studentName && entry.studentName !== "Student" && !entry.studentName.startsWith("Student (") ? entry.studentName : (entry.username || entry.name || "Guest User"));
 
-                    const validRoll = (entry.rollNumber && entry.rollNumber !== "N/A" && entry.rollNumber !== "Guest" && entry.rollNumber !== "Student" && !String(entry.rollNumber).startsWith("STU-"))
+                    const isPhoneNum = (val: string) => /^\d{7,15}$/.test(String(val || "").trim().replace(/[\s\-\+\(\)]/g, ""));
+                    const validRoll = (entry.rollNumber && entry.rollNumber !== "N/A" && entry.rollNumber !== "Guest" && entry.rollNumber !== "Student" && !isPhoneNum(entry.rollNumber))
                                     ? entry.rollNumber
                                     : (resolvedStudent?.rollNumber || resolvedStudent?.rollNo || resolvedStudent?.loginUsername);
 
-                    const rollVal = validRoll || sName;
+                    const rollVal = (validRoll && !isPhoneNum(validRoll)) ? validRoll : "Guest";
                     const studentLabel = sName 
                       ? (rollVal && rollVal !== sName && rollVal !== "N/A" && rollVal !== "Guest" && rollVal !== "Student" ? `${sName} (${rollVal})` : sName) 
                       : rollVal;
@@ -34573,7 +37985,9 @@ function MainApp() {
                       <Text style={{ width: 90, fontWeight: "bold", fontSize: 11, color: darkMode ? "#fff" : "#555", textAlign: "center" }}>Correct Ans</Text>
                       <Text style={{ width: 90, fontWeight: "bold", fontSize: 11, color: darkMode ? "#fff" : "#555", textAlign: "center" }}>Wrong Ans</Text>
                       <Text style={{ width: 100, fontWeight: "bold", fontSize: 11, color: darkMode ? "#fff" : "#555", textAlign: "center" }}>Total Marks</Text>
-                      <Text style={{ width: 140, fontWeight: "bold", fontSize: 11, color: darkMode ? "#fff" : "#555", textAlign: "center" }}>Status</Text>
+                      {(!user || (user.role !== "student" && user.role !== "user")) && (
+                        <Text style={{ width: 140, fontWeight: "bold", fontSize: 11, color: darkMode ? "#fff" : "#555", textAlign: "center" }}>Status</Text>
+                      )}
                     </View>
 
                     {/* Table Rows */}
@@ -34593,11 +38007,12 @@ function MainApp() {
                                     : resolvedUser ? (resolvedUser.name || resolvedUser.username || resolvedUser.email?.split("@")[0])
                                     : (entry.studentName && entry.studentName !== "Student" && !entry.studentName.startsWith("Student (") ? entry.studentName : (entry.username || entry.name || "Guest User"));
 
-                        const validRoll = (entry.rollNumber && entry.rollNumber !== "N/A" && entry.rollNumber !== "Guest" && entry.rollNumber !== "Student" && !String(entry.rollNumber).startsWith("STU-"))
+                        const isPhoneNum = (val: string) => /^\d{7,15}$/.test(String(val || "").trim().replace(/[\s\-\+\(\)]/g, ""));
+                        const validRoll = (entry.rollNumber && entry.rollNumber !== "N/A" && entry.rollNumber !== "Guest" && entry.rollNumber !== "Student" && !isPhoneNum(entry.rollNumber))
                                         ? entry.rollNumber
                                         : (resolvedStudent?.rollNumber || resolvedStudent?.rollNo || resolvedStudent?.loginUsername);
 
-                        const rollVal = validRoll || sName;
+                        const rollVal = (validRoll && !isPhoneNum(validRoll)) ? validRoll : "Guest";
                         const studentLabel = sName 
                           ? (rollVal && rollVal !== sName && rollVal !== "N/A" && rollVal !== "Guest" && rollVal !== "Student" ? `${sName} (${rollVal})` : sName) 
                           : rollVal;
@@ -34605,6 +38020,12 @@ function MainApp() {
                         const obtainedMarks = entry.obtainedMarks ?? entry.score ?? 0;
                         const totalMarks = entry.totalMarks ?? entry.totalScore ?? 0;
                         const perf = getPerformanceStatus(obtainedMarks, totalMarks, entry.percentage);
+
+                        const isTop3 = idx < 3;
+                        const isTop10 = idx >= 3 && idx < 10;
+                        const rankColor = idx === 0 ? "#b45309" : idx === 1 ? "#d97706" : idx === 2 ? "#d97706" : isTop10 ? (darkMode ? "#60a5fa" : "#1d4ed8") : (darkMode ? "#94a3b8" : "#475569");
+                        const nameColor = isTop3 ? (darkMode ? "#fef08a" : "#92400e") : isTop10 ? (darkMode ? "#93c5fd" : "#1e40af") : (darkMode ? "#f8fafc" : "#1e293b");
+                        const nameWeight = isTop3 ? "800" : isTop10 ? "700" : "500";
 
                         return (
                           <View
@@ -34616,13 +38037,17 @@ function MainApp() {
                               paddingHorizontal: 12,
                               borderBottomWidth: 1,
                               borderBottomColor: darkMode ? "#333" : "#f0f0f0",
-                              backgroundColor: idx % 2 === 0 ? (darkMode ? "#1e1e1e" : "#ffffff") : (darkMode ? "#252525" : "#fafafa")
+                              backgroundColor: isTop3 
+                                ? (darkMode ? "#2a2206" : "#fffbeb") 
+                                : isTop10 
+                                  ? (darkMode ? "#172554" : "#eff6ff") 
+                                  : (idx % 2 === 0 ? (darkMode ? "#1e1e1e" : "#ffffff") : (darkMode ? "#252525" : "#fafafa"))
                             }}
                           >
-                            <Text style={{ width: 45, fontSize: 12, fontWeight: "bold", color: idx === 0 ? "#fbc02d" : idx === 1 ? "#9e9e9e" : idx === 2 ? "#cd7f32" : (darkMode ? "#aaa" : "#757575") }}>
+                            <Text style={{ width: 45, fontSize: 13, fontWeight: "800", color: rankColor }}>
                               #{idx + 1}
                             </Text>
-                            <Text style={{ flex: 1, minWidth: 180, fontSize: 12, fontWeight: "600", color: darkMode ? "#fff" : "#212121" }}>
+                            <Text style={{ flex: 1, minWidth: 180, fontSize: 12, fontWeight: nameWeight, color: nameColor }}>
                               {studentLabel}
                             </Text>
                             <Text style={{ width: 85, fontSize: 12, color: "#1565c0", fontWeight: "bold", textAlign: "center" }}>
@@ -34640,11 +38065,13 @@ function MainApp() {
                             <Text style={{ width: 100, fontSize: 12, fontWeight: "bold", color: darkMode ? "#81c784" : "#1a237e", textAlign: "center" }}>
                               {obtainedMarks} / {totalMarks}
                             </Text>
-                            <View style={{ width: 140, alignItems: "center", justifyContent: "center" }}>
-                              <View style={{ backgroundColor: perf.bgColor, borderColor: perf.borderColor, borderWidth: 1, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
-                                <Text style={{ fontSize: 10, fontWeight: "bold", color: perf.color, textAlign: "center" }}>{perf.label}</Text>
+                            {(!user || (user.role !== "student" && user.role !== "user")) && (
+                              <View style={{ width: 140, alignItems: "center", justifyContent: "center" }}>
+                                <View style={{ backgroundColor: perf.bgColor, borderColor: perf.borderColor, borderWidth: 1, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
+                                  <Text style={{ fontSize: 10, fontWeight: "bold", color: perf.color, textAlign: "center" }}>{perf.label}</Text>
+                                </View>
                               </View>
-                            </View>
+                            )}
                           </View>
                         );
                       })}
@@ -35515,7 +38942,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingVertical: 12,
     paddingHorizontal: 15,
-    backgroundColor: "#fcfcfc",
+    backgroundColor: "#ffffff",
+    zIndex: 2,
   },
   modalOptionBtnSelected: {
     backgroundColor: "#c62828",

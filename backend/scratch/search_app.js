@@ -1,29 +1,14 @@
 const fs = require('fs');
-const readline = require('readline');
 const path = require('path');
 
-const filePath = 'd:/unistrix/NERMAI_IAS_ACADEMY/web_portal/App.tsx';
+const content = fs.readFileSync(path.join(__dirname, '../../web_portal/App.tsx'), 'utf8');
+const lines = content.split('\n');
 
-async function searchFile() {
-  const fileStream = fs.createReadStream(filePath);
-
-  const rl = readline.createInterface({
-    input: fileStream,
-    crlfDelay: Infinity
-  });
-
-  let lineCount = 0;
-  console.log("=== SEARCH RESULTS ===");
-  for await (const line of rl) {
-    lineCount++;
-    const lowerLine = line.toLowerCase();
-    // Search for teacher role check, bottom tabs, or where navigation tabs are rendered
-    if (lowerLine.includes('teacher') || lowerLine.includes('erp') || lowerLine.includes('lms') || lowerLine.includes('test portal') || lowerLine.includes('tab')) {
-      if (lineCount > 15000 && lineCount < 23900) {
-        console.log(`Line ${lineCount}: ${line.trim()}`);
-      }
+console.log(`Total lines: ${lines.length}`);
+lines.forEach((line, index) => {
+    if (line.toLowerCase().includes('notice') || line.toLowerCase().includes('announcement')) {
+        if (line.includes('Registry') || line.includes('Active Notice') || line.includes('publish') || line.includes('Publish') || line.includes('api/notification') || line.includes('fetch')) {
+            console.log(`L${index + 1}: ${line.trim().slice(0, 150)}`);
+        }
     }
-  }
-}
-
-searchFile().catch(console.error);
+});

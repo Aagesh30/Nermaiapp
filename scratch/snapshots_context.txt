@@ -1,0 +1,1216 @@
+=== ALL ON_SNAPSHOT LISTENERS ===
+
+[1] File: backend\packages\shared\src\realtime\LiveSessionRealtimeService.ts (Line: 126)
+Code: this.unsubSession = onSnapshot(
+--- Context: ---
+    this.cleanup(); // Clean any existing subscriptions
+
+    try {
+      await this.authenticate();
+      this.initListeners(callbacks);
+    } catch (error: any) {
+      this.handleError(error, callbacks);
+    }
+  }
+
+  private initListeners(callbacks: any) {
+    if (!this.sessionId) return;
+    this.retryCount = 0;
+
+    // Session Document
+    this.unsubSession = onSnapshot(
+      doc(this.db, 'live_sessions', this.sessionId),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          callbacks.onSessionUpdate({ id: docSnap.id, ...docSnap.data() });
+        }
+      },
+      (error) => this.handleError(error, callbacks)
+    );
+
+    // Participants Subcollection
+    this.unsubParticipants = onSnapshot(
+      collection(this.db, 'live_sessions', this.sessionId, 'participants'),
+      (querySnap) => {
+        const parts = querySnap.docs.map(d => d.data() as ILiveParticipant);
+        callbacks.onParticipantsUpdate(parts);
+      },
+      (error) => this.handleError(error, callbacks)
+    );
+
+    // Activity Feed Subcollection
+    const q = query(
+      collection(this.db, 'live_sessions', this.sessionId, 'activity_feed'), 
+      orderBy('timestamp', 'desc'), 
+      limit(50)
+----------------
+
+[2] File: backend\packages\shared\src\realtime\LiveSessionRealtimeService.ts (Line: 137)
+Code: this.unsubParticipants = onSnapshot(
+--- Context: ---
+    if (!this.sessionId) return;
+    this.retryCount = 0;
+
+    // Session Document
+    this.unsubSession = onSnapshot(
+      doc(this.db, 'live_sessions', this.sessionId),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          callbacks.onSessionUpdate({ id: docSnap.id, ...docSnap.data() });
+        }
+      },
+      (error) => this.handleError(error, callbacks)
+    );
+
+    // Participants Subcollection
+    this.unsubParticipants = onSnapshot(
+      collection(this.db, 'live_sessions', this.sessionId, 'participants'),
+      (querySnap) => {
+        const parts = querySnap.docs.map(d => d.data() as ILiveParticipant);
+        callbacks.onParticipantsUpdate(parts);
+      },
+      (error) => this.handleError(error, callbacks)
+    );
+
+    // Activity Feed Subcollection
+    const q = query(
+      collection(this.db, 'live_sessions', this.sessionId, 'activity_feed'), 
+      orderBy('timestamp', 'desc'), 
+      limit(50)
+    );
+    this.unsubActivityFeed = onSnapshot(
+      q,
+      (querySnap) => {
+        const logs = querySnap.docs.map(d => d.data() as IActivityLog);
+        callbacks.onActivityUpdate(logs);
+      },
+      (error) => this.handleError(error, callbacks)
+    );
+  }
+
+----------------
+
+[3] File: backend\packages\shared\src\realtime\LiveSessionRealtimeService.ts (Line: 152)
+Code: this.unsubActivityFeed = onSnapshot(
+--- Context: ---
+    this.unsubParticipants = onSnapshot(
+      collection(this.db, 'live_sessions', this.sessionId, 'participants'),
+      (querySnap) => {
+        const parts = querySnap.docs.map(d => d.data() as ILiveParticipant);
+        callbacks.onParticipantsUpdate(parts);
+      },
+      (error) => this.handleError(error, callbacks)
+    );
+
+    // Activity Feed Subcollection
+    const q = query(
+      collection(this.db, 'live_sessions', this.sessionId, 'activity_feed'), 
+      orderBy('timestamp', 'desc'), 
+      limit(50)
+    );
+    this.unsubActivityFeed = onSnapshot(
+      q,
+      (querySnap) => {
+        const logs = querySnap.docs.map(d => d.data() as IActivityLog);
+        callbacks.onActivityUpdate(logs);
+      },
+      (error) => this.handleError(error, callbacks)
+    );
+  }
+
+  private handleError(error: any, callbacks: any) {
+    console.error('[RealtimeGateway] Subscription Error:', error);
+    this.cleanup();
+
+    // Check if it's a permission denied or network error
+    const isPermissionError = error?.code === 'permission-denied' || error?.message?.includes('Missing or insufficient permissions');
+    const isNetworkError = error?.code === 'unavailable';
+
+    if (this.retryCount < this.maxRetries) {
+      this.retryCount++;
+      const delayMs = Math.min(1000 * Math.pow(2, this.retryCount), 15000); // Exponential backoff max 15s
+      
+      console.log(`[RealtimeGateway] Retrying connection in ${delayMs}ms (Attempt ${this.retryCount}/${this.maxRetries})`);
+      
+      this.retryTimeout = setTimeout(async () => {
+----------------
+
+[4] File: web_portal\App.tsx (Line: 3738)
+Code: const unsub = onSnapshot(q, (snapshot) => {
+--- Context: ---
+    const targetIds = Array.from(new Set([
+      sId,
+      user?.userId,
+      user?.username,
+      loggedInStudent?.rollNumber
+    ].filter(Boolean) as string[]));
+
+    if (targetIds.length === 0) return;
+
+    // Filter by studentId so student only syncs their own documents (0 unnecessary reads)
+    const q = query(
+      collection(db, "offlineTestPermissionRequests"),
+      where("studentId", "in", targetIds)
+    );
+
+    const unsub = onSnapshot(q, (snapshot) => {
+      const reqs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
+      setOfflineTestRequests(reqs);
+      try {
+        if (typeof localStorage !== "undefined") {
+          localStorage.setItem("nermai_offline_test_requests", JSON.stringify(reqs));
+        }
+      } catch (storageErr) { }
+    }, (err) => {
+      console.log("Student offline request listener error:", err);
+      loadOfflineTestRequests();
+    });
+
+    return () => unsub();
+  }, [user, isAdmin, students]);
+
+
+
+  // Redirect students away from admin-only ERP sub-tabs to their profile
+  useEffect(() => {
+    if (user && user.role === "student" && activeTab === "erp" && (erpSub === "students" || erpSub === "batch" || erpSub === "staff" || erpSub === "profile-requests")) {
+      changeErpSub("my-profile");
+    }
+  }, [user, activeTab, erpSub]);
+
+----------------
+
+[5] File: web_portal\App.tsx (Line: 3872)
+Code: const unsub = onSnapshot(q, (snapshot) => {
+--- Context: ---
+          }
+        } catch (_) { }
+      }
+    } catch (e) {
+      // silently ignore
+    }
+  };
+
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    const q = query(
+      collection(db, "offlineTestPermissionRequests")
+    );
+
+    const unsub = onSnapshot(q, (snapshot) => {
+      const reqs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
+      // Sort in-memory desc by requestedAt
+      reqs.sort((a, b) => new Date(b.requestedAt || 0).getTime() - new Date(a.requestedAt || 0).getTime());
+      setOfflineTestRequests(reqs);
+    }, (err) => {
+      console.log("Admin offline request listener error:", err);
+    });
+
+    return () => unsub();
+  }, [isAdmin]);
+
+  // Initial load of offline test requests when entering test tab (real-time is handled by onSnapshot)
+  useEffect(() => {
+    if (!user || activeTab !== "test") return;
+    loadOfflineTestRequests();
+  }, [user, activeTab]);
+
+  const saveOfflineTestRequests = async (newList: any[]) => {
+    setOfflineTestRequests(newList);
+  };
+
+
+
+  // Page Lock state — developer can lock any page with a custom maintenance message
+----------------
+
+[6] File: web_portal\App.tsx (Line: 6046)
+Code: unsub = onSnapshot(qUserNotifs, (snapshot) => {
+--- Context: ---
+      lms_courses: loadLmsCourses,
+      admissions: loadAdmissions,
+      leads: loadLeads,
+      campaigns: loadCampaigns,
+      alumni_feedback: loadFeedback,
+      test_creation: loadTests,
+      question_bank: loadQuestions,
+      examinations: loadTests,
+      test_results: loadTests,
+    });
+
+    let unsub: (() => void) | undefined;
+    try {
+      // Listen to notifications that belong strictly to this user
+      const qUserNotifs = query(collection(db, "notifications"), where("requestedByUserId", "==", userId));
+      unsub = onSnapshot(qUserNotifs, (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          if (change.type !== "modified") return;
+          const data = change.doc.data();
+          // Only react to our own submissions that have just been resolved
+          if (data.requestedByUserId !== userId) return;
+          if (data.status !== "approved" && data.status !== "rejected") return;
+
+          // If approved → reload relevant collection so data appears immediately
+          if (data.status === "approved") {
+            const reloaders = getFeatureReloaders();
+            reloaders[data.feature]?.();
+          }
+
+          // Remove from pendingSubmissions regardless of outcome
+          setPendingSubmissions(prev => prev.filter(k => k !== data.feature));
+          // Refresh the pending approvals banner
+          loadPendingApprovals();
+        });
+      });
+    } catch (e) {
+      console.log("[ApprovalSync] Failed to attach real-time listener:", e);
+    }
+
+    return () => { if (unsub) unsub(); };
+----------------
+
+[7] File: web_portal\App.tsx (Line: 6979)
+Code: const unsubscribe = onSnapshot(
+--- Context: ---
+    if (!user) {
+      setAnnouncements([]);
+      return;
+    }
+
+    const role = user.role || "guest";
+    const myStudent = getLoggedInStudent(user, students);
+    const studentBatch = (myStudent?.batch || user.batch || "").trim().toLowerCase();
+
+    // Real-time Firestore listener for non-deleted announcements
+    const announcementsQuery = query(
+      collection(db, "announcements"),
+      where("isDeleted", "==", false)
+    );
+
+    const unsubscribe = onSnapshot(
+      announcementsQuery,
+      (snapshot) => {
+        let rawNotices = snapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            ...data,
+            createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt
+          };
+        });
+
+        // Filter in-memory by target Audience & Batch
+        let notices = rawNotices.filter((ann: any) => {
+          const audience = ann.targetAudience || "all";
+          if (role === "admin" || role === "super_admin" || role === "staff") return true;
+          if (audience === "all") return true;
+          if (role === "student" && audience === "paid") return true;
+          if (role === "guest" && audience === "free") return true;
+          if (audience === "batch") {
+            const annBatch = (ann.targetBatch || "").trim().toLowerCase();
+            return annBatch !== "" && studentBatch !== "" && annBatch === studentBatch;
+          }
+          return false;
+        });
+----------------
+
+[8] File: web_portal\App.tsx (Line: 7094)
+Code: const unsubscribe = onSnapshot(
+--- Context: ---
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user?.userId || user?.id, user?.role, user?.batch]);
+
+  // True Real-Time (0-second delay) Snapshot Listener for Student Profile Updates (Student View)
+  useEffect(() => {
+    if (!user || user.role !== "student") return;
+
+    const myStudent = getLoggedInStudent(user, students);
+    const lookupId = myStudent?.id || user.studentId || user.userId;
+    if (!lookupId) return;
+
+    const studentDocRef = doc(db, "students", String(lookupId));
+    const unsubscribe = onSnapshot(
+      studentDocRef,
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (!data.isDeleted) {
+            const updatedStudent = {
+              ...data,
+              id: data.id || docSnap.id
+            };
+            setStudents(prev => {
+              if (JSON.stringify(prev) === JSON.stringify([updatedStudent])) {
+                return prev;
+              }
+              return [updatedStudent];
+            });
+          }
+        }
+      },
+      (err) => {
+        console.log("Real-time student profile snapshot listener note:", err?.message);
+      }
+    );
+
+    return () => unsubscribe();
+----------------
+
+[9] File: web_portal\App.tsx (Line: 7130)
+Code: const unsubscribe = onSnapshot(
+--- Context: ---
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user?.userId || user?.id]);
+
+  // True Real-Time (0-second delay) Snapshot Listener for Admin Profile Requests Queue
+  useEffect(() => {
+    if (!user || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "staff")) return;
+
+    const requestsQuery = query(
+      collection(db, "profile_requests"),
+      where("isDeleted", "==", false)
+    );
+
+    const unsubscribe = onSnapshot(
+      requestsQuery,
+      (snapshot) => {
+        const requests = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        requests.sort((a: any, b: any) => {
+          const timeA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;
+          const timeB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;
+          return timeB - timeA;
+        });
+        setProfileRequests(requests);
+      },
+      (err) => {
+        console.log("Real-time profile requests snapshot listener note:", err?.message);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // True Real-Time (0-second delay) Snapshot Listener for LMS Resources (PDFs & Documents)
+  useEffect(() => {
+    if (!user || activeTab !== "lms") return;
+    try {
+      const resourcesQuery = query(collection(db, "resources"), where("isDeleted", "==", false));
+      const unsubscribe = onSnapshot(
+----------------
+
+[10] File: web_portal\App.tsx (Line: 7154)
+Code: const unsubscribe = onSnapshot(
+--- Context: ---
+        setProfileRequests(requests);
+      },
+      (err) => {
+        console.log("Real-time profile requests snapshot listener note:", err?.message);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // True Real-Time (0-second delay) Snapshot Listener for LMS Resources (PDFs & Documents)
+  useEffect(() => {
+    if (!user || activeTab !== "lms") return;
+    try {
+      const resourcesQuery = query(collection(db, "resources"), where("isDeleted", "==", false));
+      const unsubscribe = onSnapshot(
+        resourcesQuery,
+        (snapshot) => {
+          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          list.sort((a: any, b: any) => {
+            const timeA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;
+            const timeB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;
+            return timeB - timeA;
+          });
+          setLmsResources(list);
+        },
+        (err) => console.log("Real-time resources listener note:", err?.message)
+      );
+      return () => unsubscribe();
+    } catch (_) {}
+  }, [user, activeTab]);
+
+  // True Real-Time (0-second delay) Snapshot Listener for Daily Content
+  useEffect(() => {
+    if (!user || activeTab !== "lms") return;
+    try {
+      const dailyContentQuery = query(collection(db, "dailyContent"), where("isDeleted", "==", false));
+      const unsubscribe = onSnapshot(
+        dailyContentQuery,
+        (snapshot) => {
+----------------
+
+[11] File: web_portal\App.tsx (Line: 7176)
+Code: const unsubscribe = onSnapshot(
+--- Context: ---
+            return timeB - timeA;
+          });
+          setLmsResources(list);
+        },
+        (err) => console.log("Real-time resources listener note:", err?.message)
+      );
+      return () => unsubscribe();
+    } catch (_) {}
+  }, [user, activeTab]);
+
+  // True Real-Time (0-second delay) Snapshot Listener for Daily Content
+  useEffect(() => {
+    if (!user || activeTab !== "lms") return;
+    try {
+      const dailyContentQuery = query(collection(db, "dailyContent"), where("isDeleted", "==", false));
+      const unsubscribe = onSnapshot(
+        dailyContentQuery,
+        (snapshot) => {
+          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          list.sort((a: any, b: any) => {
+            const dateA = a.date || a.createdAt || "";
+            const dateB = b.date || b.createdAt || "";
+            return String(dateB).localeCompare(String(dateA));
+          });
+          setLmsDailyContent(list);
+        },
+        (err) => console.log("Real-time daily content listener note:", err?.message)
+      );
+      return () => unsubscribe();
+    } catch (_) {}
+  }, [user, activeTab]);
+
+  // True Real-Time (0-second delay) Snapshot Listener for Recorded Classes
+  useEffect(() => {
+    if (!user || activeTab !== "lms") return;
+    try {
+      const recordedQuery = query(collection(db, "recorded_classes"), where("isDeleted", "==", false));
+      const unsubscribe = onSnapshot(
+        recordedQuery,
+        (snapshot) => {
+----------------
+
+[12] File: web_portal\App.tsx (Line: 7198)
+Code: const unsubscribe = onSnapshot(
+--- Context: ---
+            return String(dateB).localeCompare(String(dateA));
+          });
+          setLmsDailyContent(list);
+        },
+        (err) => console.log("Real-time daily content listener note:", err?.message)
+      );
+      return () => unsubscribe();
+    } catch (_) {}
+  }, [user, activeTab]);
+
+  // True Real-Time (0-second delay) Snapshot Listener for Recorded Classes
+  useEffect(() => {
+    if (!user || activeTab !== "lms") return;
+    try {
+      const recordedQuery = query(collection(db, "recorded_classes"), where("isDeleted", "==", false));
+      const unsubscribe = onSnapshot(
+        recordedQuery,
+        (snapshot) => {
+          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          list.sort((a: any, b: any) => {
+            const timeA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;
+            const timeB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;
+            return timeB - timeA;
+          });
+          setLmsRecordedClasses(list);
+        },
+        (err) => console.log("Real-time recorded classes listener note:", err?.message)
+      );
+      return () => unsubscribe();
+    } catch (_) {}
+  }, [user, activeTab]);
+
+  // True Real-Time (0-second delay) Snapshot Listener for Daily Quizzes
+  useEffect(() => {
+    if (!user || activeTab !== "daily_quizzes") return;
+    try {
+      const quizzesQuery = query(collection(db, "dailyQuizzes"), where("isDeleted", "==", false));
+      const unsubscribe = onSnapshot(
+        quizzesQuery,
+        (snapshot) => {
+----------------
+
+[13] File: web_portal\App.tsx (Line: 7220)
+Code: const unsubscribe = onSnapshot(
+--- Context: ---
+            return timeB - timeA;
+          });
+          setLmsRecordedClasses(list);
+        },
+        (err) => console.log("Real-time recorded classes listener note:", err?.message)
+      );
+      return () => unsubscribe();
+    } catch (_) {}
+  }, [user, activeTab]);
+
+  // True Real-Time (0-second delay) Snapshot Listener for Daily Quizzes
+  useEffect(() => {
+    if (!user || activeTab !== "daily_quizzes") return;
+    try {
+      const quizzesQuery = query(collection(db, "dailyQuizzes"), where("isDeleted", "==", false));
+      const unsubscribe = onSnapshot(
+        quizzesQuery,
+        (snapshot) => {
+          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          list.sort((a: any, b: any) => {
+            const dateA = a.date || a.createdAt || "";
+            const dateB = b.date || b.createdAt || "";
+            return String(dateB).localeCompare(String(dateA));
+          });
+          setAllQuizzes(list);
+        },
+        (err) => console.log("Real-time daily quizzes listener note:", err?.message)
+      );
+      return () => unsubscribe();
+    } catch (_) {}
+  }, [user, activeTab]);
+
+  // True Real-Time (0-second delay) Snapshot Listener for Admissions
+  useEffect(() => {
+    if (!user || activeTab !== "admissions" || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "staff")) return;
+    try {
+      const admissionsQuery = query(collection(db, "admissions"), where("isDeleted", "==", false));
+      const unsubscribe = onSnapshot(
+        admissionsQuery,
+        (snapshot) => {
+----------------
+
+[14] File: web_portal\App.tsx (Line: 7242)
+Code: const unsubscribe = onSnapshot(
+--- Context: ---
+            return String(dateB).localeCompare(String(dateA));
+          });
+          setAllQuizzes(list);
+        },
+        (err) => console.log("Real-time daily quizzes listener note:", err?.message)
+      );
+      return () => unsubscribe();
+    } catch (_) {}
+  }, [user, activeTab]);
+
+  // True Real-Time (0-second delay) Snapshot Listener for Admissions
+  useEffect(() => {
+    if (!user || activeTab !== "admissions" || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "staff")) return;
+    try {
+      const admissionsQuery = query(collection(db, "admissions"), where("isDeleted", "==", false));
+      const unsubscribe = onSnapshot(
+        admissionsQuery,
+        (snapshot) => {
+          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          list.sort((a: any, b: any) => {
+            const timeA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;
+            const timeB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;
+            return timeB - timeA;
+          });
+          setAdmissions(list);
+        },
+        (err) => console.log("Real-time admissions listener note:", err?.message)
+      );
+      return () => unsubscribe();
+    } catch (_) {}
+  }, [user, activeTab]);
+
+  // True Real-Time (0-second delay) Snapshot Listener for Leads & Custom Leads
+  useEffect(() => {
+    if (!user || activeTab !== "crm" || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "staff")) return;
+    try {
+      const leadsQuery = query(collection(db, "leads"), where("isDeleted", "==", false));
+      const unsubscribe = onSnapshot(
+        leadsQuery,
+        (snapshot) => {
+----------------
+
+[15] File: web_portal\App.tsx (Line: 7264)
+Code: const unsubscribe = onSnapshot(
+--- Context: ---
+            return timeB - timeA;
+          });
+          setAdmissions(list);
+        },
+        (err) => console.log("Real-time admissions listener note:", err?.message)
+      );
+      return () => unsubscribe();
+    } catch (_) {}
+  }, [user, activeTab]);
+
+  // True Real-Time (0-second delay) Snapshot Listener for Leads & Custom Leads
+  useEffect(() => {
+    if (!user || activeTab !== "crm" || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "staff")) return;
+    try {
+      const leadsQuery = query(collection(db, "leads"), where("isDeleted", "==", false));
+      const unsubscribe = onSnapshot(
+        leadsQuery,
+        (snapshot) => {
+          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          list.sort((a: any, b: any) => {
+            const timeA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;
+            const timeB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;
+            return timeB - timeA;
+          });
+          setLeads(list);
+        },
+        (err) => console.log("Real-time leads listener note:", err?.message)
+      );
+      return () => unsubscribe();
+    } catch (_) {}
+  }, [user, activeTab]);
+
+  // True Real-Time (0-second delay) Snapshot Listener for Campaigns & Banners
+  useEffect(() => {
+    try {
+      const campaignsQuery = query(collection(db, "campaigns"), where("isDeleted", "==", false), where("showInDashboard", "==", true));
+      const unsubscribe = onSnapshot(
+        campaignsQuery,
+        (snapshot) => {
+          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+----------------
+
+[16] File: web_portal\App.tsx (Line: 7285)
+Code: const unsubscribe = onSnapshot(
+--- Context: ---
+            const timeB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;
+            return timeB - timeA;
+          });
+          setLeads(list);
+        },
+        (err) => console.log("Real-time leads listener note:", err?.message)
+      );
+      return () => unsubscribe();
+    } catch (_) {}
+  }, [user, activeTab]);
+
+  // True Real-Time (0-second delay) Snapshot Listener for Campaigns & Banners
+  useEffect(() => {
+    try {
+      const campaignsQuery = query(collection(db, "campaigns"), where("isDeleted", "==", false), where("showInDashboard", "==", true));
+      const unsubscribe = onSnapshot(
+        campaignsQuery,
+        (snapshot) => {
+          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          const filtered = list.filter((c: any) => {
+            const title = (c?.title || "").toLowerCase();
+            return !title.includes("state level test") && !title.includes("free entry");
+          });
+          setCampaigns(filtered);
+        },
+        (err) => console.log("Real-time campaigns listener note:", err?.message)
+      );
+      return () => unsubscribe();
+    } catch (_) {}
+  }, []);
+
+  // True Real-Time (0-second delay) Snapshot Listener for Website Inquiries
+  useEffect(() => {
+    if (!user || activeTab !== "crm" || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "staff")) return;
+    try {
+      const inquiriesQuery = query(collection(db, "inquiries"), where("isDeleted", "==", false));
+      const unsubscribe = onSnapshot(
+        inquiriesQuery,
+        (snapshot) => {
+          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+----------------
+
+[17] File: web_portal\App.tsx (Line: 7306)
+Code: const unsubscribe = onSnapshot(
+--- Context: ---
+            return !title.includes("state level test") && !title.includes("free entry");
+          });
+          setCampaigns(filtered);
+        },
+        (err) => console.log("Real-time campaigns listener note:", err?.message)
+      );
+      return () => unsubscribe();
+    } catch (_) {}
+  }, []);
+
+  // True Real-Time (0-second delay) Snapshot Listener for Website Inquiries
+  useEffect(() => {
+    if (!user || activeTab !== "crm" || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "staff")) return;
+    try {
+      const inquiriesQuery = query(collection(db, "inquiries"), where("isDeleted", "==", false));
+      const unsubscribe = onSnapshot(
+        inquiriesQuery,
+        (snapshot) => {
+          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          list.sort((a: any, b: any) => {
+            const timeA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;
+            const timeB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;
+            return timeB - timeA;
+          });
+          setEnquiries(list);
+        },
+        (err) => console.log("Real-time inquiries listener note:", err?.message)
+      );
+      return () => unsubscribe();
+    } catch (_) {}
+  }, [user, activeTab]);
+
+  // True Real-Time (0-second delay) Snapshot Listener for Tests & Exams in Test Portal (Guests & Students)
+  useEffect(() => {
+    const isTestTab = [
+      "tests", "testPortal", "test_portal", "test-portal", "test", "practice", 
+      "results", "exam", "onlineTest", "offlineTest", "scholarship", "testSeries"
+    ].includes(activeTab) || lmsSub === "tests" || lmsSub === "testPortal";
+
+    if (!isTestTab) return;
+----------------
+
+[18] File: web_portal\App.tsx (Line: 7334)
+Code: const unsubscribe = onSnapshot(
+--- Context: ---
+      return () => unsubscribe();
+    } catch (_) {}
+  }, [user, activeTab]);
+
+  // True Real-Time (0-second delay) Snapshot Listener for Tests & Exams in Test Portal (Guests & Students)
+  useEffect(() => {
+    const isTestTab = [
+      "tests", "testPortal", "test_portal", "test-portal", "test", "practice", 
+      "results", "exam", "onlineTest", "offlineTest", "scholarship", "testSeries"
+    ].includes(activeTab) || lmsSub === "tests" || lmsSub === "testPortal";
+
+    if (!isTestTab) return;
+
+    try {
+      const testsQuery = query(collection(db, "tests"), where("isDeleted", "==", false));
+      const unsubscribe = onSnapshot(
+        testsQuery,
+        (snapshot) => {
+          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          list.sort((a: any, b: any) => {
+            const timeA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;
+            const timeB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;
+            return timeB - timeA;
+          });
+          setTests(list);
+        },
+        (err) => console.log("Real-time tests listener note:", err?.message)
+      );
+      return () => unsubscribe();
+    } catch (_) {}
+  }, [activeTab, lmsSub]);
+
+  useEffect(() => {
+    if (user) {
+      loadLmsResources();
+    }
+  }, [user, activeTab, lmsSub]);
+
+  // API Call Loaders
+  const loadAnnouncements = async () => {
+----------------
+
+[19] File: web_portal\lms\admin\QRCodePermissionsPage.tsx (Line: 109)
+Code: const unsubStudents = onSnapshot(pendingStudentsQuery, () => {
+--- Context: ---
+    try {
+      const res = await StudentApi.listPaymentAcknowledgements(filter);
+      setAcknowledgements(res.data?.data || []);
+    } catch (err) {
+      console.error('Failed to fetch acknowledgements', err);
+    } finally {
+      setAckLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+
+    // Targeted real-time updates only for pending QR requests (avoids reading the entire student database)
+    const pendingStudentsQuery = query(collection(db, 'students'), where('qrCodeRequested', '==', true));
+    const unsubStudents = onSnapshot(pendingStudentsQuery, () => {
+      fetchData();
+    }, (err) => {
+      console.warn('[QRCodePermissionsPage] Realtime pending students sync error:', err);
+    });
+
+    return () => {
+      unsubStudents();
+    };
+  }, []);
+
+  useEffect(() => {
+    ackFilterRef.current = ackFilter;
+    fetchAcknowledgements(ackFilter);
+  }, [ackFilter]);
+
+  useEffect(() => {
+    // Zero-cost live updates for payment acknowledgements (mounted once)
+    const unsubAcks = onSnapshot(collection(db, 'payment_acknowledgements'), () => {
+      fetchAcknowledgements(ackFilterRef.current);
+    }, (err) => {
+      console.warn('[QRCodePermissionsPage] Realtime acks sync error:', err);
+    });
+
+    return () => {
+----------------
+
+[20] File: web_portal\lms\admin\QRCodePermissionsPage.tsx (Line: 127)
+Code: const unsubAcks = onSnapshot(collection(db, 'payment_acknowledgements'), () => {
+--- Context: ---
+      console.warn('[QRCodePermissionsPage] Realtime pending students sync error:', err);
+    });
+
+    return () => {
+      unsubStudents();
+    };
+  }, []);
+
+  useEffect(() => {
+    ackFilterRef.current = ackFilter;
+    fetchAcknowledgements(ackFilter);
+  }, [ackFilter]);
+
+  useEffect(() => {
+    // Zero-cost live updates for payment acknowledgements (mounted once)
+    const unsubAcks = onSnapshot(collection(db, 'payment_acknowledgements'), () => {
+      fetchAcknowledgements(ackFilterRef.current);
+    }, (err) => {
+      console.warn('[QRCodePermissionsPage] Realtime acks sync error:', err);
+    });
+
+    return () => {
+      unsubAcks();
+    };
+  }, []);
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = () => {
+      setQrCodeUrl(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleDeleteQrCode = () => {
+    if (window.confirm('Are you sure you want to delete the QR Code? Students will not be able to scan until you upload a new one.')) {
+      setQrCodeUrl(null);
+----------------
+
+[21] File: web_portal\lms\core\shared\src\realtime\LiveSessionRealtimeService.ts (Line: 126)
+Code: this.unsubSession = onSnapshot(
+--- Context: ---
+    this.cleanup(); // Clean any existing subscriptions
+
+    try {
+      await this.authenticate();
+      this.initListeners(callbacks);
+    } catch (error: any) {
+      this.handleError(error, callbacks);
+    }
+  }
+
+  private initListeners(callbacks: any) {
+    if (!this.sessionId) return;
+    this.retryCount = 0;
+
+    // Session Document
+    this.unsubSession = onSnapshot(
+      doc(this.db, 'live_sessions', this.sessionId),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          callbacks.onSessionUpdate({ id: docSnap.id, ...docSnap.data() });
+        }
+      },
+      (error) => this.handleError(error, callbacks)
+    );
+
+    // Participants Subcollection
+    this.unsubParticipants = onSnapshot(
+      collection(this.db, 'live_sessions', this.sessionId, 'participants'),
+      (querySnap) => {
+        const parts = querySnap.docs.map(d => d.data() as ILiveParticipant);
+        callbacks.onParticipantsUpdate(parts);
+      },
+      (error) => this.handleError(error, callbacks)
+    );
+
+    // Activity Feed Subcollection
+    const q = query(
+      collection(this.db, 'live_sessions', this.sessionId, 'activity_feed'), 
+      orderBy('timestamp', 'desc'), 
+      limit(50)
+----------------
+
+[22] File: web_portal\lms\core\shared\src\realtime\LiveSessionRealtimeService.ts (Line: 137)
+Code: this.unsubParticipants = onSnapshot(
+--- Context: ---
+    if (!this.sessionId) return;
+    this.retryCount = 0;
+
+    // Session Document
+    this.unsubSession = onSnapshot(
+      doc(this.db, 'live_sessions', this.sessionId),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          callbacks.onSessionUpdate({ id: docSnap.id, ...docSnap.data() });
+        }
+      },
+      (error) => this.handleError(error, callbacks)
+    );
+
+    // Participants Subcollection
+    this.unsubParticipants = onSnapshot(
+      collection(this.db, 'live_sessions', this.sessionId, 'participants'),
+      (querySnap) => {
+        const parts = querySnap.docs.map(d => d.data() as ILiveParticipant);
+        callbacks.onParticipantsUpdate(parts);
+      },
+      (error) => this.handleError(error, callbacks)
+    );
+
+    // Activity Feed Subcollection
+    const q = query(
+      collection(this.db, 'live_sessions', this.sessionId, 'activity_feed'), 
+      orderBy('timestamp', 'desc'), 
+      limit(50)
+    );
+    this.unsubActivityFeed = onSnapshot(
+      q,
+      (querySnap) => {
+        const logs = querySnap.docs.map(d => d.data() as IActivityLog);
+        callbacks.onActivityUpdate(logs);
+      },
+      (error) => this.handleError(error, callbacks)
+    );
+  }
+
+----------------
+
+[23] File: web_portal\lms\core\shared\src\realtime\LiveSessionRealtimeService.ts (Line: 152)
+Code: this.unsubActivityFeed = onSnapshot(
+--- Context: ---
+    this.unsubParticipants = onSnapshot(
+      collection(this.db, 'live_sessions', this.sessionId, 'participants'),
+      (querySnap) => {
+        const parts = querySnap.docs.map(d => d.data() as ILiveParticipant);
+        callbacks.onParticipantsUpdate(parts);
+      },
+      (error) => this.handleError(error, callbacks)
+    );
+
+    // Activity Feed Subcollection
+    const q = query(
+      collection(this.db, 'live_sessions', this.sessionId, 'activity_feed'), 
+      orderBy('timestamp', 'desc'), 
+      limit(50)
+    );
+    this.unsubActivityFeed = onSnapshot(
+      q,
+      (querySnap) => {
+        const logs = querySnap.docs.map(d => d.data() as IActivityLog);
+        callbacks.onActivityUpdate(logs);
+      },
+      (error) => this.handleError(error, callbacks)
+    );
+  }
+
+  private handleError(error: any, callbacks: any) {
+    console.error('[RealtimeGateway] Subscription Error:', error);
+    this.cleanup();
+
+    // Check if it's a permission denied or network error
+    const isPermissionError = error?.code === 'permission-denied' || error?.message?.includes('Missing or insufficient permissions');
+    const isNetworkError = error?.code === 'unavailable';
+
+    if (this.retryCount < this.maxRetries) {
+      this.retryCount++;
+      const delayMs = Math.min(1000 * Math.pow(2, this.retryCount), 15000); // Exponential backoff max 15s
+      
+      console.log(`[RealtimeGateway] Retrying connection in ${delayMs}ms (Attempt ${this.retryCount}/${this.maxRetries})`);
+      
+      this.retryTimeout = setTimeout(async () => {
+----------------
+
+[24] File: web_portal\lms\student\StudentLiveClassesPage.tsx (Line: 795)
+Code: const unsub = onSnapshot(
+--- Context: ---
+      if (fallbackTimer) return; // already polling
+      console.info('[LiveDashboard] Firestore signal unavailable — starting 30s fallback polling.');
+      fallbackTimer = setInterval(() => {
+        queryClient.invalidateQueries({ queryKey: ['studentDashboard'] });
+      }, 30_000);
+    };
+
+    const stopFallbackPolling = () => {
+      if (fallbackTimer) {
+        clearInterval(fallbackTimer);
+        fallbackTimer = null;
+        console.info('[LiveDashboard] Firestore signal restored — stopped fallback polling.');
+      }
+    };
+
+    const unsub = onSnapshot(
+      doc(db, 'live_class_index', 'current'),
+      (_snap) => {
+        // Signal doc exists and is reachable — stop fallback polling if running
+        stopFallbackPolling();
+        queryClient.invalidateQueries({ queryKey: ['studentDashboard'] });
+      },
+      (error) => {
+        console.warn('[LiveDashboard] Firestore signal listener error:', error.code);
+        // Start 30s fallback so students still get auto-refresh
+        startFallbackPolling();
+      }
+    );
+
+    return () => {
+      unsub();
+      stopFallbackPolling();
+    };
+  }, [queryClient]);
+
+  // Load my access requests once
+  useEffect(() => {
+    LiveClassesApi.getMyAccessRequests()
+      .then((res: any) => {
+        const data = res?.data?.data || res?.data || [];
+----------------
+
+[25] File: web_portal\lms\student\StudentPayFeesPage.tsx (Line: 123)
+Code: unsubStudent = onSnapshot(doc(db, 'students', studentDocId), () => {
+--- Context: ---
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [status?.qrCodeEnabled, timeLeft, status?.qrCodeEnabledAt]);
+
+  // Real-time zero-cost sync for student QR status, QR settings & payment history
+  useEffect(() => {
+    let unsubStudent: (() => void) | null = null;
+    let unsubPayments: (() => void) | null = null;
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const storedUser = JSON.parse(localStorage.getItem('nermai_auth_user') || '{}');
+        const studentDocId = storedUser?.studentId || storedUser?.id || storedUser?.userId;
+        if (studentDocId) {
+          unsubStudent = onSnapshot(doc(db, 'students', studentDocId), () => {
+            fetchQrStatus();
+          }, (err) => {
+            console.warn('[StudentPayFeesPage] Realtime student sync error:', err);
+          });
+
+          // Scope payment listener strictly to this student to prevent academy-wide read multiplier
+          const qPayments = query(collection(db, 'payment_acknowledgements'), where('studentId', '==', studentDocId));
+          unsubPayments = onSnapshot(qPayments, () => {
+            fetchPaymentHistory();
+          }, (err) => {
+            console.warn('[StudentPayFeesPage] Realtime payment sync error:', err);
+          });
+        }
+      }
+    } catch (e) {}
+
+    const unsubSettings = onSnapshot(doc(db, 'system_settings', 'payment_qr_code'), () => {
+      fetchQrStatus();
+    }, (err) => {
+      console.warn('[StudentPayFeesPage] Realtime qr settings sync error:', err);
+    });
+
+    return () => {
+      if (unsubStudent) unsubStudent();
+----------------
+
+[26] File: web_portal\lms\student\StudentPayFeesPage.tsx (Line: 131)
+Code: unsubPayments = onSnapshot(qPayments, () => {
+--- Context: ---
+    let unsubStudent: (() => void) | null = null;
+    let unsubPayments: (() => void) | null = null;
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const storedUser = JSON.parse(localStorage.getItem('nermai_auth_user') || '{}');
+        const studentDocId = storedUser?.studentId || storedUser?.id || storedUser?.userId;
+        if (studentDocId) {
+          unsubStudent = onSnapshot(doc(db, 'students', studentDocId), () => {
+            fetchQrStatus();
+          }, (err) => {
+            console.warn('[StudentPayFeesPage] Realtime student sync error:', err);
+          });
+
+          // Scope payment listener strictly to this student to prevent academy-wide read multiplier
+          const qPayments = query(collection(db, 'payment_acknowledgements'), where('studentId', '==', studentDocId));
+          unsubPayments = onSnapshot(qPayments, () => {
+            fetchPaymentHistory();
+          }, (err) => {
+            console.warn('[StudentPayFeesPage] Realtime payment sync error:', err);
+          });
+        }
+      }
+    } catch (e) {}
+
+    const unsubSettings = onSnapshot(doc(db, 'system_settings', 'payment_qr_code'), () => {
+      fetchQrStatus();
+    }, (err) => {
+      console.warn('[StudentPayFeesPage] Realtime qr settings sync error:', err);
+    });
+
+    return () => {
+      if (unsubStudent) unsubStudent();
+      unsubSettings();
+      if (unsubPayments) unsubPayments();
+    };
+  }, []);
+
+  const handleRequestQr = async () => {
+    setSubmitting(true);
+    try {
+----------------
+
+[27] File: web_portal\lms\student\StudentPayFeesPage.tsx (Line: 140)
+Code: const unsubSettings = onSnapshot(doc(db, 'system_settings', 'payment_qr_code'), () => {
+--- Context: ---
+          }, (err) => {
+            console.warn('[StudentPayFeesPage] Realtime student sync error:', err);
+          });
+
+          // Scope payment listener strictly to this student to prevent academy-wide read multiplier
+          const qPayments = query(collection(db, 'payment_acknowledgements'), where('studentId', '==', studentDocId));
+          unsubPayments = onSnapshot(qPayments, () => {
+            fetchPaymentHistory();
+          }, (err) => {
+            console.warn('[StudentPayFeesPage] Realtime payment sync error:', err);
+          });
+        }
+      }
+    } catch (e) {}
+
+    const unsubSettings = onSnapshot(doc(db, 'system_settings', 'payment_qr_code'), () => {
+      fetchQrStatus();
+    }, (err) => {
+      console.warn('[StudentPayFeesPage] Realtime qr settings sync error:', err);
+    });
+
+    return () => {
+      if (unsubStudent) unsubStudent();
+      unsubSettings();
+      if (unsubPayments) unsubPayments();
+    };
+  }, []);
+
+  const handleRequestQr = async () => {
+    setSubmitting(true);
+    try {
+      await StudentApi.requestStudentQr();
+      const msg = "Request sent, admin will respond in a short time";
+      if (Platform.OS === 'web') {
+        success(msg);
+      } else {
+        Alert.alert("Request Sent", msg);
+      }
+      setIsDialogOpen(false);
+      await fetchQrStatus();
+----------------

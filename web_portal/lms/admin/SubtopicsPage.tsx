@@ -3,6 +3,8 @@ import { Plus, BookOpen, Layers, FileText, Search, Shield, User, ArrowRight } fr
 import { AdminTable, AdminModal, AdminInput, AdminSelect, AdminButton, DeleteConfirm } from '../components/admin-ui';
 import { CourseApi } from '../core/services';
 import api from '../core/api';
+import { db } from '../../firebaseConfig';
+import { collection, onSnapshot } from 'firebase/firestore';
 
 export const SubtopicsPage = ({ permission = 'edit_direct', executeEditOrApproval }: { permission?: string; executeEditOrApproval?: any }) => {
   const [subtopics, setSubtopics] = useState<any[]>([]);
@@ -62,6 +64,50 @@ export const SubtopicsPage = ({ permission = 'edit_direct', executeEditOrApprova
 
   useEffect(() => {
     fetchData();
+
+    let unsubSubtopics: (() => void) | null = null;
+    let unsubTopics: (() => void) | null = null;
+    let unsubSubjects: (() => void) | null = null;
+    let unsubCourses: (() => void) | null = null;
+
+    try {
+      unsubSubtopics = onSnapshot(collection(db, 'subtopics'), (snapshot) => {
+        if (!snapshot.empty) {
+          const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter((st: any) => !st.isDeleted);
+          setSubtopics(list);
+        }
+      }, (err) => console.log('Subtopics onSnapshot note:', err?.message));
+
+      unsubTopics = onSnapshot(collection(db, 'topics'), (snapshot) => {
+        if (!snapshot.empty) {
+          const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter((t: any) => !t.isDeleted);
+          setTopics(list);
+        }
+      }, (err) => console.log('Topics onSnapshot note:', err?.message));
+
+      unsubSubjects = onSnapshot(collection(db, 'subjects'), (snapshot) => {
+        if (!snapshot.empty) {
+          const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter((s: any) => !s.isDeleted);
+          setSubjects(list);
+        }
+      }, (err) => console.log('Subjects onSnapshot note:', err?.message));
+
+      unsubCourses = onSnapshot(collection(db, 'courses'), (snapshot) => {
+        if (!snapshot.empty) {
+          const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter((c: any) => !c.isDeleted);
+          setCourses(list);
+        }
+      }, (err) => console.log('Courses onSnapshot note:', err?.message));
+    } catch (err) {
+      console.warn('Real-time subtopics listener note:', err);
+    }
+
+    return () => {
+      if (unsubSubtopics) unsubSubtopics();
+      if (unsubTopics) unsubTopics();
+      if (unsubSubjects) unsubSubjects();
+      if (unsubCourses) unsubCourses();
+    };
   }, []);
 
   // Filter Cascading Handlers

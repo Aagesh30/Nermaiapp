@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import { CourseApi } from '../core/services';
 import { ExcelSyllabusModal } from '../components/ExcelSyllabusModal';
+import { db } from '../../firebaseConfig';
+import { collection, onSnapshot } from 'firebase/firestore';
 
 export const SyllabusTrackerPage = () => {
   const [courses, setCourses] = useState<any[]>([]);
@@ -69,6 +71,34 @@ export const SyllabusTrackerPage = () => {
     fetchData(true);
   }, []);
 
+  // Real-time listener for topics & subtopics to keep in sync with Teacher Portal
+  useEffect(() => {
+    let unsubTopics: (() => void) | null = null;
+    let unsubSubtopics: (() => void) | null = null;
+    try {
+      unsubTopics = onSnapshot(collection(db, 'topics'), (snapshot) => {
+        if (!snapshot.empty) {
+          const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setTopics(list);
+        }
+      }, (err) => console.log('Topics onSnapshot note:', err?.message));
+
+      unsubSubtopics = onSnapshot(collection(db, 'subtopics'), (snapshot) => {
+        if (!snapshot.empty) {
+          const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setSubtopics(list);
+        }
+      }, (err) => console.log('Subtopics onSnapshot note:', err?.message));
+    } catch (err) {
+      console.warn('Real-time syllabus listener note:', err);
+    }
+
+    return () => {
+      if (unsubTopics) unsubTopics();
+      if (unsubSubtopics) unsubSubtopics();
+    };
+  }, []);
+
   const handleSyncExcel = async () => {
     if (!selectedCourse) {
       alert('Please select a course to sync the syllabus.');
@@ -113,6 +143,7 @@ export const SyllabusTrackerPage = () => {
       const payload = {
         coverageStatus: dbStatus,
         percentCovered: pct,
+        progress: pct,
         completed: dbStatus === 'Done'
       };
 

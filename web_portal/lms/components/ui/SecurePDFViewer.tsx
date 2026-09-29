@@ -17,6 +17,30 @@ export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({ url }) => {
   const [viewMode, setViewMode] = useState<'single' | 'book'>('single');
   // Tracks whether the viewer is scrolled near the bottom (to show next-page hint)
   const [atScrollBottom, setAtScrollBottom] = useState(false);
+  const [useIframeFallback, setUseIframeFallback] = useState(false);
+
+  // Clean URL by stripping fragment strings like #toolbar=0 which break pdf.js parsing
+  let cleanUrl = (url || '').trim();
+  if (cleanUrl.includes('#toolbar=0')) {
+    cleanUrl = cleanUrl.replace('#toolbar=0', '');
+  }
+
+  // Detect Google Drive URLs & extract file ID
+  const getDriveId = (u: string) => {
+    if (!u) return null;
+    const m = u.match(/\/file\/d\/([-\w]{25,})/) || u.match(/[?&]id=([-\w]{25,})/);
+    if (m && m[1]) return m[1];
+    if (u.includes('drive.google.com') || u.includes('docs.google.com')) {
+      const m2 = u.match(/([-\w]{25,})/);
+      if (m2) return m2[1];
+    }
+    return null;
+  };
+
+  const driveId = getDriveId(cleanUrl);
+  // Attempt direct Google Drive binary endpoint if available
+  const pdfSource = driveId ? `https://lh3.googleusercontent.com/d/${driveId}` : cleanUrl;
+  const fallbackIframeSrc = driveId ? `https://drive.google.com/file/d/${driveId}/preview` : cleanUrl;
 
   // Detect portrait vs landscape orientation
   const [isPortrait, setIsPortrait] = useState<boolean>(() =>
@@ -88,6 +112,11 @@ export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({ url }) => {
     setNumPages(numPages);
     computeAutoFit();
     if (viewerRef.current) viewerRef.current.scrollTop = 0;
+  };
+
+  const handleDocumentLoadError = (err: Error) => {
+    console.warn('[SecurePDFViewer] react-pdf load failed, falling back to secure iframe:', err.message);
+    setUseIframeFallback(true);
   };
 
   // ── Scroll tracking ───────────────────────────────────────────────────────
@@ -163,6 +192,34 @@ export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({ url }) => {
     setPageNumber(prev => Math.min(prev + pageStep, numPages || 1));
     setTimeout(() => { if (viewerRef.current) viewerRef.current.scrollTop = 0; }, 50);
   };
+
+  if (useIframeFallback) {
+    return (
+      <div
+        id="pdf-container"
+        className="relative flex flex-col w-full h-full bg-[#1E1E1E] rounded-xl overflow-hidden border border-white/10"
+        onContextMenu={preventContextMenu}
+        style={{ height: '100%', minHeight: 0 }}
+      >
+        <div className="relative w-full flex-1 min-h-0 bg-[#121212]">
+          <iframe
+            src={fallbackIframeSrc}
+            className="w-full h-full border-none bg-white"
+            title="Secure PDF Content"
+          />
+          {driveId && (
+            <div 
+              className="absolute top-0 right-0 w-28 h-14 bg-[#121212]/90 backdrop-blur-md z-30 select-none cursor-default flex items-center justify-center border-b border-l border-white/10"
+              title="Protected Document"
+            >
+              <span className="text-white/80 text-[11px] font-bold tracking-wide">NERMAI SECURE</span>
+            </div>
+          )}
+          <WatermarkOverlay />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -276,9 +333,7 @@ export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({ url }) => {
         </div>
       </div>
 
-      {/* ── Viewer Area ──
-          min-h-0 prevents blank space below by keeping flex child bounded.
-          onWheel + onTouchStart/End handle scroll-based page turning. */}
+      {/* ── Viewer Area ── */}
       <div
         ref={viewerRef}
         className="relative w-full flex-1 min-h-0 overflow-auto bg-[#2A2A2A] flex justify-center items-start p-2 custom-scrollbar"
@@ -288,8 +343,9 @@ export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({ url }) => {
         onTouchEnd={handleTouchEnd}
       >
         <Document
-          file={url}
+          file={pdfSource}
           onLoadSuccess={onDocumentLoadSuccess}
+          onLoadError={handleDocumentLoadError}
           loading={
             <div className="text-white animate-pulse py-16 text-sm">
               Loading Document...
@@ -336,16 +392,11 @@ export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({ url }) => {
           )}
         </Document>
 
-        {/* SECURITY: WatermarkOverlay — always rendered, never conditional */}
+        {/* SECURITY: WatermarkOverlay — always rendered */}
         <WatermarkOverlay />
       </div>
 
-      {/* ── Next-page hint button ─────────────────────────────────────────────
-          Appears at bottom when:
-          • Single-page mode
-          • User has scrolled to the bottom of the current page
-          • There is a next page available
-          Clickable shortcut + visual cue for scroll-to-advance behaviour */}
+      {/* ── Next-page hint button ── */}
       {effectiveViewMode === 'single' && pageNumber < (numPages || 1) && atScrollBottom && (
         <button
           onClick={goNextPage}
@@ -359,3 +410,4 @@ export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({ url }) => {
     </div>
   );
 };
+

@@ -1,0 +1,1299 @@
+=== ALL SET_INTERVAL OCCURRENCES ===
+
+[1] File: App.tsx (Line: 1287)
+Code: const timer = setInterval(tick, 1000);
+--- Context: ---
+        // Auto-submit when time is up
+        submitTestAttempt();
+      }
+    };
+    tick(); // immediate first tick
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [activeAttempt, examEndTime]);
+
+  const [playedNoticeIds, setPlayedNoticeIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem("played_notice_ids");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const playNoticeSound = (priority: string) => {
+    try {
+      const url = priority === "high"
+        ? "https://assets.mixkit.co/active_storage/sfx/911/911-500.wav"
+        : "https://assets.mixkit.co/active_storage/sfx/2869/2869-500.wav";
+      if (typeof Audio !== "undefined") {
+        const audio = new Audio(url);
+----------------
+
+[2] File: backend\infrastructure\redis\index.ts (Line: 15)
+Code: setInterval(() => {
+--- Context: ---
+
+// ── Internal TTL store ─────────────────────────────────────────────────────────
+const fallbackCache = new Map<string, { value: string; expiry: number }>();
+
+// Periodic cleanup every 60 seconds to prevent memory growth
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, record] of fallbackCache.entries()) {
+    if (now > record.expiry) fallbackCache.delete(key);
+  }
+}, 60_000).unref();
+
+// ── rawRedisClient: a no-op stub so BullMQ queue/infra imports don't crash ────
+export const rawRedisClient = {
+  on: () => rawRedisClient,
+  connect: async () => {},
+  quit: async () => {},
+  pipeline: () => {
+    const cmds: Array<[string, string]> = [];
+    const pipe = {
+      get: (k: string) => { cmds.push(['get', k]); return pipe; },
+      set: (k: string, v: string) => { cmds.push(['set', k]); return pipe; },
+      exec: async () => cmds.map(() => [null, null] as [null, null]),
+    };
+    return pipe;
+----------------
+
+[3] File: backend\modules\courses\player.ts (Line: 543)
+Code: setInterval(updateScrubber, 250);
+--- Context: ---
+    if (wrapper) {
+      wrapper.addEventListener('mousemove', resetHideControlsTimer);
+      wrapper.addEventListener('touchstart', resetHideControlsTimer);
+    }
+
+    setInterval(updateScrubber, 250);
+  }
+
+  function onPlayerReady(event) {
+    initCustomControls();
+
+    if (CONFIG.isDev) {
+      updateDebug('class', CONFIG.classId);
+      updateDebug('provider', CONFIG.isLive ? 'youtube_live' : 'youtube_recorded');
+      updateDebug('status', CONFIG.isLive ? 'LIVE' : 'RECORDED');
+      updateDebug('interval', CONFIG.isLive ? CONFIG.attendanceHeartbeatInterval : CONFIG.watchProgressInterval);
+      const btn = document.getElementById('debug-btn');
+      if (btn) {
+        btn.addEventListener('click', () => {
+          console.log('[Attendance] Manual Test Event Triggered');
+          if (CONFIG.isLive) sendHeartbeat(false, 'HEARTBEAT');
+          else saveProgress(false, 'PLAY');
+        });
+      }
+      const fab = document.getElementById('debug-fab');
+----------------
+
+[4] File: backend\modules\courses\player.ts (Line: 669)
+Code: setInterval(updateTime, 1000);
+--- Context: ---
+  /* ── Static watermark time update ── */
+  function updateTime() {
+    document.getElementById('wm-time').textContent = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+  }
+  updateTime();
+  setInterval(updateTime, 1000);
+</script>
+</body>
+</html>`;
+}
+
+export const renderPlayer = async (req: Request, res: Response) => {
+  try {
+    console.log(`[Player] Initializing render for token: ${req.params.token}`);
+    const token = req.params.token;
+    if (!token) return res.status(400).send('Missing player token');
+
+    const cacheKey = `player:${token}`;
+    const tokenDataStr = await redisClient.get(cacheKey);
+
+    if (!tokenDataStr) return res.status(410).send(buildExpiredPage());
+
+    let tokenData: any;
+    try {
+      tokenData = JSON.parse(tokenDataStr);
+----------------
+
+[5] File: backend\modules\courses\player.ts (Line: 860)
+Code: updateTime(); setInterval(updateTime, 1000);
+--- Context: ---
+          // Disabled
+        });
+
+        // Watermark time
+        function updateTime() { document.getElementById('wm-time').textContent = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }); }
+        updateTime(); setInterval(updateTime, 1000);
+    </script>
+</body>
+</html>`;
+}
+
+export const renderZoomPlayer = async (req: Request, res: Response) => {
+  try {
+    const token = req.params.token;
+    if (!token) return res.status(400).send('Missing player token');
+
+    const cacheKey = `player:${token}`;
+    const tokenDataStr = await redisClient.get(cacheKey);
+
+    if (!tokenDataStr) return res.status(410).send(buildExpiredPage());
+
+    let tokenData: any;
+    try {
+      tokenData = JSON.parse(tokenDataStr);
+    } catch {
+----------------
+
+[6] File: backend\modules\interaction-engine\worker.ts (Line: 21)
+Code: setInterval(async () => {
+--- Context: ---
+// }, { connection: { url: env.REDIS_URL } as any });
+
+// A specialized function to drain the Redis list `interaction-persistence-queue`
+// and batch write to Firestore.
+export const startPersistenceDrainer = () => {
+  setInterval(async () => {
+    try {
+      const batchSize = 100;
+      // Atomically pop multiple items from the list using a Lua script or simply pop in a loop.
+      // For simplicity, we just LPOP in a loop up to batchSize.
+      const rawItems: string[] = [];
+      for (let i = 0; i < batchSize; i++) {
+        const item = await redisClient.lpop('interaction-persistence-queue');
+        if (!item) break;
+        rawItems.push(item);
+      }
+
+      if (rawItems.length === 0) return;
+
+      const firestoreBatch = db.batch();
+      const interactionsCollection = db.collection('interactions');
+
+      rawItems.forEach(raw => {
+        const interaction = JSON.parse(raw) as IInteraction;
+        const docRef = interactionsCollection.doc(interaction.id);
+----------------
+
+[7] File: backend\modules\test-portal\test-creation\cleanupService.ts (Line: 171)
+Code: this.intervalId = setInterval(() => {
+--- Context: ---
+        // Run once 1 minute after server boot, then every intervalMs
+        setTimeout(() => {
+            this.cleanExpiredTestImages().catch(() => {});
+        }, 60 * 1000);
+
+        this.intervalId = setInterval(() => {
+            this.cleanExpiredTestImages().catch(() => {});
+        }, intervalMs);
+
+        // Allow process to exit cleanly if needed
+        if (this.intervalId.unref) {
+            this.intervalId.unref();
+        }
+    }
+}
+
+----------------
+
+[8] File: backend\shared\utils\cache.ts (Line: 21)
+Code: setInterval(() => this.purgeExpired(), 60000).unref();
+--- Context: ---
+     * @param defaultTtlSeconds Default time to live in seconds (default 10 mins = 600s)
+     */
+    constructor(defaultTtlSeconds: number = 600) {
+        this.defaultTtlMs = defaultTtlSeconds * 1000;
+        // Periodic cleanup of expired keys every 60 seconds
+        setInterval(() => this.purgeExpired(), 60000).unref();
+    }
+
+    /**
+     * Get item from cache. Returns undefined if missing or expired.
+     */
+    get<T>(key: string): T | undefined {
+        const entry = this.cache.get(key);
+        if (!entry) return undefined;
+
+        if (Date.now() > entry.expiresAt) {
+            this.cache.delete(key);
+            return undefined;
+        }
+
+        return entry.value as T;
+    }
+
+    /**
+     * Store item in cache with optional TTL override in seconds.
+----------------
+
+[9] File: scratch\App_clean.tsx (Line: 1049)
+Code: const timer = setInterval(tick, 1000);
+--- Context: ---
+        // Auto-submit when time is up
+        submitTestAttempt();
+      }
+    };
+    tick(); // immediate first tick
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [activeAttempt, examEndTime]);
+
+  // API Call Loaders
+  const loadAnnouncements = async () => {
+    try {
+      const res = await api.get("/announcement");
+      setAnnouncements(res || []);
+    } catch (e) {
+      console.log("Failed loading announcements:", e);
+      setAnnouncements([]);
+    }
+  };
+
+  const loadNotifications = async () => {
+    try {
+      const role = user?.role || "guest";
+      const myStudent = students.find((s: any) => s.email === user?.email || s.phone === user?.phone || s.rollNumber === user?.username || s.id === user?.userId);
+      const batch = myStudent?.batch || "";
+----------------
+
+[10] File: scratch\mobile_App_clean.tsx (Line: 683)
+Code: const timer = setInterval(tick, 1000);
+--- Context: ---
+        // Auto-submit when time is up
+        submitTestAttempt();
+      }
+    };
+    tick(); // immediate first tick
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [activeAttempt, examEndTime]);
+
+  // API Call Loaders
+  const loadAnnouncements = async () => {
+    try {
+      const res = await api.get("/announcement");
+      setAnnouncements(res || []);
+    } catch (e) {
+      console.log("Failed loading announcements:", e);
+      setAnnouncements([]);
+    }
+  };
+
+  const loadNotifications = async () => {
+    try {
+      const role = user?.role || "guest";
+      const myStudent = students.find((s: any) => s.email === user?.email || s.phone === user?.phone || s.rollNumber === user?.username || s.id === user?.userId);
+      const batch = myStudent?.batch || "";
+----------------
+
+[11] File: scratch\web_portal\App.tsx (Line: 894)
+Code: const interval = setInterval(loadPageLocks, 8000);
+--- Context: ---
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    loadPageLocks();
+    const interval = setInterval(loadPageLocks, 8000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const isPageLocked = (tabKey: string): boolean => {
+    if (user?.role ==="developer") return false; // developer always bypasses lock
+    return lockedPages[tabKey]?.locked === true;
+  };
+
+  const handleTabPress = (tabKey: string, action: () => void) => {
+    if (user?.role ==="developer") { action(); return; }
+    if (lockedPages[tabKey]?.locked) {
+      setLockedPageInfoModal({ visible: true, tabKey, message: lockedPages[tabKey].message ||"This page is currently under maintenance. Please check back later."});
+    } else {
+      action();
+    }
+  };
+
+  // Page lock configuration for all lockable tabs & panels
+  const LOCKABLE_PAGES = [
+----------------
+
+[12] File: scratch\web_portal\App.tsx (Line: 1919)
+Code: const timer = setInterval(tick, 1000);
+--- Context: ---
+        // Auto-submit when time is up
+        submitTestAttempt();
+      }
+    };
+    tick(); // immediate first tick
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [activeAttempt, examEndTime]);
+
+  // Clock tick for live test filtering — re-evaluates every 30 seconds
+  useEffect(() => {
+    const clockTick = setInterval(() => setNowTick(Date.now()), 30000);
+    return () => clearInterval(clockTick);
+  }, []);
+
+  // Auto-sync student profile, ID Card, Hall Ticket, and Edit Permissions without requiring re-login
+  useEffect(() => {
+    if (!user || user.role !=="student") return;
+
+    // 1. Load immediately on tab/subtab switch
+    loadStudents();
+    loadAnnouncements();
+
+    // 2. Poll every 12 seconds in background
+    const syncInterval = setInterval(() => {
+----------------
+
+[13] File: scratch\web_portal\App.tsx (Line: 1925)
+Code: const clockTick = setInterval(() => setNowTick(Date.now()), 30000);
+--- Context: ---
+    return () => clearInterval(timer);
+  }, [activeAttempt, examEndTime]);
+
+  // Clock tick for live test filtering — re-evaluates every 30 seconds
+  useEffect(() => {
+    const clockTick = setInterval(() => setNowTick(Date.now()), 30000);
+    return () => clearInterval(clockTick);
+  }, []);
+
+  // Auto-sync student profile, ID Card, Hall Ticket, and Edit Permissions without requiring re-login
+  useEffect(() => {
+    if (!user || user.role !=="student") return;
+
+    // 1. Load immediately on tab/subtab switch
+    loadStudents();
+    loadAnnouncements();
+
+    // 2. Poll every 12 seconds in background
+    const syncInterval = setInterval(() => {
+      loadStudents();
+      loadAnnouncements();
+    }, 12000);
+
+    // 3. Sync on window focus
+    const handleFocus = () => {
+----------------
+
+[14] File: scratch\web_portal\App.tsx (Line: 1938)
+Code: const syncInterval = setInterval(() => {
+--- Context: ---
+    // 1. Load immediately on tab/subtab switch
+    loadStudents();
+    loadAnnouncements();
+
+    // 2. Poll every 12 seconds in background
+    const syncInterval = setInterval(() => {
+      loadStudents();
+      loadAnnouncements();
+    }, 12000);
+
+    // 3. Sync on window focus
+    const handleFocus = () => {
+      loadStudents();
+      loadAnnouncements();
+    };
+    if (typeof window !=="undefined"&& window.addEventListener) {
+      window.addEventListener("focus", handleFocus);
+    }
+
+    return () => {
+      clearInterval(syncInterval);
+      if (typeof window !=="undefined"&& window.removeEventListener) {
+        window.removeEventListener("focus", handleFocus);
+      }
+    };
+----------------
+
+[15] File: web_portal\App.tsx (Line: 6224)
+Code: timerId = setInterval(tick, 1000);
+--- Context: ---
+        clearInterval(timerId);
+        submitTestAttempt(true);
+      }
+    };
+    tick(); // immediate first tick
+    timerId = setInterval(tick, 1000);
+    return () => clearInterval(timerId);
+  }, [activeAttempt, examEndTime]);
+
+  // Clock tick for live test filtering — re-evaluates every 30 seconds
+  useEffect(() => {
+    const clockTick = setInterval(() => setNowTick(Date.now()), 30000);
+    return () => clearInterval(clockTick);
+  }, []);
+
+  // Reload tests when student/guest navigates to the available tests tab
+  useEffect(() => {
+    if (!user || activeTab !== "test" || testSub !== "available") return;
+    loadTests(true); // Silent load on tab focus
+  }, [user, activeTab, testSub]);
+
+  // ── Screenshot blocking for Tests & Exams module (student & guest only) ──────
+  // Toggle SCREENSHOT_BLOCK_ENABLED at the top of this file to disable for debugging.
+  // Super admin, admin, staff, teacher, developer are NEVER affected.
+  useEffect(() => {
+----------------
+
+[16] File: web_portal\App.tsx (Line: 6230)
+Code: const clockTick = setInterval(() => setNowTick(Date.now()), 30000);
+--- Context: ---
+    return () => clearInterval(timerId);
+  }, [activeAttempt, examEndTime]);
+
+  // Clock tick for live test filtering — re-evaluates every 30 seconds
+  useEffect(() => {
+    const clockTick = setInterval(() => setNowTick(Date.now()), 30000);
+    return () => clearInterval(clockTick);
+  }, []);
+
+  // Reload tests when student/guest navigates to the available tests tab
+  useEffect(() => {
+    if (!user || activeTab !== "test" || testSub !== "available") return;
+    loadTests(true); // Silent load on tab focus
+  }, [user, activeTab, testSub]);
+
+  // ── Screenshot blocking for Tests & Exams module (student & guest only) ──────
+  // Toggle SCREENSHOT_BLOCK_ENABLED at the top of this file to disable for debugging.
+  // Super admin, admin, staff, teacher, developer are NEVER affected.
+  useEffect(() => {
+    const isStudentOrGuest = user?.role === "student" || user?.role === "guest";
+    const isTestTab = activeTab === "test";
+    const shouldBlock = SCREENSHOT_BLOCK_ENABLED && isStudentOrGuest && isTestTab;
+
+    if (Platform.OS === "web") {
+      if (typeof document === "undefined" || typeof window === "undefined") return;
+----------------
+
+[17] File: web_portal\App.tsx (Line: 6411)
+Code: const timer = setInterval(tick, 1000);
+--- Context: ---
+          }, 300);
+        }
+      }
+    };
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [waitingRoomTest]);
+
+  // ── SCREENSHOT & SCREEN CAPTURE BLOCKING (Mobile & Web) ───────────────────
+  useEffect(() => {
+    if (!activeAttempt) return;
+
+    // 1. Mobile OS Screen Capture Guard (Android FLAG_SECURE & iOS Shield)
+    try {
+      ScreenCapture.preventScreenCaptureAsync().catch(() => {});
+    } catch (_) {}
+
+    // 2. Web Browser Guard (PrintScreen, Copy, ContextMenu, Shortcut Blocking)
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      const handleWebKeyDown = (e: KeyboardEvent) => {
+        const isPrintScreen = e.key === "PrintScreen" || e.keyCode === 44;
+        const isCtrlCopy = (e.ctrlKey || e.metaKey) && ["c", "C", "p", "P", "s", "S", "u", "U", "a", "A"].includes(e.key);
+        const isDevTools = (e.ctrlKey || e.metaKey) && e.shiftKey && ["i", "I", "c", "C", "j", "J"].includes(e.key);
+
+----------------
+
+[18] File: web_portal\App.tsx (Line: 6567)
+Code: const awayWatcher = setInterval(() => {
+--- Context: ---
+      }
+      triggerViolationStrike(reason, durationSeconds);
+    };
+
+    // Periodic check while away: if student stays away continuously for > 5s while in background
+    const awayWatcher = setInterval(() => {
+      if (submitInProgressRef.current) return;
+      if (tabLeaveStartTimeRef.current) {
+        const awaySeconds = Math.round((Date.now() - tabLeaveStartTimeRef.current) / 1000);
+        if (awaySeconds >= 5 && tabLeaveCountRef.current >= 1) {
+          tabLeaveStartTimeRef.current = null;
+          triggerViolationStrike("Away from exam continuously", awaySeconds);
+        }
+      }
+    }, 1000);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        onUserLeft("Tab switched / minimized");
+      } else {
+        onUserReturned("Tab switched / minimized");
+      }
+    };
+
+    const handleFullscreenChange = () => {
+----------------
+
+[19] File: web_portal\App.tsx (Line: 6696)
+Code: const intervalId = setInterval(syncAnswers, 60000);
+--- Context: ---
+        // Do NOT update lastSyncedHash on failure — next interval will retry.
+        console.log("Background exam sync warning:", e);
+      }
+    };
+
+    const intervalId = setInterval(syncAnswers, 60000);
+    return () => {
+      clearInterval(intervalId);
+      // Run a final sync on cleanup/exit regardless of dirty flag —
+      // ensures the very last answers are flushed before the component unmounts.
+      syncAnswers().catch(() => { });
+    };
+  }, [activeAttempt]);
+
+  // Network connection status toast listener during active examination
+  useEffect(() => {
+    if (!activeAttempt || Platform.OS !== "web" || typeof window === "undefined") return;
+
+    const handleOffline = () => {
+      showToast(
+        "📶 Network disconnected. You can continue answering all questions — your answers are saved locally and will sync automatically once reconnected.",
+        "warning"
+      );
+    };
+
+----------------
+
+[20] File: web_portal\App.tsx (Line: 6746)
+Code: const tokenRefreshInterval = setInterval(refreshExamToken, 10 * 60 * 1000);
+--- Context: ---
+      }
+    };
+
+    // Refresh immediately on exam start, then every 10 minutes
+    refreshExamToken();
+    const tokenRefreshInterval = setInterval(refreshExamToken, 10 * 60 * 1000);
+
+    const handleOnline = async () => {
+      showToast(
+        "✅ Network reconnected! Syncing offline answers to server...",
+        "success"
+      );
+      syncAnswers().catch(() => {});
+    };
+
+    window.addEventListener("offline", handleOffline);
+    window.addEventListener("online", handleOnline);
+
+    return () => {
+      clearInterval(tokenRefreshInterval);
+      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("online", handleOnline);
+    };
+  }, [activeAttempt, user]);
+
+----------------
+
+[21] File: web_portal\lms\admin\ClassesPage.tsx (Line: 79)
+Code: const timer = setInterval(() => {
+--- Context: ---
+    fetchData();
+  }, []);
+
+  // 10-minute and 2-minute reminders
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = Date.now();
+      classes.forEach(cls => {
+        if (!cls.scheduledStartTime) return;
+        
+        const expectedDurationMs = (cls.expectedDurationMinutes || 60) * 60 * 1000;
+        const extensionMs = (cls.extensionMinutes || 0) * 60 * 1000;
+        const gracePeriodMs = 2 * 60 * 1000;
+        const baseStart = cls.actualStartTime ? new Date(cls.actualStartTime).getTime() : new Date(cls.scheduledStartTime).getTime();
+        const effectiveEnd = baseStart + expectedDurationMs + extensionMs + gracePeriodMs;
+        const start = baseStart;
+
+        if (now >= start && now < effectiveEnd && !cls.actualEndTime) {
+          const remainingSeconds = (effectiveEnd - now) / 1000;
+          
+          if (remainingSeconds <= 600 && remainingSeconds > 590) { // Around 10 mins
+            if (!notifiedClasses[cls.id]?.tenMin) {
+              setNotifiedClasses(prev => ({ ...prev, [cls.id]: { ...prev[cls.id], tenMin: true }}));
+              alert(`Reminder: Class "${cls.title}" will end in 10 minutes. Extend if necessary.`);
+            }
+----------------
+
+[22] File: web_portal\lms\admin\LiveAttendanceControlScreen.tsx (Line: 58)
+Code: const int = setInterval(() => {
+--- Context: ---
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (activeSession?.status === 'LIVE' && activeSession.attendance?.status === 'LIVE') {
+      const startMs = new Date(activeSession.attendance.startedAt).getTime();
+      const int = setInterval(() => {
+        setTimer(Math.floor((Date.now() - startMs) / 1000));
+      }, 1000);
+      return () => clearInterval(int);
+    } else {
+      setTimer(0);
+    }
+  }, [activeSession?.attendance?.status]);
+
+
+
+  const handleJoinClass = async (launchProvider: boolean = true) => {
+    try {
+      setJoinStatus('JOINING');
+      const res = await LiveSessionApi.joinByClass(classId);
+      const data = res.data?.data;
+      
+      setJoinStatus('INITIALIZING');
+      
+      if (launchProvider && data) {
+----------------
+
+[23] File: web_portal\lms\admin\QRCodePermissionsPage.tsx (Line: 23)
+Code: const timer = setInterval(tick, 1000);
+--- Context: ---
+      const diff = Math.max(0, Math.floor((expiryTime - Date.now()) / 1000));
+      setTimeLeft(diff);
+    };
+
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [enabledAt, duration, unit]);
+
+  if (timeLeft <= 0) {
+    return <span className="text-red-500 font-semibold">Expired</span>;
+  }
+
+  const hrs = Math.floor(timeLeft / 3600);
+  const mins = Math.floor((timeLeft % 3600) / 60);
+  const secs = timeLeft % 60;
+  const timeString = hrs > 0 ? `${hrs}h ${mins}m ${secs}s` : `${mins}m ${secs}s`;
+
+  return (
+    <span className="text-green-400 font-semibold">
+      Enabled ({timeString})
+    </span>
+  );
+};
+
+----------------
+
+[24] File: web_portal\lms\features\classes\ClassesPage.tsx (Line: 79)
+Code: const timer = setInterval(() => {
+--- Context: ---
+    fetchData();
+  }, []);
+
+  // 10-minute and 2-minute reminders
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = Date.now();
+      classes.forEach(cls => {
+        if (!cls.scheduledStartTime) return;
+        
+        const expectedDurationMs = (cls.expectedDurationMinutes || 60) * 60 * 1000;
+        const extensionMs = (cls.extensionMinutes || 0) * 60 * 1000;
+        const gracePeriodMs = 2 * 60 * 1000;
+        const baseStart = cls.actualStartTime ? new Date(cls.actualStartTime).getTime() : new Date(cls.scheduledStartTime).getTime();
+        const effectiveEnd = baseStart + expectedDurationMs + extensionMs + gracePeriodMs;
+        const start = baseStart;
+
+        if (now >= start && now < effectiveEnd && !cls.actualEndTime) {
+          const remainingSeconds = (effectiveEnd - now) / 1000;
+          
+          if (remainingSeconds <= 600 && remainingSeconds > 590) { // Around 10 mins
+            if (!notifiedClasses[cls.id]?.tenMin) {
+              setNotifiedClasses(prev => ({ ...prev, [cls.id]: { ...prev[cls.id], tenMin: true }}));
+              alert(`Reminder: Class "${cls.title}" will end in 10 minutes. Extend if necessary.`);
+            }
+----------------
+
+[25] File: web_portal\lms\features\live\dashboard\controls\HeaderRibbon.tsx (Line: 12)
+Code: const interval = setInterval(() => {
+--- Context: ---
+
+  useEffect(() => {
+    const startTimeStr = session?.actualStartTime || (session as any)?.startedAt;
+    if (!startTimeStr) return;
+    
+    const interval = setInterval(() => {
+      const start = new Date(startTimeStr).getTime();
+      const now = Date.now();
+      const diffMs = Math.max(0, now - start);
+      
+      const hrs = Math.floor(diffMs / 3600000);
+      const mins = Math.floor((diffMs % 3600000) / 60000);
+      const secs = Math.floor((diffMs % 60000) / 1000);
+      
+      const formatted = `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+      setLiveSince(formatted);
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [session?.actualStartTime, (session as any)?.startedAt]);
+
+  return (
+    <header className="w-full bg-gray-950 border-b border-gray-800 flex items-center justify-between px-6 py-3 select-none">
+      <div className="flex items-center gap-6">
+        <div className="flex items-center gap-3">
+----------------
+
+[26] File: web_portal\lms\features\live\dashboard\layouts\lobbies\WaitingRoomLobby.tsx (Line: 26)
+Code: countdownTimer = setInterval(() => {
+--- Context: ---
+  useEffect(() => {
+    let retryTimer: ReturnType<typeof setTimeout>;
+    let countdownTimer: ReturnType<typeof setInterval>;
+
+    // Count down each second
+    countdownTimer = setInterval(() => {
+      setSecondsUntilRetry((prev) => {
+        if (prev <= 1) return RETRY_INTERVAL_MS / 1000; // reset after retry fires
+        return prev - 1;
+      });
+    }, 1000);
+
+    // Fire the actual retry on the interval
+    retryTimer = setTimeout(function scheduleRetry() {
+      startSession(); // re-triggers the join attempt
+      retryTimer = setTimeout(scheduleRetry, RETRY_INTERVAL_MS);
+    }, RETRY_INTERVAL_MS);
+
+    return () => {
+      clearTimeout(retryTimer);
+      clearInterval(countdownTimer);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleManualRetry = () => {
+----------------
+
+[27] File: web_portal\lms\features\live\dashboard\workspaces\AnalyticsWorkspace.tsx (Line: 53)
+Code: const interval = setInterval(() => {
+--- Context: ---
+  useEffect(() => {
+    if (!session?.actualStartTime && !session?.startTime) return;
+    
+    const start = new Date(session.actualStartTime || session.startTime).getTime();
+    
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const diffMs = now - start;
+      const h = Math.floor(diffMs / 3600000).toString().padStart(2, '0');
+      const m = Math.floor((diffMs % 3600000) / 60000).toString().padStart(2, '0');
+      const s = Math.floor((diffMs % 60000) / 1000).toString().padStart(2, '0');
+      setDurationStr(`${h}:${m}:${s}`);
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [session?.actualStartTime, session?.startTime]);
+
+  return (
+    <div className="flex-1 flex flex-col bg-[#050505] p-6 h-full overflow-hidden">
+      <div className="flex items-center justify-between mb-8">
+        <h2 className="text-xl font-bold text-white flex items-center gap-2">
+          <TrendingUp size={20} className="text-blue-500" /> Live Analytics
+        </h2>
+      </div>
+
+----------------
+
+[28] File: web_portal\lms\features\live\hooks\usePresenceLifecycle.ts (Line: 31)
+Code: intervalRef.current = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS);
+--- Context: ---
+      }
+    };
+
+    // Send immediately
+    sendHeartbeat();
+    intervalRef.current = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS);
+  }, [sessionId]);
+
+  const stopHeartbeat = useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  }, []);
+
+  const pauseHeartbeat = useCallback(() => {
+    isPausedRef.current = true;
+  }, []);
+
+  const resumeHeartbeat = useCallback(() => {
+    isPausedRef.current = false;
+  }, []);
+
+  useEffect(() => {
+    if (!sessionId || academicState !== 'LIVE') {
+----------------
+
+[29] File: web_portal\lms\features\live\hooks\useSessionStatusPoller.ts (Line: 72)
+Code: timerRef.current = setInterval(poll, intervalMs);
+--- Context: ---
+      }
+    };
+
+    setLoading(true);
+    poll(); // immediate first fetch
+    timerRef.current = setInterval(poll, intervalMs);
+
+    return () => {
+      mountedRef.current = false;
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [sessionId, intervalMs]);
+
+  return {
+    sessionStatus,
+    isHostReady: sessionStatus !== null && HOST_READY_STATUSES.includes(sessionStatus),
+    loading,
+    error,
+  };
+}
+
+----------------
+
+[30] File: web_portal\lms\features\live\legacy\LiveSessionHeader.tsx (Line: 23)
+Code: const interval = setInterval(calculateTime, 1000);
+--- Context: ---
+      const remaining = Math.max(0, durationMs - elapsed);
+      setTimeLeft(remaining);
+    };
+
+    calculateTime();
+    const interval = setInterval(calculateTime, 1000);
+    return () => clearInterval(interval);
+  }, [startedAt, durationMs]);
+
+  const mins = Math.floor(timeLeft / 60000);
+  const secs = Math.floor((timeLeft % 60000) / 1000);
+
+  return (
+    <div className="flex items-center gap-2 px-4 py-1.5 bg-blue-900/40 border border-blue-500/30 text-blue-300 rounded-full text-sm font-medium animate-pulse ml-4">
+      <Clock size={16} />
+      <span>Attendance</span>
+      <span className="opacity-50">|</span>
+      <span className="font-mono">{mins}:{secs.toString().padStart(2, '0')}</span>
+    </div>
+  );
+};
+
+// ── End Session Confirm Modal ─────────────────────────────────────────────────
+
+const EndSessionModal: React.FC<{
+----------------
+
+[31] File: web_portal\lms\features\live\services\MeetingLauncherService.ts (Line: 200)
+Code: this.pollInterval = setInterval(() => {
+--- Context: ---
+  }
+
+  // ── Signal 2 — Poll window.closed (catches accidental/crash close) ─────────
+
+  private _startPolling(): void {
+    this.pollInterval = setInterval(() => {
+      if (this.popupWindow && this.popupWindow.closed) {
+        MeetingStateManager.setState('closed');
+        MeetingTelemetryService.record('POPUP_CLOSED_BY_USER', {});
+        this._cleanup();
+      }
+    }, WINDOW_POLL_MS);
+  }
+
+  // ── Signal 3 — Heartbeat (catches laptop sleep / frozen tab / network drop) ─
+
+  private _startHeartbeat(): void {
+    this.heartbeatInterval = setInterval(() => {
+      if (!this.isAlive()) return;
+
+      // Probe the popup — it responds with HEARTBEAT_ACK via postMessage
+      try {
+        this.popupWindow!.postMessage(JSON.stringify({ type: 'HEARTBEAT' }), '*');
+      } catch (_) {}
+
+----------------
+
+[32] File: web_portal\lms\features\live\services\MeetingLauncherService.ts (Line: 212)
+Code: this.heartbeatInterval = setInterval(() => {
+--- Context: ---
+  }
+
+  // ── Signal 3 — Heartbeat (catches laptop sleep / frozen tab / network drop) ─
+
+  private _startHeartbeat(): void {
+    this.heartbeatInterval = setInterval(() => {
+      if (!this.isAlive()) return;
+
+      // Probe the popup — it responds with HEARTBEAT_ACK via postMessage
+      try {
+        this.popupWindow!.postMessage(JSON.stringify({ type: 'HEARTBEAT' }), '*');
+      } catch (_) {}
+
+      // If we haven't received an ACK within the timeout window, mark as closed
+      const elapsed = Date.now() - this.lastHeartbeatAck;
+      if (elapsed > HEARTBEAT_TIMEOUT) {
+        MeetingTelemetryService.record('HEARTBEAT_TIMEOUT', { elapsedMs: elapsed });
+        MeetingStateManager.setState('closed');
+        this._cleanup();
+      }
+    }, HEARTBEAT_INTERVAL);
+  }
+
+  // ── Cleanup ────────────────────────────────────────────────────────────────
+
+----------------
+
+[33] File: web_portal\lms\features\live\StudentLiveClassesPage.tsx (Line: 31)
+Code: const id = setInterval(update, 1000);
+--- Context: ---
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      setText(h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m ${s}s` : `${s}s`);
+    };
+    update();
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
+  }, [targetDate]);
+  return text;
+};
+
+// ── Session Card ──────────────────────────────────────────────────────────────
+const SessionCard = ({ cls, onJoin }: { cls: any; onJoin: (courseId: string, classId: string) => void }) => {
+  const isScheduled = cls.liveStatus === 'SCHEDULED' || cls.status === 'SCHEDULED';
+  const startTime = cls.startTime || cls.scheduledAt || null;
+  const countdown = useCountdown(isScheduled ? startTime : null);
+
+  const borderClass = cls.joinAllowed
+    ? 'border-green-500/40 bg-green-500/5 hover:border-green-500/70'
+    : isScheduled
+    ? 'border-yellow-500/30 bg-yellow-500/5 hover:border-yellow-500/50'
+    : 'border-border hover:border-primary/50';
+
+  const getStatusDisplay = () => {
+    if (cls.liveStatus === 'JOINING') return { text: 'Host Starting...', badge: 'destructive' };
+----------------
+
+[34] File: web_portal\lms\features\streaming\providers\hooks\useZoomPresence.ts (Line: 69)
+Code: pollTimerRef.current = setInterval(() => {
+--- Context: ---
+
+  // ── Start active polling ───────────────────────────────────────────────────
+  const startPolling = useCallback(() => {
+    stopPolling(); // clear any existing timer first
+    if (!sessionId) return;
+    pollTimerRef.current = setInterval(() => {
+      checkSessionStatus();
+    }, POLL_INTERVAL_MS);
+  }, [sessionId, checkSessionStatus, stopPolling]);
+
+  // ── Mark as "in Zoom" ──────────────────────────────────────────────────────
+  const markLaunched = useCallback(() => {
+    launched.current = true;
+    setPresenceState('in_zoom');
+    startPolling();
+  }, [startPolling]);
+
+  // ── AppState listener ──────────────────────────────────────────────────────
+  useEffect(() => {
+    mountedRef.current = true;
+
+    const sub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+      const prev = appStateRef.current;
+      appStateRef.current = nextState;
+
+----------------
+
+[35] File: web_portal\lms\features\streaming\YoutubePlayer.tsx (Line: 20)
+Code: const hbInterval = setInterval(() => {
+--- Context: ---
+  const webviewRef = useRef<any>(null);
+  const [handRaised, setHandRaised] = useState(false);
+
+  useEffect(() => {
+    // Start 15s Heartbeat Ping for Presence Tracking
+    const hbInterval = setInterval(() => {
+      if (classId) {
+        LiveSessionApi.studentHeartbeat(classId).catch(() => {});
+      }
+    }, 15000);
+
+    return () => {
+      clearInterval(hbInterval);
+    };
+  }, [classId]);
+
+  const toggleRaiseHand = async () => {
+    try {
+      const nextState = !handRaised;
+      setHandRaised(nextState);
+      const studentId = 'me'; // Resolved by token/JWT on backend
+      await LiveSessionApi.patchParticipant(classId, studentId, {
+        action: nextState ? 'raise-hand' : 'lower-hand',
+      });
+      if (nextState) {
+----------------
+
+[36] File: web_portal\lms\student\components\AttendanceStatusBadge.tsx (Line: 36)
+Code: timerId = setInterval(fetchStatus, 30000); // poll every 30s until finalized
+--- Context: ---
+        // Silent catch for polling
+      }
+    };
+
+    fetchStatus();
+    timerId = setInterval(fetchStatus, 30000); // poll every 30s until finalized
+    return () => {
+      mounted = false;
+      if (timerId) clearInterval(timerId);
+    };
+  }, [classId]);
+
+  if (!statusData) return null;
+
+  const { status, percentage } = statusData;
+
+  const getBadgeStyle = () => {
+    const finalResultStatus = statusData.finalResult?.status;
+    
+    if (finalResultStatus === 'Present' || status === 'COMPLETED' || status === 'Present') {
+      return { bg: 'bg-emerald-500/15', text: 'text-emerald-500', border: 'border-emerald-500/20', icon: <CheckCircle2 className="w-3.5 h-3.5" />, label: 'Attendance Met' };
+    }
+    
+    if (finalResultStatus === 'Absent' || status === 'Absent') {
+      return { bg: 'bg-red-500/15', text: 'text-red-500', border: 'border-red-500/20', icon: <AlertCircle className="w-3.5 h-3.5" />, label: 'Absent' };
+----------------
+
+[37] File: web_portal\lms\student\components\Watermark.tsx (Line: 16)
+Code: const timeInterval = setInterval(() => {
+--- Context: ---
+  const [scale, setScale] = useState(1);
+  const [time, setTime] = useState(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+
+  useEffect(() => {
+    // Update time every minute
+    const timeInterval = setInterval(() => {
+      setTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+    }, 60000);
+    return () => clearInterval(timeInterval);
+  }, []);
+
+  useEffect(() => {
+    // Move watermark randomly every 15-30 seconds
+    const moveInterval = setInterval(() => {
+      setPosition({
+        top: `${Math.floor(Math.random() * 80 + 10)}%`,
+        left: `${Math.floor(Math.random() * 80 + 10)}%`,
+      });
+      setOpacity(Math.random() * 0.3 + 0.15); // Between 0.15 and 0.45
+      setScale(Math.random() * 0.3 + 0.85); // Between 0.85 and 1.15
+    }, Math.floor(Math.random() * 15000) + 15000);
+    return () => clearInterval(moveInterval);
+  }, []);
+
+  return (
+----------------
+
+[38] File: web_portal\lms\student\components\Watermark.tsx (Line: 24)
+Code: const moveInterval = setInterval(() => {
+--- Context: ---
+    return () => clearInterval(timeInterval);
+  }, []);
+
+  useEffect(() => {
+    // Move watermark randomly every 15-30 seconds
+    const moveInterval = setInterval(() => {
+      setPosition({
+        top: `${Math.floor(Math.random() * 80 + 10)}%`,
+        left: `${Math.floor(Math.random() * 80 + 10)}%`,
+      });
+      setOpacity(Math.random() * 0.3 + 0.15); // Between 0.15 and 0.45
+      setScale(Math.random() * 0.3 + 0.85); // Between 0.85 and 1.15
+    }, Math.floor(Math.random() * 15000) + 15000);
+    return () => clearInterval(moveInterval);
+  }, []);
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        top: position.top,
+        left: position.left,
+        opacity: opacity,
+        transform: `scale(${scale})`,
+        transition: 'top 2s ease-in-out, left 2s ease-in-out, opacity 2s ease-in-out, transform 2s ease-in-out',
+----------------
+
+[39] File: web_portal\lms\student\LCES\useLiveComments.ts (Line: 60)
+Code: const interval = setInterval(fetchComments, 8000);
+--- Context: ---
+
+    // Initial fetch
+    fetchComments();
+
+    // Poll every 8 seconds for live updates (cost-optimized while preserving real-time feel)
+    const interval = setInterval(fetchComments, 8000);
+
+    return () => {
+      mounted.current = false;
+      clearInterval(interval);
+    };
+  }, [liveSessionId]);
+
+  return { comments, pinnedComments, loading, error };
+};
+
+----------------
+
+[40] File: web_portal\lms\student\MobileLiveClasses.tsx (Line: 23)
+Code: const timer = setInterval(update, 1000);
+--- Context: ---
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      setTimeLeft(h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m ${s}s` : `${s}s`);
+    };
+    update();
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, [targetTime]);
+  return timeLeft;
+};
+
+// ─── Session Card ─────────────────────────────────────────────────────────────
+const SessionCard = ({ item, index, onJoin, onViewRecording }: { item: any; index: number; onJoin: (id: string) => void; onViewRecording: (session: any) => void }) => {
+  const isLive = ['LIVE', 'JOINING', 'HOST_CONNECTED', 'ongoing'].includes(item.status);
+  const isScheduled = item.status === 'SCHEDULED' || item.status === 'scheduled';
+  const isRecorded = item.status === 'ENDED' || item.status === 'ended' || item.status === 'RECORDED_AVAILABLE';
+  const countdown = useCountdown(isScheduled ? (item.scheduledStartTime || item.startTime) : null);
+
+  return (
+    <AnimatedStagger index={index}>
+      <View style={[styles.card, isLive && styles.cardLive, isScheduled && styles.cardScheduled]}>
+        {/* Status Badge */}
+        <View style={styles.cardHeader}>
+          <View style={[styles.badge, isLive && styles.badgeLive, isScheduled && styles.badgeScheduled, isRecorded && styles.badgeRecorded]}>
+            {isLive && <View style={styles.livePulse} />}
+----------------
+
+[41] File: web_portal\lms\student\StudentLiveClassesPage.tsx (Line: 34)
+Code: const id = setInterval(update, 1000);
+--- Context: ---
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      setText(h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m ${s}s` : `${s}s`);
+    };
+    update();
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
+  }, [targetDate]);
+  return text;
+};
+
+// ── Status helpers ────────────────────────────────────────────────────────────
+const isLiveStatus = (s: string) => ['LIVE', 'JOINING', 'HOST_CONNECTED', 'ATTENDANCE_RUNNING'].includes(s);
+const isEndedStatus = (s: string) => ['ENDED', 'CANCELLED', 'EXPIRED', 'ARCHIVED', 'NOT_UPLOADED', 'RECORDED_AVAILABLE'].includes(s);
+
+const PRESET_DAYS = [1, 2, 7, 14, 30];
+
+// ── Prior Access Request Modal ────────────────────────────────────────────────
+const PriorAccessRequestModal = ({
+  onClose,
+  onSubmit,
+}: {
+  onClose: () => void;
+  onSubmit: (data: { requestType: 'LIVE_SESSION'; days: number; reason: string }) => Promise<void>;
+}) => {
+----------------
+
+[42] File: web_portal\lms\student\StudentLiveClassesPage.tsx (Line: 782)
+Code: fallbackTimer = setInterval(() => {
+--- Context: ---
+    let fallbackTimer: ReturnType<typeof setInterval> | null = null;
+
+    const startFallbackPolling = () => {
+      if (fallbackTimer) return; // already polling
+      console.info('[LiveDashboard] Firestore signal unavailable — starting 30s fallback polling.');
+      fallbackTimer = setInterval(() => {
+        queryClient.invalidateQueries({ queryKey: ['studentDashboard'] });
+      }, 30_000);
+    };
+
+    const stopFallbackPolling = () => {
+      if (fallbackTimer) {
+        clearInterval(fallbackTimer);
+        fallbackTimer = null;
+        console.info('[LiveDashboard] Firestore signal restored — stopped fallback polling.');
+      }
+    };
+
+    const unsub = onSnapshot(
+      doc(db, 'live_class_index', 'current'),
+      (_snap) => {
+        // Signal doc exists and is reachable — stop fallback polling if running
+        stopFallbackPolling();
+        queryClient.invalidateQueries({ queryKey: ['studentDashboard'] });
+      },
+----------------
+
+[43] File: web_portal\lms\student\StudentLiveClassesPage_main.tsx (Line: 32)
+Code: const id = setInterval(update, 1000);
+--- Context: ---
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      setText(h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m ${s}s` : `${s}s`);
+    };
+    update();
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
+  }, [targetDate]);
+  return text;
+};
+
+// ΓöÇΓöÇ Session Card ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+const SessionCard = ({ cls, onJoin }: { cls: any; onJoin: (courseId: string, classId: string) => void }) => {
+  const isScheduled = cls.liveStatus === 'SCHEDULED' || cls.status === 'SCHEDULED';
+  const startTime = cls.startTime || cls.scheduledAt || null;
+  const countdown = useCountdown(isScheduled ? startTime : null);
+
+  const borderClass = cls.joinAllowed
+    ? 'border-green-500/40 bg-green-500/5 hover:border-green-500/70'
+    : isScheduled
+    ? 'border-yellow-500/30 bg-yellow-500/5 hover:border-yellow-500/50'
+    : 'border-gray-200 dark:border-gray-700 hover:border-primary/50';
+
+  const getStatusDisplay = () => {
+    if (cls.liveStatus === 'JOINING') return { text: 'Host Starting...', badge: 'destructive' };
+----------------
+
+[44] File: web_portal\lms\student\StudentPayFeesPage.tsx (Line: 90)
+Code: timerRef.current = setInterval(() => {
+--- Context: ---
+      
+      const enabledAtTime = new Date(status.qrCodeEnabledAt).getTime();
+      const durationMs = status.timerDuration * (status.timerUnit === 'minutes' ? 60 : 3600) * 1000;
+      const expiryTime = enabledAtTime + durationMs;
+
+      timerRef.current = setInterval(() => {
+        const now = Date.now();
+        const diff = Math.max(0, Math.floor((expiryTime - now) / 1000));
+        
+        setTimeLeft(diff);
+        
+        if (diff <= 0) {
+          if (timerRef.current) clearInterval(timerRef.current);
+          // Set qrCodeEnabled to false locally so page updates
+          setStatus((prev: any) => ({ ...prev, qrCodeEnabled: false }));
+          if (Platform.OS === 'web') {
+            success("The payment QR code session has expired.");
+          } else {
+            Alert.alert("Expired", "The payment QR code session has expired.");
+          }
+        }
+      }, 1000);
+    }
+
+    return () => {
+----------------

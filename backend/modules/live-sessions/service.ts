@@ -193,16 +193,48 @@ export class LiveSessionService {
     const coursesSnap = await db.collection('courses').get();
     console.log('DEBUG: Fetched courses, count:', coursesSnap.docs.length);
     const courseMap = new Map<string, string>();
+    const courseNameToIdMap = new Map<string, string>();
     coursesSnap.docs.forEach(d => {
-      courseMap.set(d.id, d.data().title || d.data().name || '');
+      const data = d.data();
+      const title = data.title || data.name || '';
+      courseMap.set(d.id, title);
+      if (title) {
+        courseNameToIdMap.set(title, d.id);
+        courseNameToIdMap.set(title.trim().toLowerCase(), d.id);
+      }
+      if (data.code) {
+        courseNameToIdMap.set(data.code, d.id);
+        courseNameToIdMap.set(data.code.trim().toLowerCase(), d.id);
+      }
     });
 
-    console.log('DEBUG: Fetching student_batches...');
+    console.log('DEBUG: Fetching student_batches and erp batches...');
 
-    const batchesSnap = await db.collection('student_batches').get();
+    const [batchesSnap, erpBatchesSnap] = await Promise.all([
+      db.collection('student_batches').get().catch(() => ({ docs: [] })),
+      db.collection('batches').get().catch(() => ({ docs: [] }))
+    ]);
+    const allBatchDocs = [...(batchesSnap.docs || []), ...(erpBatchesSnap.docs || [])];
+
     const batchMap = new Map<string, string>();
-    batchesSnap.docs.forEach(d => {
-      batchMap.set(d.id, d.data().name || d.data().code || d.data().batchName || d.id);
+    const batchDataMap = new Map<string, any>();
+    allBatchDocs.forEach(d => {
+      const data = d.data();
+      const name = data.name || data.code || data.batchName || d.id;
+      batchMap.set(d.id, name);
+      batchDataMap.set(d.id, data);
+      if (data.name) {
+        batchDataMap.set(data.name, data);
+        batchDataMap.set(data.name.trim().toLowerCase(), data);
+      }
+      if (data.batchName) {
+        batchDataMap.set(data.batchName, data);
+        batchDataMap.set(data.batchName.trim().toLowerCase(), data);
+      }
+      if (data.code) {
+        batchDataMap.set(data.code, data);
+        batchDataMap.set(data.code.trim().toLowerCase(), data);
+      }
     });
 
     // 1. Fetch user to resolve studentId
@@ -255,6 +287,17 @@ export class LiveSessionService {
             rawBatchIds.push(id);
           }
         }
+        const bData = batchDataMap.get(studentData.batch) || batchDataMap.get(studentData.batch.trim().toLowerCase());
+        if (bData) {
+          const cId = bData.courseId || bData.course;
+          if (cId) {
+            userCourseIds.push(cId);
+            const mappedId = courseNameToIdMap.get(cId) || courseNameToIdMap.get(String(cId).trim().toLowerCase());
+            if (mappedId) userCourseIds.push(mappedId);
+            const mappedTitle = courseMap.get(cId);
+            if (mappedTitle) userCourseIds.push(mappedTitle);
+          }
+        }
       }
 
       // Read multiple batches if array
@@ -263,6 +306,17 @@ export class LiveSessionService {
           rawBatchIds.push(b);
           for (const [id, name] of batchMap.entries()) {
             if (name === b) rawBatchIds.push(id);
+          }
+          const bData = batchDataMap.get(b) || batchDataMap.get(b.trim().toLowerCase());
+          if (bData) {
+            const cId = bData.courseId || bData.course;
+            if (cId) {
+              userCourseIds.push(cId);
+              const mappedId = courseNameToIdMap.get(cId) || courseNameToIdMap.get(String(cId).trim().toLowerCase());
+              if (mappedId) userCourseIds.push(mappedId);
+              const mappedTitle = courseMap.get(cId);
+              if (mappedTitle) userCourseIds.push(mappedTitle);
+            }
           }
         });
       }
@@ -274,13 +328,28 @@ export class LiveSessionService {
           for (const [id, name] of batchMap.entries()) {
             if (name === bId) rawBatchIds.push(id);
           }
+          const bData = batchDataMap.get(bId) || batchDataMap.get(bId.trim().toLowerCase());
+          if (bData) {
+            const cId = bData.courseId || bData.course;
+            if (cId) {
+              userCourseIds.push(cId);
+              const mappedId = courseNameToIdMap.get(cId) || courseNameToIdMap.get(String(cId).trim().toLowerCase());
+              if (mappedId) userCourseIds.push(mappedId);
+              const mappedTitle = courseMap.get(cId);
+              if (mappedTitle) userCourseIds.push(mappedTitle);
+            }
+          }
           if (Array.isArray(modes)) {
             modes.forEach((m: string) => userBatchTypes.push(m.toLowerCase().trim()));
           }
         });
       }
       
-      if (studentData.courseId) userCourseIds.push(studentData.courseId);
+      if (studentData.courseId) {
+        userCourseIds.push(studentData.courseId);
+        const mappedTitle = courseMap.get(studentData.courseId);
+        if (mappedTitle) userCourseIds.push(mappedTitle);
+      }
       if (studentData.course) {
         userCourseIds.push(studentData.course);
         // Legacy support: map human-readable course name to UUID
@@ -289,6 +358,8 @@ export class LiveSessionService {
             userCourseIds.push(id);
           }
         }
+        const mappedId = courseNameToIdMap.get(studentData.course) || courseNameToIdMap.get(studentData.course.trim().toLowerCase());
+        if (mappedId) userCourseIds.push(mappedId);
       }
       
       if (studentData.enrolledCourseIds && Array.isArray(studentData.enrolledCourseIds)) {
@@ -322,13 +393,20 @@ export class LiveSessionService {
     const userBatchIds = Array.from(new Set(rawBatchIds.filter(Boolean)));
 
     if (userBatchIds.length > 0) {
-      const batchDocs = await Promise.all(userBatchIds.map((b: string) => db.collection('student_batches').doc(b).get()));
-      batchDocs.forEach(d => {
-        const cId = d.data()?.courseId;
-        if (cId) userCourseIds.push(cId);
-        // Collect batch type from student_batches doc
-        const bType = (d.data()?.type || d.data()?.batchType || '').toLowerCase().trim();
-        if (bType) userBatchTypes.push(bType);
+      userBatchIds.forEach((b: string) => {
+        const bData = batchDataMap.get(b) || batchDataMap.get(b.trim().toLowerCase());
+        if (bData) {
+          const cId = bData.courseId || bData.course;
+          if (cId) {
+            userCourseIds.push(cId);
+            const mappedId = courseNameToIdMap.get(cId) || courseNameToIdMap.get(String(cId).trim().toLowerCase());
+            if (mappedId) userCourseIds.push(mappedId);
+            const mappedTitle = courseMap.get(cId);
+            if (mappedTitle) userCourseIds.push(mappedTitle);
+          }
+          const bType = (bData.type || bData.batchType || '').toLowerCase().trim();
+          if (bType) userBatchTypes.push(bType);
+        }
       });
     }
 
@@ -412,9 +490,11 @@ export class LiveSessionService {
 
       // Primary course security gate: student must be enrolled in this class's course.
       // (Bypassed only by explicit admin grant)
+      const classCourseTitle = courseMap.get(classCourseId) || cls.courseName || '';
       const hasCourseEnrollment =
         !classCourseId ||
-        uniqueUserCourseIds.includes(classCourseId);
+        uniqueUserCourseIds.includes(classCourseId) ||
+        (classCourseTitle && uniqueUserCourseIds.includes(classCourseTitle));
 
       // ── Targeting Resolution ──
       const targetCourseIds: string[] = Array.isArray(cls.targetCourses)
@@ -427,7 +507,9 @@ export class LiveSessionService {
       const hasCourseTargeting = targetCourseIds.length > 0;
 
       const matchesTargetBatch  = !hasBatchTargeting  || specificBatchTargets.some((bId: string) => userBatchIds.includes(bId));
-      const matchesTargetCourse = !hasCourseTargeting || targetCourseIds.some((cId: string) => uniqueUserCourseIds.includes(cId));
+      const matchesTargetCourse = !hasCourseTargeting || targetCourseIds.some((cId: string) => 
+        uniqueUserCourseIds.includes(cId) || (courseMap.get(cId) && uniqueUserCourseIds.includes(courseMap.get(cId)!))
+      );
       const passesTargeting = matchesTargetBatch && matchesTargetCourse;
 
       // ── Grant-based override: admin approved a CLASS or higher-level grant ──

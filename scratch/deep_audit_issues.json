@@ -1,0 +1,293 @@
+[
+  {
+    "file": "App.tsx",
+    "line": 3714,
+    "issues": [
+      "LISTENER_FETCH_CASCADE: onSnapshot callback triggers a separate full API/DB re-fetch.",
+      "POTENTIAL_LISTENER_RECREATION_LOOP: Dependency [user, isAdmin, students] may cause listener teardown & re-subscription on every state change, multiplying read billing."
+    ],
+    "block": "  useEffect(() => {\n    if (!user || isAdmin) return;\n    const studentId = user?.userId || user?.username;\n    const username = user?.username || \"\";\n    if (!studentId && !username) return;\n\n    const loggedInStudent = getLoggedInStudent(user, students);\n    const sId = loggedInStudent?.id || studentId || \"\";\n\n    const targetIds = Array.from(new Set([\n      sId,\n      user?.userId,\n      user?.username,\n      loggedInStudent?.rollNumber\n    ].filter(Boolean) as string[]));\n\n    if (targetIds.length === 0) return;\n\n    // Filter by studentId so student only syncs their own documents (0 unnecessary reads)\n    const q = query(\n      collection(db, \"offlineTestPermissionRequests\"),\n      where(\"studentId\", \"in\", targetIds)\n    );\n\n    const unsub = onSnapshot(q, (snapshot) => {\n      const reqs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));\n      setOfflineTestRequests(reqs);\n      try {\n        if (typeof localStorage !== \"undefined\") {\n          localStorage.setItem(\"nermai_offline_test_requests\", JSON.stringify(reqs));\n        }\n      } catch (storageErr) { }\n    }, (err) => {\n      console.log(\"Student offline request listener error:\", err);\n      loadOfflineTestRequests();\n    });\n\n    return () => unsub();\n  }, [user, isAdmin, students]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 3865,
+    "issues": [
+      "UNBOUNDED_COLLECTION_LISTENER: Listens to an entire collection without where/limit clause."
+    ],
+    "block": "  useEffect(() => {\n    if (!isAdmin) return;\n\n    const q = query(\n      collection(db, \"offlineTestPermissionRequests\")\n    );\n\n    const unsub = onSnapshot(q, (snapshot) => {\n      const reqs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));\n      // Sort in-memory desc by requestedAt\n      reqs.sort((a, b) => new Date(b.requestedAt || 0).getTime() - new Date(a.requestedAt || 0).getTime());\n      setOfflineTestRequests(reqs);\n    }, (err) => {\n      console.log(\"Admin offline request listener error:\", err);\n    });\n\n    return () => unsub();\n  }, [isAdmin]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 6014,
+    "issues": [
+      "LISTENER_FETCH_CASCADE: onSnapshot callback triggers a separate full API/DB re-fetch.",
+      "POTENTIAL_LISTENER_RECREATION_LOOP: Dependency [user?.userId] may cause listener teardown & re-subscription on every state change, multiplying read billing."
+    ],
+    "block": "  useEffect(() => {\n    const userId = user?.userId || user?.user_id || user?.sub || user?.id;\n    const allowedStaffRoles = [\"admin\", \"staff\", \"teacher\", \"editor\", \"contributor\"];\n    if (!userId || !user || !user.role || !allowedStaffRoles.includes(user.role)) return;\n\n    // Data-reload mapping: featureKey → loader function\n    const getFeatureReloaders = (): Record<string, () => void> => ({\n      student_management: loadStudents,\n      staff_management: loadStaff,\n      batch_management: loadBatches,\n      fees_management: loadStudents,\n      marks_management: loadStudents,\n      lms_daily_content: loadLmsDailyContent,\n      lms_quiz_posting: loadTodayQuiz,\n      lms_live_classes: loadLiveSessions,\n      lms_recorded_videos: loadRecordedClasses,\n      lms_resources: loadLmsResources,\n      lms_courses: loadLmsCourses,\n      admissions: loadAdmissions,\n      leads: loadLeads,\n      campaigns: loadCampaigns,\n      alumni_feedback: loadFeedback,\n      test_creation: loadTests,\n      question_bank: loadQuestions,\n      examinations: loadTests,\n      test_results: loadTests,\n    });\n\n    let unsub: (() => void) | undefined;\n    try {\n      // Listen to notifications that belong strictly to this user\n      const qUserNotifs = query(collection(db, \"notifications\"), where(\"requestedByUserId\", \"==\", userId));\n      unsub = onSnapshot(qUserNotifs, (snapshot) => {\n        snapshot.docChanges().forEach((change) => {\n          if (change.type !== \"modified\") return;\n          const data = change.doc.data();\n          // Only react to our own submissions that have just been resolved\n          if (data.requestedByUserId !== userId) return;\n          if (data.status !== \"approved\" && data.status !== \"rejected\") return;\n\n          // If approved → reload relevant collection so data appears immediately\n          if (data.status === \"approved\") {\n            const reloaders = getFeatureReloaders();\n            reloaders[data.feature]?.();\n          }\n\n          // Remove from pendingSubmissions regardless of outcome\n          setPendingSubmissions(prev => prev.filter(k => k !== data.feature));\n          // Refresh the pending approvals banner\n          loadPendingApprovals();\n        });\n      });\n    } catch (e) {\n      console.log(\"[ApprovalSync] Failed to attach real-time listener:\", e);\n    }\n\n    return () => { if (unsub) unsub(); };\n  }, [user?.userId]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 6392,
+    "issues": [
+      "INTERVAL_IN_EFFECT: Contains setInterval, may poll continuously if not cleaned up or if dependencies change."
+    ],
+    "block": "  useEffect(() => {\n    if (!waitingRoomTest) return;\n    const tick = () => {\n      const startMs = parseTestTimeMs(waitingRoomTest.startTime);\n      const remaining = Math.max(0, Math.floor((startMs - Date.now()) / 1000));\n      setWaitingRoomTimeLeft(remaining);\n      if (remaining <= 0) {\n        // Test has started — close waiting room and auto-launch exam directly\n        const targetTest = waitingRoomTest;\n        setWaitingRoomTest(null);\n        setNowTick(Date.now()); // force live-test list refresh\n        if (targetTest) {\n          setTimeout(() => {\n            startExam(targetTest);\n          }, 300);\n        }\n      }\n    };\n    tick();\n    const timer = setInterval(tick, 1000);\n    return () => clearInterval(timer);\n  }, [waitingRoomTest]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 6649,
+    "issues": [
+      "INTERVAL_IN_EFFECT: Contains setInterval, may poll continuously if not cleaned up or if dependencies change."
+    ],
+    "block": "  useEffect(() => {\n    if (!activeAttempt) return;\n    const attemptId = activeAttempt.attemptId;\n\n    // Tracks a JSON snapshot of the last successfully synced answers.\n    // Scoped to this useEffect instance so it resets fresh for every new attempt.\n    let lastSyncedHash = \"\";\n\n    const syncAnswers = async () => {\n      try {\n        const draft = examLocalStorage.getDraft(attemptId);\n        if (!draft || !draft.answers) return;\n\n        // Build a stable hash of the current answer map to detect changes.\n        // JSON.stringify on a plain object is deterministic enough here since\n        // keys are question IDs (UUIDs) and values are single-letter answer strings.\n        const currentHash = JSON.stringify(draft.answers);\n\n        // Skip the API call entirely if nothing changed since the last sync.\n        // This saves Firestore writes during review phases or when the student\n        // is reading a question without having changed any answer yet.\n        if (currentHash === lastSyncedHash) return;\n\n        const formattedBatch = Object.entries(draft.answers).map(([qId, val]) => ({\n          questionId: qId,\n          answer: val\n        }));\n\n        if (formattedBatch.length > 0) {\n          // Include x-attempt-id header as bypass so this still works if JWT session expired.\n          await api.post(\n            `/test-portal/examination/autosave/${attemptId}`,\n            { answers: formattedBatch },\n            { headers: { \"user-id\": user?.userId || \"\", \"x-attempt-id\": attemptId } }\n          );\n          // Only update the hash after a successful API call.\n          // If the request fails (network drop), lastSyncedHash stays stale so the\n          // next interval will retry — ensuring no answers are silently lost.\n          lastSyncedHash = currentHash;\n          console.log(\"Automatically synchronized answers to cloud:\", formattedBatch.length);\n        }\n      } catch (e) {\n        // Do NOT update lastSyncedHash on failure — next interval will retry.\n        console.log(\"Background exam sync warning:\", e);\n      }\n    };\n\n    const intervalId = setInterval(syncAnswers, 60000);\n    return () => {\n      clearInterval(intervalId);\n      // Run a final sync on cleanup/exit regardless of dirty flag —\n      // ensures the very last answers are flushed before the component unmounts.\n      syncAnswers().catch(() => { });\n    };\n  }, [activeAttempt]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 6706,
+    "issues": [
+      "INTERVAL_IN_EFFECT: Contains setInterval, may poll continuously if not cleaned up or if dependencies change."
+    ],
+    "block": "  useEffect(() => {\n    if (!activeAttempt || Platform.OS !== \"web\" || typeof window === \"undefined\") return;\n\n    const handleOffline = () => {\n      showToast(\n        \"📶 Network disconnected. You can continue answering all questions — your answers are saved locally and will sync automatically once reconnected.\",\n        \"warning\"\n      );\n    };\n\n    // ── Token auto-refresh every 10 minutes during active exam ────────────────\n    // This is the primary fix for \"answers show as Unattempted\" —\n    // without refresh, the JWT session expires and all API calls return 401,\n    // silently dropping every answer save.\n    const refreshExamToken = async () => {\n      try {\n        if (typeof localStorage === \"undefined\") return;\n        const stored = JSON.parse(localStorage.getItem(\"nermai_auth_user\") || \"{}\");\n        if (!stored.refreshToken || !stored.sessionId) return;\n        const baseUrl = getBaseUrl();\n        const res = await fetch(`${baseUrl}/api/auth/refresh`, {\n          method: \"POST\",\n          headers: { \"Content-Type\": \"application/json\" },\n          body: JSON.stringify({ refreshToken: stored.refreshToken, sessionId: stored.sessionId })\n        });\n        const data = await res.json();\n        if (data?.data?.token) {\n          stored.token = data.data.token;\n          if (data.data.refreshToken) stored.refreshToken = data.data.refreshToken;\n          if (data.data.sessionId) stored.sessionId = data.data.sessionId;\n          localStorage.setItem(\"nermai_auth_user\", JSON.stringify(stored));\n          console.log(\"[ExamTokenRefresh] Token refreshed successfully during exam.\");\n        }\n      } catch (e) {\n        console.log(\"[ExamTokenRefresh] Refresh failed (non-critical, bypass will handle):\", e);\n      }\n    };\n\n    // Refresh immediately on exam start, then every 10 minutes\n    refreshExamToken();\n    const tokenRefreshInterval = setInterval(refreshExamToken, 10 * 60 * 1000);\n\n    const handleOnline = async () => {\n      showToast(\n        \"✅ Network reconnected! Syncing offline answers to server...\",\n        \"success\"\n      );\n      syncAnswers().catch(() => {});\n    };\n\n    window.addEventListener(\"offline\", handleOffline);\n    window.addEventListener(\"online\", handleOnline);\n\n    return () => {\n      clearInterval(tokenRefreshInterval);\n      window.removeEventListener(\"offline\", handleOffline);\n      window.removeEventListener(\"online\", handleOnline);\n    };\n  }, [activeAttempt, user]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 7086,
+    "issues": [
+      "POTENTIAL_LISTENER_RECREATION_LOOP: Dependency [user?.userId || user?.id] may cause listener teardown & re-subscription on every state change, multiplying read billing."
+    ],
+    "block": "  useEffect(() => {\n    if (!user || user.role !== \"student\") return;\n\n    const myStudent = getLoggedInStudent(user, students);\n    const lookupId = myStudent?.id || user.studentId || user.userId;\n    if (!lookupId) return;\n\n    const studentDocRef = doc(db, \"students\", String(lookupId));\n    const unsubscribe = onSnapshot(\n      studentDocRef,\n      (docSnap) => {\n        if (docSnap.exists()) {\n          const data = docSnap.data();\n          if (!data.isDeleted) {\n            const updatedStudent = {\n              ...data,\n              id: data.id || docSnap.id\n            };\n            setStudents(prev => {\n              if (JSON.stringify(prev) === JSON.stringify([updatedStudent])) {\n                return prev;\n              }\n              return [updatedStudent];\n            });\n          }\n        }\n      },\n      (err) => {\n        console.log(\"Real-time student profile snapshot listener note:\", err?.message);\n      }\n    );\n\n    return () => unsubscribe();\n  }, [user?.userId || user?.id]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 7122,
+    "issues": [
+      "POTENTIAL_LISTENER_RECREATION_LOOP: Dependency [user] may cause listener teardown & re-subscription on every state change, multiplying read billing."
+    ],
+    "block": "  useEffect(() => {\n    if (!user || (user.role !== \"admin\" && user.role !== \"super_admin\" && user.role !== \"staff\")) return;\n\n    const requestsQuery = query(\n      collection(db, \"profile_requests\"),\n      where(\"isDeleted\", \"==\", false)\n    );\n\n    const unsubscribe = onSnapshot(\n      requestsQuery,\n      (snapshot) => {\n        const requests = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));\n        requests.sort((a: any, b: any) => {\n          const timeA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;\n          const timeB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;\n          return timeB - timeA;\n        });\n        setProfileRequests(requests);\n      },\n      (err) => {\n        console.log(\"Real-time profile requests snapshot listener note:\", err?.message);\n      }\n    );\n\n    return () => unsubscribe();\n  }, [user]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 7150,
+    "issues": [
+      "POTENTIAL_LISTENER_RECREATION_LOOP: Dependency [user, activeTab] may cause listener teardown & re-subscription on every state change, multiplying read billing."
+    ],
+    "block": "  useEffect(() => {\n    if (!user || activeTab !== \"lms\") return;\n    try {\n      const resourcesQuery = query(collection(db, \"resources\"), where(\"isDeleted\", \"==\", false));\n      const unsubscribe = onSnapshot(\n        resourcesQuery,\n        (snapshot) => {\n          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));\n          list.sort((a: any, b: any) => {\n            const timeA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;\n            const timeB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;\n            return timeB - timeA;\n          });\n          setLmsResources(list);\n        },\n        (err) => console.log(\"Real-time resources listener note:\", err?.message)\n      );\n      return () => unsubscribe();\n    } catch (_) {}\n  }, [user, activeTab]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 7172,
+    "issues": [
+      "POTENTIAL_LISTENER_RECREATION_LOOP: Dependency [user, activeTab] may cause listener teardown & re-subscription on every state change, multiplying read billing."
+    ],
+    "block": "  useEffect(() => {\n    if (!user || activeTab !== \"lms\") return;\n    try {\n      const dailyContentQuery = query(collection(db, \"dailyContent\"), where(\"isDeleted\", \"==\", false));\n      const unsubscribe = onSnapshot(\n        dailyContentQuery,\n        (snapshot) => {\n          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));\n          list.sort((a: any, b: any) => {\n            const dateA = a.date || a.createdAt || \"\";\n            const dateB = b.date || b.createdAt || \"\";\n            return String(dateB).localeCompare(String(dateA));\n          });\n          setLmsDailyContent(list);\n        },\n        (err) => console.log(\"Real-time daily content listener note:\", err?.message)\n      );\n      return () => unsubscribe();\n    } catch (_) {}\n  }, [user, activeTab]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 7194,
+    "issues": [
+      "POTENTIAL_LISTENER_RECREATION_LOOP: Dependency [user, activeTab] may cause listener teardown & re-subscription on every state change, multiplying read billing."
+    ],
+    "block": "  useEffect(() => {\n    if (!user || activeTab !== \"lms\") return;\n    try {\n      const recordedQuery = query(collection(db, \"recorded_classes\"), where(\"isDeleted\", \"==\", false));\n      const unsubscribe = onSnapshot(\n        recordedQuery,\n        (snapshot) => {\n          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));\n          list.sort((a: any, b: any) => {\n            const timeA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;\n            const timeB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;\n            return timeB - timeA;\n          });\n          setLmsRecordedClasses(list);\n        },\n        (err) => console.log(\"Real-time recorded classes listener note:\", err?.message)\n      );\n      return () => unsubscribe();\n    } catch (_) {}\n  }, [user, activeTab]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 7216,
+    "issues": [
+      "POTENTIAL_LISTENER_RECREATION_LOOP: Dependency [user, activeTab] may cause listener teardown & re-subscription on every state change, multiplying read billing."
+    ],
+    "block": "  useEffect(() => {\n    if (!user || activeTab !== \"daily_quizzes\") return;\n    try {\n      const quizzesQuery = query(collection(db, \"dailyQuizzes\"), where(\"isDeleted\", \"==\", false));\n      const unsubscribe = onSnapshot(\n        quizzesQuery,\n        (snapshot) => {\n          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));\n          list.sort((a: any, b: any) => {\n            const dateA = a.date || a.createdAt || \"\";\n            const dateB = b.date || b.createdAt || \"\";\n            return String(dateB).localeCompare(String(dateA));\n          });\n          setAllQuizzes(list);\n        },\n        (err) => console.log(\"Real-time daily quizzes listener note:\", err?.message)\n      );\n      return () => unsubscribe();\n    } catch (_) {}\n  }, [user, activeTab]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 7238,
+    "issues": [
+      "POTENTIAL_LISTENER_RECREATION_LOOP: Dependency [user, activeTab] may cause listener teardown & re-subscription on every state change, multiplying read billing."
+    ],
+    "block": "  useEffect(() => {\n    if (!user || activeTab !== \"admissions\" || (user.role !== \"admin\" && user.role !== \"super_admin\" && user.role !== \"staff\")) return;\n    try {\n      const admissionsQuery = query(collection(db, \"admissions\"), where(\"isDeleted\", \"==\", false));\n      const unsubscribe = onSnapshot(\n        admissionsQuery,\n        (snapshot) => {\n          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));\n          list.sort((a: any, b: any) => {\n            const timeA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;\n            const timeB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;\n            return timeB - timeA;\n          });\n          setAdmissions(list);\n        },\n        (err) => console.log(\"Real-time admissions listener note:\", err?.message)\n      );\n      return () => unsubscribe();\n    } catch (_) {}\n  }, [user, activeTab]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 7260,
+    "issues": [
+      "POTENTIAL_LISTENER_RECREATION_LOOP: Dependency [user, activeTab] may cause listener teardown & re-subscription on every state change, multiplying read billing."
+    ],
+    "block": "  useEffect(() => {\n    if (!user || activeTab !== \"crm\" || (user.role !== \"admin\" && user.role !== \"super_admin\" && user.role !== \"staff\")) return;\n    try {\n      const leadsQuery = query(collection(db, \"leads\"), where(\"isDeleted\", \"==\", false));\n      const unsubscribe = onSnapshot(\n        leadsQuery,\n        (snapshot) => {\n          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));\n          list.sort((a: any, b: any) => {\n            const timeA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;\n            const timeB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;\n            return timeB - timeA;\n          });\n          setLeads(list);\n        },\n        (err) => console.log(\"Real-time leads listener note:\", err?.message)\n      );\n      return () => unsubscribe();\n    } catch (_) {}\n  }, [user, activeTab]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 7302,
+    "issues": [
+      "POTENTIAL_LISTENER_RECREATION_LOOP: Dependency [user, activeTab] may cause listener teardown & re-subscription on every state change, multiplying read billing."
+    ],
+    "block": "  useEffect(() => {\n    if (!user || activeTab !== \"crm\" || (user.role !== \"admin\" && user.role !== \"super_admin\" && user.role !== \"staff\")) return;\n    try {\n      const inquiriesQuery = query(collection(db, \"inquiries\"), where(\"isDeleted\", \"==\", false));\n      const unsubscribe = onSnapshot(\n        inquiriesQuery,\n        (snapshot) => {\n          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));\n          list.sort((a: any, b: any) => {\n            const timeA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;\n            const timeB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;\n            return timeB - timeA;\n          });\n          setEnquiries(list);\n        },\n        (err) => console.log(\"Real-time inquiries listener note:\", err?.message)\n      );\n      return () => unsubscribe();\n    } catch (_) {}\n  }, [user, activeTab]);\n"
+  },
+  {
+    "file": "App.tsx",
+    "line": 7324,
+    "issues": [
+      "POTENTIAL_LISTENER_RECREATION_LOOP: Dependency [activeTab, lmsSub] may cause listener teardown & re-subscription on every state change, multiplying read billing."
+    ],
+    "block": "  useEffect(() => {\n    const isTestTab = [\n      \"tests\", \"testPortal\", \"test_portal\", \"test-portal\", \"test\", \"practice\", \n      \"results\", \"exam\", \"onlineTest\", \"offlineTest\", \"scholarship\", \"testSeries\"\n    ].includes(activeTab) || lmsSub === \"tests\" || lmsSub === \"testPortal\";\n\n    if (!isTestTab) return;\n\n    try {\n      const testsQuery = query(collection(db, \"tests\"), where(\"isDeleted\", \"==\", false));\n      const unsubscribe = onSnapshot(\n        testsQuery,\n        (snapshot) => {\n          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));\n          list.sort((a: any, b: any) => {\n            const timeA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;\n            const timeB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;\n            return timeB - timeA;\n          });\n          setTests(list);\n        },\n        (err) => console.log(\"Real-time tests listener note:\", err?.message)\n      );\n      return () => unsubscribe();\n    } catch (_) {}\n  }, [activeTab, lmsSub]);\n"
+  },
+  {
+    "file": "lms\\admin\\ClassesPage.tsx",
+    "line": 78,
+    "issues": [
+      "INTERVAL_IN_EFFECT: Contains setInterval, may poll continuously if not cleaned up or if dependencies change."
+    ],
+    "block": "  useEffect(() => {\r\n    const timer = setInterval(() => {\r\n      const now = Date.now();\r\n      classes.forEach(cls => {\r\n        if (!cls.scheduledStartTime) return;\r\n        \r\n        const expectedDurationMs = (cls.expectedDurationMinutes || 60) * 60 * 1000;\r\n        const extensionMs = (cls.extensionMinutes || 0) * 60 * 1000;\r\n        const gracePeriodMs = 2 * 60 * 1000;\r\n        const baseStart = cls.actualStartTime ? new Date(cls.actualStartTime).getTime() : new Date(cls.scheduledStartTime).getTime();\r\n        const effectiveEnd = baseStart + expectedDurationMs + extensionMs + gracePeriodMs;\r\n        const start = baseStart;\r\n\r\n        if (now >= start && now < effectiveEnd && !cls.actualEndTime) {\r\n          const remainingSeconds = (effectiveEnd - now) / 1000;\r\n          \r\n          if (remainingSeconds <= 600 && remainingSeconds > 590) { // Around 10 mins\r\n            if (!notifiedClasses[cls.id]?.tenMin) {\r\n              setNotifiedClasses(prev => ({ ...prev, [cls.id]: { ...prev[cls.id], tenMin: true }}));\r\n              alert(`Reminder: Class \"${cls.title}\" will end in 10 minutes. Extend if necessary.`);\r\n            }\r\n          }\r\n          if (remainingSeconds <= 120 && remainingSeconds > 110) { // Around 2 mins\r\n            if (!notifiedClasses[cls.id]?.twoMin) {\r\n              setNotifiedClasses(prev => ({ ...prev, [cls.id]: { ...prev[cls.id], twoMin: true }}));\r\n              alert(`Critical: Class \"${cls.title}\" will end in 2 minutes!`);\r\n            }\r\n          }\r\n        }\r\n      });\r\n    }, 10000); // check every 10 seconds\r\n\r\n    return () => clearInterval(timer);\r\n  }, [classes, notifiedClasses]);\r\n\r"
+  },
+  {
+    "file": "lms\\admin\\LiveAttendanceControlScreen.tsx",
+    "line": 55,
+    "issues": [
+      "INTERVAL_IN_EFFECT: Contains setInterval, may poll continuously if not cleaned up or if dependencies change."
+    ],
+    "block": "  useEffect(() => {\n    if (activeSession?.status === 'LIVE' && activeSession.attendance?.status === 'LIVE') {\n      const startMs = new Date(activeSession.attendance.startedAt).getTime();\n      const int = setInterval(() => {\n        setTimer(Math.floor((Date.now() - startMs) / 1000));\n      }, 1000);\n      return () => clearInterval(int);\n    } else {\n      setTimer(0);\n    }\n  }, [activeSession?.attendance?.status]);\n"
+  },
+  {
+    "file": "lms\\admin\\QRCodePermissionsPage.tsx",
+    "line": 12,
+    "issues": [
+      "INTERVAL_IN_EFFECT: Contains setInterval, may poll continuously if not cleaned up or if dependencies change."
+    ],
+    "block": "  useEffect(() => {\n    const enabledAtTime = new Date(enabledAt).getTime();\n    const durationMs = duration * (unit === 'minutes' ? 60 : 3600) * 1000;\n    const expiryTime = enabledAtTime + durationMs;\n\n    const tick = () => {\n      const diff = Math.max(0, Math.floor((expiryTime - Date.now()) / 1000));\n      setTimeLeft(diff);\n    };\n\n    tick();\n    const timer = setInterval(tick, 1000);\n    return () => clearInterval(timer);\n  }, [enabledAt, duration, unit]);\n"
+  },
+  {
+    "file": "lms\\admin\\QRCodePermissionsPage.tsx",
+    "line": 104,
+    "issues": [
+      "LISTENER_FETCH_CASCADE: onSnapshot callback triggers a separate full API/DB re-fetch."
+    ],
+    "block": "  useEffect(() => {\n    fetchData();\n\n    // Targeted real-time updates only for pending QR requests (avoids reading the entire student database)\n    const pendingStudentsQuery = query(collection(db, 'students'), where('qrCodeRequested', '==', true));\n    const unsubStudents = onSnapshot(pendingStudentsQuery, () => {\n      fetchData();\n    }, (err) => {\n      console.warn('[QRCodePermissionsPage] Realtime pending students sync error:', err);\n    });\n\n    return () => {\n      unsubStudents();\n    };\n  }, []);\n"
+  },
+  {
+    "file": "lms\\admin\\QRCodePermissionsPage.tsx",
+    "line": 125,
+    "issues": [
+      "UNBOUNDED_COLLECTION_LISTENER: Listens to an entire collection without where/limit clause.",
+      "LISTENER_FETCH_CASCADE: onSnapshot callback triggers a separate full API/DB re-fetch."
+    ],
+    "block": "  useEffect(() => {\n    // Zero-cost live updates for payment acknowledgements (mounted once)\n    const unsubAcks = onSnapshot(collection(db, 'payment_acknowledgements'), () => {\n      fetchAcknowledgements(ackFilterRef.current);\n    }, (err) => {\n      console.warn('[QRCodePermissionsPage] Realtime acks sync error:', err);\n    });\n\n    return () => {\n      unsubAcks();\n    };\n  }, []);\n"
+  },
+  {
+    "file": "lms\\features\\classes\\ClassesPage.tsx",
+    "line": 78,
+    "issues": [
+      "INTERVAL_IN_EFFECT: Contains setInterval, may poll continuously if not cleaned up or if dependencies change."
+    ],
+    "block": "  useEffect(() => {\r\n    const timer = setInterval(() => {\r\n      const now = Date.now();\r\n      classes.forEach(cls => {\r\n        if (!cls.scheduledStartTime) return;\r\n        \r\n        const expectedDurationMs = (cls.expectedDurationMinutes || 60) * 60 * 1000;\r\n        const extensionMs = (cls.extensionMinutes || 0) * 60 * 1000;\r\n        const gracePeriodMs = 2 * 60 * 1000;\r\n        const baseStart = cls.actualStartTime ? new Date(cls.actualStartTime).getTime() : new Date(cls.scheduledStartTime).getTime();\r\n        const effectiveEnd = baseStart + expectedDurationMs + extensionMs + gracePeriodMs;\r\n        const start = baseStart;\r\n\r\n        if (now >= start && now < effectiveEnd && !cls.actualEndTime) {\r\n          const remainingSeconds = (effectiveEnd - now) / 1000;\r\n          \r\n          if (remainingSeconds <= 600 && remainingSeconds > 590) { // Around 10 mins\r\n            if (!notifiedClasses[cls.id]?.tenMin) {\r\n              setNotifiedClasses(prev => ({ ...prev, [cls.id]: { ...prev[cls.id], tenMin: true }}));\r\n              alert(`Reminder: Class \"${cls.title}\" will end in 10 minutes. Extend if necessary.`);\r\n            }\r\n          }\r\n          if (remainingSeconds <= 120 && remainingSeconds > 110) { // Around 2 mins\r\n            if (!notifiedClasses[cls.id]?.twoMin) {\r\n              setNotifiedClasses(prev => ({ ...prev, [cls.id]: { ...prev[cls.id], twoMin: true }}));\r\n              alert(`Critical: Class \"${cls.title}\" will end in 2 minutes!`);\r\n            }\r\n          }\r\n        }\r\n      });\r\n    }, 10000); // check every 10 seconds\r\n\r\n    return () => clearInterval(timer);\r\n  }, [classes, notifiedClasses]);\r\n\r"
+  },
+  {
+    "file": "lms\\features\\live\\dashboard\\controls\\HeaderRibbon.tsx",
+    "line": 8,
+    "issues": [
+      "INTERVAL_IN_EFFECT: Contains setInterval, may poll continuously if not cleaned up or if dependencies change."
+    ],
+    "block": "  useEffect(() => {\n    const startTimeStr = session?.actualStartTime || (session as any)?.startedAt;\n    if (!startTimeStr) return;\n    \n    const interval = setInterval(() => {\n      const start = new Date(startTimeStr).getTime();\n      const now = Date.now();\n      const diffMs = Math.max(0, now - start);\n      \n      const hrs = Math.floor(diffMs / 3600000);\n      const mins = Math.floor((diffMs % 3600000) / 60000);\n      const secs = Math.floor((diffMs % 60000) / 1000);\n      \n      const formatted = `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;\n      setLiveSince(formatted);\n    }, 1000);\n    \n    return () => clearInterval(interval);\n  }, [session?.actualStartTime, (session as any)?.startedAt]);\n"
+  },
+  {
+    "file": "lms\\features\\live\\dashboard\\workspaces\\AnalyticsWorkspace.tsx",
+    "line": 48,
+    "issues": [
+      "INTERVAL_IN_EFFECT: Contains setInterval, may poll continuously if not cleaned up or if dependencies change."
+    ],
+    "block": "  useEffect(() => {\n    if (!session?.actualStartTime && !session?.startTime) return;\n    \n    const start = new Date(session.actualStartTime || session.startTime).getTime();\n    \n    const interval = setInterval(() => {\n      const now = Date.now();\n      const diffMs = now - start;\n      const h = Math.floor(diffMs / 3600000).toString().padStart(2, '0');\n      const m = Math.floor((diffMs % 3600000) / 60000).toString().padStart(2, '0');\n      const s = Math.floor((diffMs % 60000) / 1000).toString().padStart(2, '0');\n      setDurationStr(`${h}:${m}:${s}`);\n    }, 1000);\n    \n    return () => clearInterval(interval);\n  }, [session?.actualStartTime, session?.startTime]);\n"
+  },
+  {
+    "file": "lms\\features\\live\\hooks\\useSessionStatusPoller.ts",
+    "line": 43,
+    "issues": [
+      "INTERVAL_IN_EFFECT: Contains setInterval, may poll continuously if not cleaned up or if dependencies change."
+    ],
+    "block": "  useEffect(() => {\n    mountedRef.current = true;\n    if (!sessionId) return;\n\n    const poll = async () => {\n      try {\n        const res = await LiveSessionApi.getSession(sessionId);\n        const data = res.data?.data || res.data;\n        const status: SessionStatus = data?.status ?? data?.liveStatus ?? 'SCHEDULED';\n\n        if (!mountedRef.current) return;\n        setSessionStatus(status);\n        setError(null);\n        setLoading(false);\n\n        // Stop polling once terminal or host-ready (caller will proceed)\n        if (TERMINAL_STATUSES.includes(status)) {\n          if (timerRef.current) clearInterval(timerRef.current);\n        }\n      } catch (err: any) {\n        if (mountedRef.current) {\n          setError(err?.message || 'Failed to fetch session status');\n          setLoading(false);\n        }\n      }\n    };\n\n    setLoading(true);\n    poll(); // immediate first fetch\n    timerRef.current = setInterval(poll, intervalMs);\n\n    return () => {\n      mountedRef.current = false;\n      if (timerRef.current) clearInterval(timerRef.current);\n    };\n  }, [sessionId, intervalMs]);\n"
+  },
+  {
+    "file": "lms\\features\\live\\legacy\\LiveSessionHeader.tsx",
+    "line": 13,
+    "issues": [
+      "INTERVAL_IN_EFFECT: Contains setInterval, may poll continuously if not cleaned up or if dependencies change."
+    ],
+    "block": "  useEffect(() => {\n    const calculateTime = () => {\n      const start = new Date(startedAt).getTime();\n      const now = Date.now();\n      const elapsed = now - start;\n      const remaining = Math.max(0, durationMs - elapsed);\n      setTimeLeft(remaining);\n    };\n\n    calculateTime();\n    const interval = setInterval(calculateTime, 1000);\n    return () => clearInterval(interval);\n  }, [startedAt, durationMs]);\n"
+  },
+  {
+    "file": "lms\\features\\live\\StudentLiveClassesPage.tsx",
+    "line": 20,
+    "issues": [
+      "INTERVAL_IN_EFFECT: Contains setInterval, may poll continuously if not cleaned up or if dependencies change."
+    ],
+    "block": "  useEffect(() => {\n    if (!targetDate) return;\n    const update = () => {\n      const diff = new Date(targetDate).getTime() - Date.now();\n      if (diff <= 0) { setText('Starting now'); return; }\n      const h = Math.floor(diff / 3600000);\n      const m = Math.floor((diff % 3600000) / 60000);\n      const s = Math.floor((diff % 60000) / 1000);\n      setText(h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m ${s}s` : `${s}s`);\n    };\n    update();\n    const id = setInterval(update, 1000);\n    return () => clearInterval(id);\n  }, [targetDate]);\n  return text;"
+  },
+  {
+    "file": "lms\\features\\streaming\\YoutubePlayer.tsx",
+    "line": 18,
+    "issues": [
+      "INTERVAL_IN_EFFECT: Contains setInterval, may poll continuously if not cleaned up or if dependencies change."
+    ],
+    "block": "  useEffect(() => {\n    // Start 15s Heartbeat Ping for Presence Tracking\n    const hbInterval = setInterval(() => {\n      if (classId) {\n        LiveSessionApi.studentHeartbeat(classId).catch(() => {});\n      }\n    }, 15000);\n\n    return () => {\n      clearInterval(hbInterval);\n    };\n  }, [classId]);\n"
+  },
+  {
+    "file": "lms\\student\\components\\AttendanceStatusBadge.tsx",
+    "line": 12,
+    "issues": [
+      "INTERVAL_IN_EFFECT: Contains setInterval, may poll continuously if not cleaned up or if dependencies change."
+    ],
+    "block": "  useEffect(() => {\n    let mounted = true;\n    let timerId: NodeJS.Timeout | null = null;\n\n    const fetchStatus = async () => {\n      try {\n        const response = await (CourseApi as any).getAttendanceStatus?.(classId) || await fetch(`/api/v1/attendance/status/${classId}`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => res.json());\n        if (mounted && response.data) {\n          setStatusData(response.data);\n          \n          // Stop polling once attendance status has finalized to save network & DB read operations\n          const st = response.data.status;\n          const fnSt = response.data.finalResult?.status;\n          const isTerminal = st === 'COMPLETED' || st === 'FINALIZED' || st === 'Present' || st === 'Absent' || st === 'Late' || fnSt === 'Present' || fnSt === 'Absent' || fnSt === 'Late';\n          if (isTerminal && timerId) {\n            clearInterval(timerId);\n          }\n        }\n      } catch (err) {\n        // Silent catch for polling\n      }\n    };\n\n    fetchStatus();\n    timerId = setInterval(fetchStatus, 30000); // poll every 30s until finalized\n    return () => {\n      mounted = false;\n      if (timerId) clearInterval(timerId);\n    };\n  }, [classId]);\n"
+  },
+  {
+    "file": "lms\\student\\LCES\\useLiveComments.ts",
+    "line": 31,
+    "issues": [
+      "INTERVAL_IN_EFFECT: Contains setInterval, may poll continuously if not cleaned up or if dependencies change."
+    ],
+    "block": "  useEffect(() => {\n    mounted.current = true;\n    if (!liveSessionId) return;\n\n    const fetchComments = async () => {\n      try {\n        const res = await LiveCommentsApi.getComments(liveSessionId);\n        if (!mounted.current) return;\n        \n        const allComments = res.data.data as CommentData[];\n        \n        const pinned = allComments.filter(c => c.isPinned);\n        const regular = allComments.filter(c => !c.isPinned);\n\n        setPinnedComments(pinned);\n        setComments(regular);\n        setError(null);\n      } catch (err: any) {\n        console.error('[useLiveComments] Fetch error:', err);\n        if (mounted.current) setError(err);\n      } finally {\n        if (mounted.current) setLoading(false);\n      }\n    };\n\n    // Initial fetch\n    fetchComments();\n\n    // Poll every 8 seconds for live updates (cost-optimized while preserving real-time feel)\n    const interval = setInterval(fetchComments, 8000);\n\n    return () => {\n      mounted.current = false;\n      clearInterval(interval);\n    };\n  }, [liveSessionId]);\n"
+  },
+  {
+    "file": "lms\\student\\MobileLiveClasses.tsx",
+    "line": 12,
+    "issues": [
+      "INTERVAL_IN_EFFECT: Contains setInterval, may poll continuously if not cleaned up or if dependencies change."
+    ],
+    "block": "  useEffect(() => {\n    if (!targetTime) return;\n    const update = () => {\n      const diff = new Date(targetTime).getTime() - Date.now();\n      if (diff <= 0) { setTimeLeft('Starting now'); return; }\n      const h = Math.floor(diff / 3600000);\n      const m = Math.floor((diff % 3600000) / 60000);\n      const s = Math.floor((diff % 60000) / 1000);\n      setTimeLeft(h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m ${s}s` : `${s}s`);\n    };\n    update();\n    const timer = setInterval(update, 1000);\n    return () => clearInterval(timer);\n  }, [targetTime]);\n  return timeLeft;"
+  },
+  {
+    "file": "lms\\student\\StudentLiveClassesPage.tsx",
+    "line": 23,
+    "issues": [
+      "INTERVAL_IN_EFFECT: Contains setInterval, may poll continuously if not cleaned up or if dependencies change."
+    ],
+    "block": "  useEffect(() => {\n    if (!targetDate) return;\n    const update = () => {\n      const diff = new Date(targetDate).getTime() - Date.now();\n      if (diff <= 0) { setText('Starting now'); return; }\n      const h = Math.floor(diff / 3600000);\n      const m = Math.floor((diff % 3600000) / 60000);\n      const s = Math.floor((diff % 60000) / 1000);\n      setText(h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m ${s}s` : `${s}s`);\n    };\n    update();\n    const id = setInterval(update, 1000);\n    return () => clearInterval(id);\n  }, [targetDate]);\n  return text;"
+  },
+  {
+    "file": "lms\\student\\StudentLiveClassesPage.tsx",
+    "line": 776,
+    "issues": [
+      "INTERVAL_IN_EFFECT: Contains setInterval, may poll continuously if not cleaned up or if dependencies change."
+    ],
+    "block": "  useEffect(() => {\n    let fallbackTimer: ReturnType<typeof setInterval> | null = null;\n\n    const startFallbackPolling = () => {\n      if (fallbackTimer) return; // already polling\n      console.info('[LiveDashboard] Firestore signal unavailable — starting 30s fallback polling.');\n      fallbackTimer = setInterval(() => {\n        queryClient.invalidateQueries({ queryKey: ['studentDashboard'] });\n      }, 30_000);\n    };\n\n    const stopFallbackPolling = () => {\n      if (fallbackTimer) {\n        clearInterval(fallbackTimer);\n        fallbackTimer = null;\n        console.info('[LiveDashboard] Firestore signal restored — stopped fallback polling.');\n      }\n    };\n\n    const unsub = onSnapshot(\n      doc(db, 'live_class_index', 'current'),\n      (_snap) => {\n        // Signal doc exists and is reachable — stop fallback polling if running\n        stopFallbackPolling();\n        queryClient.invalidateQueries({ queryKey: ['studentDashboard'] });\n      },\n      (error) => {\n        console.warn('[LiveDashboard] Firestore signal listener error:', error.code);\n        // Start 30s fallback so students still get auto-refresh\n        startFallbackPolling();\n      }\n    );\n\n    return () => {\n      unsub();\n      stopFallbackPolling();\n    };\n  }, [queryClient]);\n"
+  },
+  {
+    "file": "lms\\student\\StudentLiveClassesPage_main.tsx",
+    "line": 21,
+    "issues": [
+      "INTERVAL_IN_EFFECT: Contains setInterval, may poll continuously if not cleaned up or if dependencies change."
+    ],
+    "block": "  useEffect(() => {\r\n    if (!targetDate) return;\r\n    const update = () => {\r\n      const diff = new Date(targetDate).getTime() - Date.now();\r\n      if (diff <= 0) { setText('Starting now'); return; }\r\n      const h = Math.floor(diff / 3600000);\r\n      const m = Math.floor((diff % 3600000) / 60000);\r\n      const s = Math.floor((diff % 60000) / 1000);\r\n      setText(h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m ${s}s` : `${s}s`);\r\n    };\r\n    update();\r\n    const id = setInterval(update, 1000);\r\n    return () => clearInterval(id);\r\n  }, [targetDate]);\r\n  return text;\r"
+  },
+  {
+    "file": "lms\\student\\StudentPayFeesPage.tsx",
+    "line": 82,
+    "issues": [
+      "INTERVAL_IN_EFFECT: Contains setInterval, may poll continuously if not cleaned up or if dependencies change."
+    ],
+    "block": "  useEffect(() => {\n    if (status?.qrCodeEnabled && timeLeft > 0) {\n      if (timerRef.current) clearInterval(timerRef.current);\n      \n      const enabledAtTime = new Date(status.qrCodeEnabledAt).getTime();\n      const durationMs = status.timerDuration * (status.timerUnit === 'minutes' ? 60 : 3600) * 1000;\n      const expiryTime = enabledAtTime + durationMs;\n\n      timerRef.current = setInterval(() => {\n        const now = Date.now();\n        const diff = Math.max(0, Math.floor((expiryTime - now) / 1000));\n        \n        setTimeLeft(diff);\n        \n        if (diff <= 0) {\n          if (timerRef.current) clearInterval(timerRef.current);\n          // Set qrCodeEnabled to false locally so page updates\n          setStatus((prev: any) => ({ ...prev, qrCodeEnabled: false }));\n          if (Platform.OS === 'web') {\n            success(\"The payment QR code session has expired.\");\n          } else {\n            Alert.alert(\"Expired\", \"The payment QR code session has expired.\");\n          }\n        }\n      }, 1000);\n    }\n\n    return () => {\n      if (timerRef.current) clearInterval(timerRef.current);\n    };\n  }, [status?.qrCodeEnabled, timeLeft, status?.qrCodeEnabledAt]);\n"
+  },
+  {
+    "file": "lms\\student\\StudentPayFeesPage.tsx",
+    "line": 115,
+    "issues": [
+      "LISTENER_FETCH_CASCADE: onSnapshot callback triggers a separate full API/DB re-fetch."
+    ],
+    "block": "  useEffect(() => {\n    let unsubStudent: (() => void) | null = null;\n    let unsubPayments: (() => void) | null = null;\n    try {\n      if (typeof localStorage !== 'undefined') {\n        const storedUser = JSON.parse(localStorage.getItem('nermai_auth_user') || '{}');\n        const studentDocId = storedUser?.studentId || storedUser?.id || storedUser?.userId;\n        if (studentDocId) {\n          unsubStudent = onSnapshot(doc(db, 'students', studentDocId), () => {\n            fetchQrStatus();\n          }, (err) => {\n            console.warn('[StudentPayFeesPage] Realtime student sync error:', err);\n          });\n\n          // Scope payment listener strictly to this student to prevent academy-wide read multiplier\n          const qPayments = query(collection(db, 'payment_acknowledgements'), where('studentId', '==', studentDocId));\n          unsubPayments = onSnapshot(qPayments, () => {\n            fetchPaymentHistory();\n          }, (err) => {\n            console.warn('[StudentPayFeesPage] Realtime payment sync error:', err);\n          });\n        }\n      }\n    } catch (e) {}\n\n    const unsubSettings = onSnapshot(doc(db, 'system_settings', 'payment_qr_code'), () => {\n      fetchQrStatus();\n    }, (err) => {\n      console.warn('[StudentPayFeesPage] Realtime qr settings sync error:', err);\n    });\n\n    return () => {\n      if (unsubStudent) unsubStudent();\n      unsubSettings();\n      if (unsubPayments) unsubPayments();\n    };\n  }, []);\n"
+  }
+]

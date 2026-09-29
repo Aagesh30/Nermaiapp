@@ -80,15 +80,21 @@ function normalizeDate(val: any): string {
  */
 function normalizeDuration(val: any): string {
   if (!val) return '12 Months';
-  const str = String(val).trim().toLowerCase();
-  const numMatch = str.match(/\d+/);
-  if (numMatch) {
-    const num = parseInt(numMatch[0], 10);
-    if ([3, 6, 9, 12, 18, 24].includes(num)) {
-      return `${num} Months`;
-    }
+  const str = String(val).trim();
+  if (!str) return '12 Months';
+  
+  // If user explicitly gave units like 'Month', 'Months', 'Days', 'Years', 'Weeks', keep full string
+  if (/[a-zA-Z]/.test(str)) {
+    return str;
   }
-  return '12 Months';
+
+  // If pure number (e.g. 5, 45, 12), append Months or Days based on value
+  const num = parseInt(str, 10);
+  if (!isNaN(num)) {
+    return `${num} Months`;
+  }
+
+  return str;
 }
 
 /**
@@ -119,13 +125,75 @@ function cleanPhone(val: any): string {
 }
 
 /**
+ * Helper to match a single raw batch string against available batch list
+ */
+function matchSingleBatch(
+  rawStr: string,
+  availableBatches: Array<{ id: string; batchName: string; course?: string }>
+): { id?: string; batchName: string; course?: string } | null {
+  const cleanRawBatch = rawStr.trim().toLowerCase();
+  if (!cleanRawBatch) return null;
+  const digitsRaw = cleanRawBatch.replace(/\D/g, '');
+
+  // 1. Direct name or id match
+  let matchedBatch = availableBatches.find(
+    b => b.batchName.toLowerCase() === cleanRawBatch || b.id.toLowerCase() === cleanRawBatch
+  );
+
+  // 2. Full Course + BatchName match (e.g. "LDC 43", "UDC 45", "LDC Batch 44", "UDC 100")
+  if (!matchedBatch) {
+    matchedBatch = availableBatches.find(b => {
+      const combined = `${b.course || ''} ${b.batchName}`.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const cleanRawAlphaNum = cleanRawBatch.replace(/[^a-z0-9]/g, '');
+      return combined === cleanRawAlphaNum;
+    });
+  }
+
+  // 3. Match numeric batch identifier (e.g. raw "43" or "LDC 43" vs batch "43" / "Batch 43")
+  if (!matchedBatch && digitsRaw) {
+    const numericMatches = availableBatches.filter(b => {
+      const bDigits = b.batchName.replace(/\D/g, '');
+      return bDigits === digitsRaw;
+    });
+    if (numericMatches.length === 1) {
+      matchedBatch = numericMatches[0];
+    } else if (numericMatches.length > 1) {
+      const courseMatch = numericMatches.find(b =>
+        b.course && cleanRawBatch.includes(b.course.toLowerCase())
+      );
+      matchedBatch = courseMatch || numericMatches[0];
+    }
+  }
+
+  // 4. Word / Substring match (avoid matching generic word "batch")
+  if (!matchedBatch) {
+    matchedBatch = availableBatches.find(b => {
+      const bName = b.batchName.toLowerCase().trim();
+      const bClean = bName.replace(/^batch\s*/i, '').trim();
+      if (!bClean || bClean === 'batch' || bClean === 'batches') return false;
+      return cleanRawBatch === bName || cleanRawBatch.includes(bClean);
+    });
+  }
+
+  return matchedBatch || null;
+}
+
+/**
  * Parses an Excel Workbook for Bulk Student Registration
  * Column headers can appear in ANY order.
  */
 export async function parseStudentUploadFile(file: File, availableBatches: Array<{ id: string; batchName: string; course?: string }>): Promise<ParsedStudentUploadResult> {
   const buffer = await file.arrayBuffer();
   const workbook = XLSX.read(buffer, { type: 'array' });
+  return parseStudentWorkbook(workbook, file.name, availableBatches);
+}
 
+export function parseStudentUploadFromBase64(base64: string, fileName: string, availableBatches: Array<{ id: string; batchName: string; course?: string }>): ParsedStudentUploadResult {
+  const workbook = XLSX.read(base64, { type: 'base64' });
+  return parseStudentWorkbook(workbook, fileName, availableBatches);
+}
+
+function parseStudentWorkbook(workbook: XLSX.WorkBook, fileName: string, availableBatches: Array<{ id: string; batchName: string; course?: string }>): ParsedStudentUploadResult {
   // Use the first sheet or find sheet with student data
   const sheetName = workbook.SheetNames[0];
   const sheet = workbook.Sheets[sheetName];
@@ -162,52 +230,74 @@ export async function parseStudentUploadFile(file: File, availableBatches: Array
       if (typeof cell !== 'string') return;
       const h = cell.toLowerCase().trim().replace(/[\r\n\t_]+/g, ' ');
 
-      // 1. Username / Roll Number (Check first to avoid 'username' triggering 'name')
+      // 1. Username / Roll Number
       if (/^(user\s*name|roll\s*(no|number)?|reg\s*(no|number)?|admission\s*(no|number)?)$/i.test(h) || h.includes('roll') || h.includes('username') || h.includes('user name') || h.includes('reg no') || h.includes('admission no')) {
         usernameCol = idx;
         headersFound['Username'] = cell;
         matchedCount++;
       }
-      // 2. Student Full Name (Exclude user/father/mother/batch names)
+      // 2. Student Full Name
       else if (/^(student\s*)?(full\s*)?name(\s*of\s*student)?$/i.test(h) || (h.includes('name') && !h.includes('user') && !h.includes('father') && !h.includes('mother') && !h.includes('batch'))) {
         nameCol = idx;
         headersFound['Name'] = cell;
         matchedCount++;
-      } else if (/^batch(es)?(\s*name)?$/i.test(h) || (h.includes('batch') && !h.includes('mode'))) {
+      }
+      // 3. Batch (e.g. "Batches & Class Mode", "Batch", "Batches", "Batch Name")
+      else if (/^batch(es)?/i.test(h) || (h.includes('batch') && !h.startsWith('mode'))) {
         batchCol = idx;
         headersFound['Batch'] = cell;
         matchedCount++;
-      } else if (/^(class\s*)?mode$/i.test(h) || h.includes('mode of class')) {
+      }
+      // 4. Class Mode (e.g. "Class Mode", "Mode", "Mode of Class")
+      else if (/^(class\s*)?mode$/i.test(h) || h.includes('mode of class') || (h.includes('mode') && !h.includes('batch') && !h.includes('payment'))) {
         modeCol = idx;
         headersFound['Class Mode'] = cell;
-      } else if (/^(total\s*)?(course\s*)?fees?(\s*amount)?$/i.test(h) || (h.includes('total') && h.includes('fee'))) {
+      }
+      // 5. Total Fees
+      else if (/^(total\s*)?(course\s*)?fees?(\s*amount)?$/i.test(h) || (h.includes('total') && h.includes('fee'))) {
         totalFeeCol = idx;
         headersFound['Total Fees'] = cell;
         matchedCount++;
-      } else if (/^(fees?\s*)?paid(\s*amount)?|paid\s*(fees?|amount)?$/i.test(h) || (h.includes('paid') && h.includes('fee'))) {
+      }
+      // 6. Paid Fees
+      else if (/^(fees?\s*)?paid(\s*amount)?|paid\s*(fees?|amount)?$/i.test(h) || (h.includes('paid') && h.includes('fee'))) {
         paidFeeCol = idx;
         headersFound['Paid Fees'] = cell;
         matchedCount++;
-      } else if (/^(course\s*)?duration|validity|months$/i.test(h) || h.includes('duration')) {
+      }
+      // 7. Course Duration
+      else if (/^(course\s*)?duration|validity|months$/i.test(h) || h.includes('duration')) {
         durationCol = idx;
         headersFound['Course Duration'] = cell;
-      } else if (/^(joining\s*date|date\s*of\s*joining|doj|admission\s*date)$/i.test(h) || h.includes('joining')) {
+      }
+      // 8. Joining Date
+      else if (/^(joining\s*date|date\s*of\s*joining|doj|admission\s*date)$/i.test(h) || h.includes('joining')) {
         joiningDateCol = idx;
         headersFound['Joining Date'] = cell;
-      } else if (/^phone(\s*number)?|mobile(\s*number)?|contact(\s*number)?$/i.test(h) || h.includes('phone') || h.includes('mobile')) {
+      }
+      // 9. Phone Number
+      else if (/^phone(\s*number)?|mobile(\s*number)?|contact(\s*number)?$/i.test(h) || h.includes('phone') || h.includes('mobile')) {
         phoneCol = idx;
         headersFound['Phone'] = cell;
         matchedCount++;
-      } else if (/^email(\s*id)?$/i.test(h) || h.includes('email')) {
+      }
+      // 10. Email ID
+      else if (/^email(\s*id)?$/i.test(h) || h.includes('email')) {
         emailCol = idx;
         headersFound['Email'] = cell;
-      } else if (/^(mode\s*of\s*)?payment(\s*mode|\s*method)?$/i.test(h) || (h.includes('payment') && h.includes('mode'))) {
+      }
+      // 11. Mode of Payment
+      else if (/^(mode\s*of\s*)?payment(\s*mode|\s*method)?$/i.test(h) || (h.includes('payment') && h.includes('mode'))) {
         paymentModeCol = idx;
         headersFound['Mode of Payment'] = cell;
-      } else if (/^transaction\s*(id|number)?|txn\s*(id)?|utr|ref(\s*no)?$/i.test(h) || h.includes('transaction') || h.includes('utr')) {
+      }
+      // 12. Transaction ID
+      else if (/^transaction\s*(id|number)?|txn\s*(id)?|utr|ref(\s*no)?$/i.test(h) || h.includes('transaction') || h.includes('utr')) {
         txnIdCol = idx;
         headersFound['Transaction ID'] = cell;
-      } else if (/^password|pass|login\s*password$/i.test(h) || h.includes('password')) {
+      }
+      // 13. Password
+      else if (/^password|pass|login\s*password$/i.test(h) || h.includes('password')) {
         passwordCol = idx;
         headersFound['Password'] = cell;
       }
@@ -238,7 +328,7 @@ export async function parseStudentUploadFile(file: File, availableBatches: Array
     const rawPhone = phoneCol !== -1 ? cleanPhone(row[phoneCol]) : '';
     const rawEmail = emailCol !== -1 ? String(row[emailCol] || '').trim() : '';
     const rawBatch = batchCol !== -1 ? String(row[batchCol] || '').trim() : '';
-    const rawMode = modeCol !== -1 ? String(row[modeCol] || '').trim().toLowerCase() : 'offline';
+    const rawMode = modeCol !== -1 ? String(row[modeCol] || '').trim() : 'offline';
     const rawTotalFee = totalFeeCol !== -1 ? Number(row[totalFeeCol]) || 0 : 0;
     const rawPaidFee = paidFeeCol !== -1 ? Number(row[paidFeeCol]) || 0 : 0;
     const rawDuration = durationCol !== -1 ? normalizeDuration(row[durationCol]) : '12 Months';
@@ -273,63 +363,61 @@ export async function parseStudentUploadFile(file: File, availableBatches: Array
       isAutoPassword = true;
     }
 
-    // Smart Batch Matching (supports '43', 'LDC 43', 'Batch 44', '44', 'UDC 45', '100', 'UDC 100', etc.)
-    let resolvedBatchName = rawBatch;
-    let resolvedCourse = '';
-    
-    const cleanRawBatch = rawBatch.trim().toLowerCase();
-    const digitsRaw = cleanRawBatch.replace(/\D/g, '');
-    
-    // 1. Direct name or id match
-    let matchedBatch = availableBatches.find(
-      b => b.batchName.toLowerCase() === cleanRawBatch || b.id.toLowerCase() === cleanRawBatch
-    );
-    
-    // 2. Full Course + BatchName match (e.g. "LDC 43", "UDC 45", "LDC Batch 44", "UDC 100")
-    if (!matchedBatch) {
-      matchedBatch = availableBatches.find(b => {
-        const combined = `${b.course || ''} ${b.batchName}`.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const cleanRawAlphaNum = cleanRawBatch.replace(/[^a-z0-9]/g, '');
-        return combined === cleanRawAlphaNum;
-      });
-    }
+    // Smart Batch Matching
+    const resolvedBatchesList: Array<{ id?: string; batchName: string; course?: string }> = [];
 
-    // 3. Match numeric batch identifier (e.g. raw "43" or "LDC 43" vs batch "43" / "Batch 43")
-    if (!matchedBatch && digitsRaw) {
-      const numericMatches = availableBatches.filter(b => {
-        const bDigits = b.batchName.replace(/\D/g, '');
-        return bDigits === digitsRaw;
-      });
-      if (numericMatches.length === 1) {
-        matchedBatch = numericMatches[0];
-      } else if (numericMatches.length > 1) {
-        // Disambiguate by course name if present in raw string
-        const courseMatch = numericMatches.find(b => 
-          b.course && cleanRawBatch.includes(b.course.toLowerCase())
-        );
-        matchedBatch = courseMatch || numericMatches[0];
+    // 1. Try matching full rawBatch string as a single batch
+    const singleMatch = matchSingleBatch(rawBatch, availableBatches);
+    if (singleMatch) {
+      resolvedBatchesList.push(singleMatch);
+    } else if (rawBatch.trim()) {
+      // 2. Try splitting by comma, slash, plus, ampersand, or "and"
+      const batchTokens = rawBatch.split(/[\,\/\+\&]|\band\b/).map(t => t.trim()).filter(Boolean);
+      for (const token of batchTokens) {
+        const m = matchSingleBatch(token, availableBatches);
+        if (m && !resolvedBatchesList.some(b => b.batchName.toLowerCase() === m.batchName.toLowerCase())) {
+          resolvedBatchesList.push(m);
+        } else if (!m && token) {
+          resolvedBatchesList.push({ batchName: token, course: '' });
+        }
       }
     }
 
-    // 4. Fallback substring match
-    if (!matchedBatch) {
-      matchedBatch = availableBatches.find(b => {
-        const bName = b.batchName.toLowerCase();
-        return cleanRawBatch.includes(bName) || bName.includes(cleanRawBatch);
-      });
+    // 3. Fallback: If rawBatch is provided in Excel, KEEP IT instead of forcing to availableBatches[0]!
+    if (resolvedBatchesList.length === 0) {
+      if (rawBatch.trim()) {
+        resolvedBatchesList.push({ batchName: rawBatch.trim(), course: '' });
+      } else if (availableBatches.length > 0) {
+        resolvedBatchesList.push(availableBatches[0]);
+      }
     }
 
-    if (matchedBatch) {
-      resolvedBatchName = matchedBatch.batchName;
-      resolvedCourse = matchedBatch.course || '';
-    } else if (availableBatches.length > 0 && !resolvedBatchName) {
-      resolvedBatchName = availableBatches[0].batchName;
-      resolvedCourse = availableBatches[0].course || '';
-    }
+    const batchesList = resolvedBatchesList.map(b => b.batchName);
+    const resolvedBatchName = batchesList[0] || '';
+    const resolvedCourse = resolvedBatchesList[0]?.course || '';
 
-    const classMode = ['online', 'offline', 'recorded'].includes(rawMode) ? rawMode : 'offline';
-    const batchesList = resolvedBatchName ? [resolvedBatchName] : [];
-    const batchModesMap: Record<string, string[]> = resolvedBatchName ? { [resolvedBatchName]: [classMode] } : {};
+    // Parse class modes (supports dual/hybrid modes like "offline/online", "online + offline", "both", "hybrid")
+    let parsedModes: string[] = [];
+    const cleanModeStr = rawMode.toLowerCase();
+    
+    if (cleanModeStr.includes('both') || cleanModeStr.includes('hybrid') || (cleanModeStr.includes('online') && cleanModeStr.includes('offline'))) {
+      parsedModes = ['online', 'offline'];
+    } else {
+      const modeTokens = cleanModeStr.split(/[\+\/\,\&]|\band\b/).map(m => m.trim());
+      parsedModes = modeTokens.filter(m => ['online', 'offline', 'recorded'].includes(m));
+      if (parsedModes.length === 0) {
+        parsedModes = ['offline'];
+      }
+    }
+    parsedModes = Array.from(new Set(parsedModes));
+
+    const primaryType = parsedModes.join('/');
+    
+    // Assign parsedModes to ALL resolved batches for this student
+    const batchModesMap: Record<string, string[]> = {};
+    batchesList.forEach(bName => {
+      batchModesMap[bName] = parsedModes;
+    });
 
     const dueFees = Math.max(0, rawTotalFee - rawPaidFee);
 
@@ -347,7 +435,7 @@ export async function parseStudentUploadFile(file: File, availableBatches: Array
       batchModes: batchModesMap,
       batch: resolvedBatchName,
       course: resolvedCourse,
-      type: classMode,
+      type: primaryType,
       totalFees: rawTotalFee,
       feesPaid: rawPaidFee,
       dueFees,
@@ -375,6 +463,6 @@ export async function parseStudentUploadFile(file: File, availableBatches: Array
       totalPaidSum
     },
     headersFound,
-    fileName: file.name
+    fileName
   };
 }

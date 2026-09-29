@@ -169,7 +169,7 @@ export class ExaminationController {
                             testId,
                             testTitle: test.title || "",
                             creationMode: test.creationMode || "file",
-                            targetLanguages: test.targetLanguages || (test.creationMode === "file" ? ["English", "Tamil"] : ["English", "Tamil"]),
+                            targetLanguages: test.targetLanguages || ["English", "Tamil", "Malayalam", "Telugu"],
                             durationMinutes: ongoingData.durationMinutes || 60,
                             endTime: new Date(endTimeMs).toISOString(),
                             remainingTime: remainingSeconds
@@ -193,18 +193,20 @@ export class ExaminationController {
             const attemptId = randomUUID();
 
             // Duration: prefer explicit durationMinutes, otherwise derive from startTime–endTime window
-            let durationMinutes = test.durationMinutes || 60;
-            if (test.startTime && test.endTime) {
+            let durationMinutes = test.durationMinutes ? Number(test.durationMinutes) : 60;
+            if (!test.durationMinutes && test.startTime && test.endTime) {
                 const windowMs = ExaminationController.getMs(test.endTime) - ExaminationController.getMs(test.startTime);
                 const windowMin = Math.floor(windowMs / 60000);
                 if (windowMin > 0) durationMinutes = windowMin;
             }
 
-            // Attempt end = min(now + duration, test.endTime)
+            const schedulingType = (test.schedulingType === "fixed" || test.schedulingMode === "fixed") ? "fixed" : "flexible_window";
+
+            // Attempt end calculation based on scheduling mode
             const startTime = admin.firestore.FieldValue.serverTimestamp();
             const attemptEndTimeMs = now + durationMinutes * 60 * 1000;
             let finalEndTime = new Date(attemptEndTimeMs);
-            if (test.endTime) {
+            if ((schedulingType === "fixed" || test.schedulingMode === "fixed") && test.endTime) {
                 const testEndTimeMs = ExaminationController.getMs(test.endTime);
                 if (finalEndTime.getTime() > testEndTimeMs) {
                     finalEndTime = new Date(testEndTimeMs);
@@ -281,7 +283,8 @@ export class ExaminationController {
                     testId,
                     testTitle: test.title || "",
                     creationMode: test.creationMode || "file",
-                    targetLanguages: test.targetLanguages || (test.creationMode === "file" ? ["English", "Tamil"] : ["English", "Tamil"]),
+                    targetLanguages: test.targetLanguages || ["English", "Tamil", "Malayalam", "Telugu"],
+                    subjectSections: test.subjectSections || [],
                     durationMinutes,
                     endTime: finalEndTime.toISOString(),
                     remainingTime: remainingSeconds
@@ -396,7 +399,8 @@ export class ExaminationController {
                     testId: attempt.testId,
                     testTitle: test.title || "",
                     creationMode: test.creationMode || "file",
-                    targetLanguages: test.targetLanguages || (test.creationMode === "file" ? ["English", "Tamil"] : ["English", "Tamil"]),
+                    targetLanguages: test.targetLanguages || ["English", "Tamil", "Malayalam", "Telugu"],
+                    subjectSections: test.subjectSections || [],
                     status: "started",
                     endTime: new Date(endTimeMs).toISOString(),
                     remainingTime,
@@ -498,6 +502,7 @@ export class ExaminationController {
                     // Normalize options and optionsTa arrays
                     let options: string[] = [];
                     let optionsTa: string[] = [];
+                    const dynamicOptions: Record<string, string[]> = {};
                     
                     if (data.options && Array.isArray(data.options)) {
                         options = data.options.map((o: any) => typeof o === "string" ? o : (o?.en || ""));
@@ -508,6 +513,20 @@ export class ExaminationController {
                             data.options.C?.en || data.options.C || "",
                             data.options.D?.en || data.options.D || ""
                         ];
+                        // Extract language options from nested object: e.g. data.options.A.ta, data.options.A.te, etc.
+                        ["A", "B", "C", "D"].forEach((letter, idx) => {
+                            const optVal = data.options[letter];
+                            if (optVal && typeof optVal === "object") {
+                                Object.keys(optVal).forEach(langKey => {
+                                    const lKey = langKey.toLowerCase();
+                                    if (lKey === "en") return;
+                                    const PascalLang = lKey.charAt(0).toUpperCase() + lKey.slice(1);
+                                    const optKey = `options${PascalLang}`;
+                                    if (!dynamicOptions[optKey]) dynamicOptions[optKey] = ["", "", "", ""];
+                                    dynamicOptions[optKey][idx] = String(optVal[langKey] || "").trim();
+                                });
+                            }
+                        });
                     }
                     
                     if (data.optionsTa && Array.isArray(data.optionsTa)) {
@@ -519,6 +538,19 @@ export class ExaminationController {
                             data.options.C?.ta || "",
                             data.options.D?.ta || ""
                         ];
+                    }
+
+                    // Look for existing options<Lang> arrays on doc data (e.g. optionsTe, optionsMl, optionsHi)
+                    Object.keys(data).forEach(k => {
+                        if (/^options[A-Z][a-z0-9]*$/.test(k) && Array.isArray(data[k])) {
+                            const arr = data[k].map((o: any) => typeof o === "string" ? o.trim() : (o?.text || ""));
+                            while (arr.length < 4) arr.push("");
+                            dynamicOptions[k] = arr.slice(0, 4);
+                        }
+                    });
+
+                    if (optionsTa.some(x => x)) {
+                        dynamicOptions.optionsTa = optionsTa;
                     }
                     
                     // Ensure length is exactly 4
@@ -539,30 +571,25 @@ export class ExaminationController {
                     }
 
                     // EXTREMELY IMPORTANT: Never send correct answers, correct options or explanations to the client
-                    const {
-                        correctAnswer,
-                        correctOption,
-                        correctOptions,
-                        answer,
-                        answerKey,
-                        explanation,
-                        explanationTa,
-                        solution,
-                        solutionTa,
-                        isDeleted,
-                        createdAt,
-                        updatedAt,
-                        createdBy,
-                        updatedBy,
-                        ...clientQuestion
-                    } = data;
+                    const clientQuestion: Record<string, any> = {};
+                    Object.keys(data).forEach(k => {
+                        if (
+                            /^(correctAnswer|correctOption|correctOptions|answer|answerKey|isDeleted|createdAt|updatedAt|createdBy|updatedBy)$/i.test(k) ||
+                            /^explanation/i.test(k) ||
+                            /^solution/i.test(k)
+                        ) {
+                            return; // Strip sensitive fields
+                        }
+                        clientQuestion[k] = data[k];
+                    });
                     
                     const resolvedImageUrl = data.imageBase64 || data.imageUrl || data.driveUrl || data.questionImage || null;
                     return {
                         ...clientQuestion,
+                        ...dynamicOptions,
                         imageUrl: resolvedImageUrl,
                         options,
-                        optionsTa
+                        optionsTa: dynamicOptions.optionsTa || optionsTa
                     };
                 });
 
@@ -1209,6 +1236,7 @@ export class ExaminationController {
                     description: test.description || "",
                     totalQuestions: studyQuestions.length,
                     marksPerQuestion: test.marksPerQuestion || 1,
+                    subjectSections: test.subjectSections || [],
                     endedAt: test.endTime,
                     questions: studyQuestions
                 }

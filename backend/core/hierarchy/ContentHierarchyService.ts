@@ -7,6 +7,18 @@ interface HierarchyNode {
   id: string;
 }
 
+// In-memory TTL cache for parent hierarchy paths (10-minute TTL)
+const parentsCache = new Map<string, { parents: HierarchyNode[]; expiry: number }>();
+const PARENTS_CACHE_TTL_MS = 10 * 60 * 1000;
+
+export const invalidateParentsCache = (key?: string) => {
+  if (key) {
+    parentsCache.delete(key);
+  } else {
+    parentsCache.clear();
+  }
+};
+
 export class ContentHierarchyService {
   
   /**
@@ -14,6 +26,13 @@ export class ContentHierarchyService {
    * Used by effective_access_cache resolution.
    */
   async getParents(entityType: EntityType, entityId: string): Promise<HierarchyNode[]> {
+    const cacheKey = `${entityType}_${entityId}`;
+    const now = Date.now();
+    const cached = parentsCache.get(cacheKey);
+    if (cached && now < cached.expiry) {
+      return cached.parents;
+    }
+
     const parents: HierarchyNode[] = [];
     let currentType = entityType;
     let currentId = entityId;
@@ -52,6 +71,7 @@ export class ContentHierarchyService {
       }
     }
     
+    parentsCache.set(cacheKey, { parents, expiry: now + PARENTS_CACHE_TTL_MS });
     return parents;
   }
 

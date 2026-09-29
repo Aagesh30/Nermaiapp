@@ -241,7 +241,7 @@ export class AccessPolicyEngine {
         }
 
         // 5d. Recorded class
-        if (cls.classType === 'youtube_recorded') {
+        if (cls.classType === 'youtube_recorded' || cls.classType === 'recorded') {
           if (mergedCapabilities.canViewRecorded) {
             return { allowed: true, reason: 'Batch grants recorded access', source: 'BATCH' };
           }

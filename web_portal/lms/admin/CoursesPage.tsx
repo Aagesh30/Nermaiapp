@@ -3,6 +3,8 @@ import { Plus, BookOpen, Search, Sparkles, FileSpreadsheet } from 'lucide-react'
 import { AdminTable, AdminModal, AdminInput, AdminSelect, AdminButton, DeleteConfirm } from '../components/admin-ui';
 import { CourseApi } from '../core/services';
 import { ExcelSyllabusModal } from '../components/ExcelSyllabusModal';
+import { db } from '../../firebaseConfig';
+import { collection, onSnapshot } from 'firebase/firestore';
 
 export const CoursesPage = ({ permission = 'edit_direct', executeEditOrApproval }: { permission?: string; executeEditOrApproval?: any }) => {
   const [courses, setCourses] = useState<any[]>([]);
@@ -26,7 +28,22 @@ export const CoursesPage = ({ permission = 'edit_direct', executeEditOrApproval 
     finally { setIsLoading(false); }
   };
 
-  useEffect(() => { fetchCourses(); }, []);
+  useEffect(() => { 
+    fetchCourses(); 
+
+    let unsubscribe: (() => void) | null = null;
+    try {
+      unsubscribe = onSnapshot(collection(db, 'courses'), (snapshot) => {
+        if (!snapshot.empty) {
+          const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter((c: any) => !c.isDeleted);
+          setCourses(list);
+        }
+      }, (err) => console.log('Courses onSnapshot note:', err?.message));
+    } catch (err) {
+      console.warn('Real-time courses listener note:', err);
+    }
+    return () => { if (unsubscribe) unsubscribe(); };
+  }, []);
 
   const handleOpenExcelModal = (courseId?: string) => {
     if (courseId) {

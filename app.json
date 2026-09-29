@@ -25,8 +25,13 @@
     },
     "extra": {
       "eas": {
-        "projectId": "abf52532-cd54-480b-9628-1883d69544c7"
+        "projectId": "ea494a69-1ba0-46dd-bf4e-d444439771b1"
       }
-    }
+    },
+    "owner": "unistrix",
+    "plugins": [
+      "expo-sharing",
+      "expo-status-bar"
+    ]
   }
 }

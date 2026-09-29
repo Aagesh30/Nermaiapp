@@ -14,6 +14,8 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as XLSX from 'xlsx';
 import api from '../core/api';
+import { db } from '../../firebaseConfig';
+import { collection, onSnapshot } from 'firebase/firestore';
 
 export interface CustomLead {
   id: string;
@@ -48,6 +50,22 @@ export default function CustomLeadsPage() {
 
   useEffect(() => {
     fetchLeads();
+
+    let unsub: (() => void) | null = null;
+    try {
+      unsub = onSnapshot(collection(db, 'custom_application_leads'), (snap) => {
+        if (!snap.empty) {
+          const list = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter((l: any) => !l.isDeleted);
+          setLeads(list as any);
+        }
+      }, (err) => console.log('Custom leads onSnapshot note:', err?.message));
+    } catch (e) {
+      console.warn('Real-time custom leads listener note:', e);
+    }
+
+    return () => {
+      if (unsub) unsub();
+    };
   }, []);
 
   const fetchLeads = async () => {

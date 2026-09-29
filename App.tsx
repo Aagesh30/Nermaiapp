@@ -6047,6 +6047,26 @@ export default function App() {
                         >
                           <Ionicons name="download-outline" size={18} color="#fff" />
                         </TouchableOpacity>
+                        {isAdmin && (
+                          <TouchableOpacity
+                            onPress={() => {
+                              const targetId = testLog.testId || testLog.id;
+                              executeDelete("tests", targetId, async () => {
+                                try {
+                                  await api.delete(`/test-portal/test-creation/${targetId}`);
+                                  Alert.alert("Success", "Test deleted successfully.");
+                                  setAllTestResults(prev => prev.filter((r: any) => r.testId !== targetId && r.id !== targetId));
+                                  loadTests();
+                                } catch (e: any) {
+                                  Alert.alert("Error", e.message || "Failed to delete test.");
+                                }
+                              });
+                            }}
+                            style={{ backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 6, padding: 6 }}
+                          >
+                            <Ionicons name="trash-outline" size={18} color="#fff" />
+                          </TouchableOpacity>
+                        )}
                         <Ionicons name={expandedTestId === testLog.testId ? "chevron-up" : "chevron-down"} size={18} color="#fff" />
                       </View>
                     </TouchableOpacity>

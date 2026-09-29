@@ -107,6 +107,9 @@ export class NotificationController {
 
             await db.collection(COLLECTION).doc(id).set(payload);
 
+            // Invalidate student-facing cache so new notice is immediately visible
+            generalCache.delete('all_active_announcements');
+
             return res.status(201).json({
                 success: true,
                 message: "Notification sent successfully",
@@ -208,6 +211,8 @@ export class NotificationController {
 
             if (results.length > 0) {
                 await batch.commit();
+                // Invalidate student-facing cache so bulk notices are immediately visible
+                generalCache.delete('all_active_announcements');
             }
 
             return res.status(201).json({
@@ -320,6 +325,9 @@ export class NotificationController {
             }
 
             await docRef.update({ isDeleted: true });
+
+            // Invalidate student-facing cache so deleted notice is no longer served
+            generalCache.delete('all_active_announcements');
 
             return res.status(200).json({
                 success: true,

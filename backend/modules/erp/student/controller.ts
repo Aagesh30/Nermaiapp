@@ -218,6 +218,7 @@ export class StudentController {
                 previousClass: previousClass || "",
                 previousMarks: previousMarks || 0,
                 loginUsername: loginUsername || "",
+                loginPassword: loginPassword || "",
                 passwordHash,
                 courseDuration: courseDuration || "",
                 modeOfPayment: modeOfPayment || "cash",
@@ -340,7 +341,8 @@ export class StudentController {
                         rawPassword = roll + last4;
                     }
 
-                    const passwordHash = await bcrypt.hash(rawPassword, 12);
+                    // Use cost factor 8 for bulk processing to ensure rapid execution (< 3 seconds for 200+ students)
+                    const passwordHash = await bcrypt.hash(rawPassword, 8);
                     const id = randomUUID();
 
                     const finalBatches = Array.isArray(s.batches) ? s.batches : (s.batch ? [s.batch] : []);
@@ -387,7 +389,7 @@ export class StudentController {
                         batch: finalBatches[0] || "",
                         course: s.course || "",
                         academicYear: s.academicYear || "",
-                        type: (finalBatches[0] && finalBatchModes[finalBatches[0]] && finalBatchModes[finalBatches[0]][0]) || s.type || "offline",
+                        type: s.type || (finalBatches[0] && finalBatchModes[finalBatches[0]] ? finalBatchModes[finalBatches[0]].join('/') : "offline"),
                         totalFees,
                         feesPaid,
                         joiningDate: s.joiningDate || new Date().toISOString().split('T')[0],
@@ -410,6 +412,7 @@ export class StudentController {
                         previousClass: s.previousClass || "",
                         previousMarks: s.previousMarks || 0,
                         loginUsername: roll,
+                        loginPassword: rawPassword,
                         passwordHash,
                         courseDuration: s.courseDuration || "12 Months",
                         modeOfPayment,
@@ -494,6 +497,7 @@ export class StudentController {
                 academicYear,
                 status,
                 limit = 20,
+                page = 1,
                 startAfter,
                 sortBy = "createdAt",
                 sortOrder = "desc"
@@ -542,25 +546,28 @@ export class StudentController {
             // 1. Filter in-memory
             students = students.filter((student: any) => {
                 if (student.isDeleted === true) return false;
-                if (batch && student.batch !== batch) return false;
-                if (course && student.course !== course) return false;
-                if (academicYear && student.academicYear !== academicYear) return false;
-                if (status && student.status !== status) return false;
+                if (batch && batch !== "all" && batch !== "All Batches" && student.batch !== batch) return false;
+                if (course && course !== "all" && student.course !== course) return false;
+                if (academicYear && academicYear !== "all" && student.academicYear !== academicYear) return false;
+                if (status && status !== "all" && student.status !== status) return false;
                 return true;
             });
 
             // 2. Search filter in-memory
             if (search) {
-                const searchLower = (search as string).toLowerCase();
+                const searchLower = (search as string).toLowerCase().trim();
                 students = students.filter((student: any) =>
                     student.firstName?.toLowerCase().includes(searchLower) ||
                     student.lastName?.toLowerCase().includes(searchLower) ||
                     student.admissionNumber?.toLowerCase().includes(searchLower) ||
                     student.rollNumber?.toLowerCase().includes(searchLower) ||
+                    student.loginUsername?.toLowerCase().includes(searchLower) ||
                     student.email?.toLowerCase().includes(searchLower) ||
                     student.phone?.includes(searchLower)
                 );
             }
+
+            const totalCount = students.length;
 
             // 3. Sort in-memory
             const sortField = sortBy as string;
@@ -579,7 +586,10 @@ export class StudentController {
             });
 
             // 4. Pagination in-memory
-            let startIndex = 0;
+            const limitNum = parseInt(limit as string, 10) || 20;
+            const pageNum = parseInt(page as string, 10) || 1;
+            let startIndex = (pageNum - 1) * limitNum;
+
             if (startAfter) {
                 const foundIndex = students.findIndex((student: any) => student.id === startAfter);
                 if (foundIndex !== -1) {
@@ -587,18 +597,23 @@ export class StudentController {
                 }
             }
 
-            const limitNum = parseInt(limit as string, 10);
             const paginatedStudents = students.slice(startIndex, startIndex + limitNum);
-            const hasMore = startIndex + limitNum < students.length;
+            const hasMore = startIndex + limitNum < totalCount;
             const nextPageToken = paginatedStudents.length > 0 && hasMore ? (paginatedStudents[paginatedStudents.length - 1] as any).id : null;
+            const totalPages = Math.ceil(totalCount / limitNum) || 1;
 
             return res.status(200).json({
                 success: true,
-                data: paginatedStudents.map(sanitizeStudent),
-                pagination: {
-                    limit: limitNum,
-                    nextPageToken,
-                    hasMore
+                data: {
+                    students: paginatedStudents.map(sanitizeStudent),
+                    pagination: {
+                        total: totalCount,
+                        limit: limitNum,
+                        page: pageNum,
+                        totalPages,
+                        nextPageToken,
+                        hasMore
+                    }
                 }
             });
         } catch (error: any) {

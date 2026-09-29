@@ -22,6 +22,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { RNContainerSkeleton } from '../components/ui/RNSkeleton';
+import { db } from '../../firebaseConfig';
+import { doc, onSnapshot, collection, query, where } from 'firebase/firestore';
 
 export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean }) => {
   const { success, error } = useToast();
@@ -109,15 +111,44 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
     };
   }, [status?.qrCodeEnabled, timeLeft, status?.qrCodeEnabledAt]);
 
-  // Periodic polling for status when pending approval
+  // Real-time zero-cost sync for student QR status, QR settings & payment history
   useEffect(() => {
-    if (status?.qrCodeRequested && !status?.qrCodeEnabled) {
-      const pollInterval = setInterval(() => {
-        fetchQrStatus();
-      }, 10000);
-      return () => clearInterval(pollInterval);
-    }
-  }, [status?.qrCodeRequested, status?.qrCodeEnabled]);
+    let unsubStudent: (() => void) | null = null;
+    let unsubPayments: (() => void) | null = null;
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const storedUser = JSON.parse(localStorage.getItem('nermai_auth_user') || '{}');
+        const studentDocId = storedUser?.studentId || storedUser?.id || storedUser?.userId;
+        if (studentDocId) {
+          unsubStudent = onSnapshot(doc(db, 'students', studentDocId), () => {
+            fetchQrStatus();
+          }, (err) => {
+            console.warn('[StudentPayFeesPage] Realtime student sync error:', err);
+          });
+
+          // Scope payment listener strictly to this student to prevent academy-wide read multiplier
+          const qPayments = query(collection(db, 'payment_acknowledgements'), where('studentId', '==', studentDocId));
+          unsubPayments = onSnapshot(qPayments, () => {
+            fetchPaymentHistory();
+          }, (err) => {
+            console.warn('[StudentPayFeesPage] Realtime payment sync error:', err);
+          });
+        }
+      }
+    } catch (e) {}
+
+    const unsubSettings = onSnapshot(doc(db, 'system_settings', 'payment_qr_code'), () => {
+      fetchQrStatus();
+    }, (err) => {
+      console.warn('[StudentPayFeesPage] Realtime qr settings sync error:', err);
+    });
+
+    return () => {
+      if (unsubStudent) unsubStudent();
+      unsubSettings();
+      if (unsubPayments) unsubPayments();
+    };
+  }, []);
 
   const handleRequestQr = async () => {
     setSubmitting(true);

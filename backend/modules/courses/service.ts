@@ -632,7 +632,8 @@ export class CourseService {
     if (!isStaffPreview) {
       const { AccessRulesService } = require('../access-rules/service');
       const accessRulesService = new AccessRulesService();
-      const tenantId = user.tenantId || 'default';
+      const rawTenant = user.tenantId || '';
+      const tenantId = !rawTenant || rawTenant === 'nermaiiasacademy-519c8' || rawTenant === 'default' ? 'default_tenant' : rawTenant;
       const sacsDecision = await accessRulesService.evaluateEntityAccess(
         user.userId || user.id,
         classId,

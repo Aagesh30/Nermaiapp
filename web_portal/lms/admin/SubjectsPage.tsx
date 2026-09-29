@@ -3,6 +3,8 @@ import { Plus, BookOpen, Layers, Search, Filter } from 'lucide-react';
 import { AdminTable, AdminModal, AdminInput, AdminSelect, AdminButton, DeleteConfirm } from '../components/admin-ui';
 import { CourseApi } from '../core/services';
 import api from '../core/api';
+import { db } from '../../firebaseConfig';
+import { collection, onSnapshot } from 'firebase/firestore';
 
 export const SubjectsPage = ({ permission = 'edit_direct', executeEditOrApproval }: { permission?: string; executeEditOrApproval?: any }) => {
   const [subjects, setSubjects] = useState<any[]>([]);
@@ -35,6 +37,30 @@ export const SubjectsPage = ({ permission = 'edit_direct', executeEditOrApproval
 
   useEffect(() => {
     fetchData();
+
+    let unsubSubjects: (() => void) | null = null;
+    let unsubCourses: (() => void) | null = null;
+    try {
+      unsubSubjects = onSnapshot(collection(db, 'subjects'), (snapshot) => {
+        if (!snapshot.empty) {
+          const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter((s: any) => !s.isDeleted);
+          setSubjects(list);
+        }
+      }, (err) => console.log('Subjects onSnapshot note:', err?.message));
+
+      unsubCourses = onSnapshot(collection(db, 'courses'), (snapshot) => {
+        if (!snapshot.empty) {
+          const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter((c: any) => !c.isDeleted);
+          setCourses(list);
+        }
+      }, (err) => console.log('Courses onSnapshot note:', err?.message));
+    } catch (err) {
+      console.warn('Real-time subjects listener note:', err);
+    }
+    return () => {
+      if (unsubSubjects) unsubSubjects();
+      if (unsubCourses) unsubCourses();
+    };
   }, []);
 
   const handleOpenModal = (subject: any = null) => {

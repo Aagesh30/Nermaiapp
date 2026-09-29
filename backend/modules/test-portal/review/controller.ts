@@ -78,6 +78,7 @@ export class ReviewController {
             const reviewDetails = (result.questionDetails || []).map((qd: any) => {
                 const q = questionsMap[qd.questionId] || {};
                 return {
+                    ...q,
                     questionId: qd.questionId,
                     questionText: q.questionText || q.question || "",
                     questionTa: q.questionTa || "",
@@ -162,6 +163,7 @@ export class ReviewController {
                 success: true,
                 message: "Question review retrieved successfully",
                 data: {
+                    ...qData,
                     questionId: qd.questionId,
                     questionText: qData.questionText || qData.question || "",
                     questionTa: qData.questionTa || "",
@@ -606,6 +608,23 @@ export class ReviewController {
         try {
             const { testId } = req.params;
 
+            // Fetch test document to evaluate schedulingType & cutoff rules
+            const testDoc = await db.collection("tests").doc(testId).get();
+            const testData = testDoc.exists ? testDoc.data()! : {};
+            const schedulingType = (testData.schedulingType === "fixed" || testData.schedulingMode === "fixed") ? "fixed" : "flexible_window";
+
+            let endTimeDate: Date | null = null;
+            if (testData.endTime) {
+                endTimeDate = testData.endTime.toDate ? testData.endTime.toDate() : new Date(testData.endTime);
+            } else if (testData.windowEndTime) {
+                endTimeDate = testData.windowEndTime.toDate ? testData.windowEndTime.toDate() : new Date(testData.windowEndTime);
+            }
+
+            const now = new Date();
+            const isFixed = schedulingType === "fixed";
+            const isFinalized = isFixed ? (endTimeDate ? now >= endTimeDate : true) : true;
+            const ranksLocked = isFixed && !isFinalized;
+
             const snapshot = await db.collection("leaderboards")
                 .where("testId", "==", testId)
                 .get();
@@ -627,40 +646,46 @@ export class ReviewController {
                 return s === "student" || s === "guest" || s === "guest user" || s === "n/a" || s.startsWith("guest:") || s.startsWith("guest ") || s.startsWith("student (") || s.startsWith("stu-");
             };
 
+            const isPhoneNum = (val: string) => {
+                if (!val) return false;
+                const clean = String(val).trim().replace(/[\s\-\+\(\)]/g, "");
+                return /^\d{7,15}$/.test(clean);
+            };
+
             const enrichedEntries = await Promise.all(entries.map(async entry => {
                 let sName = entry.studentName || "";
                 let rNum = entry.rollNumber || "";
 
-                if (isGenericName(sName) && entry.studentId) {
+                if ((isGenericName(sName) || !rNum || isPhoneNum(rNum)) && entry.studentId) {
                     try {
                         const sid = entry.studentId;
                         const leadDoc = await db.collection("leads").doc(sid).get();
                         if (leadDoc.exists) {
                             const lData = leadDoc.data()!;
                             if (lData.name && !isGenericName(lData.name)) sName = lData.name;
-                            if (lData.phone || lData.name) rNum = lData.name || lData.phone;
+                            rNum = "Guest";
                         }
                         if (isGenericName(sName)) {
                             const userDoc = await db.collection("users").doc(sid).get();
                             if (userDoc.exists) {
                                 const uData = userDoc.data()!;
                                 sName = uData.name || uData.fullName || uData.username || "";
-                                rNum = uData.username || sName;
+                                rNum = uData.rollNumber || uData.username || "Guest";
                             }
                         }
-                        if (isGenericName(sName)) {
+                        if (isGenericName(sName) || rNum === "Guest") {
                             const studentDoc = await db.collection("students").doc(sid).get();
                             if (studentDoc.exists) {
                                 const stData = studentDoc.data()!;
-                                sName = `${stData.firstName || ""} ${stData.lastName || ""}`.trim() || stData.fullName || stData.name || "";
-                                rNum = stData.rollNumber || stData.rollNo || sName;
+                                sName = `${stData.firstName || ""} ${stData.lastName || ""}`.trim() || stData.fullName || stData.name || sName;
+                                rNum = stData.rollNumber || stData.rollNo || rNum;
                             }
                         }
                     } catch (_) {}
                 }
 
                 if (isGenericName(sName)) sName = "Guest User";
-                if (isGenericName(rNum)) rNum = sName;
+                if (isGenericName(rNum) || isPhoneNum(rNum) || rNum === sName) rNum = "Guest";
 
                 return {
                     ...entry,
@@ -672,21 +697,25 @@ export class ReviewController {
             // Sort by obtainedMarks desc, then by updatedAt asc to compute live dynamic ranks
             enrichedEntries.sort((a: any, b: any) => {
                 if (b.obtainedMarks !== a.obtainedMarks) {
-                    return b.obtainedMarks - a.obtainedMarks;
+                    return (b.obtainedMarks || 0) - (a.obtainedMarks || 0);
                 }
                 const timeA = a.updatedAt ? (a.updatedAt.toDate ? a.updatedAt.toDate().getTime() : new Date(a.updatedAt).getTime()) : 0;
                 const timeB = b.updatedAt ? (b.updatedAt.toDate ? b.updatedAt.toDate().getTime() : new Date(b.updatedAt).getTime()) : 0;
                 return timeA - timeB;
             });
 
-            // Assign ranks sequentially in memory (O(1) database cost)
+            // Assign ranks sequentially in memory
             enrichedEntries.forEach((entry, index) => {
                 entry.rank = index + 1;
             });
 
             return res.status(200).json({
                 success: true,
-                message: "Leaderboard retrieved successfully",
+                message: ranksLocked ? `Official Ranks will release at ${endTimeDate?.toISOString() || "test end time"}` : "Leaderboard retrieved successfully",
+                schedulingType,
+                isFinalized,
+                ranksLocked,
+                ranksReleaseAt: endTimeDate ? endTimeDate.toISOString() : null,
                 data: enrichedEntries
             });
 
@@ -825,13 +854,15 @@ export class ReviewController {
 
     /**
      * GET ALL TEST RESULTS (Admin Results Log)
-     * GET /results/all-tests?keyword=&date=
-     * Returns results grouped by test, sorted by marks desc, with correct/wrong answer counts
+     * GET /results/all-tests?keyword=&date=&schedulingType=&batch=
+     * Returns results grouped by test with aggregate stats & scheduling metadata
      */
     static async getAllTestResults(req: Request, res: Response) {
         try {
-            const keyword = String(req.query.keyword || "").toLowerCase().trim();
+            const keyword = String(req.query.keyword || req.query.search || "").toLowerCase().trim();
             const dateFilter = String(req.query.date || "").trim(); // YYYY-MM-DD format
+            const schedulingTypeFilter = String(req.query.schedulingType || "all").toLowerCase().trim();
+            const batchFilter = String(req.query.batch || "").toLowerCase().trim();
 
             // 1. Fetch all tests
             const testsSnapshot = await db.collection("tests")
@@ -854,12 +885,20 @@ export class ReviewController {
 
             const allResults = resultsSnapshot.docs.map(doc => doc.data()) as any[];
 
-            // 4. Build per-test leaderboard entries directly using denormalized records (0 extra reads)
+            const now = new Date();
             const testResultsLog: any[] = [];
 
             for (const test of allTests) {
-                // Apply keyword filter on test title
-                if (keyword && !test.title?.toLowerCase().includes(keyword)) continue;
+                const schedType = (test.schedulingType === "fixed" || test.schedulingMode === "fixed") ? "fixed" : "flexible_window";
+
+                // Filter by schedulingType if specified
+                if (schedulingTypeFilter !== "all" && schedulingTypeFilter !== schedType) continue;
+
+                // Apply keyword filter on test title / subject
+                if (keyword && !test.title?.toLowerCase().includes(keyword) && !test.subject?.toLowerCase().includes(keyword)) continue;
+
+                // Apply batch filter if specified
+                if (batchFilter && test.batch && !String(test.batch).toLowerCase().includes(batchFilter)) continue;
 
                 // Apply date filter on test createdAt
                 if (dateFilter) {
@@ -872,10 +911,25 @@ export class ReviewController {
                     if (testDate !== dateFilter) continue;
                 }
 
+                // Check end time for strict fixed tests
+                let endTimeDate: Date | null = null;
+                if (test.endTime) {
+                    endTimeDate = test.endTime.toDate ? test.endTime.toDate() : new Date(test.endTime);
+                } else if (test.windowEndTime) {
+                    endTimeDate = test.windowEndTime.toDate ? test.windowEndTime.toDate() : new Date(test.windowEndTime);
+                }
+
+                const isFixed = schedType === "fixed";
+                const isFinalized = isFixed ? (endTimeDate ? now >= endTimeDate : true) : true;
+
                 const testResults = allResults.filter(r => r.testId === test.id);
 
                 // Sort by obtainedMarks descending
                 testResults.sort((a, b) => (b.obtainedMarks || 0) - (a.obtainedMarks || 0));
+
+                let totalScoreSum = 0;
+                let highestScore = 0;
+                let passCount = 0;
 
                 // Build ranked entries with correct/wrong counts
                 const entries = testResults.map((r, idx) => {
@@ -883,6 +937,11 @@ export class ReviewController {
                     const isGuestRoll = !r.rollNumber || r.rollNumber === "N/A" || r.rollNumber === "Guest" || String(r.rollNumber).startsWith("STU-");
                     const rollNumber = isGuestRoll ? rawName : r.rollNumber;
                     const studentName = rawName;
+                    const obtainedMarks = r.obtainedMarks ?? 0;
+
+                    totalScoreSum += obtainedMarks;
+                    if (obtainedMarks > highestScore) highestScore = obtainedMarks;
+                    if (r.status === "pass" || obtainedMarks > 0) passCount++;
 
                     // Compute correct/wrong from questionDetails
                     const details = r.questionDetails || [];
@@ -911,10 +970,10 @@ export class ReviewController {
                         rollNumber,
                         studentName,
                         attemptId: r.attemptId,
-                        obtainedMarks: r.obtainedMarks ?? 0,
-                        totalMarks: r.totalMarks ?? 0,
+                        obtainedMarks,
+                        totalMarks: r.totalMarks ?? (test.totalMarks || 100),
                         percentage: r.percentage ?? 0,
-                        status: ((r.obtainedMarks ?? 0) <= 0) ? "fail" : (r.status || "fail"),
+                        status: (obtainedMarks <= 0) ? "fail" : (r.status || "pass"),
                         correct,
                         wrong,
                         skipped,
@@ -930,15 +989,31 @@ export class ReviewController {
                     testCreatedAt = new Date(test.createdAt).toISOString();
                 }
 
+                const totalSubmissions = entries.length;
+                const avgScore = totalSubmissions > 0 ? Math.round((totalScoreSum / totalSubmissions) * 100) / 100 : 0;
+                const passPercentage = totalSubmissions > 0 ? Math.round((passCount / totalSubmissions) * 100) / 100 : 0;
+
                 testResultsLog.push({
                     testId: test.id,
                     testTitle: test.title || "Untitled Test",
+                    subject: test.subject || test.category || "General",
                     testType: test.testType || "mock",
                     category: test.testType || "mock",
+                    schedulingType: schedType,
+                    startTime: test.startTime || test.windowStartTime || null,
+                    endTime: test.endTime || test.windowEndTime || null,
+                    isFinalized,
+                    statusText: isFixed ? (isFinalized ? "Results Finalized" : "Ranks Pending (Locked until End Time)") : "Live Rolling Ranks",
+                    subjectSections: test.subjectSections || [],
                     totalQuestions: test.totalQuestions || (test.questionIds?.length ?? 0),
+                    totalMarks: test.totalMarks || 100,
                     marksPerQuestion: test.marksPerQuestion || 1,
                     negativeMarks: test.negativeMarks || 0.25,
-                    totalParticipants: entries.length,
+                    totalSubmissions,
+                    totalParticipants: totalSubmissions,
+                    avgScore,
+                    highestScore,
+                    passPercentage,
                     createdAt: testCreatedAt,
                     entries
                 });
@@ -954,6 +1029,294 @@ export class ReviewController {
             return res.status(500).json({
                 success: false,
                 message: error.message || "An error occurred while retrieving all test results"
+            });
+        }
+    }
+
+    /**
+     * GET /diagnostics/:testId
+     * Returns subject-wise analytical aggregates and per-question 30% diagnostic metrics
+     */
+    static async getTestSubjectDiagnostics(req: Request, res: Response) {
+        try {
+            const { testId } = req.params;
+            if (!testId) {
+                return res.status(400).json({ success: false, message: "testId is required" });
+            }
+
+            const testDoc = await db.collection("tests").doc(testId).get();
+            if (!testDoc.exists) {
+                return res.status(404).json({ success: false, message: "Test not found" });
+            }
+
+            const test = { id: testDoc.id, ...testDoc.data() } as any;
+
+            // Fetch all non-deleted results for this test
+            const resultsSnapshot = await db.collection("results")
+                .where("testId", "==", testId)
+                .where("isDeleted", "==", false)
+                .get();
+
+            const allResults = resultsSnapshot.docs.map(doc => doc.data()) as any[];
+            const totalSubmissions = allResults.length;
+
+            // Resolve questions
+            let questionsList: any[] = [];
+            if (Array.isArray(test.questions) && test.questions.length > 0) {
+                questionsList = test.questions;
+            } else if (Array.isArray(test.questionIds) && test.questionIds.length > 0) {
+                // Fetch full question docs
+                const qDocs = await Promise.all(
+                    test.questionIds.map(async (qId: string) => {
+                        try {
+                            const qd = await db.collection("questions").doc(qId).get();
+                            return qd.exists ? { id: qd.id, ...qd.data() } : { id: qId };
+                        } catch {
+                            return { id: qId };
+                        }
+                    })
+                );
+                questionsList = qDocs;
+            }
+
+            const totalQCount = Math.max(
+                Number(test.totalQuestions) || 0,
+                questionsList.length,
+                allResults[0]?.questionDetails?.length || 0
+            );
+
+            // Base subject sections
+            const configuredSections: any[] = Array.isArray(test.subjectSections) ? [...test.subjectSections] : [];
+
+            // Detect unassigned question ranges and assign to "Others"
+            const assignedQuestions = new Set<number>();
+            configuredSections.forEach(sec => {
+                const f = Math.max(1, Number(sec.fromQ) || 1);
+                const t = Math.min(totalQCount, Number(sec.toQ) || totalQCount);
+                for (let qNum = f; qNum <= t; qNum++) {
+                    assignedQuestions.add(qNum);
+                }
+            });
+
+            const unassignedRanges: Array<{ fromQ: number; toQ: number }> = [];
+            let currentRangeStart: number | null = null;
+
+            for (let q = 1; q <= totalQCount; q++) {
+                if (!assignedQuestions.has(q)) {
+                    if (currentRangeStart === null) currentRangeStart = q;
+                } else {
+                    if (currentRangeStart !== null) {
+                        unassignedRanges.push({ fromQ: currentRangeStart, toQ: q - 1 });
+                        currentRangeStart = null;
+                    }
+                }
+            }
+            if (currentRangeStart !== null) {
+                unassignedRanges.push({ fromQ: currentRangeStart, toQ: totalQCount });
+            }
+
+            // Create complete sections array including "Others"
+            const allSections: any[] = [...configuredSections];
+            unassignedRanges.forEach((range, idx) => {
+                allSections.push({
+                    subject: unassignedRanges.length > 1 ? `Others (${idx + 1})` : "Others",
+                    fromQ: range.fromQ,
+                    toQ: range.toQ,
+                    isOthers: true
+                });
+            });
+
+            // If no sections were configured at all, group all questions under "General"
+            if (allSections.length === 0 && totalQCount > 0) {
+                allSections.push({
+                    subject: test.subject || "General",
+                    fromQ: 1,
+                    toQ: totalQCount
+                });
+            }
+
+            // Calculate per-question diagnostics
+            const questionDiagnostics: any[] = [];
+
+            for (let qIdx = 0; qIdx < totalQCount; qIdx++) {
+                const qNum = qIdx + 1;
+                const qObj = questionsList[qIdx] || {};
+
+                let correctCount = 0;
+                let wrongCount = 0;
+                let skippedCount = 0;
+                const optionCounts: Record<string, number> = { A: 0, B: 0, C: 0, D: 0 };
+                const wrongOptionCounts: Record<string, number> = { A: 0, B: 0, C: 0, D: 0 };
+
+                let resolvedCorrectAns = qObj.correctAnswer || "";
+
+                allResults.forEach(r => {
+                    const qd = r.questionDetails?.[qIdx];
+                    if (!resolvedCorrectAns && qd?.correctAnswer) {
+                        resolvedCorrectAns = qd.correctAnswer;
+                    }
+
+                    if (!qd || qd.selectedAnswer === null || qd.selectedAnswer === undefined || qd.selectedAnswer === "") {
+                        skippedCount++;
+                    } else {
+                        const sel = String(qd.selectedAnswer).trim().toUpperCase();
+                        if (optionCounts[sel] !== undefined) optionCounts[sel]++;
+                        else optionCounts[sel] = 1;
+
+                        if (qd.isCorrect) {
+                            correctCount++;
+                        } else {
+                            wrongCount++;
+                            if (wrongOptionCounts[sel] !== undefined) wrongOptionCounts[sel]++;
+                            else wrongOptionCounts[sel] = 1;
+                        }
+                    }
+                });
+
+                const attemptedCount = correctCount + wrongCount;
+                const skipRate = totalSubmissions > 0 ? Math.round((skippedCount / totalSubmissions) * 100) : 0;
+                const errorRate = totalSubmissions > 0 ? Math.round((wrongCount / totalSubmissions) * 100) : 0;
+                const attemptErrorRate = attemptedCount > 0 ? Math.round((wrongCount / attemptedCount) * 100) : 0;
+                const accuracyRate = totalSubmissions > 0 ? Math.round((correctCount / totalSubmissions) * 100) : 0;
+
+                // 30% rule indicators
+                const isRepeatedSkip = skipRate >= 30;
+                const isRepeatedWrong = errorRate >= 30 || attemptErrorRate >= 30;
+
+                // Find top trap option
+                let trapOption = "";
+                let trapCount = 0;
+                Object.entries(wrongOptionCounts).forEach(([opt, cnt]) => {
+                    if (cnt > trapCount) {
+                        trapCount = cnt;
+                        trapOption = opt;
+                    }
+                });
+
+                // Difficulty tier
+                let difficulty = "Moderate";
+                if (accuracyRate >= 70) difficulty = "Easy";
+                else if (accuracyRate < 35) difficulty = "Hard";
+
+                // Resolve matching subject section
+                const parentSection = allSections.find(s => qNum >= Number(s.fromQ) && qNum <= Number(s.toQ));
+                const subjectName = parentSection ? parentSection.subject : "Others";
+
+                questionDiagnostics.push({
+                    qNum,
+                    questionId: qObj.id || `q_${qNum}`,
+                    subject: subjectName,
+                    questionText: qObj.question || qObj.questionText || qObj.title || `Question ${qNum}`,
+                    options: qObj.options || ["Option A", "Option B", "Option C", "Option D"],
+                    correctAnswer: resolvedCorrectAns,
+                    explanation: qObj.explanation || "",
+                    totalSubmissions,
+                    attemptedCount,
+                    correctCount,
+                    wrongCount,
+                    skippedCount,
+                    accuracyRate,
+                    skipRate,
+                    errorRate,
+                    attemptErrorRate,
+                    isRepeatedSkip,
+                    isRepeatedWrong,
+                    trapOption: trapCount > 0 ? trapOption : "",
+                    trapCount,
+                    trapPercentage: wrongCount > 0 ? Math.round((trapCount / wrongCount) * 100) : 0,
+                    optionCounts,
+                    wrongOptionCounts,
+                    difficulty
+                });
+            }
+
+            // Aggregate subject section analytics for the Pie Chart and diagnostics
+            let overallTotalScore = 0;
+            let overallMaxPossible = 0;
+
+            const subjectAnalytics = allSections.map((sec, secIdx) => {
+                const f = Math.max(1, Number(sec.fromQ) || 1);
+                const t = Math.min(totalQCount, Number(sec.toQ) || totalQCount);
+                const secQCount = Math.max(1, t - f + 1);
+
+                const secQuestions = questionDiagnostics.filter(q => q.qNum >= f && q.qNum <= t);
+
+                // Calculate average score percentage across student submissions for this subject
+                let secCorrectTotal = 0;
+                let secAttemptedTotal = 0;
+                let secSkippedTotal = 0;
+                let secWrongTotal = 0;
+
+                secQuestions.forEach(q => {
+                    secCorrectTotal += q.correctCount;
+                    secAttemptedTotal += q.attemptedCount;
+                    secSkippedTotal += q.skippedCount;
+                    secWrongTotal += q.wrongCount;
+                });
+
+                const totalPossibleAnswers = totalSubmissions * secQCount;
+                const avgAccuracy = totalPossibleAnswers > 0 ? Math.round((secCorrectTotal / totalPossibleAnswers) * 100) : 0;
+                const attemptRate = totalPossibleAnswers > 0 ? Math.round((secAttemptedTotal / totalPossibleAnswers) * 100) : 0;
+
+                overallTotalScore += secCorrectTotal;
+                overallMaxPossible += totalPossibleAnswers;
+
+                // Collect repeated wrong questions (>= 30% error), sorted descending
+                const repeatedWrong = secQuestions
+                    .filter(q => q.isRepeatedWrong)
+                    .sort((a, b) => b.errorRate - a.errorRate);
+
+                // Collect repeatedly skipped questions (>= 30% skip), sorted descending
+                const repeatedSkipped = secQuestions
+                    .filter(q => q.isRepeatedSkip)
+                    .sort((a, b) => b.skipRate - a.skipRate);
+
+                // Dynamic visual performance color
+                let perfColor = "#2e7d32"; // Green
+                if (avgAccuracy < 40) perfColor = "#c62828"; // Red
+                else if (avgAccuracy < 70) perfColor = "#f57f17"; // Amber
+
+                return {
+                    id: `sec_${secIdx}`,
+                    subject: sec.subject,
+                    fromQ: f,
+                    toQ: t,
+                    questionCount: secQCount,
+                    isOthers: !!sec.isOthers,
+                    avgAccuracy,
+                    attemptRate,
+                    correctCount: secCorrectTotal,
+                    wrongCount: secWrongTotal,
+                    skippedCount: secSkippedTotal,
+                    perfColor,
+                    repeatedWrongCount: repeatedWrong.length,
+                    repeatedSkippedCount: repeatedSkipped.length,
+                    repeatedWrongQuestions: repeatedWrong,
+                    repeatedSkippedQuestions: repeatedSkipped,
+                    allQuestions: secQuestions
+                };
+            });
+
+            const overallClassAvg = overallMaxPossible > 0 ? Math.round((overallTotalScore / overallMaxPossible) * 100) : 0;
+
+            return res.status(200).json({
+                success: true,
+                data: {
+                    testId: test.id,
+                    testTitle: test.title || "Untitled Test",
+                    testType: test.testType || "mock",
+                    totalQuestions: totalQCount,
+                    totalSubmissions,
+                    overallClassAvg,
+                    subjectAnalytics,
+                    questionDiagnostics
+                }
+            });
+
+        } catch (error: any) {
+            return res.status(500).json({
+                success: false,
+                message: error.message || "An error occurred while computing test subject diagnostics"
             });
         }
     }

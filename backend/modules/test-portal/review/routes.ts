@@ -100,4 +100,12 @@ router.get(
     ReviewController.getAllTestResults
 );
 
+/**
+ * Subject Section Analytics & 30% Question Diagnostics
+ */
+router.get(
+    "/diagnostics/:testId",
+    ReviewController.getTestSubjectDiagnostics
+);
+
 export default router;

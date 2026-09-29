@@ -532,7 +532,7 @@ function buildPlayerPage({ videoId, classId, playerJwt, videoTitle, studentName,
         if (player && player.getPlayerState && player.getPlayerState() === YT.PlayerState.PLAYING) {
           if (controls) controls.classList.add('hidden');
         }
-      }, 3500);
+      }, 7500);
     }
 
     if (wrapper) {

@@ -75,6 +75,24 @@ async function resolveStudentContext(userId: string): Promise<StudentContext> {
     }
   }
 
+  // Fallback: If studentData not found via users doc, try direct students collection lookup by userId or doc ID
+  if (!studentData) {
+    const directSDoc = await db.collection('students').doc(userId).get();
+    if (directSDoc.exists) {
+      studentData = directSDoc.data();
+      result.studentId = directSDoc.id;
+      if (!result.role) result.role = 'student';
+    } else {
+      const byUserIdSnap = await db.collection('students').where('userId', '==', userId).limit(1).get();
+      if (!byUserIdSnap.empty) {
+        const sDoc = byUserIdSnap.docs[0];
+        studentData = sDoc.data();
+        result.studentId = sDoc.id;
+        if (!result.role) result.role = 'student';
+      }
+    }
+  }
+
   if (studentData) {
     result.studentType = studentData.type || 'offline';
     result.batchModes = studentData.batchModes || {};
@@ -221,7 +239,8 @@ function isVisibleToStudent(
  * (visibility = true), but access.allowed may be false → UI shows "Request Access".
  * For online/recorded students, normal batch + accessLevel gating applies.
  */
-export async function getMyLmsClasses(userId: string, tenantId: string): Promise<any[]> {
+export async function getMyLmsClasses(userId: string, rawTenantId: string): Promise<any[]> {
+  const tenantId = !rawTenantId || rawTenantId === 'nermaiiasacademy-519c8' || rawTenantId === 'default' ? 'default_tenant' : rawTenantId;
   const ctx = await resolveStudentContext(userId);
 
   // ── Pre-fetch courses for cross-course enrollment gate ───────────────────────
@@ -273,16 +292,31 @@ export async function getMyLmsClasses(userId: string, tenantId: string): Promise
     try {
       const lockStatus = await sacsService.getLockStatus(userId, cls.id, 'class', tenantId);
 
-      let isAllowed = lockStatus.decision.allowed;
-
-      // ── Recorded-content mode gate (Bug fix: online+offline can play) ─────────
-      // Only students explicitly enrolled with the 'recorded' student type are
-      // auto-granted playback. 'online', 'offline', and combined 'online+offline'
-      // students must submit an access request — identical to pure offline behaviour.
-      // A SACS temporary grant always overrides this restriction.
+      // ── Recorded-content mode gate ────────────────────────────────────────────
+      // This is the PRIMARY access gate for recorded content. SACS (Layer 3) is
+      // used for hard administrative controls (hidden, scheduled unlock) and
+      // temporary grants, but the student-type check here is authoritative.
+      //
+      // FIX (Bug 2): The old code only ever set isAllowed=false (deny path).
+      // Recorded students were never explicitly granted, so they depended on SACS
+      // returning true — which it couldn't due to the batch capability bug (Bug 1).
+      // Now we explicitly branch:
+      //   - hasRecordedStudentType=true  → allow, UNLESS a hard SACS block applies
+      //   - hasRecordedStudentType=false → deny, UNLESS a temporary grant exists
       const hasRecordedStudentType = ctx.studentTypes.includes('recorded');
-      if (!hasRecordedStudentType && !lockStatus.decision.hasTemporaryGrant) {
-        isAllowed = false;
+      let isAllowed: boolean;
+
+      if (hasRecordedStudentType) {
+        // Recorded students are auto-granted playback.
+        // Only hard SACS locks (hidden by admin / scheduled unlock) can override this.
+        const isHardBlocked =
+          lockStatus.decision.lockReason === 'hidden_by_admin' ||
+          lockStatus.decision.lockReason === 'scheduled_unlock';
+        isAllowed = !isHardBlocked;
+      } else {
+        // Non-recorded students (offline / online / combinations without 'recorded'):
+        // deny by default. A temporary admin grant is the ONLY exception.
+        isAllowed = !!lockStatus.decision.hasTemporaryGrant;
       }
 
       access = {

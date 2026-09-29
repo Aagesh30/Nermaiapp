@@ -1,0 +1,80 @@
+﻿
+LineNumber Line                                                                                                        
+---------- ----                                                                                                        
+      2095       setActiveTab("lms");                                                                                  
+      3591       if (activeTab === "erp") {                                                                            
+      3593       } else if (activeTab === "lms") {                                                                     
+      3595       } else if (activeTab === "crm") {                                                                     
+      3597       } else if (activeTab === "test") {                                                                    
+      3634           setActiveTab(main);                                                                               
+      3847     if (user && user.role === "student" && activeTab === "erp" && (erpSub === "students" || erpSub === "b...
+      5792     setActiveTab("dashboard");                                                                              
+      6244     if (activeTab === "dashboard") {                                                                        
+      6248     } else if (activeTab === "lms") {                                                                       
+      6253     } else if (activeTab === "test") {                                                                      
+      6255     } else if (activeTab === "erp" && isAdmin) {                                                            
+      6273           if (activeTab === "test") loadTests();                                                            
+      6274           if (activeTab === "lms") loadCourses();                                                           
+      6353     const isTestTab = activeTab === "test";                                                                 
+      6435       const isTestTab = activeTab === "test";                                                               
+      7282     if (isAdmin && activeTab === "erp" && erpSub === "announcements") {                                     
+      9784         setActiveTab("erp");                                                                                
+      9786         setActiveTab("dashboard");                                                                          
+     19335         {activeTab === "dashboard" && (                                                                     
+     19407                         onPress={() => { setActiveTab("crm"); changeCrmSub("admissions"); }}                
+     19424                         onPress={() => { setActiveTab("crm"); changeCrmSub("inquiries"); }}                 
+     19441                         onPress={() => { setActiveTab("erp"); changeErpSub("profile-requests"); setProfil...
+     19464                         onPress={() => { setActiveTab("erp"); changeErpSub("qr-permissions"); }}            
+     19481                         onPress={() => { setActiveTab("erp"); changeErpSub("edit-permissions"); }}          
+     19498                         onPress={() => { setActiveTab("erp"); changeErpSub("fees"); }}                      
+     19515                         onPress={() => { setActiveTab("lms"); changeLmsSub("live-classes"); }}              
+     19532                         onPress={() => { setActiveTab("lms"); changeLmsSub("resources"); }}                 
+     19549                         onPress={() => { setActiveTab("lms"); changeLmsSub("lms-access"); }}                
+     19585                           <TouchableOpacity onPress={() => { changeErpSub("my-profile"); setActiveTab("er...
+     19602                           <TouchableOpacity onPress={() => { changeErpSub("my-profile"); setActiveTab("er...
+     19643                             onPress={() => { changeErpSub("my-profile"); setActiveTab("erp"); }}            
+     19689                             onPress={() => { changeErpSub("fees"); setActiveTab("erp"); }}                  
+     19830                               onPress={() => { setActiveTab("lms"); setLmsSub("daily-content"); }}          
+     19980                               onPress={() => { changeErpSub("profile-requests"); setProfileRequestsTab("r...
+     20022         {activeTab === "test" && (                                                                          
+     22930         {activeTab === "erp" && (                                                                           
+     25080                                   onPress={() => { setActiveTab("lms"); setLmsSub("lms-courses"); }}        
+     28168                                           backgroundColor: activeTab === "idcard" ? "#c62828" : "#f5f5f5",  
+     28170                                           borderColor: activeTab === "idcard" ? "#c62828" : "#e0e0e0"       
+     28173                                         <Text style={{ color: activeTab === "idcard" ? "#fff" : "#616161"...
+     28183                                           backgroundColor: activeTab === "hallticket" ? "#c62828" : "#f5f...
+     28185                                           borderColor: activeTab === "hallticket" ? "#c62828" : "#e0e0e0"   
+     28188                                         <Text style={{ color: activeTab === "hallticket" ? "#fff" : "#616...
+     28193                                   {activeTab === "idcard" && hasId ? (                                      
+     28204                                   {activeTab === "hallticket" && hasTicket ? (                              
+     30588         {activeTab === "lms" && (                                                                           
+     32955         {activeTab === "crm" && (                                                                           
+     33882           onPress={() => handleTabPress("dashboard", () => { setActiveTab("dashboard"); loadTodayQuiz(); })}
+     33883           style={[styles.bottomTab, activeTab === "dashboard" && styles.bottomTabSelected, activeTab === ...
+     33887               name={activeTab === "dashboard" ? "home" : "home-outline"}                                    
+     33889               color={activeTab === "dashboard" ? "#c62828" : darkMode ? "#555" : "#757575"}                 
+     33897           <Text style={[styles.bottomTabLabel, activeTab === "dashboard" && styles.bottomTabLabelActive, ...
+     33902             onPress={() => handleTabPress("test", () => setActiveTab("test"))}                              
+     33903             style={[styles.bottomTab, activeTab === "test" && styles.bottomTabSelected, activeTab === "te...
+     33907                 name={activeTab === "test" ? "document-text" : "document-text-outline"}                     
+     33909                 color={activeTab === "test" ? "#c62828" : darkMode ? "#555" : "#757575"}                    
+     33917             <Text style={[styles.bottomTabLabel, activeTab === "test" && styles.bottomTabLabelActive, !(a...
+     33924               setActiveTab("erp");                                                                          
+     33931             style={[styles.bottomTab, activeTab === "erp" && styles.bottomTabSelected, activeTab === "erp...
+     33935                 name={activeTab === "erp" ? "grid" : "grid-outline"}                                        
+     33937                 color={activeTab === "erp" ? "#c62828" : darkMode ? "#555" : "#757575"}                     
+     33945             <Text style={[styles.bottomTabLabel, activeTab === "erp" && styles.bottomTabLabelActive, !(ac...
+     33952               setActiveTab("lms");                                                                          
+     33957             style={[styles.bottomTab, activeTab === "lms" && styles.bottomTabSelected, activeTab === "lms...
+     33961                 name={activeTab === "lms" ? "book" : "book-outline"}                                        
+     33963                 color={activeTab === "lms" ? "#c62828" : darkMode ? "#555" : "#757575"}                     
+     33971             <Text style={[styles.bottomTabLabel, activeTab === "lms" && styles.bottomTabLabelActive, !(ac...
+     33977             onPress={() => handleTabPress("crm", () => setActiveTab("crm"))}                                
+     33978             style={[styles.bottomTab, activeTab === "crm" && styles.bottomTabSelected, activeTab === "crm...
+     33982                 name={activeTab === "crm" ? "people" : "people-outline"}                                    
+     33984                 color={activeTab === "crm" ? "#c62828" : darkMode ? "#555" : "#757575"}                     
+     33992             <Text style={[styles.bottomTabLabel, activeTab === "crm" && styles.bottomTabLabelActive, !(ac...
+     35035         if (activeTab === "erp" && (erpSub === "pay-fees" || erpSub === "fees")) return null;               
+     35133                     setActiveTab("erp");                                                                    
+
+

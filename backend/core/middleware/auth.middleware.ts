@@ -191,6 +191,34 @@ export const requireAuthOrQueryToken = async (
   return requireAuth(req, res, next);
 };
 
+// In-memory TTL cache for role_permissions (5-minute TTL) to avoid redundant Firestore reads on every API call
+const rolePermissionsCache = new Map<string, { exists: boolean; data: any; expiry: number }>();
+const ROLE_PERMS_CACHE_TTL_MS = 5 * 60 * 1000;
+
+export const invalidateRolePermissionsCache = (role?: string) => {
+  if (role) {
+    rolePermissionsCache.delete(role);
+  } else {
+    rolePermissionsCache.clear();
+  }
+};
+
+async function getCachedRolePermissions(role: string): Promise<{ exists: boolean; data: any }> {
+  const now = Date.now();
+  const cached = rolePermissionsCache.get(role);
+  if (cached && now < cached.expiry) {
+    return cached;
+  }
+  const doc = await db.collection('role_permissions').doc(role).get();
+  const entry = {
+    exists: doc.exists,
+    data: doc.exists ? (doc.data() || {}) : {},
+    expiry: now + ROLE_PERMS_CACHE_TTL_MS
+  };
+  rolePermissionsCache.set(role, entry);
+  return entry;
+}
+
 export const requireRole = (allowedRoles: string[]) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {
@@ -203,8 +231,8 @@ export const requireRole = (allowedRoles: string[]) => {
     }
 
     try {
-      const doc = await db.collection('role_permissions').doc(req.user.role).get();
-      if (doc.exists) {
+      const { exists } = await getCachedRolePermissions(req.user.role);
+      if (exists) {
         return next();
       }
     } catch (err) {
@@ -250,12 +278,11 @@ export const requirePermission = (featureKey: string, action: 'C' | 'R' | 'U' | 
         }
       }
 
-      const doc = await db.collection('role_permissions').doc(req.user.role).get();
-      if (!doc.exists) {
+      const { exists, data } = await getCachedRolePermissions(req.user.role);
+      if (!exists) {
         return next(new AppError(`Forbidden: Permissions not configured for role ${req.user.role}`, 403));
       }
 
-      const data = doc.data() || {};
       const perm = data[featureKey];
 
       // Handle permission levels

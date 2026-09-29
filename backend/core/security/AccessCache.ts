@@ -16,6 +16,9 @@ export interface AccessContext {
   // Batch membership — derived exclusively from programMemberships[]
   batchIds: string[];
 
+  // Student enrollment types (e.g. ['recorded', 'offline'])
+  studentTypes: string[];
+
   // Program names the student is enrolled in (e.g. "Gold", "LDC", "PSC")
   programs: string[];
 
@@ -43,16 +46,25 @@ function lockKey(userId: string) {
   return `${LOCK_PREFIX}:${ACCESS_CACHE_PREFIX}:${userId}`;
 }
 
+function normalizeTenantId(t?: string): string {
+  if (!t || t === 'nermaiiasacademy-519c8' || t === 'default' || t === 'default_tenant') {
+    return 'default_tenant';
+  }
+  return t;
+}
+
 /**
  * Build a fresh AccessContext from Firestore. Called on cache miss.
  */
-async function buildAccessContext(userId: string, tenantId: string): Promise<AccessContext> {
+async function buildAccessContext(userId: string, rawTenantId: string): Promise<AccessContext> {
+  const tenantId = normalizeTenantId(rawTenantId);
   let studentName = 'Student';
   let studentEmail = 'student@nermai.com';
   let role = 'student';
   let version = 0;
   const batchIds: string[] = [];
   const programs: string[] = [];
+  const rawStudentTypes: string[] = [];
 
   // FIX (Bug 2): collection is 'students', not 'student_profiles'
   let studentDoc = await db.collection('students').doc(userId).get();
@@ -69,6 +81,16 @@ async function buildAccessContext(userId: string, tenantId: string): Promise<Acc
     if (profile.email) studentEmail = profile.email;
     if (profile.role) role = profile.role;
     if (profile.membershipVersion) version = profile.membershipVersion;
+
+    if (profile.type) rawStudentTypes.push(profile.type);
+    if (profile.studentType) rawStudentTypes.push(profile.studentType);
+    if (Array.isArray(profile.studentTypes)) rawStudentTypes.push(...profile.studentTypes);
+    if (profile.batchModes && typeof profile.batchModes === 'object') {
+      Object.values(profile.batchModes).forEach((modes: any) => {
+        if (Array.isArray(modes)) rawStudentTypes.push(...modes);
+        else if (typeof modes === 'string') rawStudentTypes.push(modes);
+      });
+    }
 
     if (Array.isArray(profile.programMemberships)) {
       for (const m of profile.programMemberships) {
@@ -87,6 +109,8 @@ async function buildAccessContext(userId: string, tenantId: string): Promise<Acc
       }
     }
   }
+
+  const studentTypes = Array.from(new Set(rawStudentTypes)).filter(Boolean);
 
   // Resolve batch UUIDs for any string batch names (e.g. batch name '43' -> batch UUID) AND vice versa
   const currentBatchIdentifiers = [...batchIds];
@@ -127,6 +151,7 @@ async function buildAccessContext(userId: string, tenantId: string): Promise<Acc
     tenantId,
     role,
     batchIds,
+    studentTypes,
     programs: [...new Set(programs)], // deduplicate
     accessProfiles,
     studentName,

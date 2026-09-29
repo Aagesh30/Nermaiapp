@@ -1,0 +1,439 @@
+[
+  {
+    "filePath": "web_portal\\App.tsx",
+    "hasOnSnapshot": true,
+    "snapshotCollections": [
+      "offlineTestPermissionRequests",
+      "notifications",
+      "announcements",
+      "profile_requests",
+      "resources",
+      "dailyContent",
+      "recorded_classes",
+      "dailyQuizzes",
+      "admissions",
+      "leads",
+      "campaigns",
+      "inquiries",
+      "tests",
+      "doc:students",
+      "doc:offlineTestPermissionRequests"
+    ],
+    "apiCalls": [
+      "/zoom-accounts",
+      "/test-portal/review/leaderboard/${testId}",
+      "/test-portal/examination/reports/detail/${testId}",
+      "/test-portal/review/diagnostics/${testId}",
+      "/test-portal/examination/reports/${testId}",
+      "/developer/page-locks",
+      "/developer/drive-config",
+      "/test-portal/evaluation/test/${testId}",
+      "/announcement?role=${role}&batch=${batch}",
+      "/erp/student/profile/me",
+      "/notification?role=${role}&batch=${batch}&studentId=${studentId}",
+      "/erp/batch",
+      "/erp/profile-request",
+      "/erp/device-alerts",
+      "/erp/profile-request/student/${studentId}",
+      "/developer/role-permissions",
+      "/admin-approvals/pending",
+      "/developer/collection/notifications",
+      "/developer/collection/one_time_permissions",
+      "/erp/staff",
+      "/erp/fees/payments",
+      "/test-portal/test-creation",
+      "/test-portal/review/history/${lookupId}",
+      "/test-portal/question-bank",
+      "/crm/admission${params}",
+      "/crm/leads",
+      "/crm/alumni-feedback",
+      "/lms/daily-quiz/today?studentId=${user.userId}",
+      "/lms/daily-quiz/${quizId}?studentId=${user.userId}",
+      "/lms/daily-quiz/all?studentId=${user.userId}",
+      "/crm/courses",
+      "/students/me/lms-resources",
+      "/resources",
+      "/live-sessions",
+      "/students/me/lms-classes",
+      "/classes",
+      "/lms/daily-content",
+      "/courses",
+      "/subjects",
+      "/topics",
+      "/staff/live-session-candidates",
+      "/access-rules/admin/requests?status=pending",
+      "/access-rules/admin/requests",
+      "/access-requests/admin/permanent-grants",
+      "/access-rules/matrix/${targetId}",
+      "/access-rules/conflict-check",
+      "/access-rules/audit/${targetId}",
+      "/access-rules/batches/${targetId}/capabilities",
+      "/access-rules/templates",
+      "/crm/guest-posters",
+      "/crm/custom-form/active",
+      "/crm/inquiry${params}",
+      "/test-portal/test-creation/feedback",
+      "/test-portal/review/attempt/${attemptId}",
+      "/test-portal/examination/live-count/${testId}",
+      "/test-portal/evaluation/result/${attemptId}",
+      "/developer/collections",
+      "/developer/collection/${col}?${params.toString()}",
+      "/developer/collection/${devActiveCollection}/${docId}",
+      "/resources/${resId}/access",
+      "/test-portal/review/results/all-tests?${params.toString()}",
+      "/live-sessions/${sessionId}/attendance",
+      "/live-sessions/${sessionId}/join",
+      "/classes/${cls.id || cls._id}/access",
+      "${baseUrl}${path}",
+      "${baseUrl}/auth/debug",
+      "${baseUrl}/crm/leads/guest-login",
+      "${baseUrl}/crm/leads/${data.leadId}/notifications",
+      "${baseUrl}/announcement",
+      "${baseUrl}/crm/campaigns?userType=free",
+      "${baseUrl}/api/auth/refresh"
+    ],
+    "lineCount": 38569
+  },
+  {
+    "filePath": "web_portal\\lms\\admin\\AccessControlPage.tsx",
+    "hasOnSnapshot": true,
+    "snapshotCollections": [
+      "access_requests",
+      "access_history"
+    ],
+    "apiCalls": [],
+    "lineCount": 1131
+  },
+  {
+    "filePath": "web_portal\\lms\\admin\\CoursesPage.tsx",
+    "hasOnSnapshot": true,
+    "snapshotCollections": [
+      "courses"
+    ],
+    "apiCalls": [],
+    "lineCount": 281
+  },
+  {
+    "filePath": "web_portal\\lms\\admin\\CustomizeApplicationPage.tsx",
+    "hasOnSnapshot": false,
+    "snapshotCollections": [],
+    "apiCalls": [
+      "/crm/custom-form/mock_test_app"
+    ],
+    "lineCount": 1112
+  },
+  {
+    "filePath": "web_portal\\lms\\admin\\CustomLeadsPage.tsx",
+    "hasOnSnapshot": false,
+    "snapshotCollections": [],
+    "apiCalls": [
+      "/crm/custom-leads"
+    ],
+    "lineCount": 996
+  },
+  {
+    "filePath": "web_portal\\lms\\admin\\KnowledgeStudio.tsx",
+    "hasOnSnapshot": false,
+    "snapshotCollections": [],
+    "apiCalls": [
+      "/kb/articles",
+      "/kb/collections",
+      "/kb/settings",
+      "/assistant/health"
+    ],
+    "lineCount": 460
+  },
+  {
+    "filePath": "web_portal\\lms\\admin\\MergedLeadsAdmissionsPage.tsx",
+    "hasOnSnapshot": false,
+    "snapshotCollections": [],
+    "apiCalls": [
+      "/crm/admission",
+      "/crm/leads"
+    ],
+    "lineCount": 2280
+  },
+  {
+    "filePath": "web_portal\\lms\\admin\\QRCodePermissionsPage.tsx",
+    "hasOnSnapshot": true,
+    "snapshotCollections": [
+      "students",
+      "payment_acknowledgements"
+    ],
+    "apiCalls": [],
+    "lineCount": 744
+  },
+  {
+    "filePath": "web_portal\\lms\\admin\\SubjectsPage.tsx",
+    "hasOnSnapshot": true,
+    "snapshotCollections": [
+      "subjects",
+      "courses"
+    ],
+    "apiCalls": [
+      "/erp/staff"
+    ],
+    "lineCount": 312
+  },
+  {
+    "filePath": "web_portal\\lms\\admin\\SubtopicsPage.tsx",
+    "hasOnSnapshot": true,
+    "snapshotCollections": [
+      "subtopics",
+      "topics",
+      "subjects",
+      "courses"
+    ],
+    "apiCalls": [
+      "/erp/staff"
+    ],
+    "lineCount": 561
+  },
+  {
+    "filePath": "web_portal\\lms\\admin\\SyllabusTrackerPage.tsx",
+    "hasOnSnapshot": true,
+    "snapshotCollections": [
+      "topics",
+      "subtopics"
+    ],
+    "apiCalls": [],
+    "lineCount": 767
+  },
+  {
+    "filePath": "web_portal\\lms\\admin\\TeachersPage.tsx",
+    "hasOnSnapshot": false,
+    "snapshotCollections": [],
+    "apiCalls": [
+      "/erp/staff"
+    ],
+    "lineCount": 324
+  },
+  {
+    "filePath": "web_portal\\lms\\admin\\TopicsPage.tsx",
+    "hasOnSnapshot": true,
+    "snapshotCollections": [
+      "topics",
+      "subjects",
+      "courses"
+    ],
+    "apiCalls": [],
+    "lineCount": 393
+  },
+  {
+    "filePath": "web_portal\\lms\\components\\DynamicApplicationModal.tsx",
+    "hasOnSnapshot": false,
+    "snapshotCollections": [],
+    "apiCalls": [
+      "/crm/custom-form/active"
+    ],
+    "lineCount": 512
+  },
+  {
+    "filePath": "web_portal\\lms\\core\\services.ts",
+    "hasOnSnapshot": false,
+    "snapshotCollections": [],
+    "apiCalls": [
+      "/courses",
+      "/courses/${id}",
+      "/subjects",
+      "/courses/${courseId}/subjects",
+      "/topics",
+      "/subjects/${subjectId}/topics",
+      "/subtopics",
+      "/topics/${topicId}/subtopics",
+      "/subtopics/${subtopicId}/classes",
+      "/classes",
+      "/topics/${topicId}/classes",
+      "/classes/${id}/access",
+      "/live-sessions/token/${data.token}",
+      "/courses/${courseId}/staff",
+      "/live-sessions/${sessionId}",
+      "/live-sessions/class/${classId}/join",
+      "/live-sessions/history/ended",
+      "/live-sessions",
+      "/access-requests/my-requests",
+      "/resources/course/${courseId}/hierarchy",
+      "/resources/${id}",
+      "/resources/${id}/access",
+      "/resources/favorites",
+      "/students",
+      "/students/${id}",
+      "/students/${id}/courses",
+      "/students/qr-settings",
+      "/students/me/qr-status",
+      "/students/me/payment-acknowledgements",
+      "/erp/batch",
+      "/batches/${id}",
+      "/staff/live-session-candidates",
+      "/staff",
+      "/staff/${id}/classes",
+      "/staff/${id}/live-sessions",
+      "/dashboard/student/overview",
+      "/dashboard/admin/metrics",
+      "/dashboard/teacher/metrics",
+      "/live-attendance/${sessionId}",
+      "/live-comments/${liveSessionId}",
+      "/watch-history",
+      "/access-rules/evaluate/${entityType}/${entityId}?studentId=${studentId}",
+      "/access-rules/matrix/${courseId}",
+      "/access-requests/admin/temporary-grants",
+      "/access-requests/admin/analytics",
+      "/access-rules/templates",
+      "/access-rules/batches/${batchId}/capabilities",
+      "/access-requests/admin/permanent-grants",
+      "/assistant/health",
+      "/knowledge-base/articles/${id}",
+      "/knowledge-base/collections",
+      "/knowledge-base/settings",
+      "/live-attendance/staff/${liveSessionId}/active",
+      "/live-attendance/staff/${sessionId}/summary",
+      "/live-attendance/staff/${sessionId}/logs",
+      "/live-attendance/active/${liveSessionId}",
+      "/new-attendance/check/${sessionId}",
+      "/new-attendance/my-attendance",
+      "/new-attendance/session/${sessionId}",
+      "/lms-attendance/my",
+      "/lms-attendance/class/${classId}",
+      "/lms-attendance/admin/class/${classId}/summary"
+    ],
+    "lineCount": 367
+  },
+  {
+    "filePath": "web_portal\\lms\\core\\shared\\src\\hooks\\useLiveSessionsState.ts",
+    "hasOnSnapshot": false,
+    "snapshotCollections": [],
+    "apiCalls": [
+      "/live-sessions"
+    ],
+    "lineCount": 39
+  },
+  {
+    "filePath": "web_portal\\lms\\core\\shared\\src\\realtime\\LiveSessionRealtimeService.ts",
+    "hasOnSnapshot": true,
+    "snapshotCollections": [
+      "doc:live_sessions"
+    ],
+    "apiCalls": [],
+    "lineCount": 210
+  },
+  {
+    "filePath": "web_portal\\lms\\developer\\ZoomAccountsPage.tsx",
+    "hasOnSnapshot": false,
+    "snapshotCollections": [],
+    "apiCalls": [
+      "/zoom-accounts"
+    ],
+    "lineCount": 480
+  },
+  {
+    "filePath": "web_portal\\lms\\features\\streaming\\providers\\zoom\\ZoomDeepLinkPlayer.tsx",
+    "hasOnSnapshot": false,
+    "snapshotCollections": [],
+    "apiCalls": [
+      "/live-sessions/${sessionId}/join"
+    ],
+    "lineCount": 193
+  },
+  {
+    "filePath": "web_portal\\lms\\staff\\StaffClassesPage.tsx",
+    "hasOnSnapshot": false,
+    "snapshotCollections": [],
+    "apiCalls": [
+      "/staff/me/live-sessions"
+    ],
+    "lineCount": 165
+  },
+  {
+    "filePath": "web_portal\\lms\\staff\\StaffCoursesPage.tsx",
+    "hasOnSnapshot": false,
+    "snapshotCollections": [],
+    "apiCalls": [
+      "/staff/me/courses"
+    ],
+    "lineCount": 91
+  },
+  {
+    "filePath": "web_portal\\lms\\staff\\TeacherDashboard.tsx",
+    "hasOnSnapshot": true,
+    "snapshotCollections": [
+      "topics",
+      "subtopics"
+    ],
+    "apiCalls": [
+      "/test-portal/review/results/all-tests",
+      "/erp/staff/profile/me"
+    ],
+    "lineCount": 619
+  },
+  {
+    "filePath": "web_portal\\lms\\student\\components\\AttendanceStatusBadge.tsx",
+    "hasOnSnapshot": false,
+    "snapshotCollections": [],
+    "apiCalls": [
+      "/api/v1/attendance/status/${classId}"
+    ],
+    "lineCount": 85
+  },
+  {
+    "filePath": "web_portal\\lms\\student\\StudentLiveClassesPage.tsx",
+    "hasOnSnapshot": true,
+    "snapshotCollections": [
+      "doc:live_class_index"
+    ],
+    "apiCalls": [],
+    "lineCount": 1281
+  },
+  {
+    "filePath": "web_portal\\lms\\student\\StudentPayFeesPage.tsx",
+    "hasOnSnapshot": true,
+    "snapshotCollections": [
+      "payment_acknowledgements",
+      "doc:students",
+      "doc:system_settings"
+    ],
+    "apiCalls": [],
+    "lineCount": 1232
+  },
+  {
+    "filePath": "App.tsx",
+    "hasOnSnapshot": false,
+    "snapshotCollections": [],
+    "apiCalls": [
+      "/test-portal/evaluation/test/${testId}",
+      "/developer/page-locks",
+      "/announcement?role=${role}&batch=${batch}",
+      "/notification?role=${role}&batch=${batch}&studentId=${studentId}",
+      "/erp/batch",
+      "/erp/profile-request",
+      "/erp/profile-request/student/${studentId}",
+      "/developer/role-permissions",
+      "/developer/collection/notifications",
+      "/erp/staff",
+      "/erp/fees/payments",
+      "/test-portal/test-creation",
+      "/test-portal/review/history/${user.userId}",
+      "/test-portal/question-bank",
+      "/crm/admission${params}",
+      "/crm/leads",
+      "/crm/alumni-feedback",
+      "/lms/daily-quiz/today?studentId=${user.userId}",
+      "/lms/daily-quiz/${quizId}?studentId=${user.userId}",
+      "/lms/daily-quiz/all?studentId=${user.userId}",
+      "/crm/courses",
+      "/crm/leads/${leadId}/notifications",
+      "/test-portal/review/attempt/${attemptId}",
+      "/test-portal/examination/live-count/${testId}",
+      "/test-portal/review/leaderboard/${testId}",
+      "/developer/collections",
+      "/developer/collection/${col}?${params.toString()}",
+      "/developer/collection/${devActiveCollection}/${docId}",
+      "/test-portal/review/results/all-tests?${params.toString()}",
+      "${baseUrl}${path}",
+      "${baseUrl}/crm/leads/guest-login",
+      "${baseUrl}/crm/leads/${data.leadId}/notifications",
+      "${baseUrl}/announcement",
+      "${baseUrl}/crm/campaigns?userType=free"
+    ],
+    "lineCount": 11221
+  }
+]

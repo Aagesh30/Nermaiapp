@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { UserPlus, Users, Search, Mail, Phone, Shield } from 'lucide-react';
 import { AdminTable, AdminModal, AdminInput, AdminButton, DeleteConfirm } from '../components/admin-ui';
 import api from '../core/api';
+import { db } from '../../firebaseConfig';
+import { collection, onSnapshot } from 'firebase/firestore';
 
 export const TeachersPage = ({ permission = 'edit_direct', executeEditOrApproval }: { permission?: string; executeEditOrApproval?: any }) => {
   const [teachers, setTeachers] = useState<any[]>([]);
@@ -26,7 +28,7 @@ export const TeachersPage = ({ permission = 'edit_direct', executeEditOrApproval
     try {
       const res = await api.get('/erp/staff');
       const allStaff = res.data?.data || res.data || [];
-      const teacherStaff = allStaff.filter((s: any) => s.role === 'teacher');
+      const teacherStaff = allStaff.filter((s: any) => s.role === 'teacher' && !s.isDeleted);
       setTeachers(teacherStaff);
     } catch (error) {
       console.error('Failed to fetch teachers', error);
@@ -37,6 +39,26 @@ export const TeachersPage = ({ permission = 'edit_direct', executeEditOrApproval
 
   useEffect(() => {
     fetchTeachers();
+
+    let unsub: (() => void) | null = null;
+    try {
+      unsub = onSnapshot(collection(db, 'staff'), (snapshot) => {
+        if (!snapshot.empty) {
+          const list = snapshot.docs
+            .map(doc => ({ id: doc.id, ...doc.data() }))
+            .filter((s: any) => s.role === 'teacher' && !s.isDeleted);
+          if (list.length > 0) {
+            setTeachers(list);
+          }
+        }
+      }, (err) => console.log('Staff onSnapshot note:', err?.message));
+    } catch (e) {
+      console.warn('Real-time staff listener note:', e);
+    }
+
+    return () => {
+      if (unsub) unsub();
+    };
   }, []);
 
   const handleOpenModal = (teacher: any = null) => {

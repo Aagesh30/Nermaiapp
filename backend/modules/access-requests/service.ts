@@ -292,6 +292,15 @@ export class AccessRequestService {
       }
     });
 
+    // Bridge grant to entity_permissions so SACS and real-time listeners update instantly
+    const entitiesToUpdate = (partialSelection && partialSelection.length > 0)
+      ? partialSelection
+      : [request.contentId];
+
+    for (const eId of entitiesToUpdate) {
+      await this.addTemporaryGrantToEntity(eId, request.studentId, adminId, requestId, expiresAt);
+    }
+
     return { success: true, message: 'Request approved successfully.' };
   }
 
@@ -554,6 +563,10 @@ export class AccessRequestService {
       updatedBy: adminId
     });
 
+    if (grant.entityId && grant.studentId) {
+      await this.addTemporaryGrantToEntity(grant.entityId, grant.studentId, adminId, (grant as any).sourceRequestId || grantId, newExpiry);
+    }
+
     return { success: true, newExpiry };
   }
 
@@ -564,11 +577,16 @@ export class AccessRequestService {
     // Try content_access first, then fall back to finding the grant via the request.
     let grantRef: FirebaseFirestore.DocumentReference | null = null;
     let sourceRequestId: string | null = null;
+    let studentId: string | null = null;
+    let entityId: string | null = null;
 
     const grantDoc = await db.collection('content_access').doc(grantId).get();
     if (grantDoc.exists) {
       grantRef = grantDoc.ref;
-      sourceRequestId = (grantDoc.data() as any)?.sourceRequestId || null;
+      const gData = grantDoc.data() as any;
+      sourceRequestId = gData?.sourceRequestId || null;
+      studentId = gData?.studentId || null;
+      entityId = gData?.entityId || gData?.contentId || null;
     } else {
       // Maybe grantId is actually an access_request ID — find the linked grant
       const linkedGrantSnap = await db.collection('content_access')
@@ -578,17 +596,26 @@ export class AccessRequestService {
         .get();
       if (!linkedGrantSnap.empty) {
         grantRef = linkedGrantSnap.docs[0].ref;
+        const gData = linkedGrantSnap.docs[0].data() as any;
         sourceRequestId = grantId; // the passed ID is the request ID
+        studentId = gData?.studentId || null;
+        entityId = gData?.entityId || gData?.contentId || null;
       } else {
         // Last resort: check if the access_request itself exists and mark it REVOKED
         const reqDoc = await db.collection('access_requests').doc(grantId).get();
         if (reqDoc.exists) {
+          const rData = reqDoc.data() as any;
+          studentId = rData?.studentId || null;
+          entityId = rData?.entityId || rData?.contentId || null;
           await reqDoc.ref.update({
             status: 'REVOKED',
             revocationReason: reason,
             updatedAt: new Date().toISOString(),
             updatedBy: adminId
           });
+          if (studentId && entityId) {
+            await this.removeTemporaryGrantFromEntity(entityId, studentId, adminId);
+          }
           return { success: true };
         }
         throw new AppError('Grant not found', 404);
@@ -607,10 +634,83 @@ export class AccessRequestService {
 
     // Also update the source access_request so History tab doesn't re-show it on refresh
     if (sourceRequestId) {
-      await db.collection('access_requests').doc(sourceRequestId).update(revokePayload).catch(() => {});
+      const sourceReqDoc = await db.collection('access_requests').doc(sourceRequestId).get();
+      if (sourceReqDoc.exists) {
+        const srData = sourceReqDoc.data() as any;
+        if (!studentId) studentId = srData?.studentId || null;
+        if (!entityId) entityId = srData?.entityId || srData?.contentId || null;
+        await sourceReqDoc.ref.update(revokePayload).catch(() => {});
+      }
+    }
+
+    // Clean up temporaryGrants in entity_permissions document so SACS denies access
+    if (studentId && entityId) {
+      await this.removeTemporaryGrantFromEntity(entityId, studentId, adminId);
     }
 
     return { success: true };
+  }
+
+  private async addTemporaryGrantToEntity(
+    entityId: string,
+    studentId: string,
+    adminId: string,
+    requestId: string,
+    expiresAt: string | null
+  ) {
+    try {
+      const permRef = db.collection('entity_permissions').doc(entityId);
+      const permDoc = await permRef.get();
+      const existingGrants: any[] = permDoc.exists ? (permDoc.data()?.temporaryGrants || []) : [];
+      const filteredGrants = existingGrants.filter((g: any) => g.studentId !== studentId);
+      const newGrant = {
+        studentId,
+        grantedAt: new Date().toISOString(),
+        expiresAt: expiresAt || undefined,
+        grantedBy: adminId,
+        requestId
+      };
+      await permRef.set(
+        { temporaryGrants: [...filteredGrants, newGrant], updatedAt: new Date().toISOString() },
+        { merge: true }
+      );
+
+      try {
+        const { redisClient } = await import('../../infrastructure/redis');
+        await redisClient.del(`sacs:perm:${entityId}`);
+        const { invalidateAccessCache } = await import('../../core/security/AccessCache');
+        await invalidateAccessCache(studentId);
+      } catch (_) {}
+    } catch (err) {
+      console.warn(`[addTemporaryGrantToEntity] Failed for entity ${entityId}, student ${studentId}:`, err);
+    }
+  }
+
+  private async removeTemporaryGrantFromEntity(entityId: string, studentId: string, adminId: string) {
+    try {
+      const permRef = db.collection('entity_permissions').doc(entityId);
+      const permDoc = await permRef.get();
+      if (permDoc.exists) {
+        const data = permDoc.data() || {};
+        const existingGrants: any[] = data.temporaryGrants || [];
+        const filteredGrants = existingGrants.filter((g: any) => g.studentId !== studentId);
+        await permRef.set({
+          ...data,
+          temporaryGrants: filteredGrants,
+          updatedAt: new Date().toISOString(),
+          updatedBy: adminId
+        }, { merge: true });
+      }
+
+      try {
+        const { redisClient } = await import('../../infrastructure/redis');
+        await redisClient.del(`sacs:perm:${entityId}`);
+        const { invalidateAccessCache } = await import('../../core/security/AccessCache');
+        await invalidateAccessCache(studentId);
+      } catch (_) {}
+    } catch (err) {
+      console.warn(`[revokeGrant] Failed to clean temporary grant for entity ${entityId}, student ${studentId}:`, err);
+    }
   }
 
   // ─── Admin: Analytics ────────────────────────────────────────────────────────
@@ -770,6 +870,10 @@ export class AccessRequestService {
       updatedAt: new Date().toISOString(),
       updatedBy: adminId
     });
+
+    if (grant.entityId && grant.studentId) {
+      await this.addTemporaryGrantToEntity(grant.entityId, grant.studentId, adminId, grant.sourceRequestId || grantId, expiresAt);
+    }
 
     return { success: true, newType, expiresAt };
   }

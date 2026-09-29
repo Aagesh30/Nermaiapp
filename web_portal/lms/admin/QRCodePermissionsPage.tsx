@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StudentApi, BatchApi } from '../core/services';
 import { AdminTable, AdminInput, AdminSelect, AdminButton, AdminModal } from '../components/admin-ui';
 import { Upload, Trash2, ShieldCheck, QrCode, Search, Users, Clock, CheckCircle2, XCircle, AlertCircle, Eye, Check, X, Download } from 'lucide-react';
+import { db } from '../../firebaseConfig';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 
 // Real-time ticking countdown cell for the table
 const TimerCountdownCell = ({ enabledAt, duration, unit }: { enabledAt: string; duration: number; unit: string }) => {
@@ -85,10 +87,12 @@ export const QRCodePermissionsPage = () => {
     }
   };
 
-  const fetchAcknowledgements = async () => {
+  const ackFilterRef = useRef(ackFilter);
+
+  const fetchAcknowledgements = async (filter = ackFilter) => {
     setAckLoading(true);
     try {
-      const res = await StudentApi.listPaymentAcknowledgements(ackFilter);
+      const res = await StudentApi.listPaymentAcknowledgements(filter);
       setAcknowledgements(res.data?.data || []);
     } catch (err) {
       console.error('Failed to fetch acknowledgements', err);
@@ -99,19 +103,37 @@ export const QRCodePermissionsPage = () => {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(() => {
+
+    // Targeted real-time updates only for pending QR requests (avoids reading the entire student database)
+    const pendingStudentsQuery = query(collection(db, 'students'), where('qrCodeRequested', '==', true));
+    const unsubStudents = onSnapshot(pendingStudentsQuery, () => {
       fetchData();
-    }, 12000);
-    return () => clearInterval(interval);
+    }, (err) => {
+      console.warn('[QRCodePermissionsPage] Realtime pending students sync error:', err);
+    });
+
+    return () => {
+      unsubStudents();
+    };
   }, []);
 
   useEffect(() => {
-    fetchAcknowledgements();
-    const interval = setInterval(() => {
-      fetchAcknowledgements();
-    }, 15000);
-    return () => clearInterval(interval);
+    ackFilterRef.current = ackFilter;
+    fetchAcknowledgements(ackFilter);
   }, [ackFilter]);
+
+  useEffect(() => {
+    // Zero-cost live updates for payment acknowledgements (mounted once)
+    const unsubAcks = onSnapshot(collection(db, 'payment_acknowledgements'), () => {
+      fetchAcknowledgements(ackFilterRef.current);
+    }, (err) => {
+      console.warn('[QRCodePermissionsPage] Realtime acks sync error:', err);
+    });
+
+    return () => {
+      unsubAcks();
+    };
+  }, []);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

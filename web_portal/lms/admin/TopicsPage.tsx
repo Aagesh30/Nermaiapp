@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, BookOpen, Layers, FileText, Search, Filter, ArrowRight } from 'lucide-react';
 import { AdminTable, AdminModal, AdminInput, AdminSelect, AdminButton, DeleteConfirm } from '../components/admin-ui';
 import { CourseApi } from '../core/services';
+import { db } from '../../firebaseConfig';
+import { collection, onSnapshot } from 'firebase/firestore';
 
 export const TopicsPage = ({ permission = 'edit_direct', executeEditOrApproval }: { permission?: string; executeEditOrApproval?: any }) => {
   const [topics, setTopics] = useState<any[]>([]);
@@ -35,7 +37,42 @@ export const TopicsPage = ({ permission = 'edit_direct', executeEditOrApproval }
     finally { setIsLoading(false); }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { 
+    fetchData(); 
+
+    let unsubTopics: (() => void) | null = null;
+    let unsubSubjects: (() => void) | null = null;
+    let unsubCourses: (() => void) | null = null;
+    try {
+      unsubTopics = onSnapshot(collection(db, 'topics'), (snapshot) => {
+        if (!snapshot.empty) {
+          const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter((t: any) => !t.isDeleted);
+          setTopics(list);
+        }
+      }, (err) => console.log('Topics onSnapshot note:', err?.message));
+
+      unsubSubjects = onSnapshot(collection(db, 'subjects'), (snapshot) => {
+        if (!snapshot.empty) {
+          const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter((s: any) => !s.isDeleted);
+          setSubjects(list);
+        }
+      }, (err) => console.log('Subjects onSnapshot note:', err?.message));
+
+      unsubCourses = onSnapshot(collection(db, 'courses'), (snapshot) => {
+        if (!snapshot.empty) {
+          const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter((c: any) => !c.isDeleted);
+          setCourses(list);
+        }
+      }, (err) => console.log('Courses onSnapshot note:', err?.message));
+    } catch (err) {
+      console.warn('Real-time topics listener note:', err);
+    }
+    return () => {
+      if (unsubTopics) unsubTopics();
+      if (unsubSubjects) unsubSubjects();
+      if (unsubCourses) unsubCourses();
+    };
+  }, []);
 
   // When Course filter changes, reset Subject filter if the subject doesn't belong to the course
   const handleCourseFilterChange = (courseId: string) => {

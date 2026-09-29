@@ -15,6 +15,8 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as XLSX from 'xlsx';
 import api from '../core/api';
+import { db } from '../../firebaseConfig';
+import { collection, onSnapshot } from 'firebase/firestore';
 
 export type NatureOfEnquiry = 'visit' | 'phone' | 'whatsapp' | 'Telegram' | 'W35' | 'FB' | 'Instagram' | 'portal';
 
@@ -147,6 +149,31 @@ export default function MergedLeadsAdmissionsPage() {
 
   useEffect(() => {
     fetchData();
+
+    let unsubAdm: (() => void) | null = null;
+    let unsubLeads: (() => void) | null = null;
+    try {
+      unsubAdm = onSnapshot(collection(db, 'admissions'), (snap) => {
+        if (!snap.empty) {
+          const list = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter((a: any) => !a.isDeleted);
+          setAdmissions(list);
+        }
+      }, (err) => console.log('Admissions onSnapshot note:', err?.message));
+
+      unsubLeads = onSnapshot(collection(db, 'leads'), (snap) => {
+        if (!snap.empty) {
+          const list = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter((l: any) => !l.isDeleted);
+          setLeads(list);
+        }
+      }, (err) => console.log('Leads onSnapshot note:', err?.message));
+    } catch (e) {
+      console.warn('Real-time merged enquiries listener note:', e);
+    }
+
+    return () => {
+      if (unsubAdm) unsubAdm();
+      if (unsubLeads) unsubLeads();
+    };
   }, []);
 
   const fetchData = async () => {

@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Book, CheckSquare, Square, Award, Users, Search, ChevronDown, ChevronRight, CheckCircle2, AlertCircle, Percent, GraduationCap } from 'lucide-react';
 import { CourseApi } from '../core/services';
 import api from '../core/api';
+import { db } from '../../firebaseConfig';
+import { collection, onSnapshot } from 'firebase/firestore';
 
 interface TeacherDashboardProps {
   user: any;
@@ -62,6 +64,34 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, darkMo
 
   useEffect(() => {
     fetchData();
+  }, []);
+
+  // Real-time listener for topics & subtopics to keep in sync with Super Admin Portal
+  useEffect(() => {
+    let unsubTopics: (() => void) | null = null;
+    let unsubSubtopics: (() => void) | null = null;
+    try {
+      unsubTopics = onSnapshot(collection(db, 'topics'), (snapshot) => {
+        if (!snapshot.empty) {
+          const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setTopics(list);
+        }
+      }, (err) => console.log('Topics onSnapshot note:', err?.message));
+
+      unsubSubtopics = onSnapshot(collection(db, 'subtopics'), (snapshot) => {
+        if (!snapshot.empty) {
+          const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setSubtopics(list);
+        }
+      }, (err) => console.log('Subtopics onSnapshot note:', err?.message));
+    } catch (err) {
+      console.warn('Real-time syllabus listener note:', err);
+    }
+
+    return () => {
+      if (unsubTopics) unsubTopics();
+      if (unsubSubtopics) unsubSubtopics();
+    };
   }, []);
 
   // userId from JWT (users collection doc ID)
@@ -127,22 +157,36 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, darkMo
 
   // Toggle subtopic completion state
   const handleToggleSubtopic = async (subtopic: any, topic: any) => {
-    const newCompleted = !subtopic.completed;
+    const isCurrentlyDone = subtopic.completed === true || (subtopic.coverageStatus || '').toLowerCase() === 'done';
+    const newCompleted = !isCurrentlyDone;
+    const dbStatus = newCompleted ? 'Done' : 'Pending';
+    const pct = newCompleted ? 100 : 0;
     setIsUpdating(subtopic.id);
     try {
-      // Update subtopic status
-      await CourseApi.updateSubtopic(subtopic.id, { completed: newCompleted });
+      // Update subtopic status with all matching fields
+      await CourseApi.updateSubtopic(subtopic.id, {
+        completed: newCompleted,
+        coverageStatus: dbStatus,
+        percentCovered: pct,
+        progress: pct
+      });
 
       // Get updated subtopics list to calculate topic progress percentage
       const topicSubtopics = subtopics.map((st) => 
-        st.id === subtopic.id ? { ...st, completed: newCompleted } : st
+        st.id === subtopic.id ? { ...st, completed: newCompleted, coverageStatus: dbStatus, percentCovered: pct, progress: pct } : st
       ).filter((st) => st.topicId === topic.id);
 
-      const completedCount = topicSubtopics.filter((st) => st.completed).length;
-      const progressPercent = Math.round((completedCount / topicSubtopics.length) * 100);
+      const completedCount = topicSubtopics.filter((st) => st.completed || (st.coverageStatus || '').toLowerCase() === 'done').length;
+      const progressPercent = topicSubtopics.length > 0 ? Math.round((completedCount / topicSubtopics.length) * 100) : pct;
+      const topicDbStatus = progressPercent === 100 ? 'Done' : progressPercent === 0 ? 'Pending' : 'Partial';
 
-      // Update topic progress
-      await CourseApi.updateTopic(topic.id, { progress: progressPercent });
+      // Update topic progress with all matching fields
+      await CourseApi.updateTopic(topic.id, {
+        progress: progressPercent,
+        percentCovered: progressPercent,
+        coverageStatus: topicDbStatus,
+        completed: progressPercent === 100
+      });
 
       // Refresh data to keep UI synced
       await fetchData();
@@ -158,7 +202,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, darkMo
   const handleDirectTopicProgress = async (topicId: string, progress: number) => {
     setIsUpdating(topicId);
     try {
-      await CourseApi.updateTopic(topicId, { progress });
+      const dbStatus = progress === 100 ? 'Done' : progress === 0 ? 'Pending' : 'Partial';
+      await CourseApi.updateTopic(topicId, {
+        progress,
+        percentCovered: progress,
+        coverageStatus: dbStatus,
+        completed: progress === 100
+      });
       await fetchData();
     } catch (err) {
       console.error('Failed to update topic progress:', err);
@@ -326,7 +376,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, darkMo
                     {activeTopics.map((topic) => {
                       const topicSubtopics = subtopics.filter((st) => st.topicId === topic.id);
                       const isExpanded = !!expandedTopics[topic.id];
-                      const progress = topic.progress || 0;
+                      
+                      let progress = 0;
+                      if (topicSubtopics.length > 0) {
+                        const doneCount = topicSubtopics.filter((st) => st.completed === true || (st.coverageStatus || '').toLowerCase() === 'done').length;
+                        progress = Math.round((doneCount / topicSubtopics.length) * 100);
+                      } else {
+                        progress = topic.percentCovered !== undefined ? Number(topic.percentCovered) : (topic.progress !== undefined ? Number(topic.progress) : ((topic.coverageStatus || '').toLowerCase() === 'done' ? 100 : 0));
+                      }
 
                       return (
                         <div
@@ -377,35 +434,38 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, darkMo
                                     Subtopic Completions (Topic progress calculated automatically):
                                   </p>
                                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                    {topicSubtopics.sort((a, b) => (a.order || 0) - (b.order || 0)).map((st) => (
-                                      <div
-                                        key={st.id}
-                                        onClick={() => isUpdating !== st.id && handleToggleSubtopic(st, topic)}
-                                        className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                                          st.completed
-                                            ? 'bg-green-500/5 border-green-500/20 text-green-700 dark:text-green-400'
-                                            : 'bg-white dark:bg-[#1a1a2e] border-gray-200 dark:border-gray-850 hover:border-gray-300'
-                                        } ${isUpdating === st.id ? 'opacity-50 pointer-events-none' : ''}`}
-                                      >
-                                        <div className="shrink-0">
-                                          {st.completed ? (
-                                            <CheckSquare className="w-5 h-5 text-green-600 dark:text-green-400" />
-                                          ) : (
-                                            <Square className="w-5 h-5 text-gray-400" />
-                                          )}
-                                        </div>
-                                        <div className="min-w-0">
-                                          <div className="text-xs font-semibold truncate">
-                                            {st.name}
+                                    {topicSubtopics.sort((a, b) => (a.order || 0) - (b.order || 0)).map((st) => {
+                                      const isDone = st.completed === true || (st.coverageStatus || '').toLowerCase() === 'done';
+                                      return (
+                                        <div
+                                          key={st.id}
+                                          onClick={() => isUpdating !== st.id && handleToggleSubtopic(st, topic)}
+                                          className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                                            isDone
+                                              ? 'bg-green-500/5 border-green-500/20 text-green-700 dark:text-green-400'
+                                              : 'bg-white dark:bg-[#1a1a2e] border-gray-200 dark:border-gray-850 hover:border-gray-300'
+                                          } ${isUpdating === st.id ? 'opacity-50 pointer-events-none' : ''}`}
+                                        >
+                                          <div className="shrink-0">
+                                            {isDone ? (
+                                              <CheckSquare className="w-5 h-5 text-green-600 dark:text-green-400" />
+                                            ) : (
+                                              <Square className="w-5 h-5 text-gray-400" />
+                                            )}
                                           </div>
-                                          {st.description && (
-                                            <div className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
-                                              {st.description}
+                                          <div className="min-w-0">
+                                            <div className="text-xs font-semibold truncate">
+                                              {st.name}
                                             </div>
-                                          )}
+                                            {st.description && (
+                                              <div className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
+                                                {st.description}
+                                              </div>
+                                            )}
+                                          </div>
                                         </div>
-                                      </div>
-                                    ))}
+                                      );
+                                    })}
                                   </div>
                                 </div>
                               ) : (

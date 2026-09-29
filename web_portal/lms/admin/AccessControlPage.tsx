@@ -7,6 +7,8 @@ import {
 import { AdminButton as Button } from '../components/admin-ui';
 import { Badge } from '../components/ui/Badge';
 import { AccessRulesApi } from '../core/services';
+import { db } from '../../firebaseConfig';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 
 /* ─── Sub-tabs ─────────────────────────────────────────────────────────────── */
 const SUB_TABS = [
@@ -591,7 +593,25 @@ const RequestsTab: React.FC = () => {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    let unsub: (() => void) | null = null;
+    try {
+      unsub = onSnapshot(collection(db, 'access_requests'), (snapshot) => {
+        if (!snapshot.empty) {
+          const list = snapshot.docs
+            .map(doc => ({ id: doc.id, ...doc.data() }))
+            .filter((r: any) => !r.isDeleted && r.status === 'PENDING');
+          if (list.length > 0) {
+            setRequests(list);
+          }
+        }
+      }, (err) => console.log('Access requests onSnapshot note:', err?.message));
+    } catch (e) {
+      console.warn('Real-time access requests listener error:', e);
+    }
+    return () => { if (unsub) unsub(); };
+  }, []);
 
   const batches = [...new Set(requests.map(r => r.batchName || r.batchId).filter(Boolean))];
   const filtered = applyFilters(requests, search, filterBatch, filterRequestType, filterTime);
@@ -858,7 +878,23 @@ const HistoryTab: React.FC = () => {
       .catch(console.error)
       .finally(() => setLoading(false));
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    let unsub: (() => void) | null = null;
+    try {
+      unsub = onSnapshot(collection(db, 'access_history'), (snapshot) => {
+        if (!snapshot.empty) {
+          const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter((h: any) => !h.isDeleted);
+          if (list.length > 0) {
+            setHistory(list);
+          }
+        }
+      }, (err) => console.log('Access history onSnapshot note:', err?.message));
+    } catch (e) {
+      console.warn('Real-time access history listener error:', e);
+    }
+    return () => { if (unsub) unsub(); };
+  }, []);
 
   const batches = [...new Set(history.map(r => r.batchName || r.batchId).filter(Boolean))];
 
