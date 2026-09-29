@@ -4135,6 +4135,13 @@ function MainApp() {
     }
   }, [isAdmin]);
 
+  // Load pending approvals on mount for super_admin
+  useEffect(() => {
+    if (isAdmin && (user?.role === "super_admin" || user?.role === "developer")) {
+      loadPendingApprovals();
+    }
+  }, [isAdmin, user?.role]);
+
   // Sync existing pending requests into admin_alerts if not already dismissed by admin
   useEffect(() => {
     if (!isAdmin) return;
@@ -4194,7 +4201,36 @@ function MainApp() {
         }
       }
     });
-  }, [isAdmin, offlineTestRequests, profileRequests]);
+
+    // 3. Sync pending admin proposals (e.g. dharun CTO requesting student/batch edits)
+    if (user?.role === "super_admin" || user?.role === "developer") {
+      (pendingApprovals || []).forEach((prop: any) => {
+        const propId = prop._id || prop.id;
+        if (prop && propId && (prop.status === "pending" || !prop.status)) {
+          const alertId = `admin_approval_${propId}`;
+          if (!dismissedSet.has(alertId) && !adminAlerts.some(a => a.id === alertId)) {
+            const formattedFeature = String(prop.feature || prop.featureKey || "Module")
+              .replace(/_/g, " ")
+              .replace(/\b\w/g, c => c.toUpperCase());
+            const actionLabel = prop.actionType ? String(prop.actionType).toUpperCase() : (prop.type === "delete_approval" ? "DELETE" : prop.type === "create_approval" ? "CREATE" : "EDIT");
+            setDoc(doc(db, "admin_alerts", alertId), {
+              id: alertId,
+              type: "admin_approval",
+              title: `Admin Proposal: ${actionLabel} in ${formattedFeature}`,
+              subtitle: `Requested by ${prop.requestedBy || "Admin"}`,
+              message: `Proposed ${actionLabel.toLowerCase()} on ${getTargetName(prop) || prop.docId || "record"}. Requires Super Admin review.`,
+              sourceDocId: propId,
+              sourceCollection: "admin_approvals",
+              targetTab: "erp",
+              targetSub: "approvals",
+              createdAt: prop.createdAt || new Date().toISOString(),
+              isDismissed: false
+            }, { merge: true }).catch(() => {});
+          }
+        }
+      });
+    }
+  }, [isAdmin, offlineTestRequests, profileRequests, pendingApprovals, user?.role]);
 
   const handleViewAdminAlert = async (alertItem: any) => {
     if (!alertItem) return;
@@ -4222,12 +4258,24 @@ function MainApp() {
       if (alertItem.targetTab === "erp") {
         if (alertItem.targetSub) changeErpSub(alertItem.targetSub);
         if (alertItem.targetSub === "profile-requests") setProfileRequestsTab("requests");
+        if (alertItem.targetSub === "approvals") loadPendingApprovals();
       } else if (alertItem.targetTab === "crm") {
         if (alertItem.targetSub) changeCrmSub(alertItem.targetSub);
       } else if (alertItem.targetTab === "lms") {
         if (alertItem.targetSub) changeLmsSub(alertItem.targetSub);
       }
     }
+
+    // 5. Log review action in permanent audit trail
+    logSystemActivity({
+      action: "ALERT_REVIEWED",
+      category: "admin",
+      operatorName: user?.name || "Super Admin",
+      operatorRole: user?.role,
+      details: `Super Admin reviewed alert: "${alertItem.title} - ${alertItem.subtitle || ''}"`,
+      targetModule: alertItem.targetTab || "dashboard",
+      status: "completed"
+    });
   };
 
   const handleDismissAdminAlert = async (alertId: string) => {
@@ -4236,6 +4284,18 @@ function MainApp() {
       saved.push(alertId);
       localStorage.setItem("nermai_dismissed_admin_alerts", JSON.stringify(Array.from(new Set(saved))));
     } catch {}
+
+    const alertItem = adminAlerts.find(a => a.id === alertId);
+    if (alertItem) {
+      logSystemActivity({
+        action: "ALERT_DISMISSED",
+        category: "admin",
+        operatorName: user?.name || "Super Admin",
+        operatorRole: user?.role,
+        details: `Dismissed alert: "${alertItem.title}"`,
+        targetModule: alertItem.targetTab || "dashboard"
+      });
+    }
 
     try {
       await deleteDoc(doc(db, "admin_alerts", alertId));
@@ -8253,6 +8313,21 @@ function MainApp() {
           };
           featureReloaders[featureKey]?.();
 
+          // Clean up alert from admin_alerts if present
+          const alertId = `admin_approval_${item._id || item.id}`;
+          deleteDoc(doc(db, "admin_alerts", alertId)).catch(() => {});
+          setAdminAlerts(prev => prev.filter(a => a.id !== alertId));
+
+          logSystemActivity({
+            action: `ADMIN_PROPOSAL_APPROVED`,
+            category: "admin",
+            operatorName: user?.name || "Super Admin",
+            operatorRole: user?.role,
+            details: `Approved ${actionTitle} proposal in '${featureKey}' requested by ${item.requestedBy || "Admin"} (Doc: ${getTargetName(item) || item.docId || ""})`,
+            targetModule: featureKey,
+            status: "approved"
+          });
+
           Alert.alert("✅ Approved & Applied", `Request approved. ${actionTitle} action applied successfully via the proper business logic.`);
           loadPendingApprovals();
           if (callback) callback();
@@ -8284,6 +8359,22 @@ function MainApp() {
               reason: "Rejected by Super Admin"
             });
           }
+
+          // Clean up alert from admin_alerts if present
+          const alertId = `admin_approval_${approvalId}`;
+          deleteDoc(doc(db, "admin_alerts", alertId)).catch(() => {});
+          setAdminAlerts(prev => prev.filter(a => a.id !== alertId));
+
+          logSystemActivity({
+            action: `ADMIN_PROPOSAL_REJECTED`,
+            category: "admin",
+            operatorName: user?.name || "Super Admin",
+            operatorRole: user?.role,
+            details: `Rejected approval proposal in '${item.feature || item.featureKey}' requested by ${item.requestedBy || "Admin"}`,
+            targetModule: item.feature || item.featureKey,
+            status: "rejected"
+          });
+
           Alert.alert("Rejected", "Approval request rejected.");
           loadPendingApprovals();
           if (callback) callback();
@@ -20661,10 +20752,14 @@ function MainApp() {
                       {/* Dynamic Alert Cards */}
                       {(() => {
                         const filtered = adminAlerts.filter(a => {
-                          if (adminAlertsFilter === "test") return a.type === "offline_test";
-                          if (adminAlertsFilter === "profile") return a.type === "profile_submission" || a.type === "profile_edit";
-                          if (adminAlertsFilter === "crm") return a.type === "crm_inquiry" || a.type === "crm_admission";
-                          if (adminAlertsFilter === "fees") return a.type === "payment";
+                          // The predefined grid cards handle Inquiries, Admissions, Profile Verifications, and Edit Permissions.
+                          // The Top Feed displays everything EXCEPT those grid modules:
+                          // 1. Admin "Edit on Approval" Proposals (e.g. dharun CTO)
+                          // 2. Offline Test Attendance Requests (Test Portal)
+                          // 3. New Batches / Exams / Notices / System operations
+                          if (a.type === "crm_inquiry" || a.type === "crm_admission" || a.type === "profile_submission" || a.type === "profile_edit") {
+                            return false;
+                          }
                           return true;
                         });
 
@@ -20682,10 +20777,10 @@ function MainApp() {
                               </View>
                               <View style={{ flex: 1 }}>
                                 <Text style={{ fontSize: 14, fontWeight: "bold", color: darkMode ? "#a5d6a7" : "#1b5e20" }}>
-                                  All Caught Up! No Pending Requests
+                                  All Caught Up! No Pending Operations
                                 </Text>
                                 <Text style={{ fontSize: 12, color: darkMode ? "#c8e6c9" : "#388e3c", marginTop: 2, lineHeight: 17 }}>
-                                  When students request offline test attendance, submit complete profile verifications, or ask website inquiries, they will appear right here in real time. Once you review or dismiss them, they automatically clear.
+                                  Admin proposals (like edit requests on students/batches), offline test requests, and system actions appear here live in real-time. Once reviewed or dismissed, they automatically clear and save to Audit Logs.
                                 </Text>
                               </View>
                             </View>
@@ -20696,17 +20791,16 @@ function MainApp() {
                           <View style={{ gap: 10, marginBottom: 10 }}>
                             {filtered.map((alert: any) => {
                               const isTest = alert.type === "offline_test";
-                              const isProfile = alert.type === "profile_submission" || alert.type === "profile_edit";
-                              const isCrm = alert.type === "crm_inquiry" || alert.type === "crm_admission";
+                              const isApproval = alert.type === "admin_approval";
                               const isFee = alert.type === "payment";
 
-                              const themeColor = isTest ? "#7b1fa2" : isProfile ? "#e65100" : isCrm ? "#0288d1" : isFee ? "#2e7d32" : "#c62828";
+                              const themeColor = isApproval ? "#e65100" : isTest ? "#7b1fa2" : isFee ? "#2e7d32" : "#c62828";
                               const bgColor = darkMode
-                                ? (isTest ? "#2a1b38" : isProfile ? "#332219" : isCrm ? "#192a3a" : isFee ? "#1b2e1e" : "#2a1a1a")
-                                : (isTest ? "#f3e5f5" : isProfile ? "#fff3e0" : isCrm ? "#e1f5fe" : isFee ? "#e8f5e9" : "#fff5f5");
-                              const borderColor = isTest ? "#ce93d8" : isProfile ? "#ffcc80" : isCrm ? "#81d4fa" : isFee ? "#a5d6a7" : "#ef9a9a";
-                              const iconName: any = isTest ? "school-outline" : isProfile ? "person-add-outline" : isCrm ? "chatbubble-ellipses-outline" : isFee ? "cash-outline" : "alert-circle-outline";
-                              const badgeLabel = isTest ? "TEST ATTENDANCE REQUEST" : (alert.type === "profile_edit" ? "PROFILE EDIT REQUEST" : isProfile ? "PROFILE VERIFICATION" : (alert.type === "crm_admission" ? "ADMISSION APPLICATION" : "CRM INQUIRY"));
+                                ? (isApproval ? "#332219" : isTest ? "#2a1b38" : isFee ? "#1b2e1e" : "#2a1a1a")
+                                : (isApproval ? "#fff3e0" : isTest ? "#f3e5f5" : isFee ? "#e8f5e9" : "#fff5f5");
+                              const borderColor = isApproval ? "#ffcc80" : isTest ? "#ce93d8" : isFee ? "#a5d6a7" : "#ef9a9a";
+                              const iconName: any = isApproval ? "shield-checkmark-outline" : isTest ? "school-outline" : isFee ? "cash-outline" : "alert-circle-outline";
+                              const badgeLabel = isApproval ? "ADMIN EDIT PROPOSAL" : isTest ? "OFFLINE TEST REQUEST" : "SYSTEM ACTION";
 
                               return (
                                 <View
@@ -20741,7 +20835,7 @@ function MainApp() {
 
                                   {/* Content Row */}
                                   <Text style={{ fontSize: 14, fontWeight: "bold", color: darkMode ? "#ffffff" : "#212121", marginBottom: 2 }}>
-                                    {alert.title} — {alert.subtitle || alert.studentName || "Applicant"}
+                                    {alert.title} — {alert.subtitle || "Admin Proposal"}
                                   </Text>
                                   <Text style={{ fontSize: 12, color: darkMode ? "#cfd8dc" : "#424242", lineHeight: 18, marginBottom: 10 }}>
                                     {alert.message}
@@ -20759,7 +20853,9 @@ function MainApp() {
                                       onPress={() => handleViewAdminAlert(alert)}
                                       style={{ paddingVertical: 6, paddingHorizontal: 14, borderRadius: 6, backgroundColor: themeColor, flexDirection: "row", alignItems: "center", gap: 4 }}
                                     >
-                                      <Text style={{ fontSize: 11, fontWeight: "bold", color: "#ffffff" }}>Review &amp; Action</Text>
+                                      <Text style={{ fontSize: 11, fontWeight: "bold", color: "#ffffff" }}>
+                                        {isApproval ? "Review in Approvals Queue" : "Review & Action"}
+                                      </Text>
                                       <Ionicons name="arrow-forward" size={12} color="#ffffff" />
                                     </TouchableOpacity>
                                   </View>
@@ -20772,101 +20868,248 @@ function MainApp() {
                     </View>
 
                     {/* ══════════════════════════════════════════════════════════════════
-                        2. ACADEMY MODULE SHORTCUTS & QUICK NAVIGATION (Preserved 100%)
+                        2. ACADEMY MODULE SHORTCUTS & QUICK NAVIGATION (Fully Dynamic)
                     ══════════════════════════════════════════════════════════════════ */}
                     <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12, paddingHorizontal: 4 }}>
                       <Ionicons name="apps-outline" size={17} color="#c62828" style={{ marginRight: 6 }} />
-                      <Text style={{ fontSize: 14, fontWeight: "bold", color: darkMode ? "#ffffff" : "#424242" }}>Module Shortcuts &amp; Quick Access</Text>
+                      <Text style={{ fontSize: 14, fontWeight: "bold", color: darkMode ? "#ffffff" : "#424242" }}>Module Shortcuts &amp; Live Status</Text>
                     </View>
                     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+                      {/* Card 1: Admission Applications */}
+                      {(() => {
+                        const pendingCount = (admissions || []).filter((a: any) => a.status === "pending" || a.status === "new" || !a.status).length;
+                        return (
+                          <TouchableOpacity
+                            onPress={() => { setActiveTab("crm"); changeCrmSub("admissions"); }}
+                            style={{
+                              width: "calc(33.33% - 8px)" as any, padding: 14, borderRadius: 12, backgroundColor: darkMode ? "#2a1b38" : "#f3e5f5",
+                              borderWidth: 1, borderColor: darkMode ? "#4a148c" : "#e1bee7", minHeight: 90, justifyContent: "space-between"
+                            }}
+                          >
+                            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                              <Ionicons name="mail-outline" size={20} color="#7b1fa2" />
+                              {pendingCount > 0 ? (
+                                <View style={{ backgroundColor: "#7b1fa2", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
+                                  <Text style={{ color: "#fff", fontSize: 10, fontWeight: "bold" }}>{pendingCount} Pending</Text>
+                                </View>
+                              ) : (
+                                <Ionicons name="arrow-forward" size={14} color="#7b1fa2" />
+                              )}
+                            </View>
+                            <View>
+                              <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#e1bee7" : "#4a148c" }}>Admission Applications</Text>
+                              <Text style={{ fontSize: 11, color: darkMode ? "#ba68c8" : "#7b1fa2", marginTop: 2 }}>
+                                {pendingCount > 0 ? `${pendingCount} new application(s) awaiting review` : "CRM Portal"}
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })()}
+
+                      {/* Card 2: Inquiries */}
+                      {(() => {
+                        const pendingCount = (enquiries || []).filter((e: any) => e.status === "pending" || e.status === "new").length;
+                        return (
+                          <TouchableOpacity
+                            onPress={() => { setActiveTab("crm"); changeCrmSub("inquiries"); }}
+                            style={{
+                              width: "calc(33.33% - 8px)" as any, padding: 14, borderRadius: 12, backgroundColor: darkMode ? "#192a3a" : "#e1f5fe",
+                              borderWidth: 1, borderColor: darkMode ? "#0277bd" : "#b3e5fc", minHeight: 90, justifyContent: "space-between"
+                            }}
+                          >
+                            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                              <Ionicons name="chatbubble-ellipses-outline" size={20} color="#0288d1" />
+                              {pendingCount > 0 ? (
+                                <View style={{ backgroundColor: "#0288d1", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
+                                  <Text style={{ color: "#fff", fontSize: 10, fontWeight: "bold" }}>{pendingCount} New</Text>
+                                </View>
+                              ) : (
+                                <Ionicons name="arrow-forward" size={14} color="#0288d1" />
+                              )}
+                            </View>
+                            <View>
+                              <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#b3e5fc" : "#01579b" }}>Inquiries</Text>
+                              <Text style={{ fontSize: 11, color: darkMode ? "#4fc3f7" : "#0288d1", marginTop: 2 }}>
+                                {pendingCount > 0 ? `${pendingCount} new lead(s) & queries` : "CRM Leads & Queries"}
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })()}
+
+                      {/* Card 3: Profile Requests */}
+                      {(() => {
+                        const pendingCount = profileRequests.filter((r: any) => r.status === "pending").length;
+                        return (
+                          <TouchableOpacity
+                            onPress={() => { setActiveTab("erp"); changeErpSub("profile-requests"); setProfileRequestsTab("requests"); }}
+                            style={{
+                              width: "calc(33.33% - 8px)" as any, padding: 14, borderRadius: 12, backgroundColor: darkMode ? "#332219" : "#fff3e0",
+                              borderWidth: 1, borderColor: darkMode ? "#e65100" : "#ffe0b2", minHeight: 90, justifyContent: "space-between"
+                            }}
+                          >
+                            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                              <Ionicons name="person-add-outline" size={20} color="#e65100" />
+                              <View style={{ backgroundColor: "#e65100", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
+                                <Text style={{ color: "#fff", fontSize: 10, fontWeight: "bold" }}>
+                                  {pendingCount} Pending
+                                </Text>
+                              </View>
+                            </View>
+                            <View>
+                              <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#ffe0b2" : "#e65100" }}>Profile Requests</Text>
+                              <Text style={{ fontSize: 11, color: darkMode ? "#ffb74d" : "#ef6c00", marginTop: 2 }}>
+                                {pendingCount} new request(s) awaiting review
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })()}
+
+                      {/* Card 4: QR Code Permissions */}
+                      {(() => {
+                        const qrCount = (students || []).filter((s: any) => s.qrCodeRequested === true).length;
+                        return (
+                          <TouchableOpacity
+                            onPress={() => { setActiveTab("erp"); changeErpSub("qr-permissions"); }}
+                            style={{
+                              width: "calc(33.33% - 8px)" as any, padding: 14, borderRadius: 12, backgroundColor: darkMode ? "#19302c" : "#e0f2f1",
+                              borderWidth: 1, borderColor: darkMode ? "#00695c" : "#b2dfdb", minHeight: 90, justifyContent: "space-between"
+                            }}
+                          >
+                            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                              <Ionicons name="qr-code-outline" size={20} color="#00796b" />
+                              {qrCount > 0 ? (
+                                <View style={{ backgroundColor: "#00796b", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
+                                  <Text style={{ color: "#fff", fontSize: 10, fontWeight: "bold" }}>{qrCount} Pending</Text>
+                                </View>
+                              ) : (
+                                <Ionicons name="arrow-forward" size={14} color="#00796b" />
+                              )}
+                            </View>
+                            <View>
+                              <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#b2dfdb" : "#004d40" }}>QR Code Permissions</Text>
+                              <Text style={{ fontSize: 11, color: darkMode ? "#80cbc4" : "#00796b", marginTop: 2 }}>
+                                {qrCount > 0 ? `${qrCount} student(s) requested QR` : "Scanner Security"}
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })()}
+
+                      {/* Card 5: Profile Edit Requests */}
+                      {(() => {
+                        const editCount = (students || []).filter((s: any) => s.profileEditRequested === true).length;
+                        return (
+                          <TouchableOpacity
+                            onPress={() => { setActiveTab("erp"); changeErpSub("edit-permissions"); }}
+                            style={{
+                              width: "calc(33.33% - 8px)" as any, padding: 14, borderRadius: 12, backgroundColor: darkMode ? "#361b24" : "#fce4ec",
+                              borderWidth: 1, borderColor: darkMode ? "#880e4f" : "#f8bbd0", minHeight: 90, justifyContent: "space-between"
+                            }}
+                          >
+                            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                              <Ionicons name="shield-checkmark-outline" size={20} color="#c2185b" />
+                              {editCount > 0 ? (
+                                <View style={{ backgroundColor: "#c2185b", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
+                                  <Text style={{ color: "#fff", fontSize: 10, fontWeight: "bold" }}>{editCount} Pending</Text>
+                                </View>
+                              ) : (
+                                <Ionicons name="arrow-forward" size={14} color="#c2185b" />
+                              )}
+                            </View>
+                            <View>
+                              <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#f8bbd0" : "#880e4f" }}>Profile Edit Requests</Text>
+                              <Text style={{ fontSize: 11, color: darkMode ? "#f48fb1" : "#c2185b", marginTop: 2 }}>
+                                {editCount > 0 ? `${editCount} edit request(s) awaiting review` : "Edit Permissions"}
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })()}
+
+                      {/* Card 6: Fees Portal */}
                       <TouchableOpacity
-                        onPress={() => { setActiveTab("crm"); changeCrmSub("admissions"); }}
+                        onPress={() => { setActiveTab("erp"); changeErpSub("fees"); }}
                         style={{
-                          width: "calc(33.33% - 8px)" as any, padding: 14, borderRadius: 12, backgroundColor: darkMode ? "#2a1b38" : "#f3e5f5",
-                          borderWidth: 1, borderColor: darkMode ? "#4a148c" : "#e1bee7", minHeight: 90, justifyContent: "space-between"
+                          width: "calc(33.33% - 8px)" as any, padding: 14, borderRadius: 12, backgroundColor: darkMode ? "#1b2e1e" : "#e8f5e9",
+                          borderWidth: 1, borderColor: darkMode ? "#1b5e20" : "#c8e6c9", minHeight: 90, justifyContent: "space-between"
                         }}
                       >
                         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                          <Ionicons name="mail-outline" size={20} color="#7b1fa2" />
-                          <Ionicons name="arrow-forward" size={14} color="#7b1fa2" />
+                          <Ionicons name="cash-outline" size={20} color="#2e7d32" />
+                          <Ionicons name="arrow-forward" size={14} color="#2e7d32" />
                         </View>
                         <View>
-                          <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#e1bee7" : "#4a148c" }}>Admission Applications</Text>
-                          <Text style={{ fontSize: 11, color: darkMode ? "#ba68c8" : "#7b1fa2", marginTop: 2 }}>CRM Portal</Text>
+                          <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#c8e6c9" : "#1b5e20" }}>Fees Portal</Text>
+                          <Text style={{ fontSize: 11, color: darkMode ? "#81c784" : "#2e7d32", marginTop: 2 }}>Student Finance &amp; Ledger</Text>
                         </View>
                       </TouchableOpacity>
 
+                      {/* Card 7: Live Class */}
+                      {(() => {
+                        const hasLive = (liveSessions || []).some((s: any) => s.status === "live");
+                        return (
+                          <TouchableOpacity
+                            onPress={() => { setActiveTab("lms"); changeLmsSub("live-classes"); }}
+                            style={{
+                              width: "calc(33.33% - 8px)" as any, padding: 14, borderRadius: 12, backgroundColor: darkMode ? "#3e1c1c" : "#ffebee",
+                              borderWidth: 1, borderColor: darkMode ? "#c62828" : "#ff8a80", minHeight: 90, justifyContent: "space-between"
+                            }}
+                          >
+                            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                              <Ionicons name="videocam-outline" size={20} color="#c62828" />
+                              {hasLive ? (
+                                <View style={{ backgroundColor: "#c62828", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
+                                  <Text style={{ color: "#fff", fontSize: 10, fontWeight: "bold" }}>🔴 LIVE NOW</Text>
+                                </View>
+                              ) : (
+                                <Ionicons name="arrow-forward" size={14} color="#c62828" />
+                              )}
+                            </View>
+                            <View>
+                              <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#ff8a80" : "#c62828" }}>Live Class</Text>
+                              <Text style={{ fontSize: 11, color: darkMode ? "#ff8a80" : "#c62828", marginTop: 2 }}>
+                                {hasLive ? "Live Session in progress" : "Live Streaming Portal"}
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })()}
+
+                      {/* Card 8: Resources */}
                       <TouchableOpacity
-                        onPress={() => { setActiveTab("crm"); changeCrmSub("inquiries"); }}
+                        onPress={() => { setActiveTab("lms"); changeLmsSub("resources"); }}
                         style={{
-                          width: "calc(33.33% - 8px)" as any, padding: 14, borderRadius: 12, backgroundColor: darkMode ? "#192a3a" : "#e1f5fe",
-                          borderWidth: 1, borderColor: darkMode ? "#0277bd" : "#b3e5fc", minHeight: 90, justifyContent: "space-between"
+                          width: "calc(33.33% - 8px)" as any, padding: 14, borderRadius: 12, backgroundColor: darkMode ? "#1c2a38" : "#e3f2fd",
+                          borderWidth: 1, borderColor: darkMode ? "#1565c0" : "#90caf9", minHeight: 90, justifyContent: "space-between"
                         }}
                       >
                         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                          <Ionicons name="chatbubble-ellipses-outline" size={20} color="#0288d1" />
-                          <Ionicons name="arrow-forward" size={14} color="#0288d1" />
+                          <Ionicons name="folder-open-outline" size={20} color="#1565c0" />
+                          <Ionicons name="arrow-forward" size={14} color="#1565c0" />
                         </View>
                         <View>
-                          <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#b3e5fc" : "#01579b" }}>Inquiries</Text>
-                          <Text style={{ fontSize: 11, color: darkMode ? "#4fc3f7" : "#0288d1", marginTop: 2 }}>CRM Leads &amp; Queries</Text>
+                          <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#90caf9" : "#1565c0" }}>Resources</Text>
+                          <Text style={{ fontSize: 11, color: darkMode ? "#90caf9" : "#1565c0", marginTop: 2 }}>Study Materials &amp; Notes</Text>
                         </View>
                       </TouchableOpacity>
 
+                      {/* Card 9: Access Control */}
                       <TouchableOpacity
-                        onPress={() => { setActiveTab("erp"); changeErpSub("profile-requests"); setProfileRequestsTab("requests"); }}
+                        onPress={() => { setActiveTab("lms"); changeLmsSub("lms-access"); }}
                         style={{
-                          width: "calc(33.33% - 8px)" as any, padding: 14, borderRadius: 12, backgroundColor: darkMode ? "#332219" : "#fff3e0",
-                          borderWidth: 1, borderColor: darkMode ? "#e65100" : "#ffe0b2", minHeight: 90, justifyContent: "space-between"
+                          width: "calc(33.33% - 8px)" as any, padding: 14, borderRadius: 12, backgroundColor: darkMode ? "#2e1c38" : "#f3e5f5",
+                          borderWidth: 1, borderColor: darkMode ? "#6a1b9a" : "#ce93d8", minHeight: 90, justifyContent: "space-between"
                         }}
                       >
                         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                          <Ionicons name="person-add-outline" size={20} color="#e65100" />
-                          <View style={{ backgroundColor: "#e65100", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
-                            <Text style={{ color: "#fff", fontSize: 10, fontWeight: "bold" }}>
-                              {profileRequests.filter((r: any) => r.status === "pending").length} Pending
-                            </Text>
-                          </View>
+                          <Ionicons name="shield-checkmark-outline" size={20} color="#6a1b9a" />
+                          <Ionicons name="arrow-forward" size={14} color="#6a1b9a" />
                         </View>
                         <View>
-                          <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#ffe0b2" : "#e65100" }}>Profile Requests</Text>
-                          <Text style={{ fontSize: 11, color: darkMode ? "#ffb74d" : "#ef6c00", marginTop: 2 }}>
-                            {profileRequests.filter((r: any) => r.status === "pending").length} new request(s) awaiting review
-                          </Text>
-                        </View>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        onPress={() => { setActiveTab("erp"); changeErpSub("qr-permissions"); }}
-                        style={{
-                          width: "calc(33.33% - 8px)" as any, padding: 14, borderRadius: 12, backgroundColor: darkMode ? "#19302c" : "#e0f2f1",
-                          borderWidth: 1, borderColor: darkMode ? "#00695c" : "#b2dfdb", minHeight: 90, justifyContent: "space-between"
-                        }}
-                      >
-                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                          <Ionicons name="qr-code-outline" size={20} color="#00796b" />
-                          <Ionicons name="arrow-forward" size={14} color="#00796b" />
-                        </View>
-                        <View>
-                          <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#b2dfdb" : "#004d40" }}>QR Code Permissions</Text>
-                          <Text style={{ fontSize: 11, color: darkMode ? "#80cbc4" : "#00796b", marginTop: 2 }}>Scanner Security</Text>
-                        </View>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        onPress={() => { setActiveTab("erp"); changeErpSub("edit-permissions"); }}
-                        style={{
-                          width: "calc(33.33% - 8px)" as any, padding: 14, borderRadius: 12, backgroundColor: darkMode ? "#361b24" : "#fce4ec",
-                          borderWidth: 1, borderColor: darkMode ? "#880e4f" : "#f8bbd0", minHeight: 90, justifyContent: "space-between"
-                        }}
-                      >
-                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                          <Ionicons name="shield-checkmark-outline" size={20} color="#c2185b" />
-                          <Ionicons name="arrow-forward" size={14} color="#c2185b" />
-                        </View>
-                        <View>
-                          <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#f8bbd0" : "#880e4f" }}>Profile Edit Requests</Text>
-                          <Text style={{ fontSize: 11, color: darkMode ? "#f48fb1" : "#c2185b", marginTop: 2 }}>Edit Permissions</Text>
+                          <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#ce93d8" : "#6a1b9a" }}>Access Control</Text>
+                          <Text style={{ fontSize: 11, color: darkMode ? "#ce93d8" : "#6a1b9a", marginTop: 2 }}>SACS Security &amp; Permissions</Text>
                         </View>
                       </TouchableOpacity>
 
@@ -36269,6 +36512,294 @@ SOURCE QUESTION PAPER:
               </View>
             </View>
           )
+        {/* ================== 6. AUDIT LOGS TAB (Super Admin Only) ================== */}
+        {activeTab === "audit-logs" && (user?.role === "super_admin" || user?.role === "developer") && (
+          <View style={{ flex: 1, backgroundColor: darkMode ? "#121212" : "#f4f6f8" }}>
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, maxWidth: 1200, width: "100%", alignSelf: "center" }}>
+              {/* Header */}
+              <View style={{ marginBottom: 20, flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+                <View>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <Ionicons name="receipt" size={24} color="#c62828" />
+                    <Text style={{ fontSize: 20, fontWeight: "bold", color: darkMode ? "#ffffff" : "#1a237e" }}>
+                      System Audit &amp; Operation Logs
+                    </Text>
+                  </View>
+                  <Text style={{ fontSize: 13, color: darkMode ? "#b0bec5" : "#616161", marginTop: 4 }}>
+                    Immutable history of all operations across the academy. Data is fetched strictly by date to optimize performance and prevent unnecessary database reads.
+                  </Text>
+                </View>
+                
+                <TouchableOpacity
+                  onPress={() => loadDateLogs(selectedLogDate)}
+                  style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: darkMode ? "#2a2a2a" : "#ffffff", paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8, borderWidth: 1, borderColor: darkMode ? "#444" : "#e0e0e0" }}
+                >
+                  <Ionicons name="refresh-outline" size={16} color={darkMode ? "#fff" : "#333"} />
+                  <Text style={{ fontSize: 12, fontWeight: "600", color: darkMode ? "#fff" : "#333" }}>Refresh</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Date Navigation & Selector */}
+              <View style={{
+                backgroundColor: darkMode ? "#1e1e1e" : "#ffffff",
+                padding: 16, borderRadius: 14, marginBottom: 16,
+                borderWidth: 1, borderColor: darkMode ? "#333" : "#e0e0e0",
+                flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12
+              }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#e0e0e0" : "#424242" }}>
+                    Select Date:
+                  </Text>
+                  <input
+                    type="date"
+                    value={selectedLogDate}
+                    onChange={(e: any) => {
+                      const d = e.target.value;
+                      if (d) {
+                        setSelectedLogDate(d);
+                        loadDateLogs(d);
+                      }
+                    }}
+                    style={{
+                      padding: "8px 12px",
+                      borderRadius: 8,
+                      border: darkMode ? "1px solid #555" : "1px solid #ccc",
+                      backgroundColor: darkMode ? "#2a2a2a" : "#ffffff",
+                      color: darkMode ? "#ffffff" : "#000000",
+                      fontSize: 13,
+                      fontWeight: "600",
+                      outline: "none",
+                      cursor: "pointer"
+                    }}
+                  />
+                  <TouchableOpacity
+                    onPress={() => {
+                      const today = new Date().toISOString().split("T")[0];
+                      setSelectedLogDate(today);
+                      loadDateLogs(today);
+                    }}
+                    style={{
+                      paddingVertical: 7, paddingHorizontal: 12, borderRadius: 8,
+                      backgroundColor: selectedLogDate === new Date().toISOString().split("T")[0] ? "#c62828" : (darkMode ? "#333" : "#f0f0f0")
+                    }}
+                  >
+                    <Text style={{ fontSize: 12, fontWeight: "bold", color: selectedLogDate === new Date().toISOString().split("T")[0] ? "#fff" : (darkMode ? "#ccc" : "#555") }}>
+                      Today
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => {
+                      const y = new Date(Date.now() - 86400000).toISOString().split("T")[0];
+                      setSelectedLogDate(y);
+                      loadDateLogs(y);
+                    }}
+                    style={{
+                      paddingVertical: 7, paddingHorizontal: 12, borderRadius: 8,
+                      backgroundColor: selectedLogDate === new Date(Date.now() - 86400000).toISOString().split("T")[0] ? "#c62828" : (darkMode ? "#333" : "#f0f0f0")
+                    }}
+                  >
+                    <Text style={{ fontSize: 12, fontWeight: "bold", color: selectedLogDate === new Date(Date.now() - 86400000).toISOString().split("T")[0] ? "#fff" : (darkMode ? "#ccc" : "#555") }}>
+                      Yesterday
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Day Stepper */}
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      const curr = new Date(selectedLogDate + "T12:00:00Z");
+                      curr.setDate(curr.getDate() - 1);
+                      const prevDate = curr.toISOString().split("T")[0];
+                      setSelectedLogDate(prevDate);
+                      loadDateLogs(prevDate);
+                    }}
+                    style={{ paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, backgroundColor: darkMode ? "#333" : "#e0e0e0" }}
+                  >
+                    <Text style={{ fontSize: 12, fontWeight: "600", color: darkMode ? "#eee" : "#333" }}>◀ Previous Day</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => {
+                      const curr = new Date(selectedLogDate + "T12:00:00Z");
+                      curr.setDate(curr.getDate() + 1);
+                      const nextDate = curr.toISOString().split("T")[0];
+                      setSelectedLogDate(nextDate);
+                      loadDateLogs(nextDate);
+                    }}
+                    style={{ paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, backgroundColor: darkMode ? "#333" : "#e0e0e0" }}
+                  >
+                    <Text style={{ fontSize: 12, fontWeight: "600", color: darkMode ? "#eee" : "#333" }}>Next Day ▶</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Filter Tabs & Search */}
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
+                <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+                  {[
+                    { key: "all", label: `All (${dateLogs.length})` },
+                    { key: "admin", label: "Admin Operations" },
+                    { key: "student", label: "Student Operations" },
+                    { key: "guest", label: "Guest / CRM" }
+                  ].map(f => {
+                    const active = logFilterCategory === f.key;
+                    return (
+                      <TouchableOpacity
+                        key={f.key}
+                        onPress={() => setLogFilterCategory(f.key as any)}
+                        style={{
+                          paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16,
+                          backgroundColor: active ? "#c62828" : (darkMode ? "#2a2a2a" : "#ffffff"),
+                          borderWidth: 1, borderColor: active ? "#c62828" : (darkMode ? "#444" : "#e0e0e0")
+                        }}
+                      >
+                        <Text style={{ fontSize: 12, fontWeight: active ? "bold" : "normal", color: active ? "#ffffff" : (darkMode ? "#ccc" : "#555") }}>
+                          {f.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {/* Search Input */}
+                <View style={{
+                  flexDirection: "row", alignItems: "center", gap: 6,
+                  backgroundColor: darkMode ? "#1e1e1e" : "#ffffff",
+                  paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8,
+                  borderWidth: 1, borderColor: darkMode ? "#333" : "#e0e0e0",
+                  minWidth: 220
+                }}>
+                  <Ionicons name="search" size={14} color="#757575" />
+                  <input
+                    type="text"
+                    placeholder="Search by operator or detail..."
+                    value={logSearchQuery}
+                    onChange={(e: any) => setLogSearchQuery(e.target.value)}
+                    style={{
+                      border: "none", outline: "none", background: "transparent",
+                      color: darkMode ? "#fff" : "#000", fontSize: 12, width: "100%"
+                    }}
+                  />
+                  {logSearchQuery ? (
+                    <TouchableOpacity onPress={() => setLogSearchQuery("")}>
+                      <Ionicons name="close-circle" size={14} color="#757575" />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              </View>
+
+              {/* Log Entries List */}
+              {dateLogsLoading ? (
+                <View style={{ padding: 60, alignItems: "center" }}>
+                  <ActivityIndicator size="large" color="#c62828" />
+                  <Text style={{ marginTop: 12, fontSize: 13, color: darkMode ? "#aaa" : "#666" }}>
+                    Loading operations for {selectedLogDate}...
+                  </Text>
+                </View>
+              ) : (() => {
+                const filtered = dateLogs.filter((log: any) => {
+                  if (logFilterCategory !== "all" && log.category !== logFilterCategory) return false;
+                  if (logSearchQuery.trim()) {
+                    const q = logSearchQuery.toLowerCase();
+                    const op = String(log.operatorName || "").toLowerCase();
+                    const det = String(log.details || "").toLowerCase();
+                    const act = String(log.action || "").toLowerCase();
+                    const mod = String(log.targetModule || "").toLowerCase();
+                    if (!op.includes(q) && !det.includes(q) && !act.includes(q) && !mod.includes(q)) return false;
+                  }
+                  return true;
+                });
+
+                if (filtered.length === 0) {
+                  return (
+                    <View style={{
+                      backgroundColor: darkMode ? "#1e1e1e" : "#ffffff",
+                      borderRadius: 14, padding: 40, alignItems: "center",
+                      borderWidth: 1, borderColor: darkMode ? "#333" : "#e0e0e0"
+                    }}>
+                      <Ionicons name="calendar-outline" size={42} color={darkMode ? "#555" : "#bbb"} style={{ marginBottom: 10 }} />
+                      <Text style={{ fontSize: 15, fontWeight: "bold", color: darkMode ? "#eee" : "#333" }}>
+                        No operations recorded on {selectedLogDate}
+                      </Text>
+                      <Text style={{ fontSize: 12, color: darkMode ? "#888" : "#777", marginTop: 4, textAlign: "center", maxWidth: 400 }}>
+                        {logSearchQuery ? "No entries match your search query." : "Any operations (proposals, approvals, student submissions, or status changes) performed on this date will appear here."}
+                      </Text>
+                    </View>
+                  );
+                }
+
+                return (
+                  <View style={{ gap: 10 }}>
+                    {filtered.map((log: any, idx: number) => {
+                      const isAdm = log.category === "admin";
+                      const isStu = log.category === "student";
+                      const isApprove = log.status === "approved" || String(log.action).includes("APPROVED");
+                      const isReject = log.status === "rejected" || String(log.action).includes("REJECTED");
+
+                      const accentColor = isApprove ? "#2e7d32" : isReject ? "#c62828" : isAdm ? "#7b1fa2" : isStu ? "#0288d1" : "#e65100";
+                      const cardBg = darkMode ? "#1e1e1e" : "#ffffff";
+                      const timeStr = log.timestamp ? new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : "N/A";
+
+                      return (
+                        <View
+                          key={log.id || idx}
+                          style={{
+                            backgroundColor: cardBg, borderRadius: 12, padding: 14,
+                            borderLeftWidth: 4, borderLeftColor: accentColor,
+                            borderWidth: 1, borderColor: darkMode ? "#333" : "#e8e8e8",
+                            shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1
+                          }}
+                        >
+                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                              <View style={{
+                                backgroundColor: accentColor + "22",
+                                paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8,
+                                borderWidth: 1, borderColor: accentColor + "55"
+                              }}>
+                                <Text style={{ fontSize: 10, fontWeight: "bold", color: accentColor }}>
+                                  {log.action ? String(log.action).replace(/_/g, " ") : "OPERATION"}
+                                </Text>
+                              </View>
+                              {log.targetModule && (
+                                <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#777", fontWeight: "600" }}>
+                                  Module: {String(log.targetModule).replace(/_/g, " ").toUpperCase()}
+                                </Text>
+                              )}
+                            </View>
+
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                              <Ionicons name="time-outline" size={13} color="#757575" />
+                              <Text style={{ fontSize: 11, color: darkMode ? "#9e9e9e" : "#757575", fontFamily: "monospace" }}>
+                                {timeStr}
+                              </Text>
+                            </View>
+                          </View>
+
+                          <Text style={{ fontSize: 13, color: darkMode ? "#e0e0e0" : "#212121", lineHeight: 19, marginBottom: 6 }}>
+                            {log.details}
+                          </Text>
+
+                          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderTopWidth: 1, borderTopColor: darkMode ? "#2a2a2a" : "#f0f0f0", paddingTop: 6, marginTop: 4 }}>
+                            <Text style={{ fontSize: 11, color: darkMode ? "#bbb" : "#616161" }}>
+                              Operator: <Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#111" }}>{log.operatorName || "System"}</Text> {log.operatorRole ? `(${log.operatorRole})` : ""}
+                            </Text>
+                            {log.status && (
+                              <View style={{ paddingHorizontal: 8, paddingVertical: 1, borderRadius: 10, backgroundColor: isApprove ? "#e8f5e9" : isReject ? "#ffebee" : (darkMode ? "#333" : "#f5f5f5") }}>
+                                <Text style={{ fontSize: 10, fontWeight: "bold", color: isApprove ? "#2e7d32" : isReject ? "#c62828" : (darkMode ? "#ccc" : "#666") }}>
+                                  {String(log.status).toUpperCase()}
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                );
+              })()}
+            </ScrollView>
+          </View>
         )}
       </View>
       {/* Bottom Tab Bar */}
@@ -36385,6 +36916,25 @@ SOURCE QUESTION PAPER:
               )}
             </View>
             <Text style={[styles.bottomTabLabel, activeTab === "crm" && styles.bottomTabLabelActive, !(activeTab === "crm") && darkMode && styles.bottomTabLabelDark]}>CRM</Text>
+          </TouchableOpacity>
+        )}
+
+        {(user?.role === "super_admin" || user?.role === "developer") && (
+          <TouchableOpacity
+            onPress={() => handleTabPress("audit-logs", () => {
+              setActiveTab("audit-logs");
+              loadDateLogs(selectedLogDate);
+            })}
+            style={[styles.bottomTab, activeTab === "audit-logs" && styles.bottomTabSelected, activeTab === "audit-logs" && darkMode && styles.sidebarTabActiveDark]}
+          >
+            <View style={{ position: "relative" }}>
+              <Ionicons
+                name={activeTab === "audit-logs" ? "receipt" : "receipt-outline"}
+                size={22}
+                color={activeTab === "audit-logs" ? "#c62828" : darkMode ? "#555" : "#757575"}
+              />
+            </View>
+            <Text style={[styles.bottomTabLabel, activeTab === "audit-logs" && styles.bottomTabLabelActive, !(activeTab === "audit-logs") && darkMode && styles.bottomTabLabelDark]}>Audit Logs</Text>
           </TouchableOpacity>
         )}
       </View>
