@@ -31,6 +31,8 @@ export const ScheduleSessionDialog: React.FC<ScheduleSessionDialogProps> = ({
 
   const [courseId, setCourseId] = useState('');
   const [subjectId, setSubjectId] = useState('');
+  const [customSubjectName, setCustomSubjectName] = useState('');
+  const [customTopicName, setCustomTopicName] = useState('');
 
   const formatDateLocal = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const formatTimeLocal = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -221,7 +223,7 @@ export const ScheduleSessionDialog: React.FC<ScheduleSessionDialogProps> = ({
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.topicId) return setErrorMsg('Please select a topic.');
+    if (!formData.topicId) return setErrorMsg('Please select or specify a topic.');
     if (formData.provider === 'youtube' && !youtubeUrl && !editingClass) return setErrorMsg('Please provide a YouTube URL.');
     if (formData.provider === 'upload' && !file && !editingClass) return setErrorMsg('Please select a video file to upload.');
     if (formData.minimumAttendancePercentage < 1 || formData.minimumAttendancePercentage > 100) {
@@ -231,12 +233,80 @@ export const ScheduleSessionDialog: React.FC<ScheduleSessionDialogProps> = ({
     setIsSaving(true);
     setErrorMsg('');
     try {
+      let activeTopicId = formData.topicId;
+
+      if (subjectId === '__custom__') {
+        if (!customSubjectName.trim()) { setIsSaving(false); return setErrorMsg('Please enter a custom subject name.'); }
+        if (!customTopicName.trim()) { setIsSaving(false); return setErrorMsg('Please enter a custom topic name.'); }
+        if (!courseId) { setIsSaving(false); return setErrorMsg('Please select a course first.'); }
+
+        let newSubjId: string | undefined;
+        try {
+          const sRes = await CourseApi.createSubject(courseId, { courseId, name: customSubjectName.trim() });
+          newSubjId = sRes?.data?.data?.id || sRes?.data?.id || sRes?.id;
+        } catch (sErr: any) {
+          try {
+            const fetchedSubjs = await CourseApi.listSubjects(courseId);
+            const subList = Array.isArray(fetchedSubjs?.data) ? fetchedSubjs.data : (Array.isArray(fetchedSubjs) ? fetchedSubjs : []);
+            const match = subList.find((s: any) => (s.name || s.title || '').trim().toLowerCase() === customSubjectName.trim().toLowerCase());
+            if (match) newSubjId = match.id || match._id;
+          } catch (_) {}
+          if (!newSubjId) {
+            const existingSubj = subjects.find((s: any) => (s.courseId === courseId || s.courseId === 'erp_course_ldc') && (s.name || s.title || '').trim().toLowerCase() === customSubjectName.trim().toLowerCase());
+            if (existingSubj) newSubjId = existingSubj.id || existingSubj._id;
+            else throw sErr;
+          }
+        }
+
+        let newTopId: string | undefined;
+        try {
+          const tRes = await CourseApi.createTopic(newSubjId!, { subjectId: newSubjId, name: customTopicName.trim() });
+          newTopId = tRes?.data?.data?.id || tRes?.data?.id || tRes?.id;
+        } catch (tErr: any) {
+          try {
+            const fetchedTopics = await CourseApi.listTopics(newSubjId!);
+            const topList = Array.isArray(fetchedTopics?.data) ? fetchedTopics.data : (Array.isArray(fetchedTopics) ? fetchedTopics : []);
+            const match = topList.find((t: any) => (t.name || t.title || '').trim().toLowerCase() === customTopicName.trim().toLowerCase());
+            if (match) newTopId = match.id || match._id;
+          } catch (_) {}
+          if (!newTopId) {
+            const existingTop = topics.find((t: any) => t.subjectId === newSubjId && (t.name || t.title || '').trim().toLowerCase() === customTopicName.trim().toLowerCase());
+            if (existingTop) newTopId = existingTop.id || existingTop._id;
+            else throw tErr;
+          }
+        }
+        activeTopicId = newTopId;
+      } else if (formData.topicId === '__custom__') {
+        if (!customTopicName.trim()) { setIsSaving(false); return setErrorMsg('Please enter a custom topic name.'); }
+        if (!subjectId) { setIsSaving(false); return setErrorMsg('Please select a subject first.'); }
+
+        let newTopId: string | undefined;
+        try {
+          const tRes = await CourseApi.createTopic(subjectId, { subjectId, name: customTopicName.trim() });
+          newTopId = tRes?.data?.data?.id || tRes?.data?.id || tRes?.id;
+        } catch (tErr: any) {
+          try {
+            const fetchedTopics = await CourseApi.listTopics(subjectId);
+            const topList = Array.isArray(fetchedTopics?.data) ? fetchedTopics.data : (Array.isArray(fetchedTopics) ? fetchedTopics : []);
+            const match = topList.find((t: any) => (t.name || t.title || '').trim().toLowerCase() === customTopicName.trim().toLowerCase());
+            if (match) newTopId = match.id || match._id;
+          } catch (_) {}
+          if (!newTopId) {
+            const existingTop = topics.find((t: any) => t.subjectId === subjectId && (t.name || t.title || '').trim().toLowerCase() === customTopicName.trim().toLowerCase());
+            if (existingTop) newTopId = existingTop.id || existingTop._id;
+            else throw tErr;
+          }
+        }
+        activeTopicId = newTopId;
+      }
+
+      if (!activeTopicId) { setIsSaving(false); return setErrorMsg('Failed to resolve topic ID.'); }
       if (editingClass) {
         // Update Class details (always allowed)
         await CourseApi.updateClass(editingClass.id, {
           title: formData.title,
           description: formData.description,
-          topicId: formData.topicId,
+          topicId: activeTopicId,
           accessLevel: formData.accessLevel,
           minimumAttendancePercentage: formData.minimumAttendancePercentage
         });
@@ -284,10 +354,10 @@ export const ScheduleSessionDialog: React.FC<ScheduleSessionDialogProps> = ({
         if (formData.provider === 'upload') classType = 'recorded';
         if (formData.provider === 'youtube') classType = 'youtube_recorded';
 
-        const res = await CourseApi.createClass(formData.topicId, {
+        const res = await CourseApi.createClass(activeTopicId, {
           title: formData.title,
           description: formData.description,
-          topicId: formData.topicId,
+          topicId: activeTopicId,
           classType,
           accessLevel: formData.accessLevel,
           minimumAttendancePercentage: formData.minimumAttendancePercentage
@@ -385,27 +455,64 @@ export const ScheduleSessionDialog: React.FC<ScheduleSessionDialogProps> = ({
               onChange={(e) => {
                 const newSubjectId = e.target.value;
                 setSubjectId(newSubjectId);
-                const tops = topics.filter(t => t.subjectId === newSubjectId);
-                if (tops.length === 1) setFormData(p => ({ ...p, topicId: tops[0].id }));
-                else setFormData(p => ({ ...p, topicId: '' }));
+                if (newSubjectId === '__custom__') {
+                  setFormData(p => ({ ...p, topicId: '__custom__' }));
+                } else {
+                  const tops = topics.filter(t => t.subjectId === newSubjectId);
+                  if (tops.length === 1) setFormData(p => ({ ...p, topicId: tops[0].id }));
+                  else setFormData(p => ({ ...p, topicId: '' }));
+                }
               }} 
               disabled={!courseId || !!editingClass || !!prefilledTopicId}
               options={[
                 { value: '', label: 'Select Subject...' },
-                ...filteredSubjects.map(s => ({ value: s.id, label: s.title || s.name }))
+                ...filteredSubjects.map(s => ({ value: s.id, label: s.title || s.name })),
+                { value: '__custom__', label: '+ Add Custom Subject...' }
               ]}
             />
             <AdminSelect
               label="Topic"
               value={formData.topicId} 
               onChange={(e) => setFormData({ ...formData, topicId: e.target.value })} 
-              disabled={!subjectId || !!editingClass || !!prefilledTopicId}
+              disabled={!subjectId || subjectId === '__custom__' || !!editingClass || !!prefilledTopicId}
               options={[
                 { value: '', label: 'Select Topic...' },
-                ...filteredTopics.map(t => ({ value: t.id, label: t.name || t.title }))
+                ...filteredTopics.map(t => ({ value: t.id, label: t.name || t.title })),
+                { value: '__custom__', label: '+ Add Custom Topic...' }
               ]}
             />
           </div>
+
+          {subjectId === '__custom__' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3 pt-3 border-t border-border/50">
+              <AdminInput
+                label="Custom Subject Name *"
+                value={customSubjectName}
+                onChange={(e) => setCustomSubjectName(e.target.value)}
+                placeholder="e.g. Current Affairs"
+                required
+              />
+              <AdminInput
+                label="Custom Topic Name *"
+                value={customTopicName}
+                onChange={(e) => setCustomTopicName(e.target.value)}
+                placeholder="e.g. International Relations Analysis"
+                required
+              />
+            </div>
+          )}
+
+          {subjectId !== '__custom__' && formData.topicId === '__custom__' && (
+            <div className="mt-3 pt-3 border-t border-border/50">
+              <AdminInput
+                label="Custom Topic Name *"
+                value={customTopicName}
+                onChange={(e) => setCustomTopicName(e.target.value)}
+                placeholder="e.g. Special Topic Session"
+                required
+              />
+            </div>
+          )}
         </div>
 
         {/* Content Details */}

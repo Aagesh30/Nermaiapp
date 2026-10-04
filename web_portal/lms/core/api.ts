@@ -33,6 +33,9 @@ const BASE_URL = getBaseUrl();
  */
 function getTokenFromFolder1Auth(): string | null {
   try {
+    if ((globalThis as any).__NERMAI_TOKEN__) {
+      return (globalThis as any).__NERMAI_TOKEN__;
+    }
     if (typeof localStorage === 'undefined') return null;
     const raw = localStorage.getItem('nermai_auth_user');
     if (!raw) return null;
@@ -49,6 +52,9 @@ function getTokenFromFolder1Auth(): string | null {
  */
 export function getRoleFromAuth(): string {
   try {
+    if ((globalThis as any).__NERMAI_USER__?.role) {
+      return (globalThis as any).__NERMAI_USER__.role;
+    }
     if (typeof localStorage === 'undefined') return 'student';
     const raw = localStorage.getItem('nermai_auth_user');
     if (!raw) return 'student';
@@ -64,6 +70,15 @@ export function getRoleFromAuth(): string {
  */
 export function getUserFromAuth(): { userId: string; tenantId: string; role: string; name: string } | null {
   try {
+    if ((globalThis as any).__NERMAI_USER__) {
+      const u = (globalThis as any).__NERMAI_USER__;
+      return {
+        userId: u.userId || u.uid || u.id || '',
+        tenantId: u.tenantId || u.tenant_id || 'default',
+        role: u.role || 'student',
+        name: u.name || u.fullName || '',
+      };
+    }
     if (typeof localStorage === 'undefined') return null;
     const raw = localStorage.getItem('nermai_auth_user');
     if (!raw) return null;
@@ -113,7 +128,7 @@ api.interceptors.response.use(
         if (typeof localStorage !== 'undefined') {
           localStorage.removeItem('nermai_auth_user');
         }
-        if (typeof window !== 'undefined') {
+        if (typeof window !== 'undefined' && window.location && typeof window.location.reload === 'function') {
           window.location.reload();
         }
       } else {

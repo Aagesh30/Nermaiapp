@@ -290,13 +290,18 @@
               success: function (res) {
                 if (destroyed) return;
                 
+                // Explicitly show Join Audio function to guarantee audio controls are accessible
+                try {
+                    ZoomMtg.showJoinAudioFunction({ show: true });
+                } catch(e) { console.warn('Could not configure join audio function', e); }
+
                 // Hide Invite button for students
                 if (isStudent) {
                     try {
                         ZoomMtg.showInviteFunction({ show: false });
                     } catch(e) { console.warn('Could not hide invite', e); }
 
-                    // Aggressive DOM/CSS hiding for Meeting Info & remaining Invite buttons
+                    // Surgical DOM/CSS hiding strictly for Meeting Info & Invite buttons (protecting audio/mic controls)
                     try {
                         var style = document.createElement('style');
                         style.innerHTML = `
@@ -309,9 +314,7 @@
                             [aria-label="Invite"],
                             button[aria-label="Invite"],
                             .participants-footer__invite-btn,
-                            .invite-button,
-                            [aria-label*="Participant"],
-                            [aria-label*="participant"] {
+                            .invite-button {
                                 display: none !important;
                                 pointer-events: none !important;
                                 opacity: 0 !important;
@@ -324,19 +327,19 @@
                         document.head.appendChild(style);
 
                         var observer = new MutationObserver(function() {
-                            // 1. Remove by class / aria-label
-                            var elements = document.querySelectorAll('.meeting-info-icon__icon-wrap, .meeting-info-icon, [aria-label*="Meeting Info"], [aria-label*="Meeting Information"], [aria-label="Invite"], .participants-footer__invite-btn, .invite-button, [aria-label*="Participant"], [aria-label*="participant"]');
+                            // 1. Remove by class / aria-label (strictly invite & info)
+                            var elements = document.querySelectorAll('.meeting-info-icon__icon-wrap, .meeting-info-icon, [aria-label*="Meeting Info"], [aria-label*="Meeting Information"], [aria-label="Invite"], .participants-footer__invite-btn, .invite-button');
                             elements.forEach(function(el) {
                                 if (el && el.parentNode) {
                                     el.parentNode.removeChild(el);
                                 }
                             });
                             
-                            // 2. Remove by text content (buttons that just say "Invite" or "Participants")
+                            // 2. Remove by text content strictly for Invite button
                             var buttons = document.querySelectorAll('button, a, div.zm-btn');
                             buttons.forEach(function(btn) {
                                 var txt = (btn.textContent || '').trim().toLowerCase();
-                                if (txt === 'invite' || txt === 'participants' || txt === 'participant') {
+                                if (txt === 'invite') {
                                     if (btn.parentNode) btn.parentNode.removeChild(btn);
                                 }
                             });

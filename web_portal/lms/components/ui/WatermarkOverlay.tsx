@@ -1,175 +1,164 @@
-import React, { useMemo, useEffect, useState, useRef, useCallback } from 'react';
+import React, { useMemo, useEffect, useState } from 'react';
 import { useAuth } from '../../core/auth/AuthProvider';
+import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export const WatermarkOverlay: React.FC = () => {
+interface WatermarkOverlayProps {
+  pageNumber?: number;
+  customText?: string;
+  isDarkBackground?: boolean;
+}
+
+// 8 balanced, deterministic coordinate pairs across pages
+// Positioned inside the content body (between 16% and 80%), avoiding outer edge clipping
+const POSITION_PAIRS: Array<[ { top: string; left: string }, { top: string; left: string } ]> = [
+  // Page 1: Upper-Left & Bottom-Right
+  [ { top: '22%', left: '16%' }, { top: '72%', left: '56%' } ],
+  // Page 2: Upper-Right & Bottom-Left
+  [ { top: '20%', left: '58%' }, { top: '74%', left: '16%' } ],
+  // Page 3: Mid-Left & Mid-Right
+  [ { top: '44%', left: '14%' }, { top: '46%', left: '54%' } ],
+  // Page 4: Upper-Center & Lower-Center
+  [ { top: '24%', left: '36%' }, { top: '78%', left: '34%' } ],
+  // Page 5: Center-Left & Lower-Right
+  [ { top: '36%', left: '18%' }, { top: '68%', left: '54%' } ],
+  // Page 6: Upper-Right & Center-Bottom
+  [ { top: '18%', left: '54%' }, { top: '80%', left: '24%' } ],
+  // Page 7: Center-Top & Lower-Left
+  [ { top: '28%', left: '46%' }, { top: '64%', left: '20%' } ],
+  // Page 8: Upper-Left & Bottom-Center
+  [ { top: '22%', left: '24%' }, { top: '76%', left: '50%' } ]
+];
+
+export const WatermarkOverlay: React.FC<WatermarkOverlayProps> = ({
+  pageNumber = 1,
+  customText,
+  isDarkBackground = false,
+}) => {
   const { currentUser } = useAuth();
-  const containerRef = useRef<HTMLDivElement>(null);
-  const cardRef = useRef<HTMLDivElement>(null);
-
-  // Detect mobile screen for smaller card sizing
-  const [isMobile, setIsMobile] = useState<boolean>(() =>
-    typeof window !== 'undefined'
-      ? window.matchMedia('(max-width: 640px)').matches
-      : false
-  );
-
-  useEffect(() => {
-    const mq = window.matchMedia('(max-width: 640px)');
-    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
-  }, []);
-
-  const [pos, setPos] = useState({ x: 50, y: 50 });
-  
-  // Animation state ref to avoid triggering re-renders for every frame
-  const animState = useRef({
-    x: 50,
-    y: 50,
-    dx: 0.2,
-    dy: 0.2,
-    width: 250,
-    height: 80,
-    containerWidth: 800,
-    containerHeight: 600
+  const [userInfo, setUserInfo] = useState<{ name: string; phone: string }>({
+    name: 'Student',
+    phone: '',
   });
 
-  const watermarkText = useMemo(() => {
-    const email = currentUser?.email || 'student@nermai.com';
-    const date = new Date().toLocaleDateString();
-    return `NERMAI ACADEMY\n${email}\n${date}`;
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadUserDetails = async () => {
+      try {
+        let raw: string | null = null;
+        if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+          raw = localStorage.getItem('nermai_auth_user');
+        } else {
+          raw = await AsyncStorage.getItem('nermai_auth_user');
+        }
+
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && isMounted) {
+            const name = parsed.name || parsed.fullName || parsed.displayName || currentUser?.displayName || 'Student';
+            const phone = parsed.phone || parsed.phoneNumber || parsed.mobile || parsed.email || currentUser?.email || '';
+            setUserInfo({ name, phone });
+            return;
+          }
+        }
+
+        // Global fallback if available
+        if (typeof globalThis !== 'undefined' && (globalThis as any).__NERMAI_USER__ && isMounted) {
+          const u = (globalThis as any).__NERMAI_USER__;
+          setUserInfo({
+            name: u.name || u.fullName || currentUser?.displayName || 'Student',
+            phone: u.phone || u.phoneNumber || u.email || currentUser?.email || '',
+          });
+          return;
+        }
+
+        // Fallback to AuthProvider currentUser
+        if (currentUser && isMounted) {
+          setUserInfo({
+            name: currentUser.displayName || 'Student',
+            phone: currentUser.email || '',
+          });
+        }
+      } catch (err) {
+        if (currentUser && isMounted) {
+          setUserInfo({
+            name: currentUser.displayName || 'Student',
+            phone: currentUser.email || '',
+          });
+        }
+      }
+    };
+
+    loadUserDetails();
+    return () => {
+      isMounted = false;
+    };
   }, [currentUser]);
 
-  useEffect(() => {
-    const updateSize = () => {
-      if (containerRef.current) {
-        animState.current.containerWidth = containerRef.current.clientWidth;
-        animState.current.containerHeight = containerRef.current.clientHeight;
-      }
-      if (cardRef.current) {
-        animState.current.width = cardRef.current.clientWidth;
-        animState.current.height = cardRef.current.clientHeight;
-      }
-    };
-    
-    updateSize();
-    window.addEventListener('resize', updateSize);
-    
-    let animationId: number;
-    
-    const animate = () => {
-      const state = animState.current;
+  // Construct watermark text: NERMAI • [Name] • [Phone]
+  const watermarkText = useMemo(() => {
+    if (customText) return customText;
+    const parts = ['NERMAI'];
+    if (userInfo.name) parts.push(userInfo.name);
+    if (userInfo.phone) parts.push(userInfo.phone);
+    return parts.join(' • ');
+  }, [customText, userInfo]);
 
-      // Update position
-      state.x += state.dx;
-      state.y += state.dy;
-
-      // Bounce off walls
-      if (state.x <= 0) {
-        state.x = 0;
-        state.dx *= -1;
-      } else if (state.x + state.width >= state.containerWidth) {
-        state.x = state.containerWidth - state.width;
-        state.dx *= -1;
-      }
-
-      if (state.y <= 0) {
-        state.y = 0;
-        state.dy *= -1;
-      } else if (state.y + state.height >= state.containerHeight) {
-        state.y = state.containerHeight - state.height;
-        state.dy *= -1;
-      }
-
-      // Apply position directly to DOM for better performance
-      if (cardRef.current) {
-        cardRef.current.style.transform = `translate(${state.x}px, ${state.y}px)`;
-      }
-
-      animationId = requestAnimationFrame(animate);
-    };
-    
-    animationId = requestAnimationFrame(animate);
-    
-    return () => {
-      window.removeEventListener('resize', updateSize);
-      cancelAnimationFrame(animationId);
-    };
-  }, []);
-
-  const handleMouseEnter = () => {
-    // Jump to a random position when hovered
-    const state = animState.current;
-    
-    const minX = 0;
-    const maxX = Math.max(0, state.containerWidth - state.width);
-    const minY = 0;
-    const maxY = Math.max(0, state.containerHeight - state.height);
-    
-    // Pick a new position at least a quarter screen away
-    let newX = state.x;
-    let newY = state.y;
-    
-    while (Math.abs(newX - state.x) < maxX * 0.25 || Math.abs(newY - state.y) < maxY * 0.25) {
-      newX = Math.random() * maxX;
-      newY = Math.random() * maxY;
-    }
-    
-    state.x = newX;
-    state.y = newY;
-    
-    // Randomize direction slightly — stay slow after hover-jump
-    state.dx = (Math.random() > 0.5 ? 1 : -1) * (0.15 + Math.random() * 0.15);
-    state.dy = (Math.random() > 0.5 ? 1 : -1) * (0.15 + Math.random() * 0.15);
-  };
+  // Determine the 2 positions for the current page
+  // Safe modulo to handle negative or 0 page numbers
+  const safePage = Math.max(1, pageNumber);
+  const pairIndex = (safePage - 1) % POSITION_PAIRS.length;
+  const currentPair = POSITION_PAIRS[pairIndex];
 
   return (
     <div
-      ref={containerRef}
-      style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        width: '100%',
-        height: '100%',
-        pointerEvents: 'none', // Let clicks pass through to PDF by default
-        overflow: 'hidden',
-        zIndex: 50,
-      }}
+      className="absolute inset-0 w-full h-full pointer-events-none select-none overflow-hidden z-20"
+      aria-hidden="true"
+      style={{ pointerEvents: 'none' }}
     >
+      {/* Watermark 1 — Static on this page, shifts when pageNumber changes */}
       <div
-        ref={cardRef}
-        onMouseEnter={handleMouseEnter}
-        onTouchStart={handleMouseEnter}
         style={{
           position: 'absolute',
-          top: 0,
-          left: 0,
-          pointerEvents: 'auto', // Capture mouse/touch events just for the card
-          backgroundColor: 'rgba(255, 255, 255, 0.18)',
-          padding: isMobile ? '5px 9px' : '10px 16px',
-          borderRadius: isMobile ? '7px' : '10px',
-          boxShadow: '0 2px 10px rgba(0,0,0,0.10)',
-          border: '1px solid rgba(255,255,255,0.30)',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          backdropFilter: 'blur(8px)',
-          WebkitBackdropFilter: 'blur(8px)',
+          top: currentPair[0].top,
+          left: currentPair[0].left,
+          fontSize: '11px',
+          fontWeight: 600,
+          fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+          letterSpacing: '0.04em',
+          color: isDarkBackground ? 'rgba(255, 255, 255, 0.13)' : 'rgba(15, 23, 42, 0.11)',
+          whiteSpace: 'nowrap',
           userSelect: 'none',
-          cursor: 'default',
+          pointerEvents: 'none',
+          zIndex: 25,
+          textShadow: isDarkBackground ? '0 1px 2px rgba(0,0,0,0.4)' : 'none',
+          transition: 'all 0.25s ease-out',
         }}
       >
-        <span style={{ fontSize: isMobile ? '8px' : '13px', fontWeight: '700', color: '#0f172a', marginBottom: isMobile ? '1px' : '3px', opacity: 0.75 }}>
-          NERMAI ACADEMY
-        </span>
-        <span style={{ fontSize: isMobile ? '8px' : '13px', color: '#0f172a', textAlign: 'center', whiteSpace: 'pre-wrap', opacity: 1, fontWeight: '500' }}>
-          {currentUser?.email || 'student@nermai.com'}
-        </span>
-        <span style={{ fontSize: isMobile ? '8px' : '13px', color: '#1e293b', marginTop: isMobile ? '1px' : '2px', opacity: 1, fontWeight: '500' }}>
-          {new Date().toLocaleDateString()}
-        </span>
+        {watermarkText}
+      </div>
+
+      {/* Watermark 2 — Static on this page, shifts when pageNumber changes */}
+      <div
+        style={{
+          position: 'absolute',
+          top: currentPair[1].top,
+          left: currentPair[1].left,
+          fontSize: '11px',
+          fontWeight: 600,
+          fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+          letterSpacing: '0.04em',
+          color: isDarkBackground ? 'rgba(255, 255, 255, 0.13)' : 'rgba(15, 23, 42, 0.11)',
+          whiteSpace: 'nowrap',
+          userSelect: 'none',
+          pointerEvents: 'none',
+          zIndex: 25,
+          textShadow: isDarkBackground ? '0 1px 2px rgba(0,0,0,0.4)' : 'none',
+          transition: 'all 0.25s ease-out',
+        }}
+      >
+        {watermarkText}
       </div>
     </div>
   );

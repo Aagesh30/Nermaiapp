@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AdminModal, AdminInput, AdminSelect, AdminButton } from '../components/admin-ui';
-import { CourseApi, LiveSessionApi, ProviderAccountsApi, StaffApi } from '../core/services';
+import { CourseApi, LiveSessionApi, ProviderAccountsApi, StaffApi, BatchApi } from '../core/services';
 import { UploadCloud, Link as LinkIcon, Settings2, Video, Clock, CheckCircle, Calendar } from 'lucide-react';
 
 export interface ScheduleSessionDialogProps {
@@ -24,6 +24,8 @@ export const ScheduleSessionDialog: React.FC<ScheduleSessionDialogProps> = ({
   const [subjects, setSubjects] = useState<any[]>([]);
   const [topics, setTopics] = useState<any[]>([]);
   const [subtopics, setSubtopics] = useState<any[]>([]);
+  const [batches, setBatches] = useState<any[]>([]);
+  const [selectedBatchIds, setSelectedBatchIds] = useState<string[]>([]);
   
   const [providerAccounts, setProviderAccounts] = useState<any[]>([]);
   const [capabilities, setCapabilities] = useState<Record<string, any>>({});
@@ -31,6 +33,8 @@ export const ScheduleSessionDialog: React.FC<ScheduleSessionDialogProps> = ({
 
   const [courseId, setCourseId] = useState('');
   const [subjectId, setSubjectId] = useState('');
+  const [customSubjectName, setCustomSubjectName] = useState('');
+  const [customTopicName, setCustomTopicName] = useState('');
 
   const formatDateLocal = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const formatTimeLocal = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -92,7 +96,7 @@ export const ScheduleSessionDialog: React.FC<ScheduleSessionDialogProps> = ({
 
     const fetchLookups = async () => {
       try {
-        const [cRes, sRes, tRes, subRes, pRes, capRes, candRes] = await Promise.all([
+        const [cRes, sRes, tRes, subRes, pRes, capRes, candRes, bRes] = await Promise.all([
           CourseApi.listCourses(),
           CourseApi.listAllSubjects(),
           CourseApi.listAllTopics(),
@@ -105,7 +109,8 @@ export const ScheduleSessionDialog: React.FC<ScheduleSessionDialogProps> = ({
             console.error('[ScheduleSessionDialog] /staff/live-session-candidates failed:', err?.response?.status, err?.message);
             // Return empty candidates so the dialog still opens, but log clearly
             return { data: { data: { teachers: [], management: [], admins: [] } } };
-          })
+          }),
+          BatchApi.listBatches().catch(() => ({ data: { data: [] } }))
         ]);
         
         setCourses(cRes.data?.data || cRes.data || []);
@@ -117,6 +122,7 @@ export const ScheduleSessionDialog: React.FC<ScheduleSessionDialogProps> = ({
         setSubtopics(fetchedSubtopics);
         setProviderAccounts(pRes.data?.data || []);
         setCapabilities(capRes.data?.data || {});
+        setBatches(bRes.data?.data || bRes.data || []);
         const fetchedCandidates = candRes.data?.data || { teachers: [], management: [], admins: [] };
         console.log("===== FRONTEND CANDIDATES DEBUG =====");
         console.log("Raw Response:", candRes.data);
@@ -125,6 +131,7 @@ export const ScheduleSessionDialog: React.FC<ScheduleSessionDialogProps> = ({
         setCandidates(fetchedCandidates);
 
         if (editingClass) {
+          setSelectedBatchIds(editingClass.targetBatchIds || editingClass.targetBatches || []);
           const tId = editingClass.topicId;
           const topic = fetchedTopics.find((t: any) => t.id === tId);
           const subject = fetchedSubjects.find((s: any) => s.id === topic?.subjectId);
@@ -180,6 +187,7 @@ export const ScheduleSessionDialog: React.FC<ScheduleSessionDialogProps> = ({
         } else if (prefilledTopicId) {
           setSelectedAdminIds([]);
           setSelectedTeacherIds([]);
+          setSelectedBatchIds([]);
           const topic = fetchedTopics.find((t: any) => t.id === prefilledTopicId);
           const subject = fetchedSubjects.find((s: any) => s.id === topic?.subjectId);
           
@@ -231,7 +239,7 @@ export const ScheduleSessionDialog: React.FC<ScheduleSessionDialogProps> = ({
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.topicId) return setErrorMsg('Please select a topic.');
+    if (!formData.topicId) return setErrorMsg('Please select or specify a topic.');
     if (formData.provider === 'youtube' && !youtubeUrl && !editingClass) return setErrorMsg('Please provide a YouTube URL.');
     if (formData.provider === 'upload' && !file && !editingClass) return setErrorMsg('Please select a video file to upload.');
     if (formData.minimumAttendancePercentage < 1 || formData.minimumAttendancePercentage > 100) {
@@ -241,14 +249,83 @@ export const ScheduleSessionDialog: React.FC<ScheduleSessionDialogProps> = ({
     setIsSaving(true);
     setErrorMsg('');
     try {
+      let activeTopicId = formData.topicId;
+
+      if (subjectId === '__custom__') {
+        if (!customSubjectName.trim()) { setIsSaving(false); return setErrorMsg('Please enter a custom subject name.'); }
+        if (!customTopicName.trim()) { setIsSaving(false); return setErrorMsg('Please enter a custom topic name.'); }
+        if (!courseId) { setIsSaving(false); return setErrorMsg('Please select a course first.'); }
+
+        let newSubjId: string | undefined;
+        try {
+          const sRes = await CourseApi.createSubject(courseId, { courseId, name: customSubjectName.trim() });
+          newSubjId = sRes?.data?.data?.id || sRes?.data?.id || sRes?.id;
+        } catch (sErr: any) {
+          try {
+            const fetchedSubjs = await CourseApi.listSubjects(courseId);
+            const subList = Array.isArray(fetchedSubjs?.data) ? fetchedSubjs.data : (Array.isArray(fetchedSubjs) ? fetchedSubjs : []);
+            const match = subList.find((s: any) => (s.name || s.title || '').trim().toLowerCase() === customSubjectName.trim().toLowerCase());
+            if (match) newSubjId = match.id || match._id;
+          } catch (_) {}
+          if (!newSubjId) {
+            const existingSubj = subjects.find((s: any) => (s.courseId === courseId || s.courseId === 'erp_course_ldc') && (s.name || s.title || '').trim().toLowerCase() === customSubjectName.trim().toLowerCase());
+            if (existingSubj) newSubjId = existingSubj.id || existingSubj._id;
+            else throw sErr;
+          }
+        }
+
+        let newTopId: string | undefined;
+        try {
+          const tRes = await CourseApi.createTopic(newSubjId!, { subjectId: newSubjId, name: customTopicName.trim() });
+          newTopId = tRes?.data?.data?.id || tRes?.data?.id || tRes?.id;
+        } catch (tErr: any) {
+          try {
+            const fetchedTopics = await CourseApi.listTopics(newSubjId!);
+            const topList = Array.isArray(fetchedTopics?.data) ? fetchedTopics.data : (Array.isArray(fetchedTopics) ? fetchedTopics : []);
+            const match = topList.find((t: any) => (t.name || t.title || '').trim().toLowerCase() === customTopicName.trim().toLowerCase());
+            if (match) newTopId = match.id || match._id;
+          } catch (_) {}
+          if (!newTopId) {
+            const existingTop = topics.find((t: any) => t.subjectId === newSubjId && (t.name || t.title || '').trim().toLowerCase() === customTopicName.trim().toLowerCase());
+            if (existingTop) newTopId = existingTop.id || existingTop._id;
+            else throw tErr;
+          }
+        }
+        activeTopicId = newTopId;
+      } else if (formData.topicId === '__custom__') {
+        if (!customTopicName.trim()) { setIsSaving(false); return setErrorMsg('Please enter a custom topic name.'); }
+        if (!subjectId) { setIsSaving(false); return setErrorMsg('Please select a subject first.'); }
+
+        let newTopId: string | undefined;
+        try {
+          const tRes = await CourseApi.createTopic(subjectId, { subjectId, name: customTopicName.trim() });
+          newTopId = tRes?.data?.data?.id || tRes?.data?.id || tRes?.id;
+        } catch (tErr: any) {
+          try {
+            const fetchedTopics = await CourseApi.listTopics(subjectId);
+            const topList = Array.isArray(fetchedTopics?.data) ? fetchedTopics.data : (Array.isArray(fetchedTopics) ? fetchedTopics : []);
+            const match = topList.find((t: any) => (t.name || t.title || '').trim().toLowerCase() === customTopicName.trim().toLowerCase());
+            if (match) newTopId = match.id || match._id;
+          } catch (_) {}
+          if (!newTopId) {
+            const existingTop = topics.find((t: any) => t.subjectId === subjectId && (t.name || t.title || '').trim().toLowerCase() === customTopicName.trim().toLowerCase());
+            if (existingTop) newTopId = existingTop.id || existingTop._id;
+            else throw tErr;
+          }
+        }
+        activeTopicId = newTopId;
+      }
+
+      if (!activeTopicId) { setIsSaving(false); return setErrorMsg('Failed to resolve topic ID.'); }
       if (editingClass) {
         // Update Class details (always allowed)
         await CourseApi.updateClass(editingClass.id, {
           title: formData.title,
           description: formData.description,
-          topicId: formData.topicId,
+          topicId: activeTopicId,
           subtopicId: formData.subtopicId || undefined,
           accessLevel: formData.accessLevel,
+          targetBatchIds: formData.accessLevel === 'batch' ? selectedBatchIds : [],
           minimumAttendancePercentage: formData.minimumAttendancePercentage,
           attendanceThresholdMinutes: formData.attendanceThresholdMinutes ?? 15
         });
@@ -296,13 +373,14 @@ export const ScheduleSessionDialog: React.FC<ScheduleSessionDialogProps> = ({
         if (formData.provider === 'upload') classType = 'recorded';
         if (formData.provider === 'youtube') classType = 'youtube_recorded';
 
-        const res = await CourseApi.createClass(formData.topicId, {
+        const res = await CourseApi.createClass(activeTopicId, {
           title: formData.title,
           description: formData.description,
-          topicId: formData.topicId,
+          topicId: activeTopicId,
           subtopicId: formData.subtopicId || undefined,
           classType,
           accessLevel: formData.accessLevel,
+          targetBatchIds: formData.accessLevel === 'batch' ? selectedBatchIds : [],
           minimumAttendancePercentage: formData.minimumAttendancePercentage,
           attendanceThresholdMinutes: formData.attendanceThresholdMinutes ?? 15
         });
@@ -405,23 +483,28 @@ export const ScheduleSessionDialog: React.FC<ScheduleSessionDialogProps> = ({
               onChange={(e: any) => {
                 const newSubjectId = e.target.value;
                 setSubjectId(newSubjectId);
-                const tops = topics.filter(t => t.subjectId === newSubjectId);
-                if (tops.length === 1) {
-                  const topVal = tops[0].id;
-                  const subtops = subtopics.filter(sub => sub.topicId === topVal);
-                  setFormData(p => ({ 
-                    ...p, 
-                    topicId: topVal,
-                    subtopicId: subtops.length === 1 ? subtops[0].id : ''
-                  }));
+                if (newSubjectId === '__custom__') {
+                  setFormData(p => ({ ...p, topicId: '__custom__', subtopicId: '' }));
                 } else {
-                  setFormData(p => ({ ...p, topicId: '', subtopicId: '' }));
+                  const tops = topics.filter(t => t.subjectId === newSubjectId);
+                  if (tops.length === 1) {
+                    const topVal = tops[0].id;
+                    const subtops = subtopics.filter(sub => sub.topicId === topVal);
+                    setFormData(p => ({ 
+                      ...p, 
+                      topicId: topVal,
+                      subtopicId: subtops.length === 1 ? subtops[0].id : ''
+                    }));
+                  } else {
+                    setFormData(p => ({ ...p, topicId: '', subtopicId: '' }));
+                  }
                 }
               }} 
               disabled={!courseId || !!editingClass || !!prefilledTopicId}
               options={[
                 { value: '', label: 'Select Subject...' },
-                ...filteredSubjects.map(s => ({ value: s.id || '', label: s.title || s.name || '' }))
+                ...filteredSubjects.map(s => ({ value: s.id || '', label: s.title || s.name || '' })),
+                { value: '__custom__', label: '+ Add Custom Subject...' }
               ]}
             />
             <AdminSelect
@@ -436,23 +519,55 @@ export const ScheduleSessionDialog: React.FC<ScheduleSessionDialogProps> = ({
                   subtopicId: subtops.length === 1 ? subtops[0].id : ''
                 });
               }} 
-              disabled={!subjectId || !!editingClass || !!prefilledTopicId}
+              disabled={!subjectId || subjectId === '__custom__' || !!editingClass || !!prefilledTopicId}
               options={[
                 { value: '', label: 'Select Topic...' },
-                ...filteredTopics.map(t => ({ value: t.id || '', label: t.name || t.title || '' }))
+                ...filteredTopics.map(t => ({ value: t.id || '', label: t.name || t.title || '' })),
+                { value: '__custom__', label: '+ Add Custom Topic...' }
               ]}
             />
             <AdminSelect
               label="Subtopic"
               value={formData.subtopicId} 
               onChange={(e: any) => setFormData({ ...formData, subtopicId: e.target.value })} 
-              disabled={!formData.topicId || !!editingClass}
+              disabled={!formData.topicId || formData.topicId === '__custom__' || !!editingClass}
               options={[
                 { value: '', label: 'Select Subtopic...' },
                 ...filteredSubtopics.map(sub => ({ value: sub.id || '', label: sub.name || '' }))
               ]}
             />
           </div>
+
+          {subjectId === '__custom__' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3 pt-3 border-t border-border/50">
+              <AdminInput
+                label="Custom Subject Name *"
+                value={customSubjectName}
+                onChange={(e: any) => setCustomSubjectName(e.target.value)}
+                placeholder="e.g. Current Affairs"
+                required
+              />
+              <AdminInput
+                label="Custom Topic Name *"
+                value={customTopicName}
+                onChange={(e: any) => setCustomTopicName(e.target.value)}
+                placeholder="e.g. International Relations Analysis"
+                required
+              />
+            </div>
+          )}
+
+          {subjectId !== '__custom__' && formData.topicId === '__custom__' && (
+            <div className="mt-3 pt-3 border-t border-border/50">
+              <AdminInput
+                label="Custom Topic Name *"
+                value={customTopicName}
+                onChange={(e: any) => setCustomTopicName(e.target.value)}
+                placeholder="e.g. Special Topic Session"
+                required
+              />
+            </div>
+          )}
         </div>
 
         {/* Content Details */}
@@ -928,6 +1043,42 @@ export const ScheduleSessionDialog: React.FC<ScheduleSessionDialogProps> = ({
                       <input type="checkbox" defaultChecked className="rounded border-border" />
                       <span className="text-textSecondary">Auto-Record Session</span>
                     </label>
+                  )}
+                  {formData.accessLevel === 'batch' && (
+                    <div className="col-span-2 bg-surface-hover p-3 rounded-xl border border-border">
+                      <label className="text-xs font-bold uppercase tracking-wider text-textSecondary block mb-2">
+                        Select Target Batches *
+                      </label>
+                      <div className="max-h-40 overflow-y-auto space-y-1.5 p-2 bg-background rounded-lg border border-border">
+                        {batches.length === 0 ? (
+                          <p className="text-xs text-textSecondary italic">No batches available</p>
+                        ) : (
+                          batches.map((b: any) => {
+                            const bId = b.id || b._id;
+                            const bName = b.batchName || b.name || b.code || bId;
+                            const isChecked = selectedBatchIds.includes(bId);
+                            return (
+                              <label key={bId} className="flex items-center space-x-2.5 p-1 hover:bg-surface-hover rounded-lg cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {
+                                    setSelectedBatchIds(prev => 
+                                      prev.includes(bId) ? prev.filter(x => x !== bId) : [...prev, bId]
+                                    );
+                                  }}
+                                  className="accent-[#8B0000] rounded focus:ring-0 w-4 h-4 cursor-pointer"
+                                />
+                                <span className="text-sm text-textPrimary font-medium">{bName}</span>
+                              </label>
+                            );
+                          })
+                        )}
+                      </div>
+                      <span className="text-xs text-textSecondary mt-1 block">
+                        {selectedBatchIds.length} batch(es) selected
+                      </span>
+                    </div>
                   )}
                 </div>
               )}

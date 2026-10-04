@@ -213,31 +213,26 @@ export class AccessPolicyEngine {
           return { allowed: true, reason: 'Publicly visible resource', source: 'PUBLIC' };
         }
 
-        // 5b. Course Enrollment Hard Gate (must be enrolled in the class's course)
-        if (cls.courseId && !enrolledCourseIds.has(cls.courseId)) {
+        // 5b. Course & Batch Targeting Gate (Additive: Course Enrolled + Targeted Batches e.g. LDC + TB18)
+        const isCourseStudent = Boolean(cls.courseId) && enrolledCourseIds.has(cls.courseId);
+        const targetBatchIds: string[] = cls.targetBatchIds || [];
+        const isTargetedBatch = targetBatchIds.length > 0 && (
+          targetBatchIds.includes('all') ||
+          (targetBatchIds.includes('all_paid') && activeMemberships.length > 0) ||
+          (targetBatchIds.includes('all_free') && activeMemberships.length === 0) ||
+          activeMemberships.some(m => m.batchId && targetBatchIds.includes(m.batchId))
+        );
+
+        const hasClassTargeting = Boolean(cls.courseId) || targetBatchIds.length > 0;
+        const passesClassTargeting = !hasClassTargeting || isCourseStudent || isTargetedBatch;
+
+        if (!passesClassTargeting) {
+          const denialReason: DenialReason = (cls.courseId && !isCourseStudent) ? 'WRONG_COURSE' : 'TARGET_MISMATCH';
           return this.buildDeniedDecision(
-            studentId, entityType, entityId, 'WRONG_COURSE',
+            studentId, entityType, entityId, denialReason,
             { batchType: primaryBatchType, classType: cls.classType, batchName: primaryBatchName },
             mergedCapabilities
           );
-        }
-
-        // 5c. Specific Batch check (ERP batches / all / paid / free)
-        if (cls.accessLevel === 'batch' || (cls.targetBatchIds && cls.targetBatchIds.length > 0)) {
-          const targetBatchIds: string[] = cls.targetBatchIds || [];
-          const hasBatchAccess = 
-            targetBatchIds.includes('all') ||
-            (targetBatchIds.includes('all_paid') && activeMemberships.length > 0) ||
-            (targetBatchIds.includes('all_free') && activeMemberships.length === 0) ||
-            activeMemberships.some(m => m.batchId && targetBatchIds.includes(m.batchId));
-
-          if (!hasBatchAccess) {
-            return this.buildDeniedDecision(
-              studentId, entityType, entityId, 'TARGET_MISMATCH',
-              { batchType: primaryBatchType, classType: cls.classType, batchName: primaryBatchName },
-              mergedCapabilities
-            );
-          }
         }
 
         // 5d. Recorded class

@@ -937,9 +937,9 @@ export const StudentLiveClassesPage = () => {
     }
   };
 
-  // UI safety net: never show a denied class in the Live Now tab even if backend slips.
+  // Show all live classes in Live Now tab (SessionCard handles accessDenied with "Request Live Class Access")
   const live = classes.filter(
-    (c: any) => isLiveStatus(c.liveStatus || c.status) && !c.accessDenied
+    (c: any) => isLiveStatus(c.liveStatus || c.status)
   );
 
   // Default to live tab if there are live classes and we haven't manually changed tabs

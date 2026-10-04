@@ -30,11 +30,14 @@ const Alert = {
     }
   }
 };
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
+import * as ScreenCapture from "expo-screen-capture";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Notifications from "expo-notifications";
 
 // Configure your Host IP address for local network connections
 const DEFAULT_HOST_IP = "192.168.0.120";
@@ -253,6 +256,7 @@ if (typeof window !== "undefined") {
 
 
 export default function App() {
+  const insets = useSafeAreaInsets();
   const { width: screenWidth } = useWindowDimensions();
   const isMobile = screenWidth < 768;
   const [user, setUser] = useState<any>(null);
@@ -268,6 +272,21 @@ export default function App() {
     message: "",
     buttons: []
   });
+
+  // Screen capture blocking guard for student and guest (FLAG_SECURE on mobile APK)
+  useEffect(() => {
+    const isStaffOrAdmin = user && ["admin", "staff", "super_admin", "developer", "teacher"].includes(user.role);
+    try {
+      if (!isStaffOrAdmin) {
+        ScreenCapture.preventScreenCaptureAsync().catch(() => { });
+      } else {
+        ScreenCapture.allowScreenCaptureAsync().catch(() => { });
+      }
+    } catch (_) { }
+    return () => {
+      try { ScreenCapture.allowScreenCaptureAsync().catch(() => { }); } catch (_) { }
+    };
+  }, [user]);
 
   useEffect(() => {
     globalShowAlert = (title, message, buttons) => {
@@ -1094,9 +1113,36 @@ export default function App() {
   // without user or hostIp actually changing
   const loadedForUserRef = useRef<string | null>(null);
 
-  // Load persisted guest session on mount
+  // Load persisted guest session on mount + auto-login for registered users
   useEffect(() => {
     const checkPersistedGuest = async () => {
+      // ── Persistent login for registered users (student/admin/staff) ──────────
+      if (Platform.OS !== "web") {
+        try {
+          const savedCreds = await AsyncStorage.getItem("nermai_user_creds");
+          if (savedCreds) {
+            const { u, p } = JSON.parse(savedCreds);
+            if (u && p) {
+              const baseUrl = getBaseUrl();
+              const res = await fetch(`${baseUrl}/auth/login`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username: u, password: p })
+              });
+              const json = await res.json();
+              if (res.ok) {
+                setUser(json.data || json);
+                setActiveTab("dashboard");
+                return; // skip guest check if user already logged in
+              }
+            }
+          }
+        } catch (e) {
+          console.log("Auto-login restore failed:", e);
+        }
+      }
+
+      // ── Persistent login for guest users ─────────────────────────────────────
       const persisted = await guestStorage.get();
       if (persisted.name && persisted.phone) {
         // Pre-fill the guest input fields for convenience
@@ -1160,6 +1206,11 @@ export default function App() {
       }
     };
     checkPersistedGuest();
+
+    // ── Request notification permission on Android (one-time prompt) ──────────
+    if (Platform.OS !== "web") {
+      Notifications.requestPermissionsAsync().catch(() => {});
+    }
   }, []);
 
   // Fetch initial data — only runs when user identity changes
@@ -2104,6 +2155,10 @@ export default function App() {
       const res = await api.post("/auth/login", { username: u, password: p });
       setUser(res);
       setActiveTab("dashboard");
+      // Save credentials to device storage so the user stays logged in after closing the app
+      if (Platform.OS !== "web") {
+        AsyncStorage.setItem("nermai_user_creds", JSON.stringify({ u, p })).catch(() => {});
+      }
     } catch (e: any) {
       let errorMsg = e.message || "Unknown error";
       const normalizedMsg = String(errorMsg).toUpperCase();
@@ -3194,7 +3249,7 @@ export default function App() {
               <Text style={{ color: "#2e7d32", fontSize: 10, fontWeight: "bold" }}>● DB ONLINE</Text>
             </View>
             <TouchableOpacity
-              onPress={() => { setUser(null); setDevCollections([]); setDevDocs([]); setDevActiveCollection(""); }}
+              onPress={() => { AsyncStorage.removeItem("nermai_user_creds").catch(() => {}); setUser(null); setDevCollections([]); setDevDocs([]); setDevActiveCollection(""); }}
               style={[styles.primaryBtn, { paddingVertical: 6, paddingHorizontal: 12, marginBottom: 0, backgroundColor: "#c62828" }]}
             >
               <Text style={styles.primaryBtnTxt}>Exit Portal</Text>
@@ -3742,6 +3797,7 @@ export default function App() {
                   style={[styles.drawerItem, { marginBottom: 30 }]}
                   onPress={async () => {
                     await guestStorage.disableAutoLogin();
+                    if (Platform.OS !== "web") { await AsyncStorage.removeItem("nermai_user_creds").catch(() => {}); }
                     setShowHamburger(false);
                     setUser(null);
                     setActiveTab("dashboard");
@@ -4822,7 +4878,7 @@ export default function App() {
           {/* Drawer Panel */}
           <View style={[styles.drawerPanel, darkMode && styles.drawerPanelDark]}>
             {/* Drawer Header */}
-            <View style={[styles.drawerHeader, darkMode && styles.drawerHeaderDark]}>
+            <View style={[styles.drawerHeader, darkMode && styles.drawerHeaderDark, { paddingTop: (insets.top > 0 ? insets.top : 24) + 10 }]}>
               <View style={styles.drawerAvatarCircle}>
                 <Text style={{ color: "#ffffff", fontWeight: "bold", fontSize: 22 }}>{user.name?.[0]?.toUpperCase() || "U"}</Text>
               </View>
@@ -4893,6 +4949,7 @@ export default function App() {
                 style={[styles.drawerItem, { marginBottom: 30 }]}
                 onPress={async () => {
                   await guestStorage.disableAutoLogin();
+                  if (Platform.OS !== "web") { await AsyncStorage.removeItem("nermai_user_creds").catch(() => {}); }
                   setShowHamburger(false);
                   setUser(null);
                   setActiveTab("dashboard");
@@ -5105,10 +5162,15 @@ export default function App() {
               <View style={{ marginTop: 10 }}>
                 <Text style={[styles.sectionTitle, { marginBottom: 12 }]}>🔔 System Alerts & Notifications</Text>
                 {(() => {
+                  const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
                   const activeNotifications = notifications.filter((notif: any) => {
                     const myStudent = getLoggedInStudent(user, students);
                     const studentId = myStudent?.id || user?.studentId || user?.userId || "";
                     const myName = myStudent ? getStudentName(myStudent) : "";
+
+                    // Only show notifications from the last 30 days
+                    const notifDate = notif.createdAt ? new Date(notif.createdAt).getTime() : 0;
+                    if (notifDate > 0 && notifDate < thirtyDaysAgo) return false;
 
                     if (notif.targetStudentId) {
                       return notif.targetStudentId === studentId;
@@ -10013,7 +10075,7 @@ export default function App() {
         )}
       </View>
       {/* Bottom Tab Bar */}
-      <View style={[styles.bottomTabBar, darkMode && styles.bottomTabBarDark]}>
+      <View style={[styles.bottomTabBar, darkMode && styles.bottomTabBarDark, Platform.OS === "android" && insets.bottom > 0 && { height: 68 + insets.bottom, paddingBottom: 8 + insets.bottom }]}>
         <TouchableOpacity
           onPress={() => { setActiveTab("dashboard"); loadTodayQuiz(); }}
           style={[styles.bottomTab, activeTab === "dashboard" && styles.bottomTabSelected, activeTab === "dashboard" && darkMode && styles.sidebarTabActiveDark]}

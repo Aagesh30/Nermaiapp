@@ -1,32 +1,56 @@
 {
   "expo": {
-    "name": "NERMAI IAS Academy Web Portal",
+    "name": "NERMAI IAS Academy",
     "slug": "nermai-ias-academy-web-portal",
+    "scheme": "nermaiiasacademy",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "package": "com.nermai.iasacademy",
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.CAMERA",
+        "android.permission.POST_NOTIFICATIONS"
+      ],
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#ffffff",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false
     },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#c62828"
+        }
+      ],
+      "expo-web-browser"
+    ],
     "web": {
       "favicon": "./assets/favicon.png",
       "bundler": "metro"
     },
     "extra": {
       "eas": {
-        "projectId": "06a9d779-07a0-4c04-844b-d96b93d6eee9"
+        "projectId": "a0b3bbab-3bea-4ced-82f5-e61600fddd7f"
       }
-    }
+    },
+    "owner": "ak_jd"
   }
 }

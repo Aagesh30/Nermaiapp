@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
+import { Platform } from 'react-native';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle, XCircle, AlertTriangle, Info, X } from 'lucide-react';
 
@@ -49,13 +50,15 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-3 pointer-events-none max-w-sm w-full">
-        <AnimatePresence>
-          {toasts.map((t) => (
-            <ToastItem key={t.id} toast={t} onRemove={() => removeToast(t.id)} />
-          ))}
-        </AnimatePresence>
-      </div>
+      {Platform.OS === 'web' && (
+        <div className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-3 pointer-events-none max-w-sm w-full">
+          <AnimatePresence>
+            {toasts.map((t) => (
+              <ToastItem key={t.id} toast={t} onRemove={() => removeToast(t.id)} />
+            ))}
+          </AnimatePresence>
+        </div>
+      )}
     </ToastContext.Provider>
   );
 };

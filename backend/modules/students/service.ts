@@ -44,6 +44,9 @@ export class StudentService {
         qrCodeEnabledAt: data.qrCodeEnabledAt || null,
         qrCodeRequested: data.qrCodeRequested || false,
         qrCodeRequestedAt: data.qrCodeRequestedAt || null,
+        batch: data.batch || (Array.isArray(data.batches) ? data.batches[0] : null) || null,
+        batches: Array.isArray(data.batches) ? data.batches : (data.batch ? [data.batch] : []),
+        course: data.course || null,
       };
     });
   }

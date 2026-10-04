@@ -80,6 +80,7 @@ export const MeetingRenderer: React.FC<MeetingRendererProps> = ({ wrapperUrl, jo
         domStorageEnabled={true}
         mediaPlaybackRequiresUserAction={false}
         allowsInlineMediaPlayback={true}
+        mediaCapturePermissionGrantType="grant"
         mixedContentMode="never"
         thirdPartyCookiesEnabled={true}
         cacheEnabled={false}

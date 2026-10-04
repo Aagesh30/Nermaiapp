@@ -16,9 +16,11 @@ import {
   Linking,
   Animated,
   Easing,
-  SafeAreaView
+  SafeAreaView,
+  AppState
 } from "react-native";
-import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
+import { SafeAreaProvider, initialWindowMetrics, useSafeAreaInsets } from "react-native-safe-area-context";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ScreenCapture from 'expo-screen-capture';
 
 const safeInitialMetrics = initialWindowMetrics || {
@@ -49,8 +51,11 @@ const StudentCoursesPage = React.lazy(() => import('./lms/student/StudentCourses
 const StudentLiveClassesPage = React.lazy(() => import('./lms/student/StudentLiveClassesPage').then(m => ({ default: m.StudentLiveClassesPage })));
 const NERMAIAssistantWidget = React.lazy(() => import('./lms/student/NERMAIAssistantWidget').then(m => ({ default: m.NERMAIAssistantWidget })));
 const ResourceViewer = React.lazy(() => import('./lms/student/ResourceViewer').then(m => ({ default: m.ResourceViewer })));
+const DailyContentViewer = React.lazy(() => import('./lms/student/DailyContentViewer').then(m => ({ default: m.DailyContentViewer })));
 const SecurePDFViewer = React.lazy(() => import('./lms/components/ui/SecurePDFViewer').then(m => ({ default: m.SecurePDFViewer })));
 const QRCodePermissionsPage = React.lazy(() => import('./lms/admin/QRCodePermissionsPage').then(m => ({ default: m.QRCodePermissionsPage })));
+const MobileQRCodePermissions = React.lazy(() => import('./lms/admin/MobileQRCodePermissions').then(m => ({ default: m.MobileQRCodePermissions })));
+const MobileLMSPages = React.lazy(() => import('./lms/admin/MobileLMSPages').then(m => ({ default: m.MobileLMSPages })));
 const StudentPayFeesPage = React.lazy(() => import('./lms/student/StudentPayFeesPage').then(m => ({ default: m.StudentPayFeesPage })));
 const TeacherDashboard = React.lazy(() => import('./lms/staff/TeacherDashboard').then(m => ({ default: m.TeacherDashboard })));
 const BulkStudentUploadModal = React.lazy(() => import('./lms/components/BulkStudentUploadModal').then(m => ({ default: m.BulkStudentUploadModal })));
@@ -71,8 +76,9 @@ const getDirectImageUrl = (url: string): string => {
   return url;
 };
 
-const TestWatermarkOverlay: React.FC = () => {
+const TestWatermarkOverlay: React.FC<{ studentText?: string }> = ({ studentText }) => {
   const logoSrc = require('./assets/watermark-logo.png');
+  const displayText = studentText ? studentText.trim() : "";
   return (
     <View
       style={{
@@ -84,7 +90,8 @@ const TestWatermarkOverlay: React.FC = () => {
         justifyContent: "center",
         alignItems: "center",
         zIndex: 1,
-        pointerEvents: "none"
+        pointerEvents: "none",
+        overflow: "hidden"
       }}
       pointerEvents="none"
     >
@@ -93,10 +100,46 @@ const TestWatermarkOverlay: React.FC = () => {
         style={{
           width: 520,
           height: 520,
-          opacity: 0.08,
+          opacity: 0.07,
           resizeMode: "contain"
         }}
       />
+      {displayText ? (
+        <View
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            justifyContent: "space-around",
+            alignItems: "center",
+            opacity: 0.08,
+            transform: [{ rotate: "-22deg" }, { scale: 1.15 }],
+            pointerEvents: "none",
+            userSelect: "none"
+          }}
+          pointerEvents="none"
+        >
+          {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+            <Text
+              key={i}
+              style={{
+                fontSize: 12,
+                fontWeight: "700",
+                color: "#c62828",
+                letterSpacing: 2,
+                textAlign: "center",
+                width: "140%",
+                textTransform: "uppercase"
+              }}
+              numberOfLines={1}
+            >
+              NERMAI IAS • {displayText} • NERMAI IAS • {displayText}
+            </Text>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 };
@@ -220,11 +263,229 @@ import * as ImageManipulator from "expo-image-manipulator";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { handleFirebaseGoogleSignIn, db } from "./firebaseConfig";
+import { initNotifications, requestNotificationPermission, showPhoneNotification } from "./notifications";
 import { doc, setDoc, onSnapshot, collection, deleteDoc, query, where, addDoc, getDocs, orderBy, serverTimestamp } from "firebase/firestore";
 
 const USE_NATIVE_DRIVER = Platform.OS !== "web";
 
+interface UniversalDropdownOption {
+  label: string;
+  value: string;
+  disabled?: boolean;
+}
+
+interface UniversalDropdownProps {
+  value: string;
+  options: UniversalDropdownOption[];
+  onSelect: (val: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
+  darkMode?: boolean;
+  style?: any;
+}
+
+const UniversalDropdown: React.FC<UniversalDropdownProps> = ({
+  value,
+  options,
+  onSelect,
+  placeholder = "-- Select --",
+  disabled = false,
+  darkMode = false,
+  style
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectedOption = options.find(o => String(o.value) === String(value));
+
+  if (Platform.OS === 'web') {
+    return (
+      <select
+        disabled={disabled}
+        value={value}
+        onChange={e => onSelect((e.target as any).value)}
+        style={{
+          width: "100%",
+          height: 38,
+          borderRadius: 8,
+          padding: 8,
+          backgroundColor: darkMode ? "#2a2a2a" : "#fff",
+          color: darkMode ? "#fff" : "#212121",
+          border: "1px solid " + (darkMode ? "#444" : "#ccc"),
+          opacity: disabled ? 0.6 : 1,
+          ...style
+        }}
+      >
+        {placeholder && !options.some(o => o.value === "") ? <option value="">{placeholder}</option> : null}
+        {options.map(opt => (
+          <option key={opt.value} value={opt.value} disabled={opt.disabled}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  return (
+    <>
+      <TouchableOpacity
+        disabled={disabled}
+        onPress={() => setIsOpen(true)}
+        style={[styles?.input || {
+          width: "100%",
+          minHeight: 40,
+          borderRadius: 8,
+          paddingHorizontal: 12,
+          paddingVertical: 10,
+          backgroundColor: darkMode ? "#2a2a2a" : "#fff",
+          borderWidth: 1,
+          borderColor: darkMode ? "#444" : "#ccc",
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          opacity: disabled ? 0.6 : 1
+        }, {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          opacity: disabled ? 0.6 : 1
+        }, style]}
+      >
+        <Text
+          numberOfLines={1}
+          style={{
+            fontSize: 13,
+            color: selectedOption ? (darkMode ? "#fff" : "#212121") : (darkMode ? "#888" : "#999"),
+            fontWeight: selectedOption ? "600" : "normal",
+            flex: 1,
+            marginRight: 6
+          }}
+        >
+          {selectedOption ? selectedOption.label : (placeholder || "-- Select --")}
+        </Text>
+        <Ionicons name="chevron-down" size={16} color={darkMode ? "#aaa" : "#666"} />
+      </TouchableOpacity>
+
+      {isOpen && (
+        <Modal
+          visible={true}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setIsOpen(false)}
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={() => setIsOpen(false)}
+            style={{
+              flex: 1,
+              backgroundColor: "rgba(0,0,0,0.6)",
+              justifyContent: "center",
+              alignItems: "center",
+              padding: 20
+            }}
+          >
+            <TouchableOpacity
+              activeOpacity={1}
+              style={{
+                width: "100%",
+                maxWidth: 360,
+                maxHeight: "75%",
+                backgroundColor: darkMode ? "#1e1e2d" : "#fff",
+                borderRadius: 14,
+                overflow: "hidden",
+                borderWidth: 1,
+                borderColor: darkMode ? "#333" : "#e0e0e0",
+                elevation: 10
+              }}
+            >
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  paddingHorizontal: 16,
+                  paddingVertical: 12,
+                  borderBottomWidth: 1,
+                  borderBottomColor: darkMode ? "#333" : "#eee",
+                  backgroundColor: darkMode ? "#161622" : "#f8f9fa"
+                }}
+              >
+                <Text style={{ fontWeight: "bold", fontSize: 14, color: darkMode ? "#fff" : "#111" }}>
+                  {placeholder ? placeholder.replace(/^[-\s+]+|[-\s+]+$/g, "") || "Select an option" : "Select an option"}
+                </Text>
+                <TouchableOpacity onPress={() => setIsOpen(false)} style={{ padding: 4 }}>
+                  <Ionicons name="close" size={20} color={darkMode ? "#aaa" : "#666"} />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView style={{ maxHeight: 320 }} contentContainerStyle={{ paddingVertical: 4 }}>
+                {placeholder && !options.some(o => o.value === "") && (
+                  <TouchableOpacity
+                    onPress={() => {
+                      onSelect("");
+                      setIsOpen(false);
+                    }}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingHorizontal: 16,
+                      paddingVertical: 12,
+                      borderBottomWidth: 1,
+                      borderBottomColor: darkMode ? "#282838" : "#f1f3f5",
+                      backgroundColor: value === "" ? (darkMode ? "#342232" : "#ffebee") : "transparent"
+                    }}
+                  >
+                    <Text style={{ fontSize: 13, color: darkMode ? "#888" : "#999", fontStyle: "italic" }}>
+                      {placeholder}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                {options.map(opt => {
+                  const isSelected = String(opt.value) === String(value);
+                  return (
+                    <TouchableOpacity
+                      key={opt.value}
+                      disabled={opt.disabled}
+                      onPress={() => {
+                        onSelect(opt.value);
+                        setIsOpen(false);
+                      }}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        paddingHorizontal: 16,
+                        paddingVertical: 12,
+                        borderBottomWidth: 1,
+                        borderBottomColor: darkMode ? "#282838" : "#f1f3f5",
+                        backgroundColor: isSelected ? (darkMode ? "#342232" : "#ffebee") : "transparent",
+                        opacity: opt.disabled ? 0.4 : 1
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 13,
+                          color: isSelected ? "#c62828" : (darkMode ? "#e0e0e0" : "#333"),
+                          fontWeight: isSelected ? "bold" : "normal",
+                          flex: 1
+                        }}
+                      >
+                        {opt.label}
+                      </Text>
+                      {isSelected && <Ionicons name="checkmark-circle" size={18} color="#c62828" />}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
+      )}
+    </>
+  );
+};
+
 const AppsScriptGuideCard = ({ darkMode }: { darkMode: boolean }) => {
+  const { width: screenWidth } = useWindowDimensions();
+  const isMobile = screenWidth < 768;
   const [showAppsScriptGuide, setShowAppsScriptGuide] = useState<boolean>(true);
   const [activeAppsScriptTab, setActiveAppsScriptTab] = useState<"script1" | "script2">("script1");
   const [scriptCopied, setScriptCopied] = useState<boolean>(false);
@@ -388,7 +649,7 @@ function doPost(e) {
   const activeScript = activeAppsScriptTab === "script2" ? appsScriptTemplate2 : appsScriptTemplate1;
 
   return (
-    <View style={[{ backgroundColor: darkMode ? "#1e1e1e" : "#fff", borderRadius: 12, borderWidth: 1, borderColor: darkMode ? "#333" : "#e0e0e0", padding: 18, gap: 10 }]}>
+    <View style={[{ backgroundColor: darkMode ? "#1e1e1e" : "#fff", borderRadius: 12, borderWidth: 1, borderColor: darkMode ? "#333" : "#e0e0e0", padding: isMobile ? 12 : 18, gap: 10, width: "100%", maxWidth: "100%", overflow: "hidden" }]}>
       <TouchableOpacity
         onPress={() => setShowAppsScriptGuide(!showAppsScriptGuide)}
         style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
@@ -406,12 +667,16 @@ function doPost(e) {
           </Text>
 
           {/* Script Selection Tabs */}
-          <View style={{ flexDirection: "row", gap: 8, marginVertical: 4 }}>
+          <View style={{ flexDirection: "row", gap: 8, marginVertical: 4, flexWrap: "wrap" }}>
             <TouchableOpacity
               onPress={() => setActiveAppsScriptTab("script1")}
               style={{
+                flex: isMobile ? 1 : undefined,
+                minWidth: isMobile ? 130 : undefined,
+                alignItems: "center",
+                justifyContent: "center",
                 paddingHorizontal: 12,
-                paddingVertical: 6,
+                paddingVertical: 7,
                 borderRadius: 6,
                 backgroundColor: activeAppsScriptTab === "script1" ? (darkMode ? "#1e88e5" : "#1976d2") : (darkMode ? "#222" : "#e0e0e0")
               }}
@@ -423,8 +688,12 @@ function doPost(e) {
             <TouchableOpacity
               onPress={() => setActiveAppsScriptTab("script2")}
               style={{
+                flex: isMobile ? 1 : undefined,
+                minWidth: isMobile ? 130 : undefined,
+                alignItems: "center",
+                justifyContent: "center",
                 paddingHorizontal: 12,
-                paddingVertical: 6,
+                paddingVertical: 7,
                 borderRadius: 6,
                 backgroundColor: activeAppsScriptTab === "script2" ? (darkMode ? "#2e7d32" : "#388e3c") : (darkMode ? "#222" : "#e0e0e0")
               }}
@@ -435,14 +704,14 @@ function doPost(e) {
             </TouchableOpacity>
           </View>
 
-          <View style={{ gap: 8, paddingLeft: 6 }}>
+          <View style={{ gap: 8, paddingLeft: isMobile ? 0 : 6 }}>
             <TouchableOpacity onPress={() => Linking.openURL("https://script.google.com")} style={{ paddingVertical: 4 }}>
               <Text style={{ fontSize: 11, color: "#1976d2", textDecorationLine: "underline", fontWeight: "bold" }}>
                 1. Click here to open Google Apps Script dashboard (script.google.com)
               </Text>
             </TouchableOpacity>
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginVertical: 4 }}>
-              <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#555", flex: 1, minWidth: 200 }}>
+            <View style={{ flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between", gap: 8, marginVertical: 4, width: "100%", maxWidth: "100%" }}>
+              <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#555", flex: isMobile ? undefined : 1, minWidth: isMobile ? undefined : 200, lineHeight: 16 }}>
                 2. Click <Text style={{ fontWeight: "bold" }}>"New Project"</Text> and replace all code in <Text style={{ fontWeight: "bold" }}>Code.gs</Text> with {activeAppsScriptTab === "script2" ? "Script 2 (Backup)" : "Script 1 (Standard)"}:
               </Text>
               <TouchableOpacity
@@ -456,11 +725,14 @@ function doPost(e) {
                 style={{
                   flexDirection: "row",
                   alignItems: "center",
+                  justifyContent: "center",
                   gap: 6,
                   backgroundColor: scriptCopied ? "#2e7d32" : "#e64a19",
                   paddingHorizontal: 14,
-                  paddingVertical: 8,
+                  paddingVertical: 9,
                   borderRadius: 6,
+                  width: isMobile ? "100%" : undefined,
+                  alignSelf: isMobile ? "stretch" : "auto",
                   shadowColor: "#000",
                   shadowOpacity: 0.15,
                   shadowRadius: 4,
@@ -476,18 +748,70 @@ function doPost(e) {
           </View>
 
           {/* Script Code Block */}
-          <ScrollView style={{
-            backgroundColor: darkMode ? "#121212" : "#f4f4f4",
-            borderRadius: 8,
-            padding: 10,
-            maxHeight: 180,
-            borderWidth: 1,
-            borderColor: darkMode ? "#333" : "#e0e0e0"
-          }}>
-            <Text style={{ fontFamily: "monospace", fontSize: 9, color: activeAppsScriptTab === "script2" ? (darkMode ? "#81c784" : "#2e7d32") : (darkMode ? "#64b5f6" : "#1565c0") }}>
-              {activeScript}
-            </Text>
-          </ScrollView>
+          {isMobile ? (
+            <View style={{ borderRadius: 8, overflow: "hidden", borderWidth: 1, borderColor: darkMode ? "#333" : "#e0e0e0", width: "100%", maxWidth: "100%" }}>
+              <View style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+                backgroundColor: darkMode ? "#0f0f14" : "#e8e8e8",
+                paddingHorizontal: 10,
+                paddingVertical: 5,
+                borderBottomWidth: 1,
+                borderBottomColor: darkMode ? "#222" : "#ddd",
+                width: "100%"
+              }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 1 }}>
+                  <Ionicons name="code-slash" size={12} color={darkMode ? "#64b5f6" : "#1976d2"} />
+                  <Text style={{ fontSize: 10, fontWeight: "bold", color: darkMode ? "#ccc" : "#333", fontFamily: "monospace" }}>
+                    Code.gs ({activeAppsScriptTab === "script2" ? "Script 2" : "Script 1"})
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 9, color: darkMode ? "#666" : "#888", fontStyle: "italic" }}>
+                  scroll horizontal ↔
+                </Text>
+              </View>
+              <ScrollView
+                style={{
+                  backgroundColor: darkMode ? "#121212" : "#f4f4f4",
+                  maxHeight: 200,
+                  width: "100%"
+                }}
+                nestedScrollEnabled={true}
+                showsVerticalScrollIndicator={true}
+              >
+                <ScrollView
+                  horizontal={true}
+                  nestedScrollEnabled={true}
+                  showsHorizontalScrollIndicator={true}
+                  style={{ width: "100%" }}
+                  contentContainerStyle={{ padding: 10 }}
+                >
+                  <Text style={{
+                    fontFamily: "monospace",
+                    fontSize: 9.5,
+                    lineHeight: 15,
+                    color: activeAppsScriptTab === "script2" ? (darkMode ? "#81c784" : "#2e7d32") : (darkMode ? "#64b5f6" : "#1565c0")
+                  }}>
+                    {activeScript}
+                  </Text>
+                </ScrollView>
+              </ScrollView>
+            </View>
+          ) : (
+            <ScrollView style={{
+              backgroundColor: darkMode ? "#121212" : "#f4f4f4",
+              borderRadius: 8,
+              padding: 10,
+              maxHeight: 180,
+              borderWidth: 1,
+              borderColor: darkMode ? "#333" : "#e0e0e0"
+            }}>
+              <Text style={{ fontFamily: "monospace", fontSize: 9, color: activeAppsScriptTab === "script2" ? (darkMode ? "#81c784" : "#2e7d32") : (darkMode ? "#64b5f6" : "#1565c0") }}>
+                {activeScript}
+              </Text>
+            </ScrollView>
+          )}
 
           <View style={{ gap: 4, marginTop: 4 }}>
             <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#555", lineHeight: 15 }}>
@@ -667,6 +991,9 @@ const guestStorage = {
       if (Platform.OS === "web") {
         localStorage.setItem("nermai_guest_email", email);
         localStorage.setItem("nermai_guest_auto_login", "true");
+      } else {
+        await AsyncStorage.setItem("nermai_guest_email", email);
+        await AsyncStorage.setItem("nermai_guest_auto_login", "true");
       }
     } catch (e) {
       console.log("Failed to save guest credentials locally:", e);
@@ -678,6 +1005,10 @@ const guestStorage = {
         const email = localStorage.getItem("nermai_guest_email") || "";
         const autoLogin = localStorage.getItem("nermai_guest_auto_login") === "true";
         return { email, autoLogin };
+      } else {
+        const email = (await AsyncStorage.getItem("nermai_guest_email")) || "";
+        const autoLogin = (await AsyncStorage.getItem("nermai_guest_auto_login")) === "true";
+        return { email, autoLogin };
       }
     } catch (e) {
       console.log("Failed to load guest credentials:", e);
@@ -688,6 +1019,8 @@ const guestStorage = {
     try {
       if (Platform.OS === "web") {
         localStorage.setItem("nermai_guest_auto_login", "false");
+      } else {
+        await AsyncStorage.setItem("nermai_guest_auto_login", "false");
       }
     } catch (e) { }
   },
@@ -697,6 +1030,12 @@ const guestStorage = {
         localStorage.removeItem("nermai_guest_name");
         localStorage.removeItem("nermai_guest_phone");
         localStorage.removeItem("nermai_guest_email");
+        localStorage.removeItem("nermai_guest_auto_login");
+      } else {
+        await AsyncStorage.removeItem("nermai_guest_name");
+        await AsyncStorage.removeItem("nermai_guest_phone");
+        await AsyncStorage.removeItem("nermai_guest_email");
+        await AsyncStorage.removeItem("nermai_guest_auto_login");
       }
     } catch (e) { }
   }
@@ -708,14 +1047,17 @@ const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 const userStorage = {
   async save(userData: any) {
     try {
+      const payload = {
+        ...userData,
+        loginTimestamp: Date.now(),
+        sessionExpiry: Date.now() + SEVEN_DAYS_MS
+      };
       if (Platform.OS === "web" && typeof localStorage !== "undefined") {
-        const payload = {
-          ...userData,
-          loginTimestamp: Date.now(),
-          sessionExpiry: Date.now() + SEVEN_DAYS_MS
-        };
         localStorage.removeItem("nermai_manual_logout");
         localStorage.setItem("nermai_auth_user", JSON.stringify(payload));
+      } else {
+        await AsyncStorage.removeItem("nermai_manual_logout");
+        await AsyncStorage.setItem("nermai_auth_user", JSON.stringify(payload));
       }
     } catch (e) {
       console.log("Failed to save user session locally:", e);
@@ -723,20 +1065,31 @@ const userStorage = {
   },
   async get() {
     try {
+      let raw: string | null = null;
       if (Platform.OS === "web" && typeof localStorage !== "undefined") {
-        const raw = localStorage.getItem("nermai_auth_user");
-        if (!raw) return null;
-        const parsed = JSON.parse(raw);
-        if (parsed.sessionExpiry && Date.now() > parsed.sessionExpiry) {
-          localStorage.removeItem("nermai_auth_user");
-          return null;
-        }
-        if (parsed.loginTimestamp && (Date.now() - parsed.loginTimestamp > SEVEN_DAYS_MS)) {
-          localStorage.removeItem("nermai_auth_user");
-          return null;
-        }
-        return parsed;
+        raw = localStorage.getItem("nermai_auth_user");
+      } else {
+        raw = await AsyncStorage.getItem("nermai_auth_user");
       }
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (parsed.sessionExpiry && Date.now() > parsed.sessionExpiry) {
+        if (Platform.OS === "web" && typeof localStorage !== "undefined") {
+          localStorage.removeItem("nermai_auth_user");
+        } else {
+          await AsyncStorage.removeItem("nermai_auth_user");
+        }
+        return null;
+      }
+      if (parsed.loginTimestamp && (Date.now() - parsed.loginTimestamp > SEVEN_DAYS_MS)) {
+        if (Platform.OS === "web" && typeof localStorage !== "undefined") {
+          localStorage.removeItem("nermai_auth_user");
+        } else {
+          await AsyncStorage.removeItem("nermai_auth_user");
+        }
+        return null;
+      }
+      return parsed;
     } catch (e) {
       console.log("Failed to load user session:", e);
     }
@@ -746,6 +1099,8 @@ const userStorage = {
     try {
       if (Platform.OS === "web" && typeof localStorage !== "undefined") {
         localStorage.removeItem("nermai_auth_user");
+      } else {
+        await AsyncStorage.removeItem("nermai_auth_user");
       }
     } catch (e) { }
   }
@@ -918,7 +1273,7 @@ function DateTimePickerSelect({
       </Text>
 
       {Platform.OS === "web" ? (
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+        <View style={{ flexDirection: ((typeof window !== "undefined" && window.innerWidth < 768) ? "column" : "row"), alignItems: ((typeof window !== "undefined" && window.innerWidth < 768) ? "stretch" : "center"), gap: 8 }}>
           {/* HTML5 Native Calendar Input for Web */}
           <View style={{ flex: 1 }}>
             <input
@@ -959,7 +1314,7 @@ function DateTimePickerSelect({
               setShowCalendarModal(true);
             }}
             style={{
-              paddingHorizontal: 12,
+              paddingHorizontal: 14,
               paddingVertical: 10,
               backgroundColor: darkMode ? "#1a3a1a" : "#e8f5e9",
               borderRadius: 8,
@@ -967,6 +1322,7 @@ function DateTimePickerSelect({
               borderColor: darkMode ? "#2e7d32" : "#a5d6a7",
               flexDirection: "row",
               alignItems: "center",
+              justifyContent: "center",
               gap: 6
             }}
           >
@@ -1115,7 +1471,7 @@ function DateTimePickerSelect({
                   })}
                 </View>
 
-                {/* TIME PICKER SECTION */}
+                {/* TIME PICKER SECTION (Pure React Native - Safe for APK & Web) */}
                 <View style={{
                   marginTop: 16,
                   paddingTop: 14,
@@ -1123,83 +1479,94 @@ function DateTimePickerSelect({
                   borderTopColor: darkMode ? "#333" : "#eee",
                   flexDirection: "row",
                   alignItems: "center",
-                  justifyContent: "space-between"
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
+                  gap: 10
                 }}>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                     <Ionicons name="time-outline" size={18} color={darkMode ? "#ccc" : "#444"} />
                     <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#212121" }}>Time:</Text>
                   </View>
 
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                    {/* Hour Select */}
-                    <View style={{ borderWidth: 1, borderColor: darkMode ? "#444" : "#ccc", borderRadius: 6, backgroundColor: darkMode ? "#222" : "#f9f9f9", overflow: "hidden" }}>
-                      <select
-                        value={get12Hour(date.getHours())}
-                        onChange={(e) => handleTimeChange("hour", Number(e.target.value))}
-                        style={{
-                          padding: "6px 10px",
-                          fontSize: "13px",
-                          fontWeight: "bold",
-                          border: "none",
-                          backgroundColor: "transparent",
-                          color: darkMode ? "#fff" : "#111",
-                          cursor: "pointer",
-                          outline: "none"
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    {/* Hour (1 - 12) */}
+                    <View style={{ flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: darkMode ? "#444" : "#ccc", borderRadius: 6, backgroundColor: darkMode ? "#222" : "#f9f9f9", paddingHorizontal: 4, paddingVertical: 2 }}>
+                      <TouchableOpacity
+                        onPress={() => {
+                          const cur12 = get12Hour(date.getHours());
+                          const nextH = cur12 === 1 ? 12 : cur12 - 1;
+                          handleTimeChange("hour", nextH);
                         }}
+                        style={{ padding: 4 }}
                       >
-                        {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
-                          <option key={h} value={h} style={{ backgroundColor: darkMode ? "#222" : "#fff", color: darkMode ? "#fff" : "#111" }}>
-                            {String(h).padStart(2, "0")}
-                          </option>
-                        ))}
-                      </select>
+                        <Ionicons name="chevron-down" size={14} color={darkMode ? "#aaa" : "#555"} />
+                      </TouchableOpacity>
+                      <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#111", minWidth: 24, textAlign: "center", marginHorizontal: 2 }}>
+                        {String(get12Hour(date.getHours())).padStart(2, "0")}
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => {
+                          const cur12 = get12Hour(date.getHours());
+                          const nextH = cur12 === 12 ? 1 : cur12 + 1;
+                          handleTimeChange("hour", nextH);
+                        }}
+                        style={{ padding: 4 }}
+                      >
+                        <Ionicons name="chevron-up" size={14} color={darkMode ? "#aaa" : "#555"} />
+                      </TouchableOpacity>
                     </View>
 
                     <Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#111" }}>:</Text>
 
-                    {/* Minute Select */}
-                    <View style={{ borderWidth: 1, borderColor: darkMode ? "#444" : "#ccc", borderRadius: 6, backgroundColor: darkMode ? "#222" : "#f9f9f9", overflow: "hidden" }}>
-                      <select
-                        value={Math.floor(date.getMinutes() / 5) * 5}
-                        onChange={(e) => handleTimeChange("minute", Number(e.target.value))}
-                        style={{
-                          padding: "6px 10px",
-                          fontSize: "13px",
-                          fontWeight: "bold",
-                          border: "none",
-                          backgroundColor: "transparent",
-                          color: darkMode ? "#fff" : "#111",
-                          cursor: "pointer",
-                          outline: "none"
+                    {/* Minute (00 - 55 in 5m steps) */}
+                    <View style={{ flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: darkMode ? "#444" : "#ccc", borderRadius: 6, backgroundColor: darkMode ? "#222" : "#f9f9f9", paddingHorizontal: 4, paddingVertical: 2 }}>
+                      <TouchableOpacity
+                        onPress={() => {
+                          const curM = date.getMinutes();
+                          const nextM = curM <= 0 ? 55 : (Math.floor(curM / 5) * 5) - 5;
+                          handleTimeChange("minute", nextM);
                         }}
+                        style={{ padding: 4 }}
                       >
-                        {Array.from({ length: 12 }, (_, i) => i * 5).map((m) => (
-                          <option key={m} value={m} style={{ backgroundColor: darkMode ? "#222" : "#fff", color: darkMode ? "#fff" : "#111" }}>
-                            {String(m).padStart(2, "0")}
-                          </option>
-                        ))}
-                      </select>
+                        <Ionicons name="chevron-down" size={14} color={darkMode ? "#aaa" : "#555"} />
+                      </TouchableOpacity>
+                      <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#111", minWidth: 24, textAlign: "center", marginHorizontal: 2 }}>
+                        {String(Math.floor(date.getMinutes() / 5) * 5).padStart(2, "0")}
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => {
+                          const curM = date.getMinutes();
+                          const nextM = curM >= 55 ? 0 : (Math.floor(curM / 5) * 5) + 5;
+                          handleTimeChange("minute", nextM);
+                        }}
+                        style={{ padding: 4 }}
+                      >
+                        <Ionicons name="chevron-up" size={14} color={darkMode ? "#aaa" : "#555"} />
+                      </TouchableOpacity>
                     </View>
 
-                    {/* AM/PM Select */}
-                    <View style={{ borderWidth: 1, borderColor: darkMode ? "#444" : "#ccc", borderRadius: 6, backgroundColor: darkMode ? "#222" : "#f9f9f9", overflow: "hidden", marginLeft: 4 }}>
-                      <select
-                        value={getAmPm(date.getHours())}
-                        onChange={(e) => handleTimeChange("ampm", e.target.value)}
+                    {/* AM / PM Toggle */}
+                    <View style={{ flexDirection: "row", borderRadius: 6, overflow: "hidden", borderWidth: 1, borderColor: darkMode ? "#444" : "#ccc", marginLeft: 4 }}>
+                      <TouchableOpacity
+                        onPress={() => handleTimeChange("ampm", "AM")}
                         style={{
-                          padding: "6px 10px",
-                          fontSize: "13px",
-                          fontWeight: "bold",
-                          border: "none",
-                          backgroundColor: "transparent",
-                          color: darkMode ? "#fff" : "#111",
-                          cursor: "pointer",
-                          outline: "none"
+                          paddingHorizontal: 8,
+                          paddingVertical: 5,
+                          backgroundColor: getAmPm(date.getHours()) === "AM" ? "#c62828" : (darkMode ? "#222" : "#f9f9f9")
                         }}
                       >
-                        <option value="AM" style={{ backgroundColor: darkMode ? "#222" : "#fff", color: darkMode ? "#fff" : "#111" }}>AM</option>
-                        <option value="PM" style={{ backgroundColor: darkMode ? "#222" : "#fff", color: darkMode ? "#fff" : "#111" }}>PM</option>
-                      </select>
+                        <Text style={{ fontSize: 11, fontWeight: "bold", color: getAmPm(date.getHours()) === "AM" ? "#fff" : (darkMode ? "#aaa" : "#555") }}>AM</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => handleTimeChange("ampm", "PM")}
+                        style={{
+                          paddingHorizontal: 8,
+                          paddingVertical: 5,
+                          backgroundColor: getAmPm(date.getHours()) === "PM" ? "#c62828" : (darkMode ? "#222" : "#f9f9f9")
+                        }}
+                      >
+                        <Text style={{ fontSize: 11, fontWeight: "bold", color: getAmPm(date.getHours()) === "PM" ? "#fff" : (darkMode ? "#aaa" : "#555") }}>PM</Text>
+                      </TouchableOpacity>
                     </View>
                   </View>
                 </View>
@@ -1458,10 +1825,12 @@ function OnboardingScreens({ onDone }: { onDone: () => void }) {
   ]).current;
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const isLargeScreen = windowWidth > 768;
-  const orbitRadius = isLargeScreen ? 120 : 98;
-  const centralCircleSize = isLargeScreen ? 104 : 86;
-  const badgeSize = isLargeScreen ? 50 : 42;
+  const isCompactHeight = windowHeight < 820;
+  const orbitRadius = isLargeScreen ? 120 : (isCompactHeight ? 82 : 98);
+  const centralCircleSize = isLargeScreen ? 104 : (isCompactHeight ? 76 : 86);
+  const badgeSize = isLargeScreen ? 50 : (isCompactHeight ? 36 : 42);
 
   useEffect(() => {
     contentAnim.setValue(0);
@@ -1513,8 +1882,14 @@ function OnboardingScreens({ onDone }: { onDone: () => void }) {
     else { markDone(); }
   };
 
-  const markDone = () => {
-    try { if (Platform.OS === "web") localStorage.setItem(ONBOARDING_KEY, "true"); } catch (e) { }
+  const markDone = async () => {
+    try {
+      if (Platform.OS === "web") {
+        localStorage.setItem(ONBOARDING_KEY, "true");
+      } else {
+        await AsyncStorage.setItem(ONBOARDING_KEY, "true");
+      }
+    } catch (e) { }
     onDone();
   };
 
@@ -1608,7 +1983,7 @@ function OnboardingScreens({ onDone }: { onDone: () => void }) {
       <Animated.View style={{ flex: 1, opacity: contentAnim, transform: [{ translateY: contentAnim.interpolate({ inputRange: [0, 1], outputRange: [15, 0] }) }] }}>
 
         {/* Header */}
-        <View style={{ paddingTop: 48, paddingHorizontal: 24, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+        <View style={{ paddingTop: Math.max(insets.top, 20) + (isCompactHeight ? 6 : 14), paddingHorizontal: 24, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
             <Image source={require("./assets/logo.png")} style={{ width: 34, height: 34, borderRadius: 17, borderWidth: 1.5, borderColor: isGold ? "rgba(198,40,40,0.3)" : "rgba(255,255,255,0.4)" }} />
             <View>
@@ -1624,56 +1999,57 @@ function OnboardingScreens({ onDone }: { onDone: () => void }) {
         </View>
 
         {/* Text Section */}
-        <View style={{ paddingHorizontal: 24, marginTop: 24, alignItems: "center" }}>
+        <View style={{ paddingHorizontal: 24, marginTop: isCompactHeight ? 8 : 18, alignItems: "center" }}>
           {slide === 0 ? (
             <View style={{ alignItems: "center" }}>
-              <Text style={{ fontSize: 22, fontWeight: "900", color: "#ffffff", textAlign: "center", letterSpacing: 0.5 }}>
+              <Text style={{ fontSize: isCompactHeight ? 18 : 22, fontWeight: "900", color: "#ffffff", textAlign: "center", letterSpacing: 0.5 }}>
                 WELCOME TO
               </Text>
-              <Text style={{ fontSize: 26, fontWeight: "900", color: "#FFD700", textAlign: "center", marginTop: 2, letterSpacing: 0.5 }}>
+              <Text style={{ fontSize: isCompactHeight ? 22 : 26, fontWeight: "900", color: "#FFD700", textAlign: "center", marginTop: 1, letterSpacing: 0.5 }}>
                 NERMAI
               </Text>
-              <Text style={{ fontSize: 22, fontWeight: "900", color: "#ffffff", textAlign: "center", marginTop: 2, letterSpacing: 0.5 }}>
+              <Text style={{ fontSize: isCompactHeight ? 18 : 22, fontWeight: "900", color: "#ffffff", textAlign: "center", marginTop: 1, letterSpacing: 0.5 }}>
                 IAS ACADEMY
               </Text>
               {/* Star separator */}
-              <View style={{ marginVertical: 6 }}>
-                <Ionicons name="star" size={12} color="#FFD700" />
+              <View style={{ marginVertical: isCompactHeight ? 3 : 6 }}>
+                <Ionicons name="star" size={11} color="#FFD700" />
               </View>
               {/* Tagline */}
-              <Text style={{ fontSize: 12.5, fontWeight: "800", color: "#ffffff", textAlign: "center" }}>
+              <Text style={{ fontSize: isCompactHeight ? 11 : 12.5, fontWeight: "800", color: "#ffffff", textAlign: "center" }}>
                 Your Journey Towards Competitive Excellence
               </Text>
             </View>
           ) : (
             <View style={{ alignItems: "center" }}>
-              <Text style={{ fontSize: 24, fontWeight: "900", color: titleCol, textAlign: "center", letterSpacing: 0.5, lineHeight: 30 }}>
+              <Text style={{ fontSize: isCompactHeight ? 20 : 24, fontWeight: "900", color: titleCol, textAlign: "center", letterSpacing: 0.5, lineHeight: isCompactHeight ? 24 : 30 }}>
                 {s.title}
               </Text>
               {s.subtitle ? (
-                <Text style={{ fontSize: 18, fontWeight: "900", color: accentCol, textAlign: "center", marginTop: 2 }}>
+                <Text style={{ fontSize: isCompactHeight ? 15 : 18, fontWeight: "900", color: accentCol, textAlign: "center", marginTop: 2 }}>
                   {s.subtitle}
                 </Text>
               ) : null}
             </View>
           )}
-          <Text style={{ fontSize: 12, color: subTextCol, textAlign: "center", marginTop: 8, lineHeight: 18, paddingHorizontal: 12 }}>
+          <Text style={{ fontSize: isCompactHeight ? 10.5 : 12, color: subTextCol, textAlign: "center", marginTop: isCompactHeight ? 4 : 8, lineHeight: isCompactHeight ? 15 : 18, paddingHorizontal: 12 }}>
             {s.desc}
           </Text>
         </View>
 
         {/* Illustration Section */}
-        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 10 }}>
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: isCompactHeight ? 4 : 10 }}>
 
           {slide === 0 && (
             // Slide 1 Layout (Red Theme 2-column grid of 8 content cards)
             <View style={{ width: "100%", maxWidth: 440, paddingHorizontal: 16 }}>
               {(() => {
-                const isSmallHeight = windowHeight < 700;
-                const gridGap = isSmallHeight ? 8 : 12;
-                const circW = isSmallHeight ? 30 : 38;
-                const iconSz = isSmallHeight ? 16 : 20;
-                const cardH = isSmallHeight ? 50 : 62;
+                const isSmallHeight = windowHeight < 720;
+                const isCompact = windowHeight < 820;
+                const gridGap = isSmallHeight ? 6 : (isCompact ? 8 : 12);
+                const circW = isSmallHeight ? 26 : (isCompact ? 30 : 38);
+                const iconSz = isSmallHeight ? 13 : (isCompact ? 15 : 20);
+                const cardH = isSmallHeight ? 42 : (isCompact ? 48 : 62);
 
                 return (
                   <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: gridGap }}>
@@ -1729,11 +2105,11 @@ function OnboardingScreens({ onDone }: { onDone: () => void }) {
 
                           {/* Text Description */}
                           <Text style={{
-                            fontSize: isSmallHeight ? 8.5 : 10.5,
+                            fontSize: isSmallHeight ? 8 : (isCompact ? 9 : 10.5),
                             fontWeight: "800",
                             color: "#ffffff",
                             flex: 1,
-                            lineHeight: isSmallHeight ? 10 : 13
+                            lineHeight: isSmallHeight ? 10 : (isCompact ? 11 : 13)
                           }} numberOfLines={2}>
                             {item.label}
                           </Text>
@@ -1856,15 +2232,15 @@ function OnboardingScreens({ onDone }: { onDone: () => void }) {
             // Slide 3 Layout (Yellow Theme Bento Grid)
             <View style={{ width: "100%", maxWidth: 540, alignSelf: "center", paddingHorizontal: 16 }}>
               {(() => {
-                const isSmallHeight = windowHeight < 700;
-                const isTallScreen = windowHeight > 800;
-                const rowH = isSmallHeight ? 76 : (isTallScreen ? 134 : 114);
-                const gapVal = isSmallHeight ? 8 : (isTallScreen ? 14 : 10);
+                const isSmallHeight = windowHeight < 720;
+                const isTallScreen = windowHeight > 850;
+                const rowH = isSmallHeight ? 68 : (isCompactHeight ? 88 : (isTallScreen ? 134 : 114));
+                const gapVal = isSmallHeight ? 6 : (isCompactHeight ? 8 : (isTallScreen ? 14 : 10));
                 const cardRadius = 12;
 
                 // Icon circle container size
-                const circW = isSmallHeight ? 38 : (isTallScreen ? 54 : 48);
-                const iconSz = isSmallHeight ? 20 : (isTallScreen ? 28 : 24);
+                const circW = isSmallHeight ? 32 : (isCompactHeight ? 38 : (isTallScreen ? 54 : 48));
+                const iconSz = isSmallHeight ? 16 : (isCompactHeight ? 20 : (isTallScreen ? 28 : 24));
 
                 const bentoCardStyle = (widthPercent: any) => ({
                   width: widthPercent,
@@ -2047,9 +2423,20 @@ function OnboardingScreens({ onDone }: { onDone: () => void }) {
         )}
 
         {/* Navigation bar */}
-        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 24, paddingBottom: Platform.OS === "ios" ? 40 : 28, paddingTop: 10 }}>
-          <TouchableOpacity onPress={slide === 0 ? markDone : () => setSlide(slide - 1)} style={{ paddingHorizontal: 12, paddingVertical: 8 }}>
-            <Text style={{ color: isGold ? "rgba(0,0,0,0.5)" : "rgba(255,255,255,0.7)", fontWeight: "700", fontSize: 13, letterSpacing: 0.5 }}>
+        <View style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingHorizontal: 24,
+          paddingBottom: Math.max(insets.bottom, 22) + 12,
+          paddingTop: 8
+        }}>
+          <TouchableOpacity
+            onPress={slide === 0 ? markDone : () => setSlide(slide - 1)}
+            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+            style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 12 }}
+          >
+            <Text style={{ color: isGold ? "rgba(0,0,0,0.5)" : "rgba(255,255,255,0.75)", fontWeight: "800", fontSize: 13, letterSpacing: 0.5 }}>
               {slide === 0 ? "SKIP" : "← BACK"}
             </Text>
           </TouchableOpacity>
@@ -2066,7 +2453,11 @@ function OnboardingScreens({ onDone }: { onDone: () => void }) {
             ))}
           </View>
 
-          <TouchableOpacity onPress={goNext} style={{ paddingHorizontal: 12, paddingVertical: 8 }}>
+          <TouchableOpacity
+            onPress={goNext}
+            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+            style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 12 }}
+          >
             <Text style={{ color: accentCol, fontWeight: "900", fontSize: 13, letterSpacing: 0.5 }}>
               {slide === 2 ? "START →" : "NEXT →"}
             </Text>
@@ -2089,6 +2480,7 @@ function MainApp() {
   const [user, setUser] = useState<any>(null);
   const isAdmin = user && ["admin", "staff", "super_admin", "editor", "contributor", "developer"].includes(user.role);
   const isTeacher = user && user.role === "teacher";
+  const isProtectedRole = !isAdmin && !isTeacher;
   const [activeTab, setActiveTab] = useState(initialNav.activeTabVal);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
 
@@ -2144,8 +2536,23 @@ function MainApp() {
       if (Platform.OS === "web" && typeof localStorage !== "undefined") {
         localStorage.setItem("nermai_manual_logout", "true");
         localStorage.removeItem("nermai_auth_user");
+      } else {
+        try {
+          await AsyncStorage.setItem("nermai_manual_logout", "true");
+          await AsyncStorage.removeItem("nermai_auth_user");
+        } catch (e) { }
+        // Sign out Firebase on native so Google session is fully cleared for re-login
+        try {
+          const { signOut: fbSignOut } = require("firebase/auth");
+          const { auth: fbAuth } = require("./firebaseConfig");
+          await fbSignOut(fbAuth);
+        } catch (e) { }
       }
-      await authStorage.clear();
+      setPendingGoogleUser(null);
+      setGuestNameInput("");
+      setGuestPhoneInput("");
+      setGuestEmail("");
+      setGuestEmailUnlocked(false);
       setUser(null);
       setActiveTab("lms");
       setLmsSub("home");
@@ -2857,9 +3264,25 @@ function MainApp() {
       </head>
       <body>
       <div id="container">
-        <img id="img" src="${imgSrc}" oncontextmenu="return false;" ondragstart="return false;" />
+        <img id="img" src="${imgSrc}" onerror="handleImgErr(this)" oncontextmenu="return false;" ondragstart="return false;" />
         <button id="resetBtn" onclick="resetZoom()">Reset Zoom</button>
       </div>
+      <script>
+        function handleImgErr(el) {
+          var url = el.src || '';
+          var m = url.match(/([-\w]{25,})/);
+          if (m && m[1]) {
+            var id = m[1];
+            if (!el.dataset.attempt) {
+              el.dataset.attempt = '1';
+              el.src = 'https://drive.google.com/thumbnail?id=' + id + '&sz=w2000';
+            } else if (el.dataset.attempt === '1') {
+              el.dataset.attempt = '2';
+              el.src = 'https://drive.google.com/uc?export=view&id=' + id;
+            }
+          }
+        }
+      </script>
       <script>
         var img = document.getElementById('img');
         var resetBtn = document.getElementById('resetBtn');
@@ -2968,6 +3391,824 @@ function MainApp() {
     );
   };
 
+  const buildNativePdfViewerHtml = (sourceUrlOrBase64: string, docTitle: string = "Document Viewer") => {
+    const isDataUri = sourceUrlOrBase64.startsWith("data:") || !sourceUrlOrBase64.startsWith("http");
+    let base64Clean = "";
+    if (isDataUri) {
+      base64Clean = sourceUrlOrBase64.replace(/^data:[^;]+;base64,/, "").replace(/\s+/g, "");
+    }
+    const safeTitle = (docTitle || "Document").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=4.0, user-scalable=yes">
+  <title>${safeTitle}</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      background-color: #0b0e17;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      min-height: 100%;
+      overflow-x: hidden;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #top-bar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(15, 18, 25, 0.95);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 16px;
+    }
+    .badge {
+      font-size: 10px;
+      font-weight: 800;
+      color: #34d399;
+      background: rgba(16,185,129,0.15);
+      padding: 4px 8px;
+      border-radius: 4px;
+      letter-spacing: 0.5px;
+    }
+    .page-counter {
+      font-size: 12px;
+      font-weight: 600;
+      color: #9ca3af;
+    }
+    #pdf-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 12px 8px 80px 8px;
+      gap: 16px;
+      width: 100%;
+    }
+    .pdf-page-wrapper {
+      position: relative;
+      width: 100%;
+      max-width: 850px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    canvas {
+      width: 100% !important;
+      height: auto !important;
+      border-radius: 6px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+      background-color: #fff;
+    }
+    #status-msg {
+      padding: 50px 20px;
+      text-align: center;
+      color: #9ca3af;
+      font-size: 13px;
+    }
+    .spinner {
+      border: 3px solid rgba(255,255,255,0.1);
+      border-top: 3px solid #c62828;
+      border-radius: 50%;
+      width: 32px;
+      height: 32px;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px auto;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div id="top-bar">
+    <span class="badge">SECURE PDF VIEWER</span>
+    <span id="page-counter" class="page-counter">Initializing...</span>
+  </div>
+  <div id="status-msg">
+    <div class="spinner"></div>
+    <div>Rendering secure document...</div>
+  </div>
+  <div id="pdf-container"></div>
+  <div id="raw-pdf-data" style="display:none;">${base64Clean}</div>
+
+  <script>
+    var container = document.getElementById('pdf-container');
+    var statusMsg = document.getElementById('status-msg');
+    var pageCounter = document.getElementById('page-counter');
+    var attempts = 0;
+
+    function renderPdf() {
+      if (typeof pdfjsLib === 'undefined') {
+        attempts++;
+        if (attempts > 30) {
+          statusMsg.innerHTML = '<div style="color: #ef4444; font-weight: bold; margin-bottom: 8px;">PDF Engine Unavailable</div><div style="font-size: 11px;">Please check internet connection or reload.</div>';
+          return;
+        }
+        setTimeout(renderPdf, 200);
+        return;
+      }
+
+      try {
+        // Disable external worker on Android WebView to prevent origin null security error
+        try {
+          pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+        } catch(wErr) {}
+
+        var loadParam;
+        ${isDataUri ? `
+          var rawEl = document.getElementById('raw-pdf-data');
+          var b64 = rawEl ? (rawEl.textContent || "").trim() : "";
+          if (!b64) {
+            statusMsg.innerHTML = '<div style="color: #ef4444; font-weight: bold;">Document data is empty</div>';
+            return;
+          }
+          var binStr = atob(b64);
+          var len = binStr.length;
+          var bytes = new Uint8Array(len);
+          for (var i = 0; i < len; i++) {
+            bytes[i] = binStr.charCodeAt(i);
+          }
+          loadParam = { data: bytes };
+        ` : `
+          loadParam = { url: "${sourceUrlOrBase64}" };
+        `}
+
+        pdfjsLib.getDocument(loadParam).promise.then(function(pdf) {
+          statusMsg.style.display = 'none';
+          pageCounter.innerText = pdf.numPages + " Pages";
+
+          var renderPage = function(pageNum) {
+            if (pageNum > pdf.numPages) return;
+            pdf.getPage(pageNum).then(function(page) {
+              var desiredWidth = Math.min(window.innerWidth - 16, 760);
+              var unscaledViewport = page.getViewport({ scale: 1 });
+              var scale = desiredWidth / unscaledViewport.width;
+              var viewport = page.getViewport({ scale: Math.max(scale, 1.25) });
+
+              var wrapper = document.createElement('div');
+              wrapper.className = 'pdf-page-wrapper';
+
+              var canvas = document.createElement('canvas');
+              var context = canvas.getContext('2d');
+              canvas.height = viewport.height;
+              canvas.width = viewport.width;
+
+              wrapper.appendChild(canvas);
+              container.appendChild(wrapper);
+
+              page.render({
+                canvasContext: context,
+                viewport: viewport
+              }).promise.then(function() {
+                renderPage(pageNum + 1);
+              });
+            }).catch(function(pErr) {
+              console.error('Page render error:', pErr);
+            });
+          };
+          renderPage(1);
+        }).catch(function(err) {
+          statusMsg.innerHTML = '<div style="color: #ef4444; font-weight: bold; margin-bottom: 8px;">Failed to load PDF</div><div style="font-size: 11px;">' + (err.message || 'The PDF document could not be rendered.') + '</div>';
+        });
+      } catch (e) {
+        statusMsg.innerHTML = '<div style="color: #ef4444; font-weight: bold;">Error opening document</div><div style="font-size: 11px;">' + (e.message || '') + '</div>';
+      }
+    }
+
+    if (typeof pdfjsLib !== 'undefined') {
+      renderPdf();
+    } else {
+      window.addEventListener('load', renderPdf);
+    }
+  </script>
+</body>
+</html>`;
+  };
+
+  const hidePopOutJs = `
+    (function() {
+      function hideElements() {
+        var selectors = [
+          '[aria-label*="Pop-out" i]',
+          '[aria-label*="pop out" i]',
+          '[aria-label*="popout" i]',
+          '[title*="Pop-out" i]',
+          '[title*="pop out" i]',
+          '[title*="popout" i]',
+          '[data-tooltip*="Pop-out" i]',
+          '[data-tooltip*="pop out" i]',
+          '[data-tooltip*="popout" i]',
+          '[aria-label*="Open in new window" i]',
+          '[title*="Open in new window" i]',
+          '.ndfHFb-c4YZDc-Wrql6b',
+          '.ndfHFb-c4YZDc-s3Eaab',
+          '.ndfHFb-c4YZDc-GSxda-haAclf',
+          '.drive-viewer-toolstrip',
+          '.drive-viewer-popout-button',
+          '.drive-viewer-toolstrip-popout',
+          'a.drive-viewer-popout-button',
+          '.ndfHFb-c4YZDc-b0t70b-aTv5jf',
+          'a[target="_blank"]'
+        ];
+        selectors.forEach(function(s) {
+          try {
+            var els = document.querySelectorAll(s);
+            els.forEach(function(el) {
+              el.style.display = 'none';
+              el.style.visibility = 'hidden';
+              el.style.pointerEvents = 'none';
+              el.style.opacity = '0';
+            });
+          } catch(e) {}
+        });
+        if (!document.getElementById('antiPopoutStyle')) {
+          var style = document.createElement('style');
+          style.id = 'antiPopoutStyle';
+          style.innerHTML = selectors.join(', ') + ' { display: none !important; visibility: hidden !important; pointer-events: none !important; opacity: 0 !important; width: 0 !important; height: 0 !important; }';
+          document.head.appendChild(style);
+        }
+      }
+      hideElements();
+      setInterval(hideElements, 400);
+    })();
+    true;
+  `;
+
+  const NativeResourceModal = ({ resourceId, onClose, darkMode }: { resourceId: string; onClose: () => void; darkMode: boolean }) => {
+    const [loading, setLoading] = useState(true);
+    const [data, setData] = useState<{ url: string; title: string; type: string; isDrive: boolean; drivePreviewUrl: string } | null>(null);
+    const [error, setError] = useState('');
+
+    useEffect(() => {
+      let isMounted = true;
+      (async () => {
+        try {
+          const res = await api.get(`/resources/${resourceId}`);
+          const resource = res?.data !== undefined ? (res?.data?.data || res?.data) : (res || {});
+          const acc = await api.get(`/resources/${resourceId}/access`);
+          const access = acc?.data !== undefined ? (acc?.data?.data || acc?.data) : (acc || {});
+          let targetUrl = access?.viewerUrl || access?.signedUrl || resource?.sourceUrl || `${getBaseUrl()}/resources/${resourceId}/content?token=${user?.token || ""}`;
+
+          const rawType = (resource?.type || '').toLowerCase();
+          const mimeType = (resource?.mimeType || access?.contentType || '').toLowerCase();
+
+          const candidateStrings = [
+            resource?.title,
+            resource?.originalName,
+            resource?.fileName,
+            resource?.filename,
+            resource?.name,
+            resource?.sourceUrl,
+            resource?.url,
+            resource?.storagePath,
+            resource?.fileUrl,
+            access?.fileName,
+            access?.originalName,
+            access?.contentType,
+            access?.mimeType,
+            targetUrl
+          ].filter(Boolean).map(s => String(s));
+
+          const isPdf = rawType === 'pdf' || mimeType === 'application/pdf' || candidateStrings.some(s => /\.pdf(\?.*)?$/i.test(s));
+
+          let isImg = !isPdf && (
+            access?.viewerType === 'image' ||
+            imageTypeRegex.test(rawType) ||
+            mimeType.startsWith('image/') ||
+            candidateStrings.some(s => imageExtRegex.test(s)) ||
+            targetUrl.includes('lh3.googleusercontent.com') ||
+            targetUrl.startsWith('data:image/')
+          );
+
+          // Extract drive ID if this resource is hosted on Google Drive
+          const rawDriveStr = candidateStrings.find(s => s.includes('drive.google.com') || s.includes('/file/d/')) || resource?.sourceUrl || resource?.url || resource?.storagePath || (access?.viewerUrl?.includes('drive.google.com') ? access.viewerUrl : '') || (targetUrl.includes('drive.google.com') ? targetUrl : '');
+          const driveMatch = String(rawDriveStr).match(/\/file\/d\/([-\w]{25,})/) || String(rawDriveStr).match(/[?&]id=([-\w]{25,})/) || String(rawDriveStr).match(/([-\w]{25,})/);
+          const driveId = driveMatch ? (driveMatch[1] || driveMatch[0]) : null;
+
+          // If driveId exists and it wasn't flagged as an image yet, probe if it's an image (skip for PDFs)
+          if (!isImg && !isPdf && driveId) {
+            try {
+              const isDriveImg = await new Promise<boolean>((resolve) => {
+                let settled = false;
+                const timer = setTimeout(() => {
+                  if (!settled) {
+                    settled = true;
+                    resolve(false);
+                  }
+                }, 1200);
+
+                Image.getSize(
+                  `https://lh3.googleusercontent.com/d/${driveId}`,
+                  (w, h) => {
+                    if (!settled) {
+                      settled = true;
+                      clearTimeout(timer);
+                      resolve(w > 0 && h > 0);
+                    }
+                  },
+                  () => {
+                    if (!settled) {
+                      settled = true;
+                      clearTimeout(timer);
+                      resolve(false);
+                    }
+                  }
+                );
+              });
+
+              if (isDriveImg) {
+                isImg = true;
+              }
+            } catch (e) {
+              // fallback
+            }
+          }
+
+          if (isImg) {
+            if (driveId) {
+              targetUrl = `https://lh3.googleusercontent.com/d/${driveId}`;
+            } else if (access?.cdnUrl && (access.cdnUrl.startsWith('http://') || access.cdnUrl.startsWith('https://'))) {
+              targetUrl = access.cdnUrl;
+            } else if (access?.signedUrl && (access.signedUrl.startsWith('http://') || access.signedUrl.startsWith('https://'))) {
+              targetUrl = access.signedUrl;
+            } else if (resource?.sourceUrl && (resource.sourceUrl.startsWith('http://') || resource.sourceUrl.startsWith('https://'))) {
+              targetUrl = resource.sourceUrl;
+            }
+          }
+
+          const drivePreviewUrl = driveId ? `https://drive.google.com/file/d/${driveId}/preview` : '';
+          const isDrive = Boolean(driveId && !isImg);
+
+          if (isMounted) {
+            setData({
+              url: targetUrl,
+              title: resource?.title || 'Resource Document',
+              type: isImg ? 'image' : 'pdf',
+              isDrive,
+              drivePreviewUrl
+            });
+          }
+        } catch (err: any) {
+          if (isMounted) setError(err.message || 'Failed to load resource');
+        } finally {
+          if (isMounted) setLoading(false);
+        }
+      })();
+      return () => { isMounted = false; };
+    }, [resourceId]);
+
+    const isImg = data?.type === 'image';
+
+    return (
+      <Modal visible={true} transparent={false} animationType="fade" onRequestClose={onClose}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: "#0f1219" }}>
+          {/* Header */}
+          <View style={{
+            height: 60,
+            borderBottomWidth: 1,
+            borderBottomColor: "rgba(255,255,255,0.08)",
+            backgroundColor: "#151923",
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            paddingHorizontal: 16
+          }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1, marginRight: 8 }}>
+              <TouchableOpacity onPress={onClose} style={{ padding: 6, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.06)" }}>
+                <Ionicons name="close" size={20} color="#fff" />
+              </TouchableOpacity>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 14, flexShrink: 1 }} numberOfLines={1}>
+                    {data?.title || "Resource"}
+                  </Text>
+                  <View style={{ backgroundColor: "rgba(16,185,129,0.2)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, flexDirection: "row", alignItems: "center", gap: 3 }}>
+                    <Ionicons name="shield-checkmark" size={10} color="#34d399" />
+                    <Text style={{ color: "#34d399", fontSize: 9, fontWeight: "bold" }}>SECURE</Text>
+                  </View>
+                </View>
+                <Text style={{ color: "#9ca3af", fontSize: 11 }}>{isImg ? "IMAGE" : "PDF"} • v1</Text>
+              </View>
+            </View>
+
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <View style={{ backgroundColor: "rgba(239,68,68,0.15)", borderWidth: 1, borderColor: "rgba(239,68,68,0.3)", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 4 }}>
+                <Ionicons name="eye-off-outline" size={12} color="#f87171" />
+                <Text style={{ color: "#f87171", fontSize: 10, fontWeight: "bold" }}>No Download</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Content */}
+          <View style={{ flex: 1, backgroundColor: "#000", width: "100%", position: "relative" }}>
+            {loading ? (
+              <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+                <ActivityIndicator size="large" color="#c62828" />
+                <Text style={{ color: "#fff", marginTop: 12, fontSize: 12 }}>Loading secure viewer...</Text>
+              </View>
+            ) : error ? (
+              <View style={{ flex: 1, padding: 24, justifyContent: "center", alignItems: "center" }}>
+                <Ionicons name="alert-circle-outline" size={48} color="#ef4444" />
+                <Text style={{ color: "#fff", fontSize: 15, fontWeight: "bold", marginTop: 8 }}>Access Denied</Text>
+                <Text style={{ color: "#9ca3af", fontSize: 12, textAlign: "center", marginTop: 4 }}>{error}</Text>
+                <TouchableOpacity onPress={onClose} style={{ marginTop: 16, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 8 }}>
+                  <Text style={{ color: "#fff", fontSize: 12, fontWeight: "bold" }}>Close</Text>
+                </TouchableOpacity>
+              </View>
+            ) : isImg ? (
+              <NativeDailyImageZoomView imgSrc={data?.url || ""} darkMode={true} />
+            ) : data?.isDrive && data?.drivePreviewUrl ? (
+              (() => {
+                const { WebView } = require("react-native-webview");
+                return (
+                  <View style={{ flex: 1, width: "100%", height: "100%", position: "relative" }}>
+                    <WebView
+                      source={{ uri: data.drivePreviewUrl }}
+                      style={{ flex: 1, width: "100%", height: "100%", backgroundColor: "#0b0e17" }}
+                      javaScriptEnabled={true}
+                      domStorageEnabled={true}
+                      thirdPartyCookiesEnabled={true}
+                      sharedCookiesEnabled={true}
+                      userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                      injectedJavaScript={hidePopOutJs}
+                      onShouldStartLoadWithRequest={(req) => {
+                        if (
+                          req.url === data.drivePreviewUrl ||
+                          req.url.startsWith("https://drive.google.com/file/d/") ||
+                          req.url.startsWith("https://docs.google.com") ||
+                          req.url.startsWith("https://accounts.google.com") ||
+                          req.url.startsWith("about:blank")
+                        ) {
+                          return true;
+                        }
+                        return false;
+                      }}
+                      startInLoadingState={true}
+                      renderLoading={() => (
+                        <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "center", alignItems: "center", backgroundColor: "#0f1219" }}>
+                          <ActivityIndicator size="large" color="#c62828" />
+                          <Text style={{ color: "#ccc", marginTop: 10, fontSize: 12 }}>Loading document…</Text>
+                        </View>
+                      )}
+                    />
+                    {/* Security overlay blocking Google Drive pop-out button */}
+                    <View
+                      pointerEvents="auto"
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        right: 0,
+                        width: 76,
+                        height: 58,
+                        backgroundColor: "#151923",
+                        zIndex: 9999,
+                        justifyContent: "center",
+                        alignItems: "center",
+                        borderBottomLeftRadius: 10,
+                        borderLeftWidth: 1,
+                        borderBottomWidth: 1,
+                        borderColor: "rgba(255,255,255,0.08)"
+                      }}
+                    >
+                      <Ionicons name="shield-checkmark" size={16} color="#34d399" />
+                      <Text style={{ color: "#9ca3af", fontSize: 9, fontWeight: "bold", marginTop: 2 }}>PROTECTED</Text>
+                    </View>
+                  </View>
+                );
+              })()
+            ) : (
+              (() => {
+                const { WebView } = require("react-native-webview");
+                const docUrl = data?.url || "";
+                const isExternalHttp = docUrl.startsWith("http://") || docUrl.startsWith("https://");
+                const webViewSource = isExternalHttp
+                  ? { uri: docUrl.includes('drive.google.com') ? docUrl : `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(docUrl)}` }
+                  : { html: buildNativePdfViewerHtml(docUrl, data?.title) };
+                return (
+                  <View style={{ flex: 1, width: "100%", height: "100%", position: "relative" }}>
+                    <WebView
+                      source={webViewSource}
+                      style={{ flex: 1, width: "100%", height: "100%", backgroundColor: "#0b0e17" }}
+                      javaScriptEnabled={true}
+                      domStorageEnabled={true}
+                      thirdPartyCookiesEnabled={true}
+                      sharedCookiesEnabled={true}
+                      userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                      injectedJavaScript={hidePopOutJs}
+                      onShouldStartLoadWithRequest={(req) => {
+                        if (
+                          req.url.startsWith("https://docs.google.com/gview") ||
+                          req.url.startsWith("https://drive.google.com") ||
+                          req.url === docUrl ||
+                          req.url.startsWith("about:blank")
+                        ) {
+                          return true;
+                        }
+                        return false;
+                      }}
+                      startInLoadingState={true}
+                      renderLoading={() => (
+                        <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "center", alignItems: "center", backgroundColor: "#0f1219" }}>
+                          <ActivityIndicator size="large" color="#c62828" />
+                          <Text style={{ color: "#ccc", marginTop: 10, fontSize: 12 }}>Loading document…</Text>
+                        </View>
+                      )}
+                    />
+                    {/* Security overlay blocking Google Docs pop-out button */}
+                    <View
+                      pointerEvents="auto"
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        right: 0,
+                        width: 76,
+                        height: 58,
+                        backgroundColor: "#151923",
+                        zIndex: 9999,
+                        justifyContent: "center",
+                        alignItems: "center",
+                        borderBottomLeftRadius: 10,
+                        borderLeftWidth: 1,
+                        borderBottomWidth: 1,
+                        borderColor: "rgba(255,255,255,0.08)"
+                      }}
+                    >
+                      <Ionicons name="shield-checkmark" size={16} color="#34d399" />
+                      <Text style={{ color: "#9ca3af", fontSize: 9, fontWeight: "bold", marginTop: 2 }}>PROTECTED</Text>
+                    </View>
+                  </View>
+                );
+              })()
+            )}
+          </View>
+        </SafeAreaView>
+      </Modal>
+    );
+  };
+
+  const NativeDailyContentModal = ({
+    content,
+    displaySrc,
+    onClose,
+    darkMode
+  }: {
+    content: any;
+    displaySrc: string;
+    onClose: () => void;
+    darkMode: boolean;
+  }) => {
+    const rawType = (content?.type || '').toLowerCase();
+    const rawUrl = content?.url || displaySrc || '';
+
+    const candidateStrings = [
+      content?.title,
+      content?.fileName,
+      content?.originalName,
+      content?.name,
+      content?.sourceUrl,
+      content?.url,
+      displaySrc,
+      rawUrl
+    ].filter(Boolean).map(s => String(s));
+
+    const imageExtRegex = /\.(png|jpe?g|webp|gif|svg|bmp|tiff|heic|ico)(\?.*)?$/i;
+    const isImg =
+      rawType === 'image' ||
+      ['image', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'svg', 'bmp'].includes(rawType) ||
+      candidateStrings.some(s => imageExtRegex.test(s)) ||
+      displaySrc.startsWith('data:image/') ||
+      displaySrc.includes('lh3.googleusercontent.com');
+
+    const getGoogleDriveId = (urlStr: string) => {
+      if (!urlStr) return null;
+      const m1 = urlStr.match(/\/file\/d\/([-\w]{25,})/);
+      if (m1 && m1[1]) return m1[1];
+      const m2 = urlStr.match(/[?&]id=([-\w]{25,})/);
+      if (m2 && m2[1]) return m2[1];
+      if (urlStr.includes('drive.google.com') || urlStr.includes('docs.google.com')) {
+        const m3 = urlStr.match(/([-\w]{25,})/);
+        if (m3 && m3[1]) return m3[1];
+      }
+      return null;
+    };
+
+    const driveId = getGoogleDriveId(rawUrl) || getGoogleDriveId(displaySrc);
+    let targetSrc = displaySrc;
+    if (isImg && driveId) {
+      targetSrc = `https://lh3.googleusercontent.com/d/${driveId}`;
+    }
+
+    const contentTypeLabel = isImg ? 'IMAGE' : (content?.type ? content.type.toUpperCase() : 'PDF');
+
+    return (
+      <Modal visible={true} transparent={false} animationType="fade" onRequestClose={onClose}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: "#0f1219" }}>
+          {/* Header */}
+          <View style={{
+            height: 60,
+            borderBottomWidth: 1,
+            borderBottomColor: "rgba(255,255,255,0.08)",
+            backgroundColor: "#151923",
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            paddingHorizontal: 16
+          }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1, marginRight: 8 }}>
+              <TouchableOpacity onPress={onClose} style={{ padding: 6, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.06)" }}>
+                <Ionicons name="close" size={20} color="#fff" />
+              </TouchableOpacity>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 14, flexShrink: 1 }} numberOfLines={1}>
+                    {content?.title || (isImg ? "Daily Study Image" : "Daily Study Material")}
+                  </Text>
+                  <View style={{ backgroundColor: "rgba(16,185,129,0.2)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, flexDirection: "row", alignItems: "center", gap: 3 }}>
+                    <Ionicons name="shield-checkmark" size={10} color="#34d399" />
+                    <Text style={{ color: "#34d399", fontSize: 9, fontWeight: "bold" }}>SECURE</Text>
+                  </View>
+                </View>
+                <Text style={{ color: "#9ca3af", fontSize: 11 }}>{contentTypeLabel} • {content?.date || 'v1'}</Text>
+              </View>
+            </View>
+
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <View style={{ backgroundColor: "rgba(239,68,68,0.15)", borderWidth: 1, borderColor: "rgba(239,68,68,0.3)", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 4 }}>
+                <Ionicons name="eye-off-outline" size={12} color="#f87171" />
+                <Text style={{ color: "#f87171", fontSize: 10, fontWeight: "bold" }}>No Download</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Content */}
+          <View style={{ flex: 1, backgroundColor: "#000", width: "100%", position: "relative" }}>
+            {!targetSrc ? (
+              <View style={{ flex: 1, padding: 24, justifyContent: "center", alignItems: "center" }}>
+                <Ionicons name="alert-circle-outline" size={48} color="#ef4444" />
+                <Text style={{ color: "#fff", fontSize: 15, fontWeight: "bold", marginTop: 8 }}>Content Not Available</Text>
+                <Text style={{ color: "#9ca3af", fontSize: 12, textAlign: "center", marginTop: 4 }}>Preview is not available for this item.</Text>
+                <TouchableOpacity onPress={onClose} style={{ marginTop: 16, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 8 }}>
+                  <Text style={{ color: "#fff", fontSize: 12, fontWeight: "bold" }}>Close</Text>
+                </TouchableOpacity>
+              </View>
+            ) : isImg ? (
+              <NativeDailyImageZoomView imgSrc={targetSrc} darkMode={true} />
+            ) : driveId ? (
+              (() => {
+                const { WebView } = require("react-native-webview");
+                const drivePreview = `https://drive.google.com/file/d/${driveId}/preview`;
+                return (
+                  <View style={{ flex: 1, width: "100%", height: "100%", position: "relative" }}>
+                    <WebView
+                      source={{ uri: drivePreview }}
+                      style={{ flex: 1, width: "100%", height: "100%", backgroundColor: "#0b0e17" }}
+                      javaScriptEnabled={true}
+                      domStorageEnabled={true}
+                      thirdPartyCookiesEnabled={true}
+                      sharedCookiesEnabled={true}
+                      userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                      injectedJavaScript={hidePopOutJs}
+                      onShouldStartLoadWithRequest={(req) => {
+                        if (
+                          req.url === drivePreview ||
+                          req.url.startsWith("https://drive.google.com/file/d/") ||
+                          req.url.startsWith("https://docs.google.com") ||
+                          req.url.startsWith("https://accounts.google.com") ||
+                          req.url.startsWith("about:blank")
+                        ) {
+                          return true;
+                        }
+                        return false;
+                      }}
+                      startInLoadingState={true}
+                      renderLoading={() => (
+                        <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "center", alignItems: "center", backgroundColor: "#0f1219" }}>
+                          <ActivityIndicator size="large" color="#c62828" />
+                          <Text style={{ color: "#ccc", marginTop: 10, fontSize: 12 }}>Loading document…</Text>
+                        </View>
+                      )}
+                    />
+                    {/* Security overlay blocking Google Drive pop-out button */}
+                    <View
+                      pointerEvents="auto"
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        right: 0,
+                        width: 76,
+                        height: 58,
+                        backgroundColor: "#151923",
+                        zIndex: 9999,
+                        justifyContent: "center",
+                        alignItems: "center",
+                        borderBottomLeftRadius: 10,
+                        borderLeftWidth: 1,
+                        borderBottomWidth: 1,
+                        borderColor: "rgba(255,255,255,0.08)"
+                      }}
+                    >
+                      <Ionicons name="shield-checkmark" size={16} color="#34d399" />
+                      <Text style={{ color: "#9ca3af", fontSize: 9, fontWeight: "bold", marginTop: 2 }}>PROTECTED</Text>
+                    </View>
+                  </View>
+                );
+              })()
+            ) : (targetSrc.startsWith("http://") || targetSrc.startsWith("https://")) ? (
+              (() => {
+                const { WebView } = require("react-native-webview");
+                const docViewerUrl = `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(targetSrc)}`;
+                return (
+                  <View style={{ flex: 1, width: "100%", height: "100%", position: "relative" }}>
+                    <WebView
+                      source={{ uri: docViewerUrl }}
+                      style={{ flex: 1, width: "100%", height: "100%", backgroundColor: "#0b0e17" }}
+                      javaScriptEnabled={true}
+                      domStorageEnabled={true}
+                      thirdPartyCookiesEnabled={true}
+                      sharedCookiesEnabled={true}
+                      userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                      injectedJavaScript={hidePopOutJs}
+                      onShouldStartLoadWithRequest={(req) => {
+                        if (
+                          req.url.startsWith("https://docs.google.com/gview") ||
+                          req.url.startsWith("https://drive.google.com") ||
+                          req.url === targetSrc ||
+                          req.url.startsWith("about:blank")
+                        ) {
+                          return true;
+                        }
+                        return false;
+                      }}
+                      startInLoadingState={true}
+                      renderLoading={() => (
+                        <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "center", alignItems: "center", backgroundColor: "#0f1219" }}>
+                          <ActivityIndicator size="large" color="#c62828" />
+                          <Text style={{ color: "#ccc", marginTop: 10, fontSize: 12 }}>Loading document…</Text>
+                        </View>
+                      )}
+                    />
+                    {/* Security overlay blocking Google Docs pop-out button */}
+                    <View
+                      pointerEvents="auto"
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        right: 0,
+                        width: 76,
+                        height: 58,
+                        backgroundColor: "#151923",
+                        zIndex: 9999,
+                        justifyContent: "center",
+                        alignItems: "center",
+                        borderBottomLeftRadius: 10,
+                        borderLeftWidth: 1,
+                        borderBottomWidth: 1,
+                        borderColor: "rgba(255,255,255,0.08)"
+                      }}
+                    >
+                      <Ionicons name="shield-checkmark" size={16} color="#34d399" />
+                      <Text style={{ color: "#9ca3af", fontSize: 9, fontWeight: "bold", marginTop: 2 }}>PROTECTED</Text>
+                    </View>
+                  </View>
+                );
+              })()
+            ) : (
+              (() => {
+                const { WebView } = require("react-native-webview");
+                return (
+                  <View style={{ flex: 1, width: "100%", height: "100%", position: "relative" }}>
+                    <WebView
+                      source={{ html: buildNativePdfViewerHtml(targetSrc, content?.title) }}
+                      style={{ flex: 1, width: "100%", height: "100%", backgroundColor: "#0b0e17" }}
+                      javaScriptEnabled={true}
+                      domStorageEnabled={true}
+                      startInLoadingState={true}
+                      renderLoading={() => (
+                        <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "center", alignItems: "center", backgroundColor: "#0f1219" }}>
+                          <ActivityIndicator size="large" color="#c62828" />
+                          <Text style={{ color: "#ccc", marginTop: 10, fontSize: 12 }}>Loading document…</Text>
+                        </View>
+                      )}
+                    />
+                  </View>
+                );
+              })()
+            )}
+          </View>
+        </SafeAreaView>
+      </Modal>
+    );
+  };
+
+
   const getLoggedInStudent = (userObj: any, studentList: any[]) => {
     if (!userObj) return null;
     if (studentList && studentList.length > 0) {
@@ -3071,6 +4312,18 @@ function MainApp() {
   const [feeAlertNote, setFeeAlertNote] = useState<string>("");
   const [feeAlertSending, setFeeAlertSending] = useState<boolean>(false);
   const [feeFilterStatus, setFeeFilterStatus] = useState<"all" | "pending" | "paid">("all");
+  const [feeFilterCourse, setFeeFilterCourse] = useState<string>("all");
+  const [feeFilterBatch, setFeeFilterBatch] = useState<string>("all");
+  const [feeCurrentPage, setFeeCurrentPage] = useState<number>(1);
+  const [showFeeCourseDropdown, setShowFeeCourseDropdown] = useState<boolean>(false);
+  const [showFeeBatchDropdown, setShowFeeBatchDropdown] = useState<boolean>(false);
+  const [showNewBatchCourseDropdown, setShowNewBatchCourseDropdown] = useState<boolean>(false);
+  const [showEditBatchCourseDropdown, setShowEditBatchCourseDropdown] = useState<boolean>(false);
+  const [idFilterCourse, setIdFilterCourse] = useState<string>("all");
+  const [idFilterBatch, setIdFilterBatch] = useState<string>("all");
+  const [idCurrentPage, setIdCurrentPage] = useState<number>(1);
+  const [showIdCourseDropdown, setShowIdCourseDropdown] = useState<boolean>(false);
+  const [showIdBatchDropdown, setShowIdBatchDropdown] = useState<boolean>(false);
   const [bulkFeeAlertModalOpen, setBulkFeeAlertModalOpen] = useState<boolean>(false);
   const [bulkFeeAlertTarget, setBulkFeeAlertTarget] = useState<"all" | "batch">("all");
   const [bulkFeeAlertBatch, setBulkFeeAlertBatch] = useState<string>("all");
@@ -3081,6 +4334,7 @@ function MainApp() {
   const [profileRequestsTab, setProfileRequestsTab] = useState<"incomplete" | "requests">("incomplete");
   const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
   const [viewingApprovalItem, setViewingApprovalItem] = useState<any>(null);
+  const [approvalViewMode, setApprovalViewMode] = useState<"diff" | "all">("diff");
   const [rolePermissions, setRolePermissions] = useState<any>({});
   const [oneTimePermissions, setOneTimePermissions] = useState<Record<string, number>>({});
   // Approval-workflow states: track which featureKeys are being submitted or are pending super admin approval
@@ -3290,6 +4544,9 @@ function MainApp() {
   const [studentOldPassword, setStudentOldPassword] = useState("");
   const [studentNewPassword, setStudentNewPassword] = useState("");
   const [studentConfirmPassword, setStudentConfirmPassword] = useState("");
+  const [showStudentOldPassword, setShowStudentOldPassword] = useState(false);
+  const [showStudentNewPassword, setShowStudentNewPassword] = useState(false);
+  const [showStudentConfirmPassword, setShowStudentConfirmPassword] = useState(false);
   const [profileFormStep, setProfileFormStep] = useState(1);
   const [showValidationErrors, setShowValidationErrors] = useState(false);
   const [resultsSubjectFilter, setResultsSubjectFilter] = useState("");
@@ -3397,6 +4654,13 @@ function MainApp() {
   const [contactFormType, setContactFormType] = useState<"admission" | "inquiry" | null>(null);
   const [showAuthFlip, setShowAuthFlip] = useState(false);
   const [pendingGoogleUser, setPendingGoogleUser] = useState<any | null>(null);
+
+  useEffect(() => {
+    if (Platform.OS !== "web") {
+      initNotifications();
+      requestNotificationPermission();
+    }
+  }, []);
 
   const handleGoogleAuthSignIn = async (passedName?: string, passedPhone?: string, existingGoogleObj?: any) => {
     console.log("[DEBUG] handleGoogleAuthSignIn called", { passedName, passedPhone, existingGoogleObj });
@@ -3643,19 +4907,23 @@ function MainApp() {
   const [lmsTabsCollapsed, setLmsTabsCollapsed] = useState(false);
   const [erpSidebarCollapsed, setErpSidebarCollapsed] = useState(false);
   const [crmSidebarCollapsed, setCrmSidebarCollapsed] = useState(false);
-  const [testSidebarCollapsed, setTestSidebarCollapsed] = useState(false);
+  const [testSidebarCollapsed, setTestSidebarCollapsed] = useState(() => (Platform.OS !== "web" || (typeof window !== "undefined" && window.innerWidth < 768)));
   const changeErpSub = (sub: string) => {
-    const lockKey = "erp-" + sub;
+    let targetSub = sub;
+    if (user?.role === "student" && targetSub === "fees") {
+      targetSub = "pay-fees";
+    }
+    const lockKey = "erp-" + targetSub;
     if (isPageLocked(lockKey)) {
       const pageInfo = LOCKABLE_PAGES.find(p => p.key === lockKey);
       setLockedPageInfoModal({
         visible: true,
         tabKey: lockKey,
-        message: lockedPages[lockKey]?.message || `The ${pageInfo?.label || sub} panel is currently under maintenance. Please check back later.`
+        message: lockedPages[lockKey]?.message || `The ${pageInfo?.label || targetSub} panel is currently under maintenance. Please check back later.`
       });
       return;
     }
-    setErpSub(sub);
+    setErpSub(targetSub);
     if (isMobile) setErpSidebarCollapsed(true);
   };
   const changeLmsSub = (sub: string) => {
@@ -3698,7 +4966,7 @@ function MainApp() {
       return;
     }
     setTestSub(sub);
-    if (isMobile) setTestSidebarCollapsed(true);
+    if (isMobile || Platform.OS !== "web") setTestSidebarCollapsed(true);
   };
   const [testSub, setTestSub] = useState(initialNav.testSubVal);
   const [testFilterQuery, setTestFilterQuery] = useState("");
@@ -3973,10 +5241,14 @@ function MainApp() {
 
 
 
-  // Redirect students away from admin-only ERP sub-tabs to their profile
+  // Redirect students away from admin-only ERP sub-tabs to their profile or proper page
   useEffect(() => {
-    if (user && user.role === "student" && activeTab === "erp" && (erpSub === "students" || erpSub === "batch" || erpSub === "staff" || erpSub === "profile-requests")) {
-      changeErpSub("my-profile");
+    if (user && user.role === "student" && activeTab === "erp") {
+      if (erpSub === "fees") {
+        changeErpSub("pay-fees");
+      } else if (erpSub === "students" || erpSub === "batch" || erpSub === "staff" || erpSub === "profile-requests") {
+        changeErpSub("my-profile");
+      }
     }
   }, [user, activeTab, erpSub]);
 
@@ -4149,7 +5421,7 @@ function MainApp() {
     let dismissedList: string[] = [];
     try {
       dismissedList = JSON.parse(localStorage.getItem("nermai_dismissed_admin_alerts") || "[]");
-    } catch {}
+    } catch { }
     const dismissedSet = new Set(dismissedList);
 
     // 1. Sync pending offline test requests
@@ -4172,7 +5444,7 @@ function MainApp() {
             targetSub: "offline-requests",
             createdAt: req.requestedAt || new Date().toISOString(),
             isDismissed: false
-          }, { merge: true }).catch(() => {});
+          }, { merge: true }).catch(() => { });
         }
       }
     });
@@ -4197,7 +5469,7 @@ function MainApp() {
             targetSub: "profile-requests",
             createdAt: req.submittedAt || req.createdAt || new Date().toISOString(),
             isDismissed: false
-          }, { merge: true }).catch(() => {});
+          }, { merge: true }).catch(() => { });
         }
       }
     });
@@ -4225,7 +5497,7 @@ function MainApp() {
               targetSub: "approvals",
               createdAt: prop.createdAt || new Date().toISOString(),
               isDismissed: false
-            }, { merge: true }).catch(() => {});
+            }, { merge: true }).catch(() => { });
           }
         }
       });
@@ -4240,7 +5512,7 @@ function MainApp() {
       const saved = JSON.parse(localStorage.getItem("nermai_dismissed_admin_alerts") || "[]");
       saved.push(alertItem.id);
       localStorage.setItem("nermai_dismissed_admin_alerts", JSON.stringify(Array.from(new Set(saved))));
-    } catch {}
+    } catch { }
 
     // 2. Delete the alert document from admin_alerts in Firestore (clean Option A deletion)
     try {
@@ -4283,7 +5555,7 @@ function MainApp() {
       const saved = JSON.parse(localStorage.getItem("nermai_dismissed_admin_alerts") || "[]");
       saved.push(alertId);
       localStorage.setItem("nermai_dismissed_admin_alerts", JSON.stringify(Array.from(new Set(saved))));
-    } catch {}
+    } catch { }
 
     const alertItem = adminAlerts.find(a => a.id === alertId);
     if (alertItem) {
@@ -4311,13 +5583,13 @@ function MainApp() {
     try {
       const saved = JSON.parse(localStorage.getItem("nermai_dismissed_admin_alerts") || "[]");
       localStorage.setItem("nermai_dismissed_admin_alerts", JSON.stringify(Array.from(new Set([...saved, ...ids]))));
-    } catch {}
+    } catch { }
 
     setAdminAlerts([]);
     for (const id of ids) {
       try {
         await deleteDoc(doc(db, "admin_alerts", id));
-      } catch {}
+      } catch { }
     }
   };
 
@@ -4533,6 +5805,23 @@ function MainApp() {
       if (u?.role) headers["user-role"] = u.role;
       return headers;
     },
+    normalizeHeaders(customHeaders?: any): Record<string, string> {
+      const unwrapped = (customHeaders && typeof customHeaders === "object" && "headers" in customHeaders && customHeaders.headers && typeof customHeaders.headers === "object")
+        ? customHeaders.headers
+        : (customHeaders || {});
+      const merged: Record<string, any> = {
+        "Content-Type": "application/json",
+        ...this.getAuthHeaders(),
+        ...unwrapped
+      };
+      const sanitized: Record<string, string> = {};
+      for (const [key, value] of Object.entries(merged)) {
+        if (value !== undefined && value !== null && typeof value !== "object") {
+          sanitized[key] = String(value);
+        }
+      }
+      return sanitized;
+    },
     handleResponse(res: Response, data: any) {
       if (res.status === 202 && data && data.approvalRequired) {
         Alert.alert("Submitted for Approval", data.message || "Your change proposal has been submitted to Super Admin for review.");
@@ -4553,7 +5842,7 @@ function MainApp() {
       const id = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
       try {
         const res = await fetch(`${baseUrl}${path}`, {
-          headers: { "Content-Type": "application/json", ...this.getAuthHeaders(), ...headers },
+          headers: this.normalizeHeaders(headers),
           signal: controller.signal
         });
         clearTimeout(id);
@@ -4574,7 +5863,7 @@ function MainApp() {
       try {
         const res = await fetch(`${baseUrl}${path}`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", ...this.getAuthHeaders(), ...headers },
+          headers: this.normalizeHeaders(headers),
           body: JSON.stringify(body),
           signal: controller.signal
         });
@@ -4596,7 +5885,7 @@ function MainApp() {
       try {
         const res = await fetch(`${baseUrl}${path}`, {
           method: "PUT",
-          headers: { "Content-Type": "application/json", ...this.getAuthHeaders(), ...headers },
+          headers: this.normalizeHeaders(headers),
           body: JSON.stringify(body),
           signal: controller.signal
         });
@@ -4618,7 +5907,7 @@ function MainApp() {
       try {
         const res = await fetch(`${baseUrl}${path}`, {
           method: "PATCH",
-          headers: { "Content-Type": "application/json", ...this.getAuthHeaders(), ...headers },
+          headers: this.normalizeHeaders(headers),
           body: JSON.stringify(body),
           signal: controller.signal
         });
@@ -4640,7 +5929,7 @@ function MainApp() {
       try {
         const res = await fetch(`${baseUrl}${path}`, {
           method: "DELETE",
-          headers: { "Content-Type": "application/json", ...this.getAuthHeaders(), ...headers },
+          headers: this.normalizeHeaders(headers),
           signal: controller.signal
         });
         clearTimeout(id);
@@ -5148,16 +6437,16 @@ function MainApp() {
         if (elem && elem.requestFullscreen) {
           const res = elem.requestFullscreen();
           if (res && typeof res.catch === "function") {
-            res.catch(() => {});
+            res.catch(() => { });
           }
         } else if (elem && elem.webkitRequestFullscreen) {
-          try { elem.webkitRequestFullscreen(); } catch (_) {}
+          try { elem.webkitRequestFullscreen(); } catch (_) { }
         } else if (elem && elem.mozRequestFullScreen) {
-          try { elem.mozRequestFullScreen(); } catch (_) {}
+          try { elem.mozRequestFullScreen(); } catch (_) { }
         } else if (elem && elem.msRequestFullscreen) {
-          try { elem.msRequestFullscreen(); } catch (_) {}
+          try { elem.msRequestFullscreen(); } catch (_) { }
         }
-      } catch (_) {}
+      } catch (_) { }
     }
   };
 
@@ -5167,7 +6456,7 @@ function MainApp() {
         const doc = document as any;
         if (doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement) {
           if (doc.exitFullscreen) {
-            doc.exitFullscreen().catch(() => {});
+            doc.exitFullscreen().catch(() => { });
           } else if (doc.webkitExitFullscreen) {
             doc.webkitExitFullscreen();
           } else if (doc.mozCancelFullScreen) {
@@ -5176,7 +6465,7 @@ function MainApp() {
             doc.msExitFullscreen();
           }
         }
-      } catch (_) {}
+      } catch (_) { }
     }
   };
   const [testFeedbacks, setTestFeedbacks] = useState<any[]>([]);
@@ -5715,7 +7004,7 @@ function MainApp() {
         );
       }
 
-      return (
+      const modalElement = (
         <div style={overlayStyle} onClick={() => setPreviewImageUri(null)}>
           <div style={cardStyle} onClick={(e) => e.stopPropagation()}>
             <div style={headerStyle}>
@@ -5732,6 +7021,19 @@ function MainApp() {
           </div>
         </div>
       );
+
+      if (typeof document !== 'undefined') {
+        try {
+          const ReactDOM = require('react-dom');
+          if (ReactDOM && typeof ReactDOM.createPortal === 'function') {
+            return ReactDOM.createPortal(modalElement, document.body);
+          }
+        } catch (e) {
+          console.warn("createPortal fallback", e);
+        }
+      }
+
+      return modalElement;
     }
 
     // ── NATIVE (iOS / Android): Use React Native Modal ──
@@ -5862,7 +7164,7 @@ function MainApp() {
         visible={fullscreenGateRequired}
         transparent={true}
         animationType="fade"
-        onRequestClose={() => {}}
+        onRequestClose={() => { }}
       >
         <View style={{
           flex: 1,
@@ -6069,7 +7371,7 @@ function MainApp() {
         visible={proctorWarning.visible}
         transparent={true}
         animationType="fade"
-        onRequestClose={() => {}}
+        onRequestClose={() => { }}
       >
         <View style={{
           flex: 1,
@@ -6113,12 +7415,22 @@ function MainApp() {
   // tokenRef.current & userRef.current are synced on every render (after hooks run) so api calls always see current credentials
   tokenRef.current = user?.token ?? null;
   userRef.current = user;
+  (globalThis as any).__NERMAI_TOKEN__ = user?.token ?? null;
+  (globalThis as any).__NERMAI_USER__ = user ?? null;
 
   // Guard ref — prevents duplicate loads when component re-renders
   // without user or hostIp actually changing
   const loadedForUserRef = useRef<string | null>(null);
   const lastFocusSyncRef = useRef<number>(0);
   const loadedCollectionsRef = useRef<Set<string>>(new Set());
+  const isInitialAnnouncementsLoadRef = useRef(false);
+  const isInitialResourceLoadRef = useRef(false);
+  const isInitialDailyContentLoadRef = useRef(false);
+  const isInitialQuizLoadRef = useRef(false);
+  const isInitialTestLoadRef = useRef(false);
+  const isInitialAdmissionLoadRef = useRef(false);
+  const isInitialInquiryLoadRef = useRef(false);
+  const isInitialProfileReqLoadRef = useRef(false);
 
 
 
@@ -6139,10 +7451,30 @@ function MainApp() {
 
       if (Platform.OS === "web" && typeof localStorage !== "undefined") {
         localStorage.setItem("nermai_manual_logout", "true");
+      } else {
+        try {
+          await AsyncStorage.setItem("nermai_manual_logout", "true");
+          await AsyncStorage.removeItem("nermai_auth_user");
+          await AsyncStorage.removeItem("nermai_guest_email");
+          await AsyncStorage.removeItem("nermai_guest_auto_login");
+        } catch (e) { }
       }
     } catch (e) {
       console.log("Error during logout:", e);
     }
+    setPendingGoogleUser(null);
+    setGuestNameInput("");
+    setGuestPhoneInput("");
+    setGuestEmail("");
+    setGuestEmailUnlocked(false);
+    isInitialAnnouncementsLoadRef.current = false;
+    isInitialResourceLoadRef.current = false;
+    isInitialDailyContentLoadRef.current = false;
+    isInitialQuizLoadRef.current = false;
+    isInitialTestLoadRef.current = false;
+    isInitialAdmissionLoadRef.current = false;
+    isInitialInquiryLoadRef.current = false;
+    isInitialProfileReqLoadRef.current = false;
     loadedCollectionsRef.current.clear();
     setStudents([]);
     setMyProfileRequest(null);
@@ -6279,6 +7611,15 @@ function MainApp() {
           setGuestTab("home");
           return;
         }
+      } else {
+        try {
+          const isManuallyLoggedOut = await AsyncStorage.getItem("nermai_manual_logout");
+          if (isManuallyLoggedOut === "true") {
+            setUser(null);
+            setGuestTab("home");
+            return;
+          }
+        } catch (e) { }
       }
 
       const savedUser = await userStorage.get();
@@ -6386,16 +7727,16 @@ function MainApp() {
               for (const registration of registrations) {
                 registration.unregister();
               }
-            }).catch(() => {});
+            }).catch(() => { });
           }
           if (typeof caches !== "undefined") {
             caches.keys().then(names => {
               for (const name of names) {
                 caches.delete(name);
               }
-            }).catch(() => {});
+            }).catch(() => { });
           }
-        } catch (_) {}
+        } catch (_) { }
       }
       setIsInitialLoading(false);
     };
@@ -6529,6 +7870,13 @@ function MainApp() {
           if (data.status === "approved") {
             const reloaders = getFeatureReloaders();
             reloaders[data.feature]?.();
+            if (Platform.OS !== "web") {
+              showPhoneNotification("✅ Submission Approved", `Your submission for ${data.feature?.replace(/_/g, " ") || "item"} was approved!`);
+            }
+          } else if (data.status === "rejected") {
+            if (Platform.OS !== "web") {
+              showPhoneNotification("❌ Submission Update", `Your submission for ${data.feature?.replace(/_/g, " ") || "item"} was rejected.`);
+            }
           }
 
           // Remove from pendingSubmissions regardless of outcome
@@ -6613,6 +7961,12 @@ function MainApp() {
       loadAnnouncements();
       loadNotifications();
       loadLiveSessions();
+      if (isAdmin) {
+        loadStudents();
+        loadProfileRequests();
+        loadAdmissions();
+        loadEnquiries();
+      }
     } else if (activeTab === "lms") {
       loadLiveSessions();
       loadCourses();
@@ -6623,6 +7977,11 @@ function MainApp() {
     } else if (activeTab === "erp" && isAdmin) {
       loadStudents();
       loadBatches();
+      loadProfileRequests();
+    } else if (activeTab === "crm" && isAdmin) {
+      loadAdmissions();
+      loadEnquiries();
+      loadLeads();
     }
   }, [activeTab, user]);
 
@@ -6640,6 +7999,12 @@ function MainApp() {
           loadLiveSessions();
           if (activeTab === "test") loadTests();
           if (activeTab === "lms") loadCourses();
+          if (isAdmin) {
+            loadStudents();
+            loadProfileRequests();
+            loadAdmissions();
+            loadEnquiries();
+          }
         }
       };
       window.addEventListener("focus", syncOnFocus);
@@ -6889,33 +8254,98 @@ function MainApp() {
   }, [waitingRoomTest]);
 
   // ── SCREENSHOT & SCREEN CAPTURE BLOCKING (Mobile & Web) ───────────────────
+  // Blocks screenshots, screen recordings, and unfocused captures across all Student & Guest modules.
+  // Exempts Admin & Teacher roles so staff can manage portals normally.
   useEffect(() => {
-    if (!activeAttempt) return;
-
     // 1. Mobile OS Screen Capture Guard (Android FLAG_SECURE & iOS Shield)
     try {
-      ScreenCapture.preventScreenCaptureAsync().catch(() => {});
-    } catch (_) {}
+      if (isProtectedRole) {
+        ScreenCapture.preventScreenCaptureAsync().catch(() => { });
+      } else {
+        ScreenCapture.allowScreenCaptureAsync().catch(() => { });
+      }
+    } catch (_) { }
 
-    // 2. Web Browser Guard (PrintScreen, Copy, ContextMenu, Shortcut Blocking)
+    // If Admin/Teacher, do not apply web blur or capture restrictions
+    if (!isProtectedRole) {
+      if (Platform.OS === "web" && typeof document !== "undefined") {
+        const rootEl = document.getElementById("root");
+        if (rootEl) rootEl.style.filter = "none";
+        const existingPrintStyle = document.getElementById("nermai-print-block");
+        if (existingPrintStyle) existingPrintStyle.remove();
+      }
+      return;
+    }
+
+    // 2. Web Browser Guard (PrintScreen, Copy, ContextMenu, Shortcut & Print Blocking)
     if (Platform.OS === "web" && typeof window !== "undefined") {
+      // Ensure root filter is clean and unblurred
+      if (typeof document !== "undefined") {
+        const rootEl = document.getElementById("root");
+        if (rootEl) rootEl.style.filter = "none";
+      }
+
+      // Inject print blocking style to prevent Ctrl+P / PDF saving
+      if (typeof document !== "undefined" && !document.getElementById("nermai-print-block")) {
+        try {
+          const style = document.createElement("style");
+          style.id = "nermai-print-block";
+          style.innerHTML = "@media print { body, #root { display: none !important; } }";
+          document.head.appendChild(style);
+        } catch (_) { }
+      }
+
       const handleWebKeyDown = (e: KeyboardEvent) => {
         const isPrintScreen = e.key === "PrintScreen" || e.keyCode === 44;
         const isCtrlCopy = (e.ctrlKey || e.metaKey) && ["c", "C", "p", "P", "s", "S", "u", "U", "a", "A"].includes(e.key);
         const isDevTools = (e.ctrlKey || e.metaKey) && e.shiftKey && ["i", "I", "c", "C", "j", "J"].includes(e.key);
+        const isPrintShortcut = (e.ctrlKey || e.metaKey) && (e.key === "p" || e.key === "P");
 
-        if (isPrintScreen || isCtrlCopy || isDevTools) {
+        if (isPrintShortcut) {
           e.preventDefault();
           e.stopPropagation();
-          if (isPrintScreen) {
-            try { navigator.clipboard?.writeText(""); } catch (_) {}
-            Alert.alert("⚠️ Screenshot Blocked", "Taking screenshots or screen captures is strictly prohibited during the examination!");
-          }
+          Alert.alert("⚠️ Printing Restricted", "Printing and exporting academy documents to PDF is prohibited.");
+          return;
+        }
+
+        if (isPrintScreen) {
+          e.preventDefault();
+          e.stopPropagation();
+          try { navigator.clipboard?.writeText(""); } catch (_) { }
+          Alert.alert(
+            "⚠️ Screenshot Blocked",
+            activeAttempt
+              ? "Taking screenshots or screen captures is strictly prohibited during the examination!"
+              : "Taking screenshots or screen captures is prohibited on student materials."
+          );
+          return;
+        }
+
+        if (activeAttempt && (isCtrlCopy || isDevTools)) {
+          e.preventDefault();
+          e.stopPropagation();
         }
       };
 
-      const handleContextMenu = (e: MouseEvent) => e.preventDefault();
-      const handleCopyCut = (e: ClipboardEvent) => e.preventDefault();
+      const handleContextMenu = (e: MouseEvent) => {
+        const target = e.target as HTMLElement;
+        const isInputField = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA");
+        if (!isInputField) {
+          e.preventDefault();
+        }
+      };
+
+      const handleCopyCut = (e: ClipboardEvent) => {
+        if (activeAttempt) {
+          e.preventDefault();
+          return;
+        }
+        const target = e.target as HTMLElement;
+        const isInputField = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+        if (!isInputField) {
+          e.preventDefault();
+        }
+      };
 
       window.addEventListener("keydown", handleWebKeyDown, true);
       window.addEventListener("contextmenu", handleContextMenu, true);
@@ -6923,24 +8353,30 @@ function MainApp() {
       window.addEventListener("cut", handleCopyCut, true);
 
       return () => {
+        if (typeof document !== "undefined") {
+          const rootEl = document.getElementById("root");
+          if (rootEl) rootEl.style.filter = "none";
+          const existingPrintStyle = document.getElementById("nermai-print-block");
+          if (existingPrintStyle) existingPrintStyle.remove();
+        }
         window.removeEventListener("keydown", handleWebKeyDown, true);
         window.removeEventListener("contextmenu", handleContextMenu, true);
         window.removeEventListener("copy", handleCopyCut, true);
         window.removeEventListener("cut", handleCopyCut, true);
-        try { ScreenCapture.allowScreenCaptureAsync().catch(() => {}); } catch (_) {}
+        try { ScreenCapture.allowScreenCaptureAsync().catch(() => { }); } catch (_) { }
       };
     }
 
     return () => {
-      try { ScreenCapture.allowScreenCaptureAsync().catch(() => {}); } catch (_) {}
+      try { ScreenCapture.allowScreenCaptureAsync().catch(() => { }); } catch (_) { }
     };
-  }, [activeAttempt]);
+  }, [isProtectedRole, activeAttempt]);
 
 
-  // Proctoring tracker: enforces fullscreen, tracks tab-switches / focus loss and 4-strike auto-submit
+  // Proctoring tracker: enforces fullscreen on web, tracks tab-switches / app minimize and 4-strike auto-submit on both Web and Mobile APK
   useEffect(() => {
-    if (!activeAttempt || Platform.OS !== "web") return;
-    
+    if (!activeAttempt) return;
+
     // Restore accumulated strike count from LocalStorage draft to survive page refreshes
     const draft = examLocalStorage.getDraft(activeAttempt.attemptId);
     const restoredStrikes = typeof draft?.tabLeaveCount === "number" ? draft.tabLeaveCount : (tabLeaveCountRef.current || 0);
@@ -6956,12 +8392,13 @@ function MainApp() {
       durationAway: 0,
     });
 
-    // Enter fullscreen when starting/resuming exam
-    // NOTE: requestFullscreen() cannot be called from useEffect (not a user gesture).
-    // The fullscreenGateRequired gate modal shows a button the user must click,
-    // which then calls enterFullscreen() as a valid user gesture.
-    if (!isWebFullscreen()) {
-      setFullscreenGateRequired(true);
+    // Enter fullscreen when starting/resuming exam (Web only)
+    if (Platform.OS === "web") {
+      if (!isWebFullscreen()) {
+        setFullscreenGateRequired(true);
+      } else {
+        setFullscreenGateRequired(false);
+      }
     } else {
       setFullscreenGateRequired(false);
     }
@@ -6985,15 +8422,15 @@ function MainApp() {
           ...currentDraft,
           tabLeaveCount: currentStrikes,
         });
-      } catch (_) {}
+      } catch (_) { }
 
       try {
         api.post(
           `/test-portal/examination/focus-event/${activeAttempt.attemptId}`,
           { event: "blur", tabLeaveCount: currentStrikes, durationSeconds, reason },
-          { headers: { "user-id": user?.userId || "" } }
-        ).catch(() => {});
-      } catch (_) {}
+          { "user-id": user?.userId || "" }
+        ).catch(() => { });
+      } catch (_) { }
 
       if (currentStrikes >= maxStrikes) {
         setProctorWarning({
@@ -7037,6 +8474,10 @@ function MainApp() {
         const timeAwayMs = Date.now() - tabLeaveStartTimeRef.current;
         durationSeconds = Math.max(1, Math.round(timeAwayMs / 1000));
         tabLeaveStartTimeRef.current = null;
+        // On mobile APK, forgive momentary status bar pull-down or quick gesture glitches under 1.8 seconds
+        if (Platform.OS !== "web" && timeAwayMs < 1800) {
+          return;
+        }
       }
       triggerViolationStrike(reason, durationSeconds);
     };
@@ -7048,76 +8489,139 @@ function MainApp() {
         const awaySeconds = Math.round((Date.now() - tabLeaveStartTimeRef.current) / 1000);
         if (awaySeconds >= 5 && tabLeaveCountRef.current >= 1) {
           tabLeaveStartTimeRef.current = null;
-          triggerViolationStrike("Away from exam continuously", awaySeconds);
+          triggerViolationStrike(Platform.OS === "web" ? "Away from exam continuously" : "Exam app left in background", awaySeconds);
         }
       }
     }, 1000);
 
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "hidden") {
-        onUserLeft("Tab switched / minimized");
-      } else {
-        onUserReturned("Tab switched / minimized");
+    // ── MOBILE APP (APK) PROCTORING: AppState background/active listener ──
+    let mobileAppStateSub: any = null;
+    if (Platform.OS !== "web") {
+      try {
+        const handleMobileAppStateChange = (nextState: string) => {
+          if (nextState === "background" || nextState === "inactive") {
+            onUserLeft("Switched out of exam app");
+          } else if (nextState === "active") {
+            onUserReturned("Switched back to exam app");
+          }
+        };
+        mobileAppStateSub = AppState.addEventListener("change", handleMobileAppStateChange);
+      } catch (e) {
+        console.log("Failed to attach mobile AppState listener:", e);
       }
-    };
+    }
 
-    const handleFullscreenChange = () => {
-      const doc = document as any;
-      const isFullscreen = !!(doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement);
-      if (isFullscreen) {
-        setFullscreenGateRequired(false);
-      } else if (!submitInProgressRef.current) {
-        setFullscreenGateRequired(true);
-        onUserReturned("Exited fullscreen mode");
-      }
-    };
+    // ── WEB PORTAL PROCTORING: Window blur, visibilitychange & fullscreen ──
+    if (Platform.OS === "web" && typeof document !== "undefined") {
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === "hidden") {
+          onUserLeft("Tab switched / minimized");
+        } else {
+          onUserReturned("Tab switched / minimized");
+        }
+      };
 
-    const handleWindowBlur = () => {
-      onUserLeft("Window blur / focus lost");
-    };
+      const handleFullscreenChange = () => {
+        const doc = document as any;
+        const isFullscreen = !!(doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement);
+        if (isFullscreen) {
+          setFullscreenGateRequired(false);
+        } else if (!submitInProgressRef.current) {
+          setFullscreenGateRequired(true);
+          onUserReturned("Exited fullscreen mode");
+        }
+      };
 
-    const handleWindowFocus = () => {
-      onUserReturned("Window blur / focus lost");
-    };
+      const handleWindowBlur = () => {
+        onUserLeft("Window blur / focus lost");
+      };
 
-    const handleContextMenu = (e: MouseEvent) => {
-      e.preventDefault();
-      return false;
-    };
+      const handleWindowFocus = () => {
+        onUserReturned("Window blur / focus lost");
+      };
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (
-        e.key === "F12" ||
-        (e.ctrlKey && e.shiftKey && ["I", "i", "J", "j", "C", "c"].includes(e.key)) ||
-        (e.ctrlKey && ["u", "U", "c", "C", "v", "V", "a", "A", "p", "P"].includes(e.key))
-      ) {
+      const handleContextMenu = (e: MouseEvent) => {
         e.preventDefault();
-        e.stopPropagation();
         return false;
-      }
-    };
+      };
 
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    document.addEventListener("fullscreenchange", handleFullscreenChange);
-    document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
-    document.addEventListener("mozfullscreenchange", handleFullscreenChange);
-    document.addEventListener("MSFullscreenChange", handleFullscreenChange);
-    window.addEventListener("blur", handleWindowBlur);
-    window.addEventListener("focus", handleWindowFocus);
-    document.addEventListener("contextmenu", handleContextMenu);
-    document.addEventListener("keydown", handleKeyDown);
+      const handleKeyDown = (e: KeyboardEvent) => {
+        const isPrintScreen = e.key === "PrintScreen" || e.keyCode === 44;
+        if (isPrintScreen) {
+          e.preventDefault();
+          e.stopPropagation();
+          try { navigator.clipboard?.writeText(""); } catch (_) { }
+          triggerViolationStrike("Screenshot attempt detected (PrintScreen)", 1);
+          return false;
+        }
+
+        if (
+          e.key === "F12" ||
+          (e.ctrlKey && e.shiftKey && ["I", "i", "J", "j", "C", "c"].includes(e.key)) ||
+          (e.ctrlKey && ["u", "U", "c", "C", "v", "V", "a", "A", "p", "P", "s", "S"].includes(e.key))
+        ) {
+          e.preventDefault();
+          e.stopPropagation();
+          triggerViolationStrike("Restricted shortcut / screen capture attempt", 1);
+          return false;
+        }
+      };
+
+      // ── Mobile Touch & Screenshot Gesture Proctoring ──
+      const handleTouchStart = (e: TouchEvent) => {
+        // Multi-touch screenshot gesture (Android 3-finger swipe)
+        if (e.touches && e.touches.length >= 3) {
+          e.preventDefault();
+          e.stopPropagation();
+          try { navigator.clipboard?.writeText(""); } catch (_) { }
+          triggerViolationStrike("Screenshot gesture detected (3-finger swipe)", 1);
+          return;
+        }
+
+        // Top-edge drag detection (notification shade / quick settings pull down)
+        if (e.touches && e.touches.length === 1 && e.touches[0].clientY <= 15) {
+          onUserLeft("Status bar / notification pull-down");
+        }
+      };
+
+      const handleTouchEnd = () => {
+        if (tabLeaveStartTimeRef.current) {
+          onUserReturned("Status bar / notification pull-down");
+        }
+      };
+
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+      document.addEventListener("fullscreenchange", handleFullscreenChange);
+      document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
+      document.addEventListener("mozfullscreenchange", handleFullscreenChange);
+      document.addEventListener("MSFullscreenChange", handleFullscreenChange);
+      window.addEventListener("blur", handleWindowBlur);
+      window.addEventListener("focus", handleWindowFocus);
+      document.addEventListener("contextmenu", handleContextMenu);
+      document.addEventListener("keydown", handleKeyDown);
+      document.addEventListener("touchstart", handleTouchStart, { passive: false });
+      document.addEventListener("touchend", handleTouchEnd, { passive: true });
+
+      return () => {
+        clearInterval(awayWatcher);
+        mobileAppStateSub?.remove?.();
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+        document.removeEventListener("fullscreenchange", handleFullscreenChange);
+        document.removeEventListener("webkitfullscreenchange", handleFullscreenChange);
+        document.removeEventListener("mozfullscreenchange", handleFullscreenChange);
+        document.removeEventListener("MSFullscreenChange", handleFullscreenChange);
+        window.removeEventListener("blur", handleWindowBlur);
+        window.removeEventListener("focus", handleWindowFocus);
+        document.removeEventListener("contextmenu", handleContextMenu);
+        document.removeEventListener("keydown", handleKeyDown);
+        document.removeEventListener("touchstart", handleTouchStart);
+        document.removeEventListener("touchend", handleTouchEnd);
+      };
+    }
 
     return () => {
       clearInterval(awayWatcher);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      document.removeEventListener("fullscreenchange", handleFullscreenChange);
-      document.removeEventListener("webkitfullscreenchange", handleFullscreenChange);
-      document.removeEventListener("mozfullscreenchange", handleFullscreenChange);
-      document.removeEventListener("MSFullscreenChange", handleFullscreenChange);
-      window.removeEventListener("blur", handleWindowBlur);
-      window.removeEventListener("focus", handleWindowFocus);
-      document.removeEventListener("contextmenu", handleContextMenu);
-      document.removeEventListener("keydown", handleKeyDown);
+      mobileAppStateSub?.remove?.();
     };
   }, [activeAttempt]);
 
@@ -7157,7 +8661,7 @@ function MainApp() {
           await api.post(
             `/test-portal/examination/autosave/${attemptId}`,
             { answers: formattedBatch },
-            { headers: { "user-id": user?.userId || "", "x-attempt-id": attemptId } }
+            { "user-id": user?.userId || "", "x-attempt-id": attemptId }
           );
           // Only update the hash after a successful API call.
           // If the request fails (network drop), lastSyncedHash stays stale so the
@@ -7228,7 +8732,7 @@ function MainApp() {
         "✅ Network reconnected! Syncing offline answers to server...",
         "success"
       );
-      syncAnswers().catch(() => {});
+      syncAnswers().catch(() => { });
     };
 
     window.addEventListener("offline", handleOffline);
@@ -7281,7 +8785,7 @@ function MainApp() {
             await api.post(
               `/test-portal/examination/autosave/${attemptId}`,
               { answers: formattedBatch },
-              { headers: { "user-id": user?.userId || "", "x-attempt-id": attemptId } }
+              { "user-id": user?.userId || "", "x-attempt-id": attemptId }
             );
             autosaveOk = true;
           } catch (e) {
@@ -7296,7 +8800,7 @@ function MainApp() {
             await api.post(
               `/test-portal/examination/submit/${attemptId}`,
               {},
-              { headers: { "user-id": user?.userId || "", "x-attempt-id": attemptId } }
+              { "user-id": user?.userId || "", "x-attempt-id": attemptId }
             );
           } catch (e) {
             console.log(`[OfflineSync] Submit note for ${attemptId}:`, e);
@@ -7307,7 +8811,7 @@ function MainApp() {
             await api.post(
               `/test-portal/evaluation/evaluate/${attemptId}`,
               {},
-              { headers: { "user-id": user?.userId || "", "x-attempt-id": attemptId } }
+              { "user-id": user?.userId || "", "x-attempt-id": attemptId }
             );
           } catch (e) {
             console.log(`[OfflineSync] Evaluate note for ${attemptId}:`, e);
@@ -7538,6 +9042,9 @@ function MainApp() {
             if (!playedNoticeIdsRef.current.has(n.id)) {
               playedNoticeIdsRef.current.add(n.id);
               hasNewlyPlayed = true;
+              if (Platform.OS !== "web" && isInitialAnnouncementsLoadRef.current) {
+                showPhoneNotification(n.title || "Academy Announcement", n.content || "A new notice has been published.", { id: n.id });
+              }
               if (n.priority === "high") {
                 hasNewHigh = true;
               } else {
@@ -7545,6 +9052,7 @@ function MainApp() {
               }
             }
           });
+          isInitialAnnouncementsLoadRef.current = true;
 
           if (hasNewlyPlayed) {
             try {
@@ -7610,20 +9118,31 @@ function MainApp() {
     if (!user || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "staff")) return;
 
     const requestsQuery = query(
-      collection(db, "profile_requests"),
-      where("isDeleted", "==", false)
+      collection(db, "profile_requests")
     );
 
     const unsubscribe = onSnapshot(
       requestsQuery,
       (snapshot) => {
-        const requests = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        const requests = snapshot.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter((r: any) => !r.isDeleted);
         requests.sort((a: any, b: any) => {
-          const timeA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;
-          const timeB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;
+          const timeA = a.submittedAt ? (a.submittedAt.toDate ? a.submittedAt.toDate().getTime() : new Date(a.submittedAt).getTime()) : (a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0);
+          const timeB = b.submittedAt ? (b.submittedAt.toDate ? b.submittedAt.toDate().getTime() : new Date(b.submittedAt).getTime()) : (b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0);
           return timeB - timeA;
         });
         setProfileRequests(requests);
+
+        if (Platform.OS !== "web" && isInitialProfileReqLoadRef.current) {
+          snapshot.docChanges().forEach((change) => {
+            if (change.type === "added") {
+              const data = change.doc.data() as any;
+              showPhoneNotification("🛡️ Profile Edit Request", `${data.studentName || data.name || "A student"} submitted a profile edit request.`);
+            }
+          });
+        }
+        isInitialProfileReqLoadRef.current = true;
       },
       (err) => {
         console.log("Real-time profile requests snapshot listener note:", err?.message);
@@ -7662,7 +9181,7 @@ function MainApp() {
 
   // True Real-Time (0-second delay) Snapshot Listener for LMS Resources (PDFs & Documents)
   useEffect(() => {
-    if (!user || activeTab !== "lms") return;
+    if (!user) return;
     try {
       const resourcesQuery = query(collection(db, "resources"), where("isDeleted", "==", false));
       const unsubscribe = onSnapshot(
@@ -7675,16 +9194,26 @@ function MainApp() {
             return timeB - timeA;
           });
           setLmsResources(list);
+
+          if (Platform.OS !== "web" && isInitialResourceLoadRef.current) {
+            snapshot.docChanges().forEach((change) => {
+              if (change.type === "added") {
+                const data = change.doc.data() as any;
+                showPhoneNotification("📚 New Study Material", data.title || "New study PDF uploaded");
+              }
+            });
+          }
+          isInitialResourceLoadRef.current = true;
         },
         (err) => console.log("Real-time resources listener note:", err?.message)
       );
       return () => unsubscribe();
-    } catch (_) {}
-  }, [user, activeTab]);
+    } catch (_) { }
+  }, [user]);
 
   // True Real-Time (0-second delay) Snapshot Listener for Daily Content
   useEffect(() => {
-    if (!user || activeTab !== "lms") return;
+    if (!user) return;
     try {
       const dailyContentQuery = query(collection(db, "dailyContent"), where("isDeleted", "==", false));
       const unsubscribe = onSnapshot(
@@ -7697,12 +9226,22 @@ function MainApp() {
             return String(dateB).localeCompare(String(dateA));
           });
           setLmsDailyContent(list);
+
+          if (Platform.OS !== "web" && isInitialDailyContentLoadRef.current) {
+            snapshot.docChanges().forEach((change) => {
+              if (change.type === "added") {
+                const data = change.doc.data() as any;
+                showPhoneNotification("📰 Daily Study Content", data.title || "Today's daily study update is now available");
+              }
+            });
+          }
+          isInitialDailyContentLoadRef.current = true;
         },
         (err) => console.log("Real-time daily content listener note:", err?.message)
       );
       return () => unsubscribe();
-    } catch (_) {}
-  }, [user, activeTab]);
+    } catch (_) { }
+  }, [user]);
 
   // True Real-Time (0-second delay) Snapshot Listener for Recorded Classes
   useEffect(() => {
@@ -7723,12 +9262,12 @@ function MainApp() {
         (err) => console.log("Real-time recorded classes listener note:", err?.message)
       );
       return () => unsubscribe();
-    } catch (_) {}
+    } catch (_) { }
   }, [user, activeTab]);
 
   // True Real-Time (0-second delay) Snapshot Listener for Daily Quizzes
   useEffect(() => {
-    if (!user || activeTab !== "daily_quizzes") return;
+    if (!user) return;
     try {
       const quizzesQuery = query(collection(db, "dailyQuizzes"), where("isDeleted", "==", false));
       const unsubscribe = onSnapshot(
@@ -7741,56 +9280,89 @@ function MainApp() {
             return String(dateB).localeCompare(String(dateA));
           });
           setAllQuizzes(list);
+
+          if (Platform.OS !== "web" && isInitialQuizLoadRef.current) {
+            snapshot.docChanges().forEach((change) => {
+              if (change.type === "added") {
+                showPhoneNotification("⚡ Daily Quiz Live", "Today's daily quiz is now active. Test your knowledge in 5 minutes!");
+              }
+            });
+          }
+          isInitialQuizLoadRef.current = true;
         },
         (err) => console.log("Real-time daily quizzes listener note:", err?.message)
       );
       return () => unsubscribe();
-    } catch (_) {}
-  }, [user, activeTab]);
+    } catch (_) { }
+  }, [user]);
 
   // True Real-Time (0-second delay) Snapshot Listener for Admissions
   useEffect(() => {
-    if (!user || activeTab !== "admissions" || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "staff")) return;
+    if (!user || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "staff")) return;
     try {
-      const admissionsQuery = query(collection(db, "admissions"), where("isDeleted", "==", false));
+      const admissionsQuery = query(collection(db, "admissions"));
       const unsubscribe = onSnapshot(
         admissionsQuery,
         (snapshot) => {
-          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          const list = snapshot.docs
+            .map(d => ({ id: d.id, ...d.data() }))
+            .filter((d: any) => !d.isDeleted);
           list.sort((a: any, b: any) => {
             const timeA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;
             const timeB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;
             return timeB - timeA;
           });
           setAdmissions(list);
+
+          if (Platform.OS !== "web" && isInitialAdmissionLoadRef.current) {
+            snapshot.docChanges().forEach((change) => {
+              if (change.type === "added") {
+                const data = change.doc.data() as any;
+                showPhoneNotification("🎓 New Student Admission", `${data.name || "A new student"} applied for ${data.course || "course"}`);
+              }
+            });
+          }
+          isInitialAdmissionLoadRef.current = true;
         },
         (err) => console.log("Real-time admissions listener note:", err?.message)
       );
       return () => unsubscribe();
-    } catch (_) {}
-  }, [user, activeTab]);
+    } catch (_) { }
+  }, [user]);
 
   // True Real-Time (0-second delay) Snapshot Listener for Leads & Custom Leads
   useEffect(() => {
-    if (!user || activeTab !== "crm" || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "staff")) return;
+    if (!user || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "staff")) return;
     try {
-      const leadsQuery = query(collection(db, "leads"), where("isDeleted", "==", false));
+      const leadsQuery = query(collection(db, "leads"));
       const unsubscribe = onSnapshot(
         leadsQuery,
         (snapshot) => {
-          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          const list = snapshot.docs
+            .map(d => ({ id: d.id, ...d.data() }))
+            .filter((d: any) => !d.isDeleted);
           list.sort((a: any, b: any) => {
             const timeA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;
             const timeB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;
             return timeB - timeA;
           });
           setLeads(list);
+
+          if (Platform.OS !== "web" && isInitialInquiryLoadRef.current) {
+            snapshot.docChanges().forEach((change) => {
+              if (change.type === "added") {
+                const data = change.doc.data() as any;
+                showPhoneNotification("💬 New Inquiry / Lead", `${data.name || "A visitor"} submitted an inquiry: ${data.message || data.course || "Contact requested"}`);
+              }
+            });
+          }
+          isInitialInquiryLoadRef.current = true;
         },
         (err) => console.log("Real-time leads listener note:", err?.message)
       );
       return () => unsubscribe();
-    } catch (_) {}
-  }, [user, activeTab]);
+    } catch (_) { }
+  }, [user]);
 
   // True Real-Time (0-second delay) Snapshot Listener for Campaigns & Banners
   useEffect(() => {
@@ -7809,39 +9381,46 @@ function MainApp() {
         (err) => console.log("Real-time campaigns listener note:", err?.message)
       );
       return () => unsubscribe();
-    } catch (_) {}
+    } catch (_) { }
   }, []);
 
   // True Real-Time (0-second delay) Snapshot Listener for Website Inquiries
   useEffect(() => {
-    if (!user || activeTab !== "crm" || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "staff")) return;
+    if (!user || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "staff")) return;
     try {
-      const inquiriesQuery = query(collection(db, "inquiries"), where("isDeleted", "==", false));
+      const inquiriesQuery = query(collection(db, "inquiries"));
       const unsubscribe = onSnapshot(
         inquiriesQuery,
         (snapshot) => {
-          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          const list = snapshot.docs
+            .map(d => ({ id: d.id, ...d.data() }))
+            .filter((d: any) => !d.isDeleted);
           list.sort((a: any, b: any) => {
             const timeA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;
             const timeB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;
             return timeB - timeA;
           });
           setEnquiries(list);
+
+          if (Platform.OS !== "web" && isInitialInquiryLoadRef.current) {
+            snapshot.docChanges().forEach((change) => {
+              if (change.type === "added") {
+                const data = change.doc.data() as any;
+                showPhoneNotification("📩 New Admission Inquiry", `${data.name || "A candidate"} sent an inquiry: ${data.message || data.subject || "Contact requested"}`);
+              }
+            });
+          }
+          isInitialInquiryLoadRef.current = true;
         },
         (err) => console.log("Real-time inquiries listener note:", err?.message)
       );
       return () => unsubscribe();
-    } catch (_) {}
-  }, [user, activeTab]);
+    } catch (_) { }
+  }, [user]);
 
   // True Real-Time (0-second delay) Snapshot Listener for Tests & Exams in Test Portal (Guests & Students)
   useEffect(() => {
-    const isTestTab = [
-      "tests", "testPortal", "test_portal", "test-portal", "test", "practice", 
-      "results", "exam", "onlineTest", "offlineTest", "scholarship", "testSeries"
-    ].includes(activeTab) || lmsSub === "tests" || lmsSub === "testPortal";
-
-    if (!isTestTab) return;
+    if (!user) return;
 
     try {
       const testsQuery = query(collection(db, "tests"), where("isDeleted", "==", false));
@@ -7881,12 +9460,24 @@ function MainApp() {
           }
 
           setTests(filteredList);
+
+          if (Platform.OS !== "web" && isInitialTestLoadRef.current) {
+            snapshot.docChanges().forEach((change) => {
+              if (change.type === "added") {
+                const data = change.doc.data() as any;
+                if (data.published !== false && data.status !== "draft_extraction") {
+                  showPhoneNotification("📝 New Test Available", data.title || "A new exam is now open for you!");
+                }
+              }
+            });
+          }
+          isInitialTestLoadRef.current = true;
         },
         (err) => console.log("Real-time tests listener note:", err?.message)
       );
       return () => unsubscribe();
-    } catch (_) {}
-  }, [activeTab, lmsSub, user, students]);
+    } catch (_) { }
+  }, [user, students]);
 
   useEffect(() => {
     if (user) {
@@ -7905,10 +9496,10 @@ function MainApp() {
       let notices: any[] = Array.isArray(rawData)
         ? rawData
         : Array.isArray(rawData?.announcements)
-        ? rawData.announcements
-        : Array.isArray(rawData?.data)
-        ? rawData.data
-        : [];
+          ? rawData.announcements
+          : Array.isArray(rawData?.data)
+            ? rawData.data
+            : [];
       if (role === "student") {
         const myStudentName = myStudent ? getStudentName(myStudent) : "";
         const myUsername = user?.username || "";
@@ -7992,10 +9583,10 @@ function MainApp() {
       let notifs: any[] = Array.isArray(rawNotifs)
         ? rawNotifs
         : Array.isArray(rawNotifs?.notifications)
-        ? rawNotifs.notifications
-        : Array.isArray(rawNotifs?.data)
-        ? rawNotifs.data
-        : [];
+          ? rawNotifs.notifications
+          : Array.isArray(rawNotifs?.data)
+            ? rawNotifs.data
+            : [];
       if (role === "student") {
         const myStudentName = myStudent ? getStudentName(myStudent) : "";
         const myUsername = user?.username || "";
@@ -8037,10 +9628,10 @@ function MainApp() {
       let list = Array.isArray(rawData)
         ? rawData
         : Array.isArray(rawData?.students)
-        ? rawData.students
-        : Array.isArray(rawData?.data)
-        ? rawData.data
-        : (rawData && typeof rawData === "object" && rawData.id ? [rawData] : []);
+          ? rawData.students
+          : Array.isArray(rawData?.data)
+            ? rawData.data
+            : (rawData && typeof rawData === "object" && rawData.id ? [rawData] : []);
       setStudents(list);
       loadedCollectionsRef.current.add("students");
     } catch (e) {
@@ -8056,10 +9647,10 @@ function MainApp() {
       let list = Array.isArray(rawData)
         ? rawData
         : Array.isArray(rawData?.batches)
-        ? rawData.batches
-        : Array.isArray(rawData?.data)
-        ? rawData.data
-        : [];
+          ? rawData.batches
+          : Array.isArray(rawData?.data)
+            ? rawData.data
+            : [];
       setBatches(list);
     } catch (e) {
       console.log("Failed loading batches:", e);
@@ -8074,10 +9665,10 @@ function MainApp() {
       let list = Array.isArray(rawData)
         ? rawData
         : Array.isArray(rawData?.requests)
-        ? rawData.requests
-        : Array.isArray(rawData?.data)
-        ? rawData.data
-        : [];
+          ? rawData.requests
+          : Array.isArray(rawData?.data)
+            ? rawData.data
+            : [];
       setProfileRequests(list);
     } catch (e) {
       console.log("Failed loading profile requests:", e);
@@ -8093,10 +9684,10 @@ function MainApp() {
       let list = Array.isArray(rawData)
         ? rawData
         : Array.isArray(rawData?.alerts)
-        ? rawData.alerts
-        : Array.isArray(rawData?.data)
-        ? rawData.data
-        : [];
+          ? rawData.alerts
+          : Array.isArray(rawData?.data)
+            ? rawData.data
+            : [];
       setDeviceAlerts(list);
     } catch (e) {
       console.log("Failed loading device alerts:", e);
@@ -8130,16 +9721,16 @@ function MainApp() {
   };
 
   const parseApprovalPayload = (item: any) => {
-    if (!item) return { fields: [], reason: "", raw: null };
+    if (!item) return { fields: [], changedFields: [], allPopulatedFields: [], hasDiff: false, existingRecordFound: false, reason: "", raw: null };
     const rawPayload = item.proposedPayload || item.payload;
-    if (!rawPayload) return { fields: [], reason: item.reason || "", raw: null };
+    if (!rawPayload) return { fields: [], changedFields: [], allPopulatedFields: [], hasDiff: false, existingRecordFound: false, reason: item.reason || "", raw: null };
 
     let obj = rawPayload;
     if (typeof rawPayload === "string") {
       try {
         obj = JSON.parse(rawPayload);
       } catch (_) {
-        return { fields: [], reason: item.reason || rawPayload, raw: rawPayload };
+        return { fields: [], changedFields: [], allPopulatedFields: [], hasDiff: false, existingRecordFound: false, reason: item.reason || rawPayload, raw: rawPayload };
       }
     }
 
@@ -8150,27 +9741,105 @@ function MainApp() {
       try { changes = JSON.parse(changes); } catch (_) { }
     }
 
-    const fields: { key: string; label: string; value: string }[] = [];
+    // Try finding existing record from state
+    const feat = String(item.feature || item.featureKey || "").toLowerCase();
+    const docId = item.docId || obj?.id || obj?._id;
+    let existingRecord: any = null;
+    if (docId) {
+      if (feat.includes("student") || feat.includes("fee") || feat.includes("mark") || feat.includes("id_card") || feat.includes("hall_ticket") || feat.includes("admission")) {
+        existingRecord = students.find((s: any) => s.id === docId || s._id === docId);
+      } else if (feat.includes("staff")) {
+        existingRecord = staff.find((st: any) => st.id === docId || st._id === docId);
+      } else if (feat.includes("batch")) {
+        existingRecord = batches.find((b: any) => b.id === docId || b._id === docId);
+      } else if (feat.includes("course")) {
+        existingRecord = courses.find((c: any) => c.id === docId || c._id === docId);
+      } else if (feat.includes("test")) {
+        existingRecord = tests.find((t: any) => t.id === docId || t._id === docId);
+      }
+    }
+
+    const formatVal = (val: any): string => {
+      if (val === null || val === undefined || val === "") return "";
+      if (typeof val === "boolean") return val ? "True / Yes" : "False / No";
+      if (typeof val === "object") {
+        if (Array.isArray(val)) {
+          if (val.length === 0) return "";
+          return val.map(v => (typeof v === "object" ? JSON.stringify(v) : String(v))).join(", ");
+        }
+        if (Object.keys(val).length === 0) return "";
+        return JSON.stringify(val);
+      }
+      return String(val);
+    };
+
+    const isSystemKey = (k: string) => {
+      const lower = k.toLowerCase().replace(/_/g, "");
+      return [
+        "updatedat", "updatedby", "id", "_id", "createdat", "createdby", "reason",
+        "tenantid", "__v", "isdeleted", "profilesubmitcount",
+        "profileeditpermission", "onetimepermissions", "permissions"
+      ].includes(lower);
+    };
+
+    const changedFields: { key: string; label: string; oldValue: string; newValue: string; value: string; isChanged: boolean }[] = [];
+    const allPopulatedFields: { key: string; label: string; oldValue: string; newValue: string; value: string; isChanged: boolean }[] = [];
+
     if (typeof changes === "object" && changes !== null) {
       Object.keys(changes).forEach(k => {
-        if (["updatedAt", "updatedBy", "id", "_id", "createdAt", "createdBy", "reason"].includes(k)) return;
-        const val = changes[k];
-        let displayVal = "";
-        if (val === null || val === undefined) displayVal = "N/A";
-        else if (typeof val === "boolean") displayVal = val ? "True / Yes" : "False / No";
-        else if (typeof val === "object") {
-          if (Array.isArray(val)) displayVal = val.map(v => (typeof v === "object" ? JSON.stringify(v) : String(v))).join(", ");
-          else displayVal = JSON.stringify(val);
-        } else {
-          displayVal = String(val);
-        }
+        if (isSystemKey(k)) return;
+        const newValRaw = changes[k];
+        const newValStr = formatVal(newValRaw);
+
+        const oldValRaw = existingRecord ? existingRecord[k] : undefined;
+        const oldValStr = existingRecord ? formatVal(oldValRaw) : "";
+
+        // If both new and old are empty/null, skip entirely
+        if (!newValStr && !oldValStr) return;
 
         const label = k.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-        fields.push({ key: k, label, value: displayVal });
+
+        let isDiff = false;
+        if (existingRecord) {
+          const normNew = newValStr.trim();
+          const normOld = oldValStr.trim();
+          isDiff = normNew !== normOld;
+        } else {
+          isDiff = !!newValStr;
+        }
+
+        const fieldItem = {
+          key: k,
+          label,
+          oldValue: oldValStr || "(empty)",
+          newValue: newValStr || "(cleared / empty)",
+          value: newValStr || "(empty)",
+          isChanged: isDiff
+        };
+
+        if (newValStr) {
+          allPopulatedFields.push(fieldItem);
+        }
+
+        if (isDiff) {
+          changedFields.push(fieldItem);
+        }
       });
     }
 
-    return { fields, reason, raw: obj };
+    const hasDiff = changedFields.length > 0;
+    // For backward compatibility, fields returns changedFields if available, else allPopulatedFields
+    const fields = hasDiff ? changedFields : allPopulatedFields;
+
+    return {
+      fields,
+      changedFields,
+      allPopulatedFields,
+      hasDiff,
+      existingRecordFound: !!existingRecord,
+      reason,
+      raw: obj
+    };
   };
 
   const getTargetName = (item: any) => {
@@ -8315,7 +9984,7 @@ function MainApp() {
 
           // Clean up alert from admin_alerts if present
           const alertId = `admin_approval_${item._id || item.id}`;
-          deleteDoc(doc(db, "admin_alerts", alertId)).catch(() => {});
+          deleteDoc(doc(db, "admin_alerts", alertId)).catch(() => { });
           setAdminAlerts(prev => prev.filter(a => a.id !== alertId));
 
           logSystemActivity({
@@ -8362,7 +10031,7 @@ function MainApp() {
 
           // Clean up alert from admin_alerts if present
           const alertId = `admin_approval_${approvalId}`;
-          deleteDoc(doc(db, "admin_alerts", alertId)).catch(() => {});
+          deleteDoc(doc(db, "admin_alerts", alertId)).catch(() => { });
           setAdminAlerts(prev => prev.filter(a => a.id !== alertId));
 
           logSystemActivity({
@@ -8431,9 +10100,9 @@ function MainApp() {
         api.get("/test-portal/test-creation"),
         isStudentOrGuest && lookupId
           ? api.get(`/test-portal/review/history/${lookupId}`).catch(err => {
-              console.log("Failed to load user attempts:", err);
-              return null;
-            })
+            console.log("Failed to load user attempts:", err);
+            return null;
+          })
           : Promise.resolve(null)
       ]);
 
@@ -8894,6 +10563,31 @@ function MainApp() {
   const uploadWithFormData = async (method: "POST" | "PUT", path: string, formData: FormData) => {
     const baseUrl = getBaseUrl();
     const token = tokenRef.current || "";
+    if (Platform.OS !== 'web') {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open(method, `${baseUrl}${path}`);
+        if (token) {
+          xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+        }
+        xhr.onload = () => {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve(data);
+            } else {
+              reject(new Error(data.message || `HTTP ${xhr.status}`));
+            }
+          } catch (e: any) {
+            reject(new Error(`Server error (${xhr.status}): ${xhr.responseText || e.message}`));
+          }
+        };
+        xhr.onerror = () => {
+          reject(new Error("Network error during file upload"));
+        };
+        xhr.send(formData);
+      });
+    }
     const res = await fetch(`${baseUrl}${path}`, {
       method,
       headers: {
@@ -9182,7 +10876,16 @@ function MainApp() {
 
         if (uploadMode === "file" && file) {
           const versionData = new FormData();
-          versionData.append("file", file);
+          if (Platform.OS !== 'web' && file.uri) {
+            const fileObj = {
+              uri: file.uri,
+              name: file.name || "upload.pdf",
+              type: file.mimeType || file.type || (file.name?.endsWith(".pdf") ? "application/pdf" : "image/jpeg")
+            };
+            versionData.append("file", fileObj as any);
+          } else {
+            versionData.append("file", file);
+          }
           await uploadWithFormData("POST", `/resources/${editingResource.id}/version`, versionData);
         }
         Alert.alert("Success", "Learning asset updated successfully.");
@@ -9218,7 +10921,16 @@ function MainApp() {
         formData.append("classIds", JSON.stringify([]));
 
         if (uploadMode === "file" && file) {
-          formData.append("file", file);
+          if (Platform.OS !== 'web' && file.uri) {
+            const fileObj = {
+              uri: file.uri,
+              name: file.name || "upload.pdf",
+              type: file.mimeType || file.type || (file.name?.endsWith(".pdf") ? "application/pdf" : "image/jpeg")
+            };
+            formData.append("file", fileObj as any);
+          } else {
+            formData.append("file", file);
+          }
         } else {
           formData.append("externalUrl", externalUrl);
           formData.append("provider", "external_link");
@@ -9262,8 +10974,8 @@ function MainApp() {
   };
 
   const handleSaveLiveClass = async () => {
-    const { title, description, courseId, subjectId, topicId, provider, accessLevel, batchTargetType, selectedBatchIds, startDate, startTime, expectedDurationMinutes, meetingMode, providerAccountId, customProviderId, providerPasscode, hostUrl, participantUrl, hostKey, meetingCode, youtubeUrl } = liveClassForm;
-    const effectiveTopicId = topicId;
+    const { title, description, courseId, subjectId, topicId, customSubjectName, customTopicName, provider, accessLevel, batchTargetType, selectedBatchIds, startDate, startTime, expectedDurationMinutes, meetingMode, providerAccountId, customProviderId, providerPasscode, hostUrl, participantUrl, hostKey, meetingCode, youtubeUrl } = liveClassForm;
+    let effectiveTopicId = topicId;
     const effectiveDescription = description || "";
 
     if (!title || !title.trim()) {
@@ -9297,6 +11009,84 @@ function MainApp() {
     }
 
     try {
+      if (subjectId === '__custom__') {
+        if (!customSubjectName || !customSubjectName.trim()) {
+          Alert.alert("Required", "Please enter Custom Subject Name.");
+          return;
+        }
+        if (!customTopicName || !customTopicName.trim()) {
+          Alert.alert("Required", "Please enter Custom Topic Name.");
+          return;
+        }
+        let newSubjId: string | undefined;
+        try {
+          const sRes = await api.post(`/courses/${courseId}/subjects`, { courseId, name: customSubjectName.trim() });
+          newSubjId = sRes?.id || sRes?.data?.id || sRes?.data?.data?.id;
+        } catch (sErr: any) {
+          try {
+            const fetchedSubjs = await api.get(`/courses/${courseId}/subjects`);
+            const subList = Array.isArray(fetchedSubjs) ? fetchedSubjs : fetchedSubjs?.data || [];
+            const match = subList.find((s: any) => (s.name || s.title || '').trim().toLowerCase() === customSubjectName.trim().toLowerCase());
+            if (match) newSubjId = match.id || match._id;
+          } catch (_) {}
+          if (!newSubjId) {
+            const existingSubj = lmsSubjects.find((s: any) => (s.courseId === courseId || s.courseId === 'erp_course_ldc') && (s.name || s.title || '').trim().toLowerCase() === customSubjectName.trim().toLowerCase());
+            if (existingSubj) {
+              newSubjId = existingSubj.id;
+            } else {
+              throw sErr;
+            }
+          }
+        }
+
+        let newTopId: string | undefined;
+        try {
+          const tRes = await api.post(`/subjects/${newSubjId}/topics`, { subjectId: newSubjId, name: customTopicName.trim() });
+          newTopId = tRes?.id || tRes?.data?.id || tRes?.data?.data?.id;
+        } catch (tErr: any) {
+          try {
+            const fetchedTopics = await api.get(`/subjects/${newSubjId}/topics`);
+            const topList = Array.isArray(fetchedTopics) ? fetchedTopics : fetchedTopics?.data || [];
+            const match = topList.find((t: any) => (t.name || t.title || '').trim().toLowerCase() === customTopicName.trim().toLowerCase());
+            if (match) newTopId = match.id || match._id;
+          } catch (_) {}
+          if (!newTopId) {
+            const existingTop = lmsTopics.find((t: any) => t.subjectId === newSubjId && (t.name || t.title || '').trim().toLowerCase() === customTopicName.trim().toLowerCase());
+            if (existingTop) {
+              newTopId = existingTop.id;
+            } else {
+              throw tErr;
+            }
+          }
+        }
+        effectiveTopicId = newTopId || topicId;
+      } else if (topicId === '__custom__') {
+        if (!customTopicName || !customTopicName.trim()) {
+          Alert.alert("Required", "Please enter Custom Topic Name.");
+          return;
+        }
+        let newTopId: string | undefined;
+        try {
+          const tRes = await api.post(`/subjects/${subjectId}/topics`, { subjectId, name: customTopicName.trim() });
+          newTopId = tRes?.id || tRes?.data?.id || tRes?.data?.data?.id;
+        } catch (tErr: any) {
+          try {
+            const fetchedTopics = await api.get(`/subjects/${subjectId}/topics`);
+            const topList = Array.isArray(fetchedTopics) ? fetchedTopics : fetchedTopics?.data || [];
+            const match = topList.find((t: any) => (t.name || t.title || '').trim().toLowerCase() === customTopicName.trim().toLowerCase());
+            if (match) newTopId = match.id || match._id;
+          } catch (_) {}
+          if (!newTopId) {
+            const existingTop = lmsTopics.find((t: any) => t.subjectId === subjectId && (t.name || t.title || '').trim().toLowerCase() === customTopicName.trim().toLowerCase());
+            if (existingTop) {
+              newTopId = existingTop.id;
+            } else {
+              throw tErr;
+            }
+          }
+        }
+        effectiveTopicId = newTopId || topicId;
+      }
       let batchIds: string[] = [];
       if (accessLevel === "batch") {
         if (batchTargetType === "all") batchIds = ["all"];
@@ -9393,14 +11183,15 @@ function MainApp() {
 
       setShowLiveClassModal(false);
       loadLiveSessions();
+      loadLmsLookups();
     } catch (e: any) {
       Alert.alert("Error", e.message || "Failed to schedule live session.");
     }
   };
 
   const handleSaveRecordedClass = async () => {
-    const { title, description, courseId, subjectId, topicId, uploadMode, youtubeUrl, file, accessLevel, batchTargetType, selectedBatchIds } = recordedClassForm;
-    const effectiveTopicId = topicId;
+    const { title, description, courseId, subjectId, topicId, customSubjectName, customTopicName, uploadMode, youtubeUrl, file, accessLevel, batchTargetType, selectedBatchIds } = recordedClassForm;
+    let effectiveTopicId = topicId;
     const effectiveDescription = description || "";
 
     if (!title || !title.trim()) {
@@ -9424,6 +11215,84 @@ function MainApp() {
     }
 
     try {
+      if (subjectId === '__custom__') {
+        if (!customSubjectName || !customSubjectName.trim()) {
+          Alert.alert("Required", "Please enter Custom Subject Name.");
+          return;
+        }
+        if (!customTopicName || !customTopicName.trim()) {
+          Alert.alert("Required", "Please enter Custom Topic Name.");
+          return;
+        }
+        let newSubjId: string | undefined;
+        try {
+          const sRes = await api.post(`/courses/${courseId}/subjects`, { courseId, name: customSubjectName.trim() });
+          newSubjId = sRes?.id || sRes?.data?.id || sRes?.data?.data?.id;
+        } catch (sErr: any) {
+          try {
+            const fetchedSubjs = await api.get(`/courses/${courseId}/subjects`);
+            const subList = Array.isArray(fetchedSubjs) ? fetchedSubjs : fetchedSubjs?.data || [];
+            const match = subList.find((s: any) => (s.name || s.title || '').trim().toLowerCase() === customSubjectName.trim().toLowerCase());
+            if (match) newSubjId = match.id || match._id;
+          } catch (_) {}
+          if (!newSubjId) {
+            const existingSubj = lmsSubjects.find((s: any) => (s.courseId === courseId || s.courseId === 'erp_course_ldc') && (s.name || s.title || '').trim().toLowerCase() === customSubjectName.trim().toLowerCase());
+            if (existingSubj) {
+              newSubjId = existingSubj.id;
+            } else {
+              throw sErr;
+            }
+          }
+        }
+
+        let newTopId: string | undefined;
+        try {
+          const tRes = await api.post(`/subjects/${newSubjId}/topics`, { subjectId: newSubjId, name: customTopicName.trim() });
+          newTopId = tRes?.id || tRes?.data?.id || tRes?.data?.data?.id;
+        } catch (tErr: any) {
+          try {
+            const fetchedTopics = await api.get(`/subjects/${newSubjId}/topics`);
+            const topList = Array.isArray(fetchedTopics) ? fetchedTopics : fetchedTopics?.data || [];
+            const match = topList.find((t: any) => (t.name || t.title || '').trim().toLowerCase() === customTopicName.trim().toLowerCase());
+            if (match) newTopId = match.id || match._id;
+          } catch (_) {}
+          if (!newTopId) {
+            const existingTop = lmsTopics.find((t: any) => t.subjectId === newSubjId && (t.name || t.title || '').trim().toLowerCase() === customTopicName.trim().toLowerCase());
+            if (existingTop) {
+              newTopId = existingTop.id;
+            } else {
+              throw tErr;
+            }
+          }
+        }
+        effectiveTopicId = newTopId || topicId;
+      } else if (topicId === '__custom__') {
+        if (!customTopicName || !customTopicName.trim()) {
+          Alert.alert("Required", "Please enter Custom Topic Name.");
+          return;
+        }
+        let newTopId: string | undefined;
+        try {
+          const tRes = await api.post(`/subjects/${subjectId}/topics`, { subjectId, name: customTopicName.trim() });
+          newTopId = tRes?.id || tRes?.data?.id || tRes?.data?.data?.id;
+        } catch (tErr: any) {
+          try {
+            const fetchedTopics = await api.get(`/subjects/${subjectId}/topics`);
+            const topList = Array.isArray(fetchedTopics) ? fetchedTopics : fetchedTopics?.data || [];
+            const match = topList.find((t: any) => (t.name || t.title || '').trim().toLowerCase() === customTopicName.trim().toLowerCase());
+            if (match) newTopId = match.id || match._id;
+          } catch (_) {}
+          if (!newTopId) {
+            const existingTop = lmsTopics.find((t: any) => t.subjectId === subjectId && (t.name || t.title || '').trim().toLowerCase() === customTopicName.trim().toLowerCase());
+            if (existingTop) {
+              newTopId = existingTop.id;
+            } else {
+              throw tErr;
+            }
+          }
+        }
+        effectiveTopicId = newTopId || topicId;
+      }
       let batchIds: string[] = [];
       if (accessLevel === "batch") {
         if (batchTargetType === "all") batchIds = ["all"];
@@ -9630,7 +11499,7 @@ function MainApp() {
           createdAt: new Date().toISOString(),
           isDismissed: false
         }, { merge: true });
-      } catch (_) {}
+      } catch (_) { }
 
       setAdmissionSubmitted(true);
       setShowAdmissionForm(false);
@@ -9786,7 +11655,7 @@ function MainApp() {
           createdAt: new Date().toISOString(),
           isDismissed: false
         }, { merge: true });
-      } catch (_) {}
+      } catch (_) { }
 
       setEnquirySubmitted(true);
       setEnquiryForm({ name: "", phone: "", subject: "", message: "" });
@@ -10220,12 +12089,12 @@ function MainApp() {
         schedulingType: newPdfTest.schedulingMode || "fixed",
         subjectSections: (newPdfTest.testType === "mock" && Array.isArray(newPdfTest.subjectSections))
           ? newPdfTest.subjectSections
-              .filter((s: any) => s && String(s.subject || s.customSubject || "").trim())
-              .map((s: any) => ({
-                subject: String(s.customSubject || s.subject || "").trim(),
-                fromQ: Number(s.fromQ) || 1,
-                toQ: Number(s.toQ) || 1
-              }))
+            .filter((s: any) => s && String(s.subject || s.customSubject || "").trim())
+            .map((s: any) => ({
+              subject: String(s.customSubject || s.subject || "").trim(),
+              fromQ: Number(s.fromQ) || 1,
+              toQ: Number(s.toQ) || 1
+            }))
           : [],
         targetLanguages: (targetLangs && targetLangs.length > 0) ? targetLangs : ["English", "Tamil"]
       });
@@ -11013,7 +12882,7 @@ function MainApp() {
           createdAt: new Date().toISOString(),
           isDismissed: false
         }, { merge: true });
-      } catch (_) {}
+      } catch (_) { }
 
       setIsSubmittingProfile(false);
       setShowProfileReviewModal(false);
@@ -11286,12 +13155,12 @@ function MainApp() {
         schedulingType: newTest.schedulingMode || "fixed",
         subjectSections: (newTest.testType === "mock" && Array.isArray(newTest.subjectSections))
           ? newTest.subjectSections
-              .filter((s: any) => s && String(s.subject || s.customSubject || "").trim())
-              .map((s: any) => ({
-                subject: String(s.customSubject || s.subject || "").trim(),
-                fromQ: Number(s.fromQ) || 1,
-                toQ: Number(s.toQ) || 1
-              }))
+            .filter((s: any) => s && String(s.subject || s.customSubject || "").trim())
+            .map((s: any) => ({
+              subject: String(s.customSubject || s.subject || "").trim(),
+              fromQ: Number(s.fromQ) || 1,
+              toQ: Number(s.toQ) || 1
+            }))
           : [],
         targetLanguages: (targetLangs && targetLangs.length > 0) ? targetLangs : ["English", "Tamil"]
       });
@@ -11732,9 +13601,9 @@ function MainApp() {
         borderColor: darkMode ? "#333" : "#e2e8f0"
       }}>
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 6 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1, flexShrink: 1 }}>
             <Ionicons name="library" size={16} color="#c62828" />
-            <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#f1f5f9" : "#1e293b" }}>
+            <Text style={{ fontSize: (isMobile || Platform.OS !== "web") ? 12 : 13, fontWeight: "bold", color: darkMode ? "#f1f5f9" : "#1e293b", flexShrink: 1 }}>
               Mock Test Subject Sections & Question Ranges
             </Text>
           </View>
@@ -11816,35 +13685,84 @@ function MainApp() {
                   {/* Subject Selection */}
                   <View style={{ flexDirection: "column", gap: 4 }}>
                     <Text style={{ fontSize: 11, fontWeight: "600", color: darkMode ? "#94a3b8" : "#475569" }}>Subject Name:</Text>
-                    <select
-                      value={isCustom ? "__NEW_CUSTOM__" : sec.subject}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val === "__NEW_CUSTOM__") {
-                          updateSection(idx, { isCustom: true, subject: sec.customSubject || "" });
-                        } else {
-                          updateSection(idx, { isCustom: false, subject: val, customSubject: "" });
-                        }
-                      }}
-                      style={{
-                        width: "100%",
-                        height: 36,
-                        borderRadius: 6,
-                        paddingLeft: 8,
-                        paddingRight: 8,
-                        fontSize: 13,
-                        backgroundColor: darkMode ? "#2d2d2d" : "#f8fafc",
-                        color: darkMode ? "#f1f5f9" : "#1e293b",
-                        border: "1px solid " + (darkMode ? "#4b5563" : "#cbd5e1"),
-                        outline: "none"
-                      }}
-                    >
-                      <option value="">-- Select Subject --</option>
-                      {uniqueSubjects.map((sName) => (
-                        <option key={sName} value={sName}>{sName}</option>
-                      ))}
-                      <option value="__NEW_CUSTOM__">➕ Add New / Custom Subject...</option>
-                    </select>
+                    {Platform.OS === "web" ? (
+                      <select
+                        value={isCustom ? "__NEW_CUSTOM__" : sec.subject}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === "__NEW_CUSTOM__") {
+                            updateSection(idx, { isCustom: true, subject: sec.customSubject || "" });
+                          } else {
+                            updateSection(idx, { isCustom: false, subject: val, customSubject: "" });
+                          }
+                        }}
+                        style={{
+                          width: "100%",
+                          height: 36,
+                          borderRadius: 6,
+                          paddingLeft: 8,
+                          paddingRight: 8,
+                          fontSize: 13,
+                          backgroundColor: darkMode ? "#2d2d2d" : "#f8fafc",
+                          color: darkMode ? "#f1f5f9" : "#1e293b",
+                          border: "1px solid " + (darkMode ? "#4b5563" : "#cbd5e1"),
+                          outline: "none"
+                        }}
+                      >
+                        <option value="">-- Select Subject --</option>
+                        {uniqueSubjects.map((sName) => (
+                          <option key={sName} value={sName}>{sName}</option>
+                        ))}
+                        <option value="__NEW_CUSTOM__">➕ Add New / Custom Subject...</option>
+                      </select>
+                    ) : (
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
+                        {(uniqueSubjects.length > 0 ? uniqueSubjects : ["History", "Geography", "Polity", "Economy", "Current Affairs", "General Science", "Aptitude & CSAT"]).map((sName) => {
+                          const isSelected = !isCustom && sec.subject === sName;
+                          return (
+                            <TouchableOpacity
+                              key={sName}
+                              onPress={() => updateSection(idx, { isCustom: false, subject: sName, customSubject: "" })}
+                              style={{
+                                paddingHorizontal: 16,
+                                paddingVertical: 7,
+                                borderRadius: 20,
+                                borderWidth: 1.5,
+                                borderColor: isSelected ? "#c62828" : (darkMode ? "#475569" : "#cbd5e1"),
+                                backgroundColor: isSelected ? (darkMode ? "#3e2723" : "#fff5f5") : (darkMode ? "#242424" : "#ffffff")
+                              }}
+                            >
+                              <Text style={{
+                                fontSize: 12,
+                                fontWeight: "bold",
+                                color: isSelected ? "#c62828" : (darkMode ? "#cbd5e1" : "#475569")
+                              }}>
+                                {sName}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                        <TouchableOpacity
+                          onPress={() => updateSection(idx, { isCustom: true, subject: sec.customSubject || "" })}
+                          style={{
+                            paddingHorizontal: 14,
+                            paddingVertical: 7,
+                            borderRadius: 20,
+                            borderWidth: 1.5,
+                            borderColor: isCustom ? "#c62828" : (darkMode ? "#475569" : "#cbd5e1"),
+                            backgroundColor: isCustom ? (darkMode ? "#3e2723" : "#fff5f5") : (darkMode ? "#242424" : "#ffffff")
+                          }}
+                        >
+                          <Text style={{
+                            fontSize: 12,
+                            fontWeight: "bold",
+                            color: isCustom ? "#c62828" : (darkMode ? "#cbd5e1" : "#475569")
+                          }}>
+                            + Custom
+                          </Text>
+                        </TouchableOpacity>
+                      </ScrollView>
+                    )}
 
                     {isCustom && (
                       <TextInput
@@ -12008,10 +13926,12 @@ function MainApp() {
       };
     });
 
+    const isMobilePanel = isMobile || Platform.OS !== "web";
+
     return (
       <View style={{
-        margin: 10,
-        padding: 16,
+        margin: isMobilePanel ? 4 : 10,
+        padding: isMobilePanel ? 10 : 16,
         borderRadius: 12,
         backgroundColor: darkMode ? "#141414" : "#ffffff",
         borderWidth: 1,
@@ -12024,15 +13944,15 @@ function MainApp() {
       }}>
         {/* Panel Header */}
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8, borderBottomWidth: 1, borderBottomColor: darkMode ? "#262626" : "#f1f5f9", paddingBottom: 12 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: isMobilePanel ? undefined : 1 }}>
             <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: "#c62828", justifyContent: "center", alignItems: "center" }}>
               <Ionicons name="pie-chart" size={18} color="#ffffff" />
             </View>
-            <View>
-              <Text style={{ fontSize: 15, fontWeight: "bold", color: darkMode ? "#ffffff" : "#0f172a" }}>
+            <View style={{ flexShrink: 1 }}>
+              <Text style={{ fontSize: isMobilePanel ? 13 : 15, fontWeight: "bold", color: darkMode ? "#ffffff" : "#0f172a" }}>
                 Subject Analytics & 30% Question Diagnostics
               </Text>
-              <Text style={{ fontSize: 11, color: darkMode ? "#a1a1aa" : "#64748b" }}>
+              <Text style={{ fontSize: 10, color: darkMode ? "#a1a1aa" : "#64748b" }}>
                 Interactive subject breakdown ({slices.length} Sections · {totalQuestions} Questions · {totalSubmissions} Candidates)
               </Text>
             </View>
@@ -12048,10 +13968,10 @@ function MainApp() {
         </View>
 
         {/* Donut Chart & Subject Cards Container */}
-        <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 20, marginBottom: 18 }}>
-          {/* SVG Donut Chart */}
-          <View style={{ alignItems: "center", justifyContent: "center", width: 220, height: 220 }}>
-            {Platform.OS === 'web' ? (
+        <View style={{ flexDirection: isMobilePanel ? "column" : "row", flexWrap: isMobilePanel ? "nowrap" : "wrap", alignItems: "center", gap: isMobilePanel ? 12 : 20, marginBottom: 18, width: "100%" }}>
+          {/* SVG Donut Chart / Native Circle */}
+          <View style={{ alignItems: "center", justifyContent: "center", width: isMobilePanel ? 140 : 220, height: isMobilePanel ? 140 : 220, alignSelf: "center", marginBottom: isMobilePanel ? 6 : 0 }}>
+            {Platform.OS === 'web' && !isMobile ? (
               <svg width="220" height="220" viewBox="0 0 220 220" style={{ cursor: "pointer" }}>
                 <defs>
                   <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
@@ -12093,11 +14013,11 @@ function MainApp() {
           </View>
 
           {/* Subject Cards Grid */}
-          <View style={{ flex: 1, minWidth: 260, gap: 8 }}>
+          <View style={{ flex: isMobilePanel ? undefined : 1, width: "100%", minWidth: isMobilePanel ? undefined : 260, gap: 8 }}>
             <Text style={{ fontSize: 12, fontWeight: "bold", color: darkMode ? "#cbd5e1" : "#334155", marginBottom: 2 }}>
               Subject Breakdown & Diagnostic Summary (Click to Inspect):
             </Text>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, width: "100%" }}>
               {slices.map((sec: any) => {
                 const isSelected = sec.id === activeSection.id;
                 return (
@@ -12105,8 +14025,9 @@ function MainApp() {
                     key={sec.id}
                     onPress={() => setSelectedSubjectTabMap(prev => ({ ...prev, [testId]: sec.id }))}
                     style={{
-                      flex: 1,
-                      minWidth: 170,
+                      flex: isMobilePanel ? undefined : 1,
+                      width: isMobilePanel ? "100%" : undefined,
+                      minWidth: isMobilePanel ? undefined : 170,
                       padding: 10,
                       borderRadius: 8,
                       backgroundColor: isSelected ? (darkMode ? "#1e293b" : "#eff6ff") : (darkMode ? "#1e1e1e" : "#f8fafc"),
@@ -12194,7 +14115,7 @@ function MainApp() {
             </View>
 
             {/* Diagnostic Sub-Tabs */}
-            <View style={{ flexDirection: "row", gap: 6 }}>
+            <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
               <TouchableOpacity
                 onPress={() => setDiagnosticSubTabMap(prev => ({ ...prev, [testId]: "wrong" }))}
                 style={{
@@ -12611,7 +14532,7 @@ function MainApp() {
       } catch (firstErr: any) {
         // If not evaluated yet, trigger evaluation automatically on the fly and retry
         try {
-          await api.post(`/test-portal/evaluation/evaluate/${attemptId}`, {}, { headers: { "user-id": user?.userId || "" } });
+          await api.post(`/test-portal/evaluation/evaluate/${attemptId}`, {}, { "user-id": user?.userId || "" });
           res = await api.get(`/test-portal/review/attempt/${attemptId}`);
         } catch (_) {
           throw firstErr;
@@ -12670,7 +14591,7 @@ function MainApp() {
   const loadStudyMode = async (testId: string) => {
     setStudyModeLoading(testId);
     try {
-      const res = await api.get(`/test-portal/examination/study/${testId}`, { headers: { "user-id": user?.userId || "" } });
+      const res = await api.get(`/test-portal/examination/study/${testId}`, { "user-id": user?.userId || "" });
       const data = res?.data || res;
       setStudyModeData(data);
       setStudyModalVisible(true);
@@ -12714,7 +14635,7 @@ function MainApp() {
     if (statusInfo.status === "ongoing") {
       try {
         const localDraft = examLocalStorage.getDraft(statusInfo.attemptId!);
-        const res = await api.get(`/test-portal/examination/resume/${statusInfo.attemptId}`, { headers: { "user-id": user.userId } });
+        const res = await api.get(`/test-portal/examination/resume/${statusInfo.attemptId}`, { "user-id": user.userId });
 
         // remainingTime is already included in the resume response — no need for a separate /timer call
         const remSec = res?.remainingTime ?? (res?.durationMinutes ? res.durationMinutes * 60 : 3600);
@@ -12725,7 +14646,7 @@ function MainApp() {
         // Load questions: prefer local draft if available, otherwise fetch from server
         let qList = localDraft?.questions || [];
         if (!qList || qList.length === 0) {
-          const qRes = await api.get(`/test-portal/examination/questions/${statusInfo.attemptId}`, { headers: { "user-id": user.userId } });
+          const qRes = await api.get(`/test-portal/examination/questions/${statusInfo.attemptId}`, { "user-id": user.userId });
           qList = qRes || [];
         }
         setAttemptQuestions(qList);
@@ -12733,7 +14654,7 @@ function MainApp() {
         // Reset explored questions — mark Q1 as explored since it's auto-opened
         setExploredQuestions(new Set([0]));
         // Load progress & merge with local answers draft and violation count
-        const progressRes = await api.get(`/test-portal/examination/progress/${statusInfo.attemptId}`, { headers: { "user-id": user.userId } });
+        const progressRes = await api.get(`/test-portal/examination/progress/${statusInfo.attemptId}`, { "user-id": user.userId });
         const savedAns: Record<string, string> = { ...(localDraft?.answers || {}) };
         if (progressRes && progressRes.answers) {
           progressRes.answers.forEach((ansObj: any) => {
@@ -12782,7 +14703,7 @@ function MainApp() {
     }
 
     try {
-      const res = await api.post(`/test-portal/examination/start/${test.id}`, {}, { headers: { "user-id": user.userId } });
+      const res = await api.post(`/test-portal/examination/start/${test.id}`, {}, { "user-id": user.userId });
       const attemptData = res?.data || res;
       if (!attemptData || !attemptData.attemptId) {
         throw new Error("Invalid response from server. Could not start test.");
@@ -12800,7 +14721,7 @@ function MainApp() {
       setTimeLeft(remSec);
       setExamEndTime(Date.now() + remSec * 1000);
 
-      const qRes = await api.get(`/test-portal/examination/questions/${attemptData.attemptId}`, { headers: { "user-id": user.userId } });
+      const qRes = await api.get(`/test-portal/examination/questions/${attemptData.attemptId}`, { "user-id": user.userId });
       setAttemptQuestions(qRes || []);
       setCurrentQIdx(0);
       setSelectedAnswers({});
@@ -12858,7 +14779,7 @@ function MainApp() {
     const attemptId = activeAttempt.attemptId;
     const testId = activeAttempt.testId;
     const myStudent = getLoggedInStudent(user, students);
-    
+
     // Read local draft from LocalStorage to guarantee all offline selected answers are merged
     const localDraft = examLocalStorage.getDraft(attemptId);
     const draftAnswers = localDraft && localDraft.answers ? localDraft.answers : {};
@@ -12917,7 +14838,7 @@ function MainApp() {
             await api.post(
               `/test-portal/examination/autosave/${attemptId}`,
               { answers: formattedBatch },
-              { headers: { "user-id": user?.userId || "", "x-attempt-id": attemptId } }
+              { "user-id": user?.userId || "", "x-attempt-id": attemptId }
             );
             autosaveOk = true;
             console.log(`[Submit] Autosave succeeded on attempt ${attempt} (${formattedBatch.length} answers).`);
@@ -12938,7 +14859,7 @@ function MainApp() {
         await api.post(
           `/test-portal/examination/submit/${attemptId}`,
           {},
-          { headers: { "user-id": user?.userId || "", "x-attempt-id": attemptId } }
+          { "user-id": user?.userId || "", "x-attempt-id": attemptId }
         );
       } catch (submitErr: any) {
         console.log("Submit endpoint note:", submitErr?.message);
@@ -12950,7 +14871,7 @@ function MainApp() {
         const evalRes = await api.post(
           `/test-portal/evaluation/evaluate/${attemptId}`,
           {},
-          { headers: { "user-id": user?.userId || "", "x-attempt-id": attemptId } }
+          { "user-id": user?.userId || "", "x-attempt-id": attemptId }
         );
         evalData = evalRes?.data || evalRes;
       } catch (evalErr: any) {
@@ -13744,10 +15665,26 @@ function MainApp() {
                                 {/* Payload Field Chips Summary */}
                                 {parsed.fields.length > 0 && (
                                   <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 2 }}>
+                                    {parsed.hasDiff && (
+                                      <View style={{ backgroundColor: darkMode ? "#1b5e20" : "#e8f5e9", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: darkMode ? "#2e7d32" : "#a5d6a7" }}>
+                                        <Text style={{ fontSize: 9, fontWeight: "bold", color: darkMode ? "#a5d6a7" : "#2e7d32" }}>
+                                          ⚡ {parsed.changedFields.length} {parsed.changedFields.length === 1 ? "change" : "changes"}
+                                        </Text>
+                                      </View>
+                                    )}
                                     {parsed.fields.slice(0, 2).map((f, fIdx) => (
                                       <View key={fIdx} style={{ backgroundColor: darkMode ? "#2e2e2e" : "#f0f4f8", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: darkMode ? "#444" : "#d0d7de" }}>
                                         <Text style={{ fontSize: 9, color: darkMode ? "#bbb" : "#444" }}>
-                                          <Text style={{ fontWeight: "bold" }}>{f.label}:</Text> {f.value.length > 18 ? f.value.substring(0, 18) + '…' : f.value}
+                                          <Text style={{ fontWeight: "bold" }}>{f.label}:</Text>{" "}
+                                          {f.isChanged && f.oldValue && f.oldValue !== "(empty)" ? (
+                                            <>
+                                              <Text style={{ textDecorationLine: "line-through", color: "#888" }}>{f.oldValue.length > 10 ? f.oldValue.substring(0, 10) + '…' : f.oldValue}</Text>
+                                              <Text> ➔ </Text>
+                                              <Text style={{ fontWeight: "bold", color: darkMode ? "#81c784" : "#2e7d32" }}>{f.newValue.length > 12 ? f.newValue.substring(0, 12) + '…' : f.newValue}</Text>
+                                            </>
+                                          ) : (
+                                            f.value.length > 18 ? f.value.substring(0, 18) + '…' : f.value
+                                          )}
                                         </Text>
                                       </View>
                                     ))}
@@ -13759,7 +15696,10 @@ function MainApp() {
 
                                 {/* View Details Link */}
                                 <TouchableOpacity
-                                  onPress={() => setViewingApprovalItem(item)}
+                                  onPress={() => {
+                                    setApprovalViewMode("diff");
+                                    setViewingApprovalItem(item);
+                                  }}
                                   style={{ alignSelf: "flex-start", marginTop: 2 }}
                                 >
                                   <Text style={{ fontSize: 10, color: "#1976d2", fontWeight: "bold" }}>🔍 View Full Details</Text>
@@ -14188,31 +16128,14 @@ function MainApp() {
                       {(() => {
                         const uniqueSubjects = [...new Set(lmsSubjects.map(s => s.name || s.title || ""))].filter(Boolean);
                         return (
-                          <select
+                          <UniversalDropdown
                             value={newTest.subject || ""}
-                            onChange={e => {
-                              const val = e.target.value;
-                              setNewTest({ ...newTest, subject: val, topic: "" });
-                            }}
-                            style={{
-                              width: "100%",
-                              height: 40,
-                              borderRadius: 8,
-                              paddingLeft: 10,
-                              paddingRight: 10,
-                              fontSize: 14,
-                              backgroundColor: darkMode ? "#2a2a2a" : "#fcfcfc",
-                              color: darkMode ? "#e0e0e0" : "#212121",
-                              border: "1px solid " + (darkMode ? "#3a3a3a" : "#e0e0e0"),
-                              marginBottom: 12,
-                              outline: "none"
-                            }}
-                          >
-                            <option value="">-- Select Subject --</option>
-                            {uniqueSubjects.map(sName => (
-                              <option key={sName} value={sName}>{sName}</option>
-                            ))}
-                          </select>
+                            placeholder="-- Select Subject --"
+                            darkMode={darkMode}
+                            options={uniqueSubjects.map(sName => ({ label: sName, value: sName }))}
+                            onSelect={val => setNewTest({ ...newTest, subject: val, topic: "" })}
+                            style={{ marginBottom: 12 }}
+                          />
                         );
                       })()}
 
@@ -14222,32 +16145,15 @@ function MainApp() {
                         const filteredTopics = lmsTopics.filter(t => matchedSubjectIds.includes(t.subjectId));
                         const uniqueTopics = [...new Set(filteredTopics.map(t => t.name || t.title || ""))].filter(Boolean);
                         return (
-                          <select
+                          <UniversalDropdown
                             disabled={!newTest.subject}
                             value={newTest.topic || ""}
-                            onChange={e => {
-                              setNewTest({ ...newTest, topic: e.target.value });
-                            }}
-                            style={{
-                              width: "100%",
-                              height: 40,
-                              borderRadius: 8,
-                              paddingLeft: 10,
-                              paddingRight: 10,
-                              fontSize: 14,
-                              backgroundColor: darkMode ? "#2a2a2a" : "#fcfcfc",
-                              color: darkMode ? "#e0e0e0" : "#212121",
-                              border: "1px solid " + (darkMode ? "#3a3a3a" : "#e0e0e0"),
-                              marginBottom: 12,
-                              outline: "none",
-                              opacity: !newTest.subject ? 0.5 : 1
-                            }}
-                          >
-                            <option value="">-- Select Sub-Topic --</option>
-                            {uniqueTopics.map(tName => (
-                              <option key={tName} value={tName}>{tName}</option>
-                            ))}
-                          </select>
+                            placeholder="-- Select Sub-Topic --"
+                            darkMode={darkMode}
+                            options={uniqueTopics.map(tName => ({ label: tName, value: tName }))}
+                            onSelect={val => setNewTest({ ...newTest, topic: val })}
+                            style={{ marginBottom: 12 }}
+                          />
                         );
                       })()}
                     </>
@@ -14428,31 +16334,31 @@ function MainApp() {
                     {/* Individual Test Duration Input Box - Only for Flexible mode */}
                     {(newTest.schedulingMode || "fixed") === "flexible" && (
                       <View style={{ marginTop: 6, paddingTop: 10, borderTopWidth: 1, borderTopColor: darkMode ? "#333" : "#e0e0e0" }}>
-                      <Text style={{ fontSize: 11, fontWeight: "bold", color: darkMode ? "#9fa8da" : "#3949ab", marginBottom: 4 }}>
-                        Test Duration (in Minutes):
-                      </Text>
-                      <TextInput
-                        style={{
-                          backgroundColor: darkMode ? "#2a2a2a" : "#fff",
-                          borderColor: darkMode ? "#444" : "#ccc",
-                          borderWidth: 1,
-                          borderRadius: 6,
-                          paddingHorizontal: 10,
-                          paddingVertical: 8,
-                          color: darkMode ? "#fff" : "#000",
-                          fontSize: 13
-                        }}
-                        placeholder="e.g. 120 (for 2 hours)"
-                        placeholderTextColor={darkMode ? "#888" : "#999"}
-                        keyboardType="numeric"
-                        value={newTest.duration ? String(newTest.duration) : ""}
-                        onChangeText={(t) => setNewTest({ ...newTest, duration: t })}
-                      />
-                      <Text style={{ fontSize: 10, color: darkMode ? "#aaa" : "#777", marginTop: 4 }}>
-                        For flexible tests, students get this exact duration (e.g. 120 mins) from the moment they click Start within the availability window.
-                      </Text>
-                    </View>
-                  )}
+                        <Text style={{ fontSize: 11, fontWeight: "bold", color: darkMode ? "#9fa8da" : "#3949ab", marginBottom: 4 }}>
+                          Test Duration (in Minutes):
+                        </Text>
+                        <TextInput
+                          style={{
+                            backgroundColor: darkMode ? "#2a2a2a" : "#fff",
+                            borderColor: darkMode ? "#444" : "#ccc",
+                            borderWidth: 1,
+                            borderRadius: 6,
+                            paddingHorizontal: 10,
+                            paddingVertical: 8,
+                            color: darkMode ? "#fff" : "#000",
+                            fontSize: 13
+                          }}
+                          placeholder="e.g. 120 (for 2 hours)"
+                          placeholderTextColor={darkMode ? "#888" : "#999"}
+                          keyboardType="numeric"
+                          value={newTest.duration ? String(newTest.duration) : ""}
+                          onChangeText={(t) => setNewTest({ ...newTest, duration: t })}
+                        />
+                        <Text style={{ fontSize: 10, color: darkMode ? "#aaa" : "#777", marginTop: 4 }}>
+                          For flexible tests, students get this exact duration (e.g. 120 mins) from the moment they click Start within the availability window.
+                        </Text>
+                      </View>
+                    )}
                   </View>
 
                   {/* Feedback Settings */}
@@ -15075,43 +16981,30 @@ function MainApp() {
                   <View style={{ flexDirection: "row", gap: 10 }}>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Asset Type</Text>
-                      <select
+                      <UniversalDropdown
                         value={resourceForm.type}
-                        onChange={e => setResourceForm({ ...resourceForm, type: e.target.value })}
-                        style={{
-                          width: "100%", height: 38, borderRadius: 8, padding: 8,
-                          backgroundColor: darkMode ? "#2a2a2a" : "#f5f5f5", color: darkMode ? "#fff" : "#212121",
-                          border: "1px solid " + (darkMode ? "#444" : "#e0e0e0")
-                        }}
-                      >
-                        {["PDF", "DOC", "PPT", "IMAGE", "ZIP", "EXCEL", "AUDIO", "VIDEO_ATTACHMENT", "LINK", "HTML"].map(t => (
-                          <option key={t} value={t}>{t}</option>
-                        ))}
-                      </select>
+                        darkMode={darkMode}
+                        options={["PDF", "IMAGE"].map(t => ({ label: t, value: t }))}
+                        onSelect={val => setResourceForm({ ...resourceForm, type: val })}
+                      />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Target Audience *</Text>
-                      <select
+                      <UniversalDropdown
                         value={resourceForm.visibility === "batch" ? "batch" : (resourceForm.visibility === "premium" ? "premium" : (resourceForm.visibility === "guest" ? "guest" : "public"))}
-                        onChange={e => {
-                          const val = e.target.value;
-                          setResourceForm({
-                            ...resourceForm,
-                            visibility: val,
-                            targetBatchIds: val === "premium" ? "all_paid" : (val === "public" || val === "guest" ? "" : resourceForm.targetBatchIds)
-                          });
-                        }}
-                        style={{
-                          width: "100%", height: 38, borderRadius: 8, padding: 8,
-                          backgroundColor: darkMode ? "#2a2a2a" : "#f5f5f5", color: darkMode ? "#fff" : "#212121",
-                          border: "1px solid " + (darkMode ? "#444" : "#e0e0e0")
-                        }}
-                      >
-                        <option value="guest">Guest Only (Free / Unenrolled Guest Users)</option>
-                        <option value="public">Guest + Enroll (All Users / Public)</option>
-                        <option value="premium">Enroll Only (All Enrolled Students)</option>
-                        <option value="batch">Enroll Batch Wise (Specific Batches)</option>
-                      </select>
+                        darkMode={darkMode}
+                        options={[
+                          { label: "Guest Only (Free / Unenrolled Guest Users)", value: "guest" },
+                          { label: "Guest + Enroll (All Users / Public)", value: "public" },
+                          { label: "Enroll Only (All Enrolled Students)", value: "premium" },
+                          { label: "Enroll Batch Wise (Specific Batches)", value: "batch" }
+                        ]}
+                        onSelect={val => setResourceForm({
+                          ...resourceForm,
+                          visibility: val,
+                          targetBatchIds: val === "premium" ? "all_paid" : (val === "public" || val === "guest" ? "" : resourceForm.targetBatchIds)
+                        })}
+                      />
                     </View>
                   </View>
 
@@ -15204,21 +17097,47 @@ function MainApp() {
 
                   {resourceForm.uploadMode === "file" ? (
                     <View style={{ borderWidth: 1, borderStyle: "dashed", borderColor: "#c62828", borderRadius: 8, padding: 16, alignItems: "center" }}>
-                      <input
-                        type="file"
-                        id="resource-file-picker"
-                        style={{ display: "none" }}
-                        onChange={e => {
-                          const fileObj = e.target.files?.[0];
-                          if (fileObj) {
-                            setResourceForm({ ...resourceForm, file: fileObj, fileName: fileObj.name });
-                          }
-                        }}
-                      />
+                      {Platform.OS === 'web' && (
+                        <input
+                          type="file"
+                          id="resource-file-picker"
+                          style={{ display: "none" }}
+                          onChange={e => {
+                            const fileObj = (e.target as any).files?.[0];
+                            if (fileObj) {
+                              const isPdfFile = fileObj.name?.toLowerCase().endsWith('.pdf') || fileObj.type === 'application/pdf';
+                              setResourceForm(prev => ({
+                                ...prev,
+                                file: fileObj,
+                                fileName: fileObj.name,
+                                type: isPdfFile ? 'PDF' : 'IMAGE'
+                              }));
+                            }
+                          }}
+                        />
+                      )}
                       <TouchableOpacity
-                        onPress={() => {
-                          const el = document.getElementById("resource-file-picker");
-                          if (el) el.click();
+                        onPress={async () => {
+                          if (Platform.OS === 'web') {
+                            const el = typeof document !== 'undefined' ? document.getElementById("resource-file-picker") : null;
+                            if (el) el.click();
+                          } else {
+                            try {
+                              const res = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true });
+                              if (!res.canceled && res.assets && res.assets.length > 0) {
+                                const asset = res.assets[0];
+                                const isPdfFile = asset.name?.toLowerCase().endsWith('.pdf') || asset.mimeType === 'application/pdf';
+                                setResourceForm(prev => ({
+                                  ...prev,
+                                  file: asset,
+                                  fileName: asset.name,
+                                  type: isPdfFile ? 'PDF' : 'IMAGE'
+                                }));
+                              }
+                            } catch (e) {
+                              console.warn("DocumentPicker error:", e);
+                            }
+                          }
                         }}
                         style={{ backgroundColor: "#c62828", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 6 }}
                       >
@@ -15380,77 +17299,96 @@ function MainApp() {
                   <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Select Curriculum Topic *</Text>
                   <View style={{ gap: 8, backgroundColor: darkMode ? "#222" : "#f9f9f9", padding: 10, borderRadius: 8, borderWidth: 1, borderColor: (darkMode ? "#444" : "#eee") }}>
                     {/* Course */}
-                    <select
+                    <UniversalDropdown
                       value={liveClassForm.courseId}
-                      onChange={e => setLiveClassForm({ ...liveClassForm, courseId: e.target.value, subjectId: "", topicId: "" })}
-                      style={{
-                        width: "100%", height: 38, borderRadius: 8, padding: 8,
-                        backgroundColor: darkMode ? "#2a2a2a" : "#fff", color: darkMode ? "#fff" : "#212121",
-                        border: "1px solid " + (darkMode ? "#444" : "#ccc")
-                      }}
-                    >
-                      <option value="">-- Select Course --</option>
-                      {lmsCourses.map(c => <option key={c.id} value={c.id}>{c.title || c.name}</option>)}
-                    </select>
+                      placeholder="-- Select Course --"
+                      darkMode={darkMode}
+                      options={lmsCourses.map(c => ({ label: c.title || c.name || "Untitled Course", value: c.id }))}
+                      onSelect={val => setLiveClassForm({ ...liveClassForm, courseId: val, subjectId: "", topicId: "" })}
+                    />
 
                     {/* Subject */}
-                    <select
+                    <UniversalDropdown
                       disabled={!liveClassForm.courseId}
                       value={liveClassForm.subjectId}
-                      onChange={e => setLiveClassForm({ ...liveClassForm, subjectId: e.target.value, topicId: "" })}
-                      style={{
-                        width: "100%", height: 38, borderRadius: 8, padding: 8,
-                        backgroundColor: darkMode ? "#2a2a2a" : "#fff", color: darkMode ? "#fff" : "#212121",
-                        border: "1px solid " + (darkMode ? "#444" : "#ccc")
-                      }}
-                    >
-                      <option value="">-- Select Subject --</option>
-                      {lmsSubjects.filter(s => s.courseId === liveClassForm.courseId).map(s => (
-                        <option key={s.id} value={s.id}>{s.name || s.title}</option>
-                      ))}
-                    </select>
+                      placeholder="-- Select Subject --"
+                      darkMode={darkMode}
+                      options={[
+                        ...lmsSubjects.filter(s => s.courseId === liveClassForm.courseId).map(s => ({ label: s.name || s.title || "Untitled Subject", value: s.id })),
+                        { label: "+ Add Custom Subject...", value: "__custom__" }
+                      ]}
+                      onSelect={val => setLiveClassForm({ 
+                        ...liveClassForm, 
+                        subjectId: val, 
+                        topicId: val === '__custom__' ? '__custom__' : '' 
+                      })}
+                    />
 
                     {/* Topic */}
-                    <select
-                      disabled={!liveClassForm.subjectId}
+                    <UniversalDropdown
+                      disabled={!liveClassForm.subjectId || liveClassForm.subjectId === '__custom__'}
                       value={liveClassForm.topicId}
-                      onChange={e => setLiveClassForm({ ...liveClassForm, topicId: e.target.value })}
-                      style={{
-                        width: "100%", height: 38, borderRadius: 8, padding: 8,
-                        backgroundColor: darkMode ? "#2a2a2a" : "#fff", color: darkMode ? "#fff" : "#212121",
-                        border: "1px solid " + (darkMode ? "#444" : "#ccc")
-                      }}
-                    >
-                      <option value="">-- Select Topic --</option>
-                      {lmsTopics.filter(t => t.subjectId === liveClassForm.subjectId).map(t => (
-                        <option key={t.id} value={t.id}>{t.name || t.title}</option>
-                      ))}
-                    </select>
+                      placeholder="-- Select Topic --"
+                      darkMode={darkMode}
+                      options={[
+                        ...lmsTopics.filter(t => t.subjectId === liveClassForm.subjectId).map(t => ({ label: t.name || t.title || "Untitled Topic", value: t.id })),
+                        { label: "+ Add Custom Topic...", value: "__custom__" }
+                      ]}
+                      onSelect={val => setLiveClassForm({ ...liveClassForm, topicId: val })}
+                    />
+
+                    {liveClassForm.subjectId === '__custom__' && (
+                      <View style={{ gap: 6, marginTop: 4 }}>
+                        <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Custom Subject Name *</Text>
+                        <TextInput
+                          style={[styles.input, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444", color: "#e0e0e0" }]}
+                          placeholder="e.g. Current Affairs"
+                          placeholderTextColor={darkMode ? "#666" : "#999"}
+                          value={liveClassForm.customSubjectName || ""}
+                          onChangeText={txt => setLiveClassForm({ ...liveClassForm, customSubjectName: txt })}
+                        />
+                        <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Custom Topic Name *</Text>
+                        <TextInput
+                          style={[styles.input, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444", color: "#e0e0e0" }]}
+                          placeholder="e.g. International Relations Analysis"
+                          placeholderTextColor={darkMode ? "#666" : "#999"}
+                          value={liveClassForm.customTopicName || ""}
+                          onChangeText={txt => setLiveClassForm({ ...liveClassForm, customTopicName: txt })}
+                        />
+                      </View>
+                    )}
+
+                    {liveClassForm.subjectId !== '__custom__' && liveClassForm.topicId === '__custom__' && (
+                      <View style={{ gap: 6, marginTop: 4 }}>
+                        <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Custom Topic Name *</Text>
+                        <TextInput
+                          style={[styles.input, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444", color: "#e0e0e0" }]}
+                          placeholder="e.g. Special Topic Session"
+                          placeholderTextColor={darkMode ? "#666" : "#999"}
+                          value={liveClassForm.customTopicName || ""}
+                          onChangeText={txt => setLiveClassForm({ ...liveClassForm, customTopicName: txt })}
+                        />
+                      </View>
+                    )}
                   </View>
 
                   {/* Target Audience / Access Selector */}
                   <View style={{ gap: 10 }}>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Target Audience / Access</Text>
-                      <select
+                      <UniversalDropdown
                         value={liveClassForm.accessLevel}
-                        onChange={e => {
-                          const val = e.target.value;
-                          setLiveClassForm({
-                            ...liveClassForm,
-                            accessLevel: val,
-                            batchTargetType: val === "batch" ? "select" : "all"
-                          });
-                        }}
-                        style={{
-                          width: "100%", height: 38, borderRadius: 8, padding: 8,
-                          backgroundColor: darkMode ? "#2a2a2a" : "#f5f5f5", color: darkMode ? "#fff" : "#212121",
-                          border: "1px solid " + (darkMode ? "#444" : "#e0e0e0")
-                        }}
-                      >
-                        <option value="premium">All Enrolled Users</option>
-                        <option value="batch">Enrolled Users Batch Wise</option>
-                      </select>
+                        darkMode={darkMode}
+                        options={[
+                          { label: "All Enrolled Users", value: "premium" },
+                          { label: "Enrolled Users Batch Wise", value: "batch" }
+                        ]}
+                        onSelect={val => setLiveClassForm({
+                          ...liveClassForm,
+                          accessLevel: val,
+                          batchTargetType: val === "batch" ? "select" : "all"
+                        })}
+                      />
                     </View>
                   </View>
 
@@ -15595,19 +17533,16 @@ function MainApp() {
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Provider</Text>
-                      <select
+                      <UniversalDropdown
                         value={liveClassForm.provider}
-                        onChange={e => setLiveClassForm({ ...liveClassForm, provider: e.target.value })}
-                        style={{
-                          width: "100%", height: 38, borderRadius: 8, padding: 8,
-                          backgroundColor: darkMode ? "#2a2a2a" : "#fff", color: darkMode ? "#fff" : "#212121",
-                          border: "1px solid " + (darkMode ? "#444" : "#ccc")
-                        }}
-                      >
-                        <option value="zoom">Zoom</option>
-                        <option value="google_meet">Google Meet</option>
-                        <option value="youtube">YouTube Live Link</option>
-                      </select>
+                        darkMode={darkMode}
+                        options={[
+                          { label: "Zoom", value: "zoom" },
+                          { label: "Google Meet", value: "google_meet" },
+                          { label: "YouTube Live Link", value: "youtube" }
+                        ]}
+                        onSelect={val => setLiveClassForm({ ...liveClassForm, provider: val })}
+                      />
                     </View>
                   </View>
 
@@ -15636,25 +17571,23 @@ function MainApp() {
                     return (
                       <View style={{ marginTop: 8 }}>
                         <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Provider Account</Text>
-                        <select
+                        <UniversalDropdown
                           value={liveClassForm.providerAccountId}
-                          onChange={e => setLiveClassForm({ ...liveClassForm, providerAccountId: e.target.value })}
-                          style={{
-                            width: "100%", height: 38, borderRadius: 8, padding: 8,
-                            backgroundColor: darkMode ? "#2a2a2a" : "#fff", color: darkMode ? "#fff" : "#212121",
-                            border: "1px solid " + (darkMode ? "#444" : "#ccc")
-                          }}
-                        >
-                          <option value="auto">Auto Assign (Any available)</option>
-                          {(providerAccounts || []).filter(pa => pa.provider === 'zoom').map(pa => {
-                            const isConflicting = conflictingAccounts.has(pa.id);
-                            return (
-                              <option key={pa.id} value={pa.id} disabled={isConflicting}>
-                                {pa.title || pa.name || pa.email || pa.id} {isConflicting ? ' (Booked)' : ''}
-                              </option>
-                            );
-                          })}
-                        </select>
+                          placeholder="Auto Assign (Any available)"
+                          darkMode={darkMode}
+                          options={[
+                            { label: "Auto Assign (Any available)", value: "auto" },
+                            ...(providerAccounts || []).filter(pa => pa.provider === 'zoom').map(pa => {
+                              const isConflicting = conflictingAccounts.has(pa.id);
+                              return {
+                                label: `${pa.title || pa.name || pa.email || pa.id}${isConflicting ? ' (Booked)' : ''}`,
+                                value: pa.id,
+                                disabled: isConflicting
+                              };
+                            })
+                          ]}
+                          onSelect={val => setLiveClassForm({ ...liveClassForm, providerAccountId: val })}
+                        />
                         <Text style={{ fontSize: 11, color: darkMode ? '#888' : '#666', marginTop: 4 }}>
                           Select a specific Zoom account to use for this class. Accounts already booked for this timeslot are disabled.
                         </Text>
@@ -15863,77 +17796,96 @@ function MainApp() {
                   <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Select Curriculum Topic *</Text>
                   <View style={{ gap: 8, backgroundColor: darkMode ? "#222" : "#f9f9f9", padding: 10, borderRadius: 8, borderWidth: 1, borderColor: (darkMode ? "#444" : "#eee") }}>
                     {/* Course */}
-                    <select
+                    <UniversalDropdown
                       value={recordedClassForm.courseId}
-                      onChange={e => setRecordedClassForm({ ...recordedClassForm, courseId: e.target.value, subjectId: "", topicId: "" })}
-                      style={{
-                        width: "100%", height: 38, borderRadius: 8, padding: 8,
-                        backgroundColor: darkMode ? "#2a2a2a" : "#fff", color: darkMode ? "#fff" : "#212121",
-                        border: "1px solid " + (darkMode ? "#444" : "#ccc")
-                      }}
-                    >
-                      <option value="">-- Select Course --</option>
-                      {lmsCourses.map(c => <option key={c.id} value={c.id}>{c.title || c.name}</option>)}
-                    </select>
+                      placeholder="-- Select Course --"
+                      darkMode={darkMode}
+                      options={lmsCourses.map(c => ({ label: c.title || c.name || "Untitled Course", value: c.id }))}
+                      onSelect={val => setRecordedClassForm({ ...recordedClassForm, courseId: val, subjectId: "", topicId: "" })}
+                    />
 
                     {/* Subject */}
-                    <select
+                    <UniversalDropdown
                       disabled={!recordedClassForm.courseId}
                       value={recordedClassForm.subjectId}
-                      onChange={e => setRecordedClassForm({ ...recordedClassForm, subjectId: e.target.value, topicId: "" })}
-                      style={{
-                        width: "100%", height: 38, borderRadius: 8, padding: 8,
-                        backgroundColor: darkMode ? "#2a2a2a" : "#fff", color: darkMode ? "#fff" : "#212121",
-                        border: "1px solid " + (darkMode ? "#444" : "#ccc")
-                      }}
-                    >
-                      <option value="">-- Select Subject --</option>
-                      {lmsSubjects.filter(s => s.courseId === recordedClassForm.courseId).map(s => (
-                        <option key={s.id} value={s.id}>{s.name || s.title}</option>
-                      ))}
-                    </select>
+                      placeholder="-- Select Subject --"
+                      darkMode={darkMode}
+                      options={[
+                        ...lmsSubjects.filter(s => s.courseId === recordedClassForm.courseId).map(s => ({ label: s.name || s.title || "Untitled Subject", value: s.id })),
+                        { label: "+ Add Custom Subject...", value: "__custom__" }
+                      ]}
+                      onSelect={val => setRecordedClassForm({ 
+                        ...recordedClassForm, 
+                        subjectId: val, 
+                        topicId: val === '__custom__' ? '__custom__' : '' 
+                      })}
+                    />
 
                     {/* Topic */}
-                    <select
-                      disabled={!recordedClassForm.subjectId}
+                    <UniversalDropdown
+                      disabled={!recordedClassForm.subjectId || recordedClassForm.subjectId === '__custom__'}
                       value={recordedClassForm.topicId}
-                      onChange={e => setRecordedClassForm({ ...recordedClassForm, topicId: e.target.value })}
-                      style={{
-                        width: "100%", height: 38, borderRadius: 8, padding: 8,
-                        backgroundColor: darkMode ? "#2a2a2a" : "#fff", color: darkMode ? "#fff" : "#212121",
-                        border: "1px solid " + (darkMode ? "#444" : "#ccc")
-                      }}
-                    >
-                      <option value="">-- Select Topic --</option>
-                      {lmsTopics.filter(t => t.subjectId === recordedClassForm.subjectId).map(t => (
-                        <option key={t.id} value={t.id}>{t.name || t.title}</option>
-                      ))}
-                    </select>
+                      placeholder="-- Select Topic --"
+                      darkMode={darkMode}
+                      options={[
+                        ...lmsTopics.filter(t => t.subjectId === recordedClassForm.subjectId).map(t => ({ label: t.name || t.title || "Untitled Topic", value: t.id })),
+                        { label: "+ Add Custom Topic...", value: "__custom__" }
+                      ]}
+                      onSelect={val => setRecordedClassForm({ ...recordedClassForm, topicId: val })}
+                    />
+
+                    {recordedClassForm.subjectId === '__custom__' && (
+                      <View style={{ gap: 6, marginTop: 4 }}>
+                        <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Custom Subject Name *</Text>
+                        <TextInput
+                          style={[styles.input, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444", color: "#e0e0e0" }]}
+                          placeholder="e.g. Current Affairs"
+                          placeholderTextColor={darkMode ? "#666" : "#999"}
+                          value={recordedClassForm.customSubjectName || ""}
+                          onChangeText={txt => setRecordedClassForm({ ...recordedClassForm, customSubjectName: txt })}
+                        />
+                        <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Custom Topic Name *</Text>
+                        <TextInput
+                          style={[styles.input, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444", color: "#e0e0e0" }]}
+                          placeholder="e.g. International Relations Analysis"
+                          placeholderTextColor={darkMode ? "#666" : "#999"}
+                          value={recordedClassForm.customTopicName || ""}
+                          onChangeText={txt => setRecordedClassForm({ ...recordedClassForm, customTopicName: txt })}
+                        />
+                      </View>
+                    )}
+
+                    {recordedClassForm.subjectId !== '__custom__' && recordedClassForm.topicId === '__custom__' && (
+                      <View style={{ gap: 6, marginTop: 4 }}>
+                        <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Custom Topic Name *</Text>
+                        <TextInput
+                          style={[styles.input, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444", color: "#e0e0e0" }]}
+                          placeholder="e.g. Special Topic Session"
+                          placeholderTextColor={darkMode ? "#666" : "#999"}
+                          value={recordedClassForm.customTopicName || ""}
+                          onChangeText={txt => setRecordedClassForm({ ...recordedClassForm, customTopicName: txt })}
+                        />
+                      </View>
+                    )}
                   </View>
 
                   {/* Target Audience / Access Selector */}
                   <View style={{ gap: 10 }}>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Target Audience / Access</Text>
-                      <select
+                      <UniversalDropdown
                         value={recordedClassForm.accessLevel}
-                        onChange={e => {
-                          const val = e.target.value;
-                          setRecordedClassForm({
-                            ...recordedClassForm,
-                            accessLevel: val,
-                            batchTargetType: val === "batch" ? "select" : "all"
-                          });
-                        }}
-                        style={{
-                          width: "100%", height: 38, borderRadius: 8, padding: 8,
-                          backgroundColor: darkMode ? "#2a2a2a" : "#f5f5f5", color: darkMode ? "#fff" : "#212121",
-                          border: "1px solid " + (darkMode ? "#444" : "#e0e0e0")
-                        }}
-                      >
-                        <option value="premium">All Enrolled Users</option>
-                        <option value="batch">Enrolled Users Batch Wise</option>
-                      </select>
+                        darkMode={darkMode}
+                        options={[
+                          { label: "All Enrolled Users", value: "premium" },
+                          { label: "Enrolled Users Batch Wise", value: "batch" }
+                        ]}
+                        onSelect={val => setRecordedClassForm({
+                          ...recordedClassForm,
+                          accessLevel: val,
+                          batchTargetType: val === "batch" ? "select" : "all"
+                        })}
+                      />
                     </View>
                   </View>
 
@@ -16515,729 +18467,7 @@ function MainApp() {
         {/* Test Feedback Modal */}
         {renderTestFeedbackModal()}
 
-        {/* Resource Creation/Edit Modal */}
-        {showResourceModal && (
-          <Modal visible={true} animationType="slide" transparent>
-            <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", alignItems: "center", padding: 20 }}>
-              <View style={[styles.feedbackSheet, darkMode && styles.feedbackSheetDark, { width: "100%", maxWidth: 680, borderRadius: 16, padding: 20, alignSelf: "center", maxHeight: "90%" }]}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 }}>
-                  <Text style={[styles.feedbackTitle, darkMode && { color: "#f0f0f0" }, { fontSize: 16, fontWeight: "800" }]}>
-                    {editingResource ? "Edit Learning Asset" : "Upload Learning Asset"}
-                  </Text>
-                  <TouchableOpacity onPress={() => setShowResourceModal(false)}>
-                    <Ionicons name="close" size={24} color={darkMode ? "#9e9e9e" : "#757575"} />
-                  </TouchableOpacity>
-                </View>
-
-                <ScrollView showsVerticalScrollIndicator={true} contentContainerStyle={{ gap: 12 }}>
-                  <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Asset Title *</Text>
-                  <TextInput
-                    style={[styles.input, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444", color: "#e0e0e0" }]}
-                    placeholder="e.g. GS Paper I Polity Revision Note"
-                    placeholderTextColor={darkMode ? "#666" : "#999"}
-                    value={resourceForm.title}
-                    onChangeText={txt => setResourceForm({ ...resourceForm, title: txt })}
-                  />
-
-                  <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Description *</Text>
-                  <TextInput
-                    style={[styles.input, { height: 60 }, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444", color: "#e0e0e0" }]}
-                    placeholder="Describe what is covered in this PDF/doc..."
-                    placeholderTextColor={darkMode ? "#666" : "#999"}
-                    multiline
-                    value={resourceForm.description}
-                    onChangeText={txt => setResourceForm({ ...resourceForm, description: txt })}
-                  />
-
-                  <View style={{ flexDirection: "row", gap: 10 }}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Asset Type</Text>
-                      <select
-                        value={resourceForm.type}
-                        onChange={e => setResourceForm({ ...resourceForm, type: e.target.value })}
-                        style={{
-                          width: "100%", height: 38, borderRadius: 8, padding: 8,
-                          backgroundColor: darkMode ? "#2a2a2a" : "#f5f5f5", color: darkMode ? "#fff" : "#212121",
-                          border: "1px solid " + (darkMode ? "#444" : "#e0e0e0")
-                        }}
-                      >
-                        {["PDF", "DOC", "PPT", "IMAGE", "ZIP", "EXCEL", "AUDIO", "VIDEO_ATTACHMENT", "LINK", "HTML"].map(t => (
-                          <option key={t} value={t}>{t}</option>
-                        ))}
-                      </select>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Visibility</Text>
-                      <select
-                        value={resourceForm.visibility}
-                        onChange={e => setResourceForm({ ...resourceForm, visibility: e.target.value })}
-                        style={{
-                          width: "100%", height: 38, borderRadius: 8, padding: 8,
-                          backgroundColor: darkMode ? "#2a2a2a" : "#f5f5f5", color: darkMode ? "#fff" : "#212121",
-                          border: "1px solid " + (darkMode ? "#444" : "#e0e0e0")
-                        }}
-                      >
-                        <option value="public">Public</option>
-                        <option value="private">Private (Admin only)</option>
-                        <option value="batch">Specific Batch</option>
-                      </select>
-                    </View>
-                  </View>
-
-                  {resourceForm.visibility === "batch" && (
-                    <View>
-                      <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Target Batch Names (comma separated)</Text>
-                      <TextInput
-                        style={[styles.input, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444", color: "#e0e0e0" }]}
-                        placeholder="e.g. IAS Regular 2026, TNPSC Morning Group"
-                        placeholderTextColor={darkMode ? "#666" : "#999"}
-                        value={resourceForm.targetBatchIds}
-                        onChangeText={txt => setResourceForm({ ...resourceForm, targetBatchIds: txt })}
-                      />
-                    </View>
-                  )}
-
-                  {/* Upload Mode Toggler */}
-                  <View style={{ flexDirection: "row", gap: 10, marginVertical: 4 }}>
-                    <TouchableOpacity
-                      onPress={() => setResourceForm({ ...resourceForm, uploadMode: "file" })}
-                      style={[styles.roleBtn, resourceForm.uploadMode === "file" && styles.roleBtnActive, darkMode && styles.roleBtnDark]}
-                    >
-                      <Text style={[styles.roleBtnTxt, resourceForm.uploadMode === "file" && styles.roleBtnTxtActive]}>File Upload</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => setResourceForm({ ...resourceForm, uploadMode: "link" })}
-                      style={[styles.roleBtn, resourceForm.uploadMode === "link" && styles.roleBtnActive, darkMode && styles.roleBtnDark]}
-                    >
-                      <Text style={[styles.roleBtnTxt, resourceForm.uploadMode === "link" && styles.roleBtnTxtActive]}>External URL Link</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  {resourceForm.uploadMode === "file" ? (
-                    <View style={{ borderWidth: 1, borderStyle: "dashed", borderColor: "#c62828", borderRadius: 8, padding: 16, alignItems: "center" }}>
-                      <input
-                        type="file"
-                        id="resource-file-picker"
-                        style={{ display: "none" }}
-                        onChange={e => {
-                          const fileObj = e.target.files?.[0];
-                          if (fileObj) {
-                            setResourceForm({ ...resourceForm, file: fileObj, fileName: fileObj.name });
-                          }
-                        }}
-                      />
-                      <TouchableOpacity
-                        onPress={() => {
-                          const el = document.getElementById("resource-file-picker");
-                          if (el) el.click();
-                        }}
-                        style={{ backgroundColor: "#c62828", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 6 }}
-                      >
-                        <Text style={{ color: "#fff", fontSize: 12, fontWeight: "bold" }}>Choose File</Text>
-                      </TouchableOpacity>
-                      {resourceForm.fileName ? (
-                        <Text style={{ fontSize: 12, color: "#2e7d32", marginTop: 8, fontWeight: "bold" }}>Selected: {resourceForm.fileName}</Text>
-                      ) : null}
-                    </View>
-                  ) : (
-                    <View>
-                      <Text style={[styles.label, darkMode && { color: "#aaa" }]}>External URL Link</Text>
-                      <TextInput
-                        style={[styles.input, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444", color: "#e0e0e0" }]}
-                        placeholder="https://..."
-                        placeholderTextColor={darkMode ? "#666" : "#999"}
-                        value={resourceForm.externalUrl}
-                        onChangeText={txt => setResourceForm({ ...resourceForm, externalUrl: txt })}
-                      />
-                    </View>
-                  )}
-
-                  {/* Distribution Management */}
-                  <View style={{ borderTopWidth: 1, borderColor: darkMode ? "#444" : "#eee", paddingTop: 10 }}>
-                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                      <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#fff" : "#212121" }}>Distribution Permissions</Text>
-                      <TouchableOpacity
-                        onPress={() => {
-                          setResourceForm({
-                            ...resourceForm,
-                            distributions: [...resourceForm.distributions, { type: "course", courseId: "", subjectId: "", topicId: "", classId: "" }]
-                          });
-                        }}
-                        style={{ backgroundColor: "#ffebee", borderRadius: 4, paddingHorizontal: 8, paddingVertical: 4 }}
-                      >
-                        <Text style={{ color: "#c62828", fontSize: 11, fontWeight: "bold" }}>+ Add Target</Text>
-                      </TouchableOpacity>
-                    </View>
-
-                    {resourceForm.distributions.length === 0 ? (
-                      <Text style={{ fontSize: 11, color: darkMode ? "#888" : "#999", fontStyle: "italic" }}>
-                        No restrictions set. Available globally.
-                      </Text>
-                    ) : (
-                      <View style={{ gap: 8 }}>
-                        {resourceForm.distributions.map((dist: any, index: number) => {
-                          const updateDist = (field: string, val: string) => {
-                            const updated = [...resourceForm.distributions];
-                            updated[index][field] = val;
-                            if (field === "type") {
-                              updated[index].courseId = "";
-                              updated[index].subjectId = "";
-                              updated[index].topicId = "";
-                              updated[index].classId = "";
-                            }
-                            if (field === "courseId") {
-                              updated[index].subjectId = "";
-                              updated[index].topicId = "";
-                              updated[index].classId = "";
-                            }
-                            if (field === "subjectId") {
-                              updated[index].topicId = "";
-                              updated[index].classId = "";
-                            }
-                            if (field === "topicId") {
-                              updated[index].classId = "";
-                            }
-                            setResourceForm({ ...resourceForm, distributions: updated });
-                          };
-
-                          const deleteDist = () => {
-                            setResourceForm({
-                              ...resourceForm,
-                              distributions: resourceForm.distributions.filter((_: any, idx: number) => idx !== index)
-                            });
-                          };
-
-                          return (
-                            <View key={index} style={{ flexDirection: "row", gap: 6, flexWrap: "wrap", alignItems: "center", backgroundColor: darkMode ? "#222" : "#fcfcfc", padding: 8, borderRadius: 8, borderWidth: 0.5, borderColor: darkMode ? "#444" : "#ddd" }}>
-                              <select
-                                value={dist.type}
-                                onChange={e => updateDist("type", e.target.value)}
-                                style={{
-                                  height: 28, borderRadius: 4, paddingLeft: 4, paddingRight: 4,
-                                  backgroundColor: darkMode ? "#1a1a1a" : "#fff", color: darkMode ? "#fff" : "#212121",
-                                  border: "1px solid #ccc"
-                                }}
-                              >
-                                <option value="course">Course</option>
-                                <option value="subject">Subject</option>
-                                <option value="topic">Topic</option>
-                                <option value="class">Class</option>
-                              </select>
-
-                              {/* Course Select */}
-                              <select
-                                value={dist.courseId}
-                                onChange={e => updateDist("courseId", e.target.value)}
-                                style={{
-                                  height: 28, borderRadius: 4, paddingLeft: 4, paddingRight: 4,
-                                  backgroundColor: darkMode ? "#1a1a1a" : "#fff", color: darkMode ? "#fff" : "#212121",
-                                  border: "1px solid #ccc"
-                                }}
-                              >
-                                <option value="">-- Course --</option>
-                                {lmsCourses.map(c => <option key={c.id} value={c.id}>{c.title || c.name}</option>)}
-                              </select>
-
-                              {/* Subject Select */}
-                              {["subject", "topic", "class"].includes(dist.type) && (
-                                <select
-                                  value={dist.subjectId}
-                                  onChange={e => updateDist("subjectId", e.target.value)}
-                                  style={{
-                                    height: 28, borderRadius: 4, paddingLeft: 4, paddingRight: 4,
-                                    backgroundColor: darkMode ? "#1a1a1a" : "#fff", color: darkMode ? "#fff" : "#212121",
-                                    border: "1px solid #ccc"
-                                  }}
-                                >
-                                  <option value="">-- Subject --</option>
-                                  {lmsSubjects.filter(s => s.courseId === dist.courseId).map(s => (
-                                    <option key={s.id} value={s.id}>{s.name || s.title}</option>
-                                  ))}
-                                </select>
-                              )}
-
-                              {/* Topic Select */}
-                              {["topic", "class"].includes(dist.type) && (
-                                <select
-                                  value={dist.topicId}
-                                  onChange={e => updateDist("topicId", e.target.value)}
-                                  style={{
-                                    height: 28, borderRadius: 4, paddingLeft: 4, paddingRight: 4,
-                                    backgroundColor: darkMode ? "#1a1a1a" : "#fff", color: darkMode ? "#fff" : "#212121",
-                                    border: "1px solid #ccc"
-                                  }}
-                                >
-                                  <option value="">-- Topic --</option>
-                                  {lmsTopics.filter(t => t.subjectId === dist.subjectId).map(t => (
-                                    <option key={t.id} value={t.id}>{t.name || t.title}</option>
-                                  ))}
-                                </select>
-                              )}
-
-                              {/* Class Select */}
-                              {dist.type === "class" && (
-                                <select
-                                  value={dist.classId}
-                                  onChange={e => updateDist("classId", e.target.value)}
-                                  style={{
-                                    height: 28, borderRadius: 4, paddingLeft: 4, paddingRight: 4,
-                                    backgroundColor: darkMode ? "#1a1a1a" : "#fff", color: darkMode ? "#fff" : "#212121",
-                                    border: "1px solid #ccc"
-                                  }}
-                                >
-                                  <option value="">-- Class --</option>
-                                  {lmsClassesList.filter(c => c.topicId === dist.topicId).map(c => (
-                                    <option key={c.id} value={c.id}>{c.title || c.name}</option>
-                                  ))}
-                                </select>
-                              )}
-
-                              <TouchableOpacity onPress={deleteDist} style={{ marginLeft: "auto" }}>
-                                <Ionicons name="trash-outline" size={16} color="#c62828" />
-                              </TouchableOpacity>
-                            </View>
-                          );
-                        })}
-                      </View>
-                    )}
-                  </View>
-                </ScrollView>
-
-                <View style={{ flexDirection: "row", gap: 10, marginTop: 15 }}>
-                  <TouchableOpacity
-                    onPress={handleSaveResource}
-                    disabled={isSavingResource}
-                    style={[styles.primaryBtn, { flex: 1, marginVertical: 0, opacity: isSavingResource ? 0.6 : 1, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 8 }]}
-                  >
-                    {isSavingResource && <ActivityIndicator size="small" color="#ffffff" />}
-                    <Text style={styles.primaryBtnTxt}>{isSavingResource ? "Saving Asset..." : "Save Asset"}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => !isSavingResource && setShowResourceModal(false)} disabled={isSavingResource} style={[styles.outlineBtn, { flex: 1, marginVertical: 0, justifyContent: "center", opacity: isSavingResource ? 0.5 : 1 }]}>
-                    <Text style={styles.outlineBtnTxt}>Cancel</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-          </Modal>
-        )}
-
-        {/* Live Class Schedule Modal */}
-        {showLiveClassModal && (
-          <Modal visible={true} animationType="slide" transparent>
-            <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", alignItems: "center", padding: 20 }}>
-              <View style={[styles.feedbackSheet, darkMode && styles.feedbackSheetDark, { width: "100%", maxWidth: 500, borderRadius: 16, padding: 20, alignSelf: "center", maxHeight: "90%" }]}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 }}>
-                  <Text style={[styles.feedbackTitle, darkMode && { color: "#f0f0f0" }, { fontSize: 16, fontWeight: "800" }]}>
-                    {editingLiveClass ? "Edit Live Class" : "Schedule Live Class"}
-                  </Text>
-                  <TouchableOpacity onPress={() => setShowLiveClassModal(false)}>
-                    <Ionicons name="close" size={24} color={darkMode ? "#9e9e9e" : "#757575"} />
-                  </TouchableOpacity>
-                </View>
-
-                <ScrollView showsVerticalScrollIndicator={true} contentContainerStyle={{ gap: 12 }}>
-                  <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Session Title *</Text>
-                  <TextInput
-                    style={[styles.input, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444", color: "#e0e0e0" }]}
-                    placeholder="e.g. Polity Session 1: Indian Polity Preamble"
-                    placeholderTextColor={darkMode ? "#666" : "#999"}
-                    value={liveClassForm.title}
-                    onChangeText={txt => setLiveClassForm({ ...liveClassForm, title: txt })}
-                  />
-
-                  <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Description (Optional)</Text>
-                  <TextInput
-                    style={[styles.input, { height: 50 }, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444", color: "#e0e0e0" }]}
-                    placeholder="Provide details about the session..."
-                    placeholderTextColor={darkMode ? "#666" : "#999"}
-                    multiline
-                    value={liveClassForm.description}
-                    onChangeText={txt => setLiveClassForm({ ...liveClassForm, description: txt })}
-                  />
-
-                  <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Select Curriculum Topic *</Text>
-                  <View style={{ gap: 8, backgroundColor: darkMode ? "#222" : "#f9f9f9", padding: 10, borderRadius: 8, borderWidth: 1, borderColor: (darkMode ? "#444" : "#eee") }}>
-                    {/* Course */}
-                    <select
-                      value={liveClassForm.courseId}
-                      onChange={e => setLiveClassForm({ ...liveClassForm, courseId: e.target.value, subjectId: "", topicId: "" })}
-                      style={{ width: "100%", height: 32, borderRadius: 6, padding: 4 }}
-                    >
-                      <option value="">-- Select Course --</option>
-                      {lmsCourses.map(c => <option key={c.id} value={c.id}>{c.title || c.name}</option>)}
-                    </select>
-
-                    {/* Subject */}
-                    <select
-                      disabled={!liveClassForm.courseId}
-                      value={liveClassForm.subjectId}
-                      onChange={e => setLiveClassForm({ ...liveClassForm, subjectId: e.target.value, topicId: "" })}
-                      style={{ width: "100%", height: 32, borderRadius: 6, padding: 4 }}
-                    >
-                      <option value="">-- Select Subject --</option>
-                      {lmsSubjects.filter(s => s.courseId === liveClassForm.courseId).map(s => (
-                        <option key={s.id} value={s.id}>{s.name || s.title}</option>
-                      ))}
-                    </select>
-
-                    {/* Topic */}
-                    <select
-                      disabled={!liveClassForm.subjectId}
-                      value={liveClassForm.topicId}
-                      onChange={e => setLiveClassForm({ ...liveClassForm, topicId: e.target.value })}
-                      style={{ width: "100%", height: 32, borderRadius: 6, padding: 4 }}
-                    >
-                      <option value="">-- Select Topic --</option>
-                      {lmsTopics.filter(t => t.subjectId === liveClassForm.subjectId).map(t => (
-                        <option key={t.id} value={t.id}>{t.name || t.title}</option>
-                      ))}
-                    </select>
-                  </View>
-
-                  <View style={{ flexDirection: "row", gap: 10 }}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Date</Text>
-                      {Platform.OS === "web" ? (
-                        <input
-                          type="date"
-                          value={liveClassForm.startDate}
-                          onChange={(e: any) => setLiveClassForm({ ...liveClassForm, startDate: e.target.value })}
-                          style={{
-                            width: "100%",
-                            height: 38,
-                            borderRadius: 8,
-                            padding: "0 10px",
-                            borderWidth: 1,
-                            borderColor: darkMode ? "#444" : "#ccc",
-                            backgroundColor: darkMode ? "#2a2a2a" : "#fff",
-                            color: darkMode ? "#e0e0e0" : "#333",
-                            fontSize: 14,
-                            outline: "none"
-                          }}
-                        />
-                      ) : (
-                        <TextInput
-                          style={[styles.input, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444", color: "#e0e0e0" }]}
-                          placeholder="YYYY-MM-DD"
-                          value={liveClassForm.startDate}
-                          onChangeText={txt => setLiveClassForm({ ...liveClassForm, startDate: txt })}
-                        />
-                      )}
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Time</Text>
-                      {Platform.OS === "web" ? (
-                        <input
-                          type="time"
-                          value={liveClassForm.startTime}
-                          onChange={(e: any) => setLiveClassForm({ ...liveClassForm, startTime: e.target.value })}
-                          style={{
-                            width: "100%",
-                            height: 38,
-                            borderRadius: 8,
-                            padding: "0 10px",
-                            borderWidth: 1,
-                            borderColor: darkMode ? "#444" : "#ccc",
-                            backgroundColor: darkMode ? "#2a2a2a" : "#fff",
-                            color: darkMode ? "#e0e0e0" : "#333",
-                            fontSize: 14,
-                            outline: "none"
-                          }}
-                        />
-                      ) : (
-                        <TextInput
-                          style={[styles.input, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444", color: "#e0e0e0" }]}
-                          placeholder="HH:MM"
-                          value={liveClassForm.startTime}
-                          onChangeText={txt => setLiveClassForm({ ...liveClassForm, startTime: txt })}
-                        />
-                      )}
-                    </View>
-                  </View>
-
-                  <View style={{ flexDirection: "row", gap: 10 }}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Duration (Minutes)</Text>
-                      <TextInput
-                        style={[styles.input, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444", color: "#e0e0e0" }]}
-                        placeholder="60"
-                        keyboardType="numeric"
-                        value={String(liveClassForm.expectedDurationMinutes)}
-                        onChangeText={txt => setLiveClassForm({ ...liveClassForm, expectedDurationMinutes: Number(txt) })}
-                      />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Provider</Text>
-                      <select
-                        value={liveClassForm.provider}
-                        onChange={e => setLiveClassForm({ ...liveClassForm, provider: e.target.value })}
-                        style={{ width: "100%", height: 38, borderRadius: 8, padding: 8 }}
-                      >
-                        <option value="zoom">Zoom</option>
-                        <option value="google_meet">Google Meet</option>
-                        <option value="youtube">YouTube Live Link</option>
-                      </select>
-                    </View>
-                  </View>
-
-                  {/* Meeting Mode or YouTube URL */}
-                  {liveClassForm.provider === "youtube" ? (
-                    <View style={{ gap: 8, marginTop: 12 }}>
-                      <Text style={[styles.label, darkMode && { color: "#aaa" }]}>YouTube Live Video URL *</Text>
-                      <TextInput
-                        style={[styles.input, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444", color: "#e0e0e0" }]}
-                        placeholder="https://www.youtube.com/watch?v=..."
-                        value={liveClassForm.youtubeUrl || ""}
-                        onChangeText={txt => setLiveClassForm({ ...liveClassForm, youtubeUrl: txt })}
-                      />
-                    </View>
-                  ) : (
-                    <>
-                      <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Link Zoom / Meet Mode</Text>
-                      <View style={{ flexDirection: "row", gap: 10 }}>
-                        <TouchableOpacity
-                          onPress={() => setLiveClassForm({ ...liveClassForm, meetingMode: "create_new" })}
-                          style={[styles.roleBtn, liveClassForm.meetingMode === "create_new" && styles.roleBtnActive, darkMode && styles.roleBtnDark]}
-                        >
-                          <Text style={[styles.roleBtnTxt, liveClassForm.meetingMode === "create_new" && styles.roleBtnTxtActive]}>Auto Create Link</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          onPress={() => setLiveClassForm({ ...liveClassForm, meetingMode: "use_existing" })}
-                          style={[styles.roleBtn, liveClassForm.meetingMode === "use_existing" && styles.roleBtnActive, darkMode && styles.roleBtnDark]}
-                        >
-                          <Text style={[styles.roleBtnTxt, liveClassForm.meetingMode === "use_existing" && styles.roleBtnTxtActive]}>Paste Custom Link</Text>
-                        </TouchableOpacity>
-                      </View>
-
-                      {liveClassForm.meetingMode === "use_existing" && (
-                        <View style={{ gap: 8 }}>
-                          <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Participant URL (Join Link)</Text>
-                          <TextInput
-                            style={[styles.input, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444", color: "#e0e0e0" }]}
-                            placeholder="https://..."
-                            value={liveClassForm.participantUrl}
-                            onChangeText={txt => setLiveClassForm({ ...liveClassForm, participantUrl: txt })}
-                          />
-                          <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Host URL (Start Link)</Text>
-                          <TextInput
-                            style={[styles.input, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444", color: "#e0e0e0" }]}
-                            placeholder="https://..."
-                            value={liveClassForm.hostUrl}
-                            onChangeText={txt => setLiveClassForm({ ...liveClassForm, hostUrl: txt })}
-                          />
-                        </View>
-                      )}
-                    </>
-                  )}
-
-                  {/* Class Participants Section */}
-                  <View style={{ marginTop: 12, borderTopWidth: 1, borderTopColor: darkMode ? "#444" : "#eee", paddingTop: 12 }}>
-                    <Text style={{ fontSize: 12, fontWeight: "bold", textTransform: "uppercase", color: darkMode ? "#ccc" : "#666", marginBottom: 8 }}>
-                      Add Class Participants (Optional)
-                    </Text>
-
-                    <View style={{ gap: 12 }}>
-                      {/* Select Admins */}
-                      <View style={{ gap: 4 }}>
-                        <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Additional Admins</Text>
-                        <View style={{
-                          maxHeight: 120,
-                          overflow: "scroll",
-                          borderWidth: 1,
-                          borderColor: darkMode ? "#444" : "#ccc",
-                          borderRadius: 8,
-                          padding: 8,
-                          backgroundColor: darkMode ? "#1a1a2e" : "#fff",
-                          gap: 6
-                        }}>
-                          {(liveSessionCandidates.admins || [])
-                            .filter((c: any) => c.id !== user?.userId && c.id !== user?.id)
-                            .map((c: any) => {
-                              const isSelected = selectedAdminIds.includes(c.id);
-                              return (
-                                <TouchableOpacity
-                                  key={c.id}
-                                  onPress={() => handleAdminToggle(c.id)}
-                                  style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 4 }}
-                                >
-                                  <View style={{
-                                    width: 16,
-                                    height: 16,
-                                    borderRadius: 4,
-                                    borderWidth: 1.5,
-                                    borderColor: isSelected ? "#c62828" : (darkMode ? "#555" : "#999"),
-                                    backgroundColor: isSelected ? "#c62828" : "transparent",
-                                    alignItems: "center",
-                                    justifyContent: "center"
-                                  }}>
-                                    {isSelected && <Ionicons name="checkmark" size={10} color="#fff" />}
-                                  </View>
-                                  <Text style={{ fontSize: 13, color: darkMode ? "#e0e0e0" : "#333" }}>{c.name}</Text>
-                                </TouchableOpacity>
-                              );
-                            })}
-                          {(liveSessionCandidates.admins || []).filter((c: any) => c.id !== user?.userId && c.id !== user?.id).length === 0 && (
-                            <Text style={{ fontSize: 11, fontStyle: "italic", color: "#888" }}>No additional admins available</Text>
-                          )}
-                        </View>
-                      </View>
-
-                      {/* Select Teachers */}
-                      <View style={{ gap: 4 }}>
-                        <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Teachers</Text>
-                        <View style={{
-                          maxHeight: 120,
-                          overflow: "scroll",
-                          borderWidth: 1,
-                          borderColor: darkMode ? "#444" : "#ccc",
-                          borderRadius: 8,
-                          padding: 8,
-                          backgroundColor: darkMode ? "#1a1a2e" : "#fff",
-                          gap: 6
-                        }}>
-                          {(liveSessionCandidates.teachers || [])
-                            .filter((c: any) => c.id !== user?.userId && c.id !== user?.id)
-                            .map((c: any) => {
-                              const isSelected = selectedTeacherIds.includes(c.id);
-                              return (
-                                <TouchableOpacity
-                                  key={c.id}
-                                  onPress={() => handleTeacherToggle(c.id)}
-                                  style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 4 }}
-                                >
-                                  <View style={{
-                                    width: 16,
-                                    height: 16,
-                                    borderRadius: 4,
-                                    borderWidth: 1.5,
-                                    borderColor: isSelected ? "#c62828" : (darkMode ? "#555" : "#999"),
-                                    backgroundColor: isSelected ? "#c62828" : "transparent",
-                                    alignItems: "center",
-                                    justifyContent: "center"
-                                  }}>
-                                    {isSelected && <Ionicons name="checkmark" size={10} color="#fff" />}
-                                  </View>
-                                  <Text style={{ fontSize: 13, color: darkMode ? "#e0e0e0" : "#333" }}>{c.name}</Text>
-                                </TouchableOpacity>
-                              );
-                            })}
-                          {(liveSessionCandidates.teachers || []).filter((c: any) => c.id !== user?.userId && c.id !== user?.id).length === 0 && (
-                            <Text style={{ fontSize: 11, fontStyle: "italic", color: "#888" }}>No teachers available</Text>
-                          )}
-                        </View>
-                      </View>
-                    </View>
-                  </View>
-                </ScrollView>
-
-                <View style={{ flexDirection: "row", gap: 10, marginTop: 15 }}>
-                  <TouchableOpacity onPress={handleSaveLiveClass} style={[styles.primaryBtn, { flex: 1, marginVertical: 0 }]}>
-                    <Text style={styles.primaryBtnTxt}>Schedule</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => setShowLiveClassModal(false)} style={[styles.outlineBtn, { flex: 1, marginVertical: 0, justifyContent: "center" }]}>
-                    <Text style={styles.outlineBtnTxt}>Cancel</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-          </Modal>
-        )}
-
-        {/* Recorded Class Modal */}
-        {showRecordedClassModal && (
-          <Modal visible={true} animationType="slide" transparent>
-            <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", alignItems: "center", padding: 20 }}>
-              <View style={[styles.feedbackSheet, darkMode && styles.feedbackSheetDark, { width: "100%", maxWidth: 500, borderRadius: 16, padding: 20, alignSelf: "center", maxHeight: "90%" }]}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 }}>
-                  <Text style={[styles.feedbackTitle, darkMode && { color: "#f0f0f0" }, { fontSize: 16, fontWeight: "800" }]}>
-                    {editingRecordedClass ? "Edit Recorded Class" : "Create Recorded Class"}
-                  </Text>
-                  <TouchableOpacity onPress={() => setShowRecordedClassModal(false)}>
-                    <Ionicons name="close" size={24} color={darkMode ? "#9e9e9e" : "#757575"} />
-                  </TouchableOpacity>
-                </View>
-
-                <ScrollView showsVerticalScrollIndicator={true} contentContainerStyle={{ gap: 12 }}>
-                  <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Lecture Title *</Text>
-                  <TextInput
-                    style={[styles.input, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444", color: "#e0e0e0" }]}
-                    placeholder="e.g. Polity Lecture 2: Fundamental Rights"
-                    placeholderTextColor={darkMode ? "#666" : "#999"}
-                    value={recordedClassForm.title}
-                    onChangeText={txt => setRecordedClassForm({ ...recordedClassForm, title: txt })}
-                  />
-
-                  <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Description (Optional)</Text>
-                  <TextInput
-                    style={[styles.input, { height: 50 }, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444", color: "#e0e0e0" }]}
-                    placeholder="Summarize the lecture content..."
-                    placeholderTextColor={darkMode ? "#666" : "#999"}
-                    multiline
-                    value={recordedClassForm.description}
-                    onChangeText={txt => setRecordedClassForm({ ...recordedClassForm, description: txt })}
-                  />
-
-                  <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Select Curriculum Topic *</Text>
-                  <View style={{ gap: 8, backgroundColor: darkMode ? "#222" : "#f9f9f9", padding: 10, borderRadius: 8, borderWidth: 1, borderColor: (darkMode ? "#444" : "#eee") }}>
-                    {/* Course */}
-                    <select
-                      value={recordedClassForm.courseId}
-                      onChange={e => setRecordedClassForm({ ...recordedClassForm, courseId: e.target.value, subjectId: "", topicId: "" })}
-                      style={{ width: "100%", height: 32, borderRadius: 6, padding: 4 }}
-                    >
-                      <option value="">-- Select Course --</option>
-                      {lmsCourses.map(c => <option key={c.id} value={c.id}>{c.title || c.name}</option>)}
-                    </select>
-
-                    {/* Subject */}
-                    <select
-                      disabled={!recordedClassForm.courseId}
-                      value={recordedClassForm.subjectId}
-                      onChange={e => setRecordedClassForm({ ...recordedClassForm, subjectId: e.target.value, topicId: "" })}
-                      style={{ width: "100%", height: 32, borderRadius: 6, padding: 4 }}
-                    >
-                      <option value="">-- Select Subject --</option>
-                      {lmsSubjects.filter(s => s.courseId === recordedClassForm.courseId).map(s => (
-                        <option key={s.id} value={s.id}>{s.name || s.title}</option>
-                      ))}
-                    </select>
-
-                    {/* Topic */}
-                    <select
-                      disabled={!recordedClassForm.subjectId}
-                      value={recordedClassForm.topicId}
-                      onChange={e => setRecordedClassForm({ ...recordedClassForm, topicId: e.target.value })}
-                      style={{ width: "100%", height: 32, borderRadius: 6, padding: 4 }}
-                    >
-                      <option value="">-- Select Topic --</option>
-                      {lmsTopics.filter(t => t.subjectId === recordedClassForm.subjectId).map(t => (
-                        <option key={t.id} value={t.id}>{t.name || t.title}</option>
-                      ))}
-                    </select>
-                  </View>
-
-                  <Text style={[styles.label, darkMode && { color: "#aaa" }]}>YouTube Video URL *</Text>
-                  <TextInput
-                    style={[styles.input, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444", color: "#e0e0e0" }]}
-                    placeholder={editingRecordedClass ? "Leave blank to keep existing video, or paste new URL..." : "https://www.youtube.com/watch?v=..."}
-                    placeholderTextColor={darkMode ? "#666" : "#999"}
-                    value={recordedClassForm.youtubeUrl}
-                    onChangeText={txt => setRecordedClassForm({ ...recordedClassForm, youtubeUrl: txt })}
-                  />
-                </ScrollView>
-
-                <View style={{ flexDirection: "row", gap: 10, marginTop: 15 }}>
-                  <TouchableOpacity onPress={handleSaveRecordedClass} style={[styles.primaryBtn, { flex: 1, marginVertical: 0 }]}>
-                    <Text style={styles.primaryBtnTxt}>Save Lecture</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => setShowRecordedClassModal(false)} style={[styles.outlineBtn, { flex: 1, marginVertical: 0, justifyContent: "center" }]}>
-                    <Text style={styles.outlineBtnTxt}>Cancel</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-          </Modal>
-        )}
+        {renderLmsModals()}
 
         {/* ─── NEW GUEST PORTAL HEADER ───────────────────────────────────────── */}
         <View style={[styles.header, darkMode && styles.headerDark, { paddingVertical: 10 }]}>
@@ -18591,170 +19821,43 @@ function MainApp() {
         )}
 
         {/* Daily Content Preview Modal for Guest Portal */}
-        {selectedDailyContentPreview && (
-          <Modal
-            visible={true}
-            transparent={true}
-            animationType="fade"
-            onRequestClose={() => setSelectedDailyContentPreview(null)}
-          >
-            <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.75)", justifyContent: "center", alignItems: "center", padding: 16 }}>
-              <View style={{
-                width: "100%",
-                maxWidth: 900,
-                height: "88%",
-                backgroundColor: darkMode ? "#1e1e1e" : "#ffffff",
-                borderRadius: 12,
-                overflow: "hidden",
-                display: "flex",
-                flexDirection: "column"
-              }}>
-                {/* Modal Header */}
-                <View style={{
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  padding: 14,
-                  backgroundColor: "#c62828"
-                }}>
-                  <View style={{ flex: 1, paddingRight: 10 }}>
-                    <Text style={{ color: "#fff", fontSize: 15, fontWeight: "bold" }} numberOfLines={1}>
-                      {selectedDailyContentPreview.title || "Daily Study Material"}
-                    </Text>
-                    <Text style={{ color: "rgba(255,255,255,0.8)", fontSize: 11 }}>
-                      {selectedDailyContentPreview.date} • {selectedDailyContentPreview.type ? selectedDailyContentPreview.type.toUpperCase() : 'PDF'}
-                    </Text>
-                  </View>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                    {isAdmin && (selectedDailyContentPreview.fileBase64 || selectedDailyContentPreview.url) && (
-                      <TouchableOpacity
-                        onPress={() => {
-                          if (typeof window !== "undefined") {
-                            const targetSrc = resolveFileUrl(selectedDailyContentPreview.url || selectedDailyContentPreview.fileBase64);
-                            if (selectedDailyContentPreview.url) {
-                              window.open(targetSrc, "_blank");
-                            } else if (selectedDailyContentPreview.fileBase64) {
-                              const win = window.open();
-                              if (win) {
-                                win.document.write(`<iframe src="${targetSrc}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
-                              }
-                            }
-                          }
-                        }}
-                        style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6, backgroundColor: "rgba(255,255,255,0.2)" }}
-                      >
-                        <Text style={{ color: "#fff", fontSize: 11, fontWeight: "bold" }}>Open In New Tab ↗</Text>
-                      </TouchableOpacity>
-                    )}
-                    <TouchableOpacity onPress={() => setSelectedDailyContentPreview(null)}>
-                      <Ionicons name="close-circle" size={24} color="#fff" />
-                    </TouchableOpacity>
-                  </View>
+        {selectedDailyContentPreview && (() => {
+          let rawSrc = selectedDailyContentPreview.fileBase64 || selectedDailyContentPreview.url;
+          if (selectedDailyContentPreview.url && (selectedDailyContentPreview.url.startsWith("http://") || selectedDailyContentPreview.url.startsWith("https://"))) {
+            rawSrc = selectedDailyContentPreview.url;
+          }
+          let displaySrc = resolveFileUrl(rawSrc, selectedDailyContentPreview.type);
+
+          if (Platform.OS === 'web') {
+            return (
+              <Suspense fallback={
+                <View style={{ position: 'fixed' as any, top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#0f1219', zIndex: 99999, justifyContent: 'center', alignItems: 'center' }}>
+                  <ActivityIndicator size="large" color="#c62828" />
+                  <Text style={{ color: '#fff', marginTop: 12 }}>Loading secure viewer module...</Text>
                 </View>
+              }>
+                <DailyContentViewer
+                  content={selectedDailyContentPreview}
+                  displaySrc={displaySrc}
+                  onClose={() => setSelectedDailyContentPreview(null)}
+                  isAdmin={isAdmin}
+                />
+              </Suspense>
+            );
+          }
 
-                {/* Modal Body */}
-                <View style={{ flex: 1, backgroundColor: darkMode ? "#111" : "#f5f5f5", justifyContent: "center", alignItems: "center", padding: 8 }}>
-                  {(() => {
-                    let rawSrc = selectedDailyContentPreview.fileBase64 || selectedDailyContentPreview.url;
-                    if (selectedDailyContentPreview.url && (selectedDailyContentPreview.url.startsWith("http://") || selectedDailyContentPreview.url.startsWith("https://"))) {
-                      rawSrc = selectedDailyContentPreview.url;
-                    }
-                    let displaySrc = resolveFileUrl(rawSrc, selectedDailyContentPreview.type);
-
-                    if (!displaySrc) {
-                      return <Text style={{ color: darkMode ? "#ccc" : "#333" }}>Preview is not available for this item.</Text>;
-                    }
-
-                    // Helper to extract Google Drive file ID
-                    const getGoogleDriveId = (urlStr: string) => {
-                      if (!urlStr) return null;
-                      const m1 = urlStr.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-                      if (m1) return m1[1];
-                      const m2 = urlStr.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-                      if (m2) return m2[1];
-                      return null;
-                    };
-
-                    const driveId = getGoogleDriveId(displaySrc);
-                    if (selectedDailyContentPreview.type === "image" && driveId) {
-                      displaySrc = `https://lh3.googleusercontent.com/d/${driveId}`;
-                    }
-
-                    // 1. If running on native mobile phone (Android / iOS), do NOT render HTML iframe or img tags to avoid crashes
-                    if (Platform.OS !== "web") {
-                      if (selectedDailyContentPreview.type === "image") {
-                        return <NativeDailyImageZoomView imgSrc={displaySrc} darkMode={darkMode} />;
-                      }
-                      // For PDFs and other documents — use WebView to render inline inside the modal
-                      const { WebView } = require("react-native-webview");
-                      const pdfViewUrl = displaySrc.startsWith("http")
-                        ? `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(displaySrc)}`
-                        : displaySrc;
-                      return (
-                        <WebView
-                          source={{ uri: pdfViewUrl }}
-                          style={{ flex: 1, width: "100%", backgroundColor: darkMode ? "#111" : "#fff" }}
-                          javaScriptEnabled={true}
-                          domStorageEnabled={true}
-                          startInLoadingState={true}
-                          renderLoading={() => (
-                            <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: darkMode ? "#111" : "#f5f5f5" }}>
-                              <ActivityIndicator size="large" color="#c62828" />
-                              <Text style={{ color: darkMode ? "#ccc" : "#555", marginTop: 10 }}>Loading document…</Text>
-                            </View>
-                          )}
-                        />
-                      );
-                    }
-
-                    if (selectedDailyContentPreview.type === "image") {
-                      const imgSrc = driveId
-                        ? `https://lh3.googleusercontent.com/d/${driveId}`
-                        : displaySrc;
-                      return <WebDailyImageZoomView imgSrc={imgSrc} alt={selectedDailyContentPreview.title} driveId={driveId} darkMode={darkMode} />;
-                    }
-                    if (selectedDailyContentPreview.type === "pdf") {
-                      return (
-                        <View style={{ flex: 1, width: "100%", height: "100%" }}>
-                          <Suspense fallback={
-                            <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: darkMode ? "#111" : "#2a2a2a" }}>
-                              <ActivityIndicator size="large" color="#c62828" />
-                              <Text style={{ color: "#fff", marginTop: 10 }}>Loading Secure PDF Viewer...</Text>
-                            </View>
-                          }>
-                            <SecurePDFViewer url={displaySrc} />
-                          </Suspense>
-                        </View>
-                      );
-                    }
-
-                    // Fallback for non-PDF files / embeds
-                    const isDriveUrl = displaySrc.includes("drive.google.com") || displaySrc.includes("docs.google.com");
-                    if (isDriveUrl && !displaySrc.includes("/preview") && !displaySrc.includes("/embeddedfolderview")) {
-                      displaySrc = formatGoogleDriveUrl(displaySrc);
-                    }
-                    return (
-                      <View style={{ flex: 1, width: "100%", position: "relative" }}>
-                        <iframe
-                          key={displaySrc}
-                          src={displaySrc}
-                          title={selectedDailyContentPreview.title}
-                          style={{ width: "100%", height: "100%", border: "none", borderRadius: 8, backgroundColor: "#fff" }}
-                          allow="autoplay; encrypted-media; fullscreen"
-                          allowFullScreen
-                          referrerPolicy="no-referrer-when-downgrade"
-                        />
-                      </View>
-                    );
-                  })()}
-                </View>
-              </View>
-            </View>
-          </Modal>
-        )}
+          return (
+            <NativeDailyContentModal
+              content={selectedDailyContentPreview}
+              displaySrc={displaySrc}
+              onClose={() => setSelectedDailyContentPreview(null)}
+              darkMode={darkMode}
+            />
+          );
+        })()}
 
         {/* Secure PDF Container Modal for Guest Portal */}
-        {selectedResourceId && (
+        {selectedResourceId && (Platform.OS === 'web' ? (
           <Suspense fallback={
             <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#0f1219", zIndex: 9999, justifyContent: "center", alignItems: "center" }}>
               <RNSkeleton style={{ width: "90%", height: 44, marginBottom: 16 }} darkMode={darkMode} />
@@ -18766,7 +19869,13 @@ function MainApp() {
               onClose={() => setSelectedResourceId(null)}
             />
           </Suspense>
-        )}
+        ) : (
+          <NativeResourceModal
+            resourceId={selectedResourceId}
+            onClose={() => setSelectedResourceId(null)}
+            darkMode={darkMode}
+          />
+        ))}
       </SafeAreaView>
     );
   }
@@ -18790,7 +19899,7 @@ function MainApp() {
     return (
       <SafeAreaView style={[styles.modalContainer, { flex: 1, backgroundColor: "#ffffff", position: "relative" }]}>
         <StatusBar style="light" />
-        <TestWatermarkOverlay />
+        <TestWatermarkOverlay studentText={user ? `${user.username || user.rollNumber || user.name || "Student"}${user.rollNumber && !user.username?.includes(user.rollNumber) ? ` (${user.rollNumber})` : ''} • ${user.email || ""}` : (activeAttempt?.userId || "Student")} />
 
         {/* ── EXAM HEADER ─────────────────────────────────── */}
         <View style={[styles.header, { backgroundColor: "#c62828", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 14, paddingVertical: 10, flexWrap: "wrap", gap: 8, zIndex: 99999, elevation: 99999, overflow: "visible" }]}>
@@ -18835,7 +19944,7 @@ function MainApp() {
                 const opt = (q.optionsTe?.[0] || "").trim();
                 return txt.length > 0 || opt.length > 0;
               });
-              
+
               if (hasEn && !allowedLangs.includes("English")) allowedLangs.push("English");
               if (hasTa && !allowedLangs.includes("Tamil")) allowedLangs.push("Tamil");
               if (hasMl && !allowedLangs.includes("Malayalam")) allowedLangs.push("Malayalam");
@@ -19363,7 +20472,7 @@ function MainApp() {
     return (
       <SafeAreaView style={[styles.modalContainer, { flex: 1, backgroundColor: "#ffffff", position: "relative" }]}>
         <StatusBar style="dark" />
-        <TestWatermarkOverlay />
+        <TestWatermarkOverlay studentText={user ? `${user.username || user.rollNumber || user.name || "Student"}${user.rollNumber && !user.username?.includes(user.rollNumber) ? ` (${user.rollNumber})` : ''} • ${user.email || ""}` : "Student"} />
         <View style={{ backgroundColor: "#5c6bc0", padding: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
           <View style={{ flex: 1 }}>
             <Text style={{ color: "#fff", fontWeight: "900", fontSize: 15 }} numberOfLines={1}>{studyModeData.testTitle || "Past Test Study"}</Text>
@@ -19520,7 +20629,7 @@ function MainApp() {
     return (
       <SafeAreaView style={[styles.modalContainer, { flex: 1, backgroundColor: "#ffffff", position: "relative" }]}>
         <StatusBar style="light" />
-        <TestWatermarkOverlay />
+        <TestWatermarkOverlay studentText={user ? `${user.username || user.rollNumber || user.name || "Student"}${user.rollNumber && !user.username?.includes(user.rollNumber) ? ` (${user.rollNumber})` : ''} • ${user.email || ""}` : "Student"} />
         <View style={[styles.header, { backgroundColor: "#2e7d32" }]}>
           <Text style={styles.headerTitle}>{reviewData.testTitle || "Review Answers"}</Text>
           <TouchableOpacity onPress={() => { setReviewMode(false); setReviewData(null); }} style={{ padding: 8 }}>
@@ -20679,21 +21788,25 @@ function MainApp() {
                         1. LIVE STUDENT REQUESTS & ACTION CENTER (Option A - Real-Time)
                     ══════════════════════════════════════════════════════════════════ */}
                     <View style={{ marginBottom: 20 }}>
-                      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12, paddingHorizontal: 4 }}>
-                        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12, paddingHorizontal: 4, flexWrap: "wrap", gap: 8 }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap", flex: 1 }}>
                           <View style={{
-                            width: 10, height: 10, borderRadius: 5,
+                            width: (isMobile || Platform.OS !== "web") ? 8 : 10,
+                            height: (isMobile || Platform.OS !== "web") ? 8 : 10,
+                            borderRadius: 5,
                             backgroundColor: adminAlerts.length > 0 ? "#e65100" : "#2e7d32"
                           }} />
-                          <Ionicons name="notifications-outline" size={20} color={darkMode ? "#ffffff" : "#c62828"} />
-                          <Text style={{ fontSize: 16, fontWeight: "bold", color: darkMode ? "#ffffff" : "#1a237e" }}>
+                          <Ionicons name="notifications-outline" size={(isMobile || Platform.OS !== "web") ? 18 : 20} color={darkMode ? "#ffffff" : "#c62828"} />
+                          <Text style={{ fontSize: (isMobile || Platform.OS !== "web") ? 14 : 16, fontWeight: "bold", color: darkMode ? "#ffffff" : "#1a237e" }}>
                             Live Student Requests &amp; Actions
                           </Text>
                           <View style={{
                             backgroundColor: adminAlerts.length > 0 ? "#c62828" : "#2e7d32",
-                            paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12
+                            paddingHorizontal: (isMobile || Platform.OS !== "web") ? 6 : 8,
+                            paddingVertical: 2,
+                            borderRadius: 12
                           }}>
-                            <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "bold" }}>
+                            <Text style={{ color: "#ffffff", fontSize: (isMobile || Platform.OS !== "web") ? 10 : 11, fontWeight: "bold" }}>
                               {adminAlerts.length > 0 ? `${adminAlerts.length} Active` : "All Caught Up"}
                             </Text>
                           </View>
@@ -20766,20 +21879,27 @@ function MainApp() {
                         if (filtered.length === 0) {
                           return (
                             <View style={{
-                              padding: 20, borderRadius: 14,
+                              padding: (isMobile || Platform.OS !== "web") ? 14 : 20,
+                              borderRadius: 14,
                               backgroundColor: darkMode ? "#192d24" : "#e8f5e9",
                               borderWidth: 1.5, borderColor: darkMode ? "#2e7d32" : "#c8e6c9",
-                              flexDirection: "row", alignItems: "center", gap: 14,
+                              flexDirection: "row", alignItems: "center",
+                              gap: (isMobile || Platform.OS !== "web") ? 10 : 14,
                               marginBottom: 10
                             }}>
-                              <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: "#2e7d32", alignItems: "center", justifyContent: "center" }}>
-                                <Ionicons name="checkmark-done" size={24} color="#ffffff" />
+                              <View style={{
+                                width: (isMobile || Platform.OS !== "web") ? 36 : 44,
+                                height: (isMobile || Platform.OS !== "web") ? 36 : 44,
+                                borderRadius: (isMobile || Platform.OS !== "web") ? 18 : 22,
+                                backgroundColor: "#2e7d32", alignItems: "center", justifyContent: "center"
+                              }}>
+                                <Ionicons name="checkmark-done" size={(isMobile || Platform.OS !== "web") ? 20 : 24} color="#ffffff" />
                               </View>
                               <View style={{ flex: 1 }}>
-                                <Text style={{ fontSize: 14, fontWeight: "bold", color: darkMode ? "#a5d6a7" : "#1b5e20" }}>
+                                <Text style={{ fontSize: (isMobile || Platform.OS !== "web") ? 13 : 14, fontWeight: "bold", color: darkMode ? "#a5d6a7" : "#1b5e20" }}>
                                   All Caught Up! No Pending Operations
                                 </Text>
-                                <Text style={{ fontSize: 12, color: darkMode ? "#c8e6c9" : "#388e3c", marginTop: 2, lineHeight: 17 }}>
+                                <Text style={{ fontSize: (isMobile || Platform.OS !== "web") ? 11 : 12, color: darkMode ? "#c8e6c9" : "#388e3c", marginTop: 2, lineHeight: 16 }}>
                                   Admin proposals (like edit requests on students/batches), offline test requests, and system actions appear here live in real-time. Once reviewed or dismissed, they automatically clear and save to Audit Logs.
                                 </Text>
                               </View>
@@ -20874,7 +21994,12 @@ function MainApp() {
                       <Ionicons name="apps-outline" size={17} color="#c62828" style={{ marginRight: 6 }} />
                       <Text style={{ fontSize: 14, fontWeight: "bold", color: darkMode ? "#ffffff" : "#424242" }}>Module Shortcuts &amp; Live Status</Text>
                     </View>
-                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+                    <View style={{
+                      flexDirection: "row",
+                      flexWrap: "wrap",
+                      gap: (isMobile || Platform.OS !== "web") ? 10 : 12,
+                      justifyContent: (isMobile || Platform.OS !== "web") ? "space-between" : "flex-start"
+                    }}>
                       {/* Card 1: Admission Applications */}
                       {(() => {
                         const pendingCount = (admissions || []).filter((a: any) => a.status === "pending" || a.status === "new" || !a.status).length;
@@ -20882,8 +22007,14 @@ function MainApp() {
                           <TouchableOpacity
                             onPress={() => { setActiveTab("crm"); changeCrmSub("admissions"); }}
                             style={{
-                              width: "calc(33.33% - 8px)" as any, padding: 14, borderRadius: 12, backgroundColor: darkMode ? "#2a1b38" : "#f3e5f5",
-                              borderWidth: 1, borderColor: darkMode ? "#4a148c" : "#e1bee7", minHeight: 90, justifyContent: "space-between"
+                              width: (isMobile || Platform.OS !== "web") ? "48%" : ("calc(33.33% - 8px)" as any),
+                              padding: (isMobile || Platform.OS !== "web") ? 12 : 14,
+                              borderRadius: 12,
+                              backgroundColor: darkMode ? "#2a1b38" : "#f3e5f5",
+                              borderWidth: 1,
+                              borderColor: darkMode ? "#4a148c" : "#e1bee7",
+                              minHeight: (isMobile || Platform.OS !== "web") ? 98 : 90,
+                              justifyContent: "space-between"
                             }}
                           >
                             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
@@ -20897,8 +22028,8 @@ function MainApp() {
                               )}
                             </View>
                             <View>
-                              <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#e1bee7" : "#4a148c" }}>Admission Applications</Text>
-                              <Text style={{ fontSize: 11, color: darkMode ? "#ba68c8" : "#7b1fa2", marginTop: 2 }}>
+                              <Text style={{ fontWeight: "bold", fontSize: (isMobile || Platform.OS !== "web") ? 12.5 : 13, color: darkMode ? "#e1bee7" : "#4a148c" }}>Admission Applications</Text>
+                              <Text style={{ fontSize: (isMobile || Platform.OS !== "web") ? 10.5 : 11, color: darkMode ? "#ba68c8" : "#7b1fa2", marginTop: 2 }} numberOfLines={2}>
                                 {pendingCount > 0 ? `${pendingCount} new application(s) awaiting review` : "CRM Portal"}
                               </Text>
                             </View>
@@ -20913,8 +22044,14 @@ function MainApp() {
                           <TouchableOpacity
                             onPress={() => { setActiveTab("crm"); changeCrmSub("inquiries"); }}
                             style={{
-                              width: "calc(33.33% - 8px)" as any, padding: 14, borderRadius: 12, backgroundColor: darkMode ? "#192a3a" : "#e1f5fe",
-                              borderWidth: 1, borderColor: darkMode ? "#0277bd" : "#b3e5fc", minHeight: 90, justifyContent: "space-between"
+                              width: (isMobile || Platform.OS !== "web") ? "48%" : ("calc(33.33% - 8px)" as any),
+                              padding: (isMobile || Platform.OS !== "web") ? 12 : 14,
+                              borderRadius: 12,
+                              backgroundColor: darkMode ? "#192a3a" : "#e1f5fe",
+                              borderWidth: 1,
+                              borderColor: darkMode ? "#0277bd" : "#b3e5fc",
+                              minHeight: (isMobile || Platform.OS !== "web") ? 98 : 90,
+                              justifyContent: "space-between"
                             }}
                           >
                             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
@@ -20928,8 +22065,8 @@ function MainApp() {
                               )}
                             </View>
                             <View>
-                              <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#b3e5fc" : "#01579b" }}>Inquiries</Text>
-                              <Text style={{ fontSize: 11, color: darkMode ? "#4fc3f7" : "#0288d1", marginTop: 2 }}>
+                              <Text style={{ fontWeight: "bold", fontSize: (isMobile || Platform.OS !== "web") ? 12.5 : 13, color: darkMode ? "#b3e5fc" : "#01579b" }}>Inquiries</Text>
+                              <Text style={{ fontSize: (isMobile || Platform.OS !== "web") ? 10.5 : 11, color: darkMode ? "#4fc3f7" : "#0288d1", marginTop: 2 }} numberOfLines={2}>
                                 {pendingCount > 0 ? `${pendingCount} new lead(s) & queries` : "CRM Leads & Queries"}
                               </Text>
                             </View>
@@ -20944,22 +22081,32 @@ function MainApp() {
                           <TouchableOpacity
                             onPress={() => { setActiveTab("erp"); changeErpSub("profile-requests"); setProfileRequestsTab("requests"); }}
                             style={{
-                              width: "calc(33.33% - 8px)" as any, padding: 14, borderRadius: 12, backgroundColor: darkMode ? "#332219" : "#fff3e0",
-                              borderWidth: 1, borderColor: darkMode ? "#e65100" : "#ffe0b2", minHeight: 90, justifyContent: "space-between"
+                              width: (isMobile || Platform.OS !== "web") ? "48%" : ("calc(33.33% - 8px)" as any),
+                              padding: (isMobile || Platform.OS !== "web") ? 12 : 14,
+                              borderRadius: 12,
+                              backgroundColor: darkMode ? "#332219" : "#fff3e0",
+                              borderWidth: 1,
+                              borderColor: darkMode ? "#e65100" : "#ffe0b2",
+                              minHeight: (isMobile || Platform.OS !== "web") ? 98 : 90,
+                              justifyContent: "space-between"
                             }}
                           >
                             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                               <Ionicons name="person-add-outline" size={20} color="#e65100" />
-                              <View style={{ backgroundColor: "#e65100", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
-                                <Text style={{ color: "#fff", fontSize: 10, fontWeight: "bold" }}>
-                                  {pendingCount} Pending
-                                </Text>
-                              </View>
+                              {pendingCount > 0 ? (
+                                <View style={{ backgroundColor: "#e65100", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
+                                  <Text style={{ color: "#fff", fontSize: 10, fontWeight: "bold" }}>
+                                    {pendingCount} Pending
+                                  </Text>
+                                </View>
+                              ) : (
+                                <Ionicons name="arrow-forward" size={14} color="#e65100" />
+                              )}
                             </View>
                             <View>
-                              <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#ffe0b2" : "#e65100" }}>Profile Requests</Text>
-                              <Text style={{ fontSize: 11, color: darkMode ? "#ffb74d" : "#ef6c00", marginTop: 2 }}>
-                                {pendingCount} new request(s) awaiting review
+                              <Text style={{ fontWeight: "bold", fontSize: (isMobile || Platform.OS !== "web") ? 12.5 : 13, color: darkMode ? "#ffe0b2" : "#e65100" }}>Profile Requests</Text>
+                              <Text style={{ fontSize: (isMobile || Platform.OS !== "web") ? 10.5 : 11, color: darkMode ? "#ffb74d" : "#ef6c00", marginTop: 2 }} numberOfLines={2}>
+                                {pendingCount > 0 ? `${pendingCount} new request(s) awaiting review` : "Profile Verifications"}
                               </Text>
                             </View>
                           </TouchableOpacity>
@@ -20973,8 +22120,14 @@ function MainApp() {
                           <TouchableOpacity
                             onPress={() => { setActiveTab("erp"); changeErpSub("qr-permissions"); }}
                             style={{
-                              width: "calc(33.33% - 8px)" as any, padding: 14, borderRadius: 12, backgroundColor: darkMode ? "#19302c" : "#e0f2f1",
-                              borderWidth: 1, borderColor: darkMode ? "#00695c" : "#b2dfdb", minHeight: 90, justifyContent: "space-between"
+                              width: (isMobile || Platform.OS !== "web") ? "48%" : ("calc(33.33% - 8px)" as any),
+                              padding: (isMobile || Platform.OS !== "web") ? 12 : 14,
+                              borderRadius: 12,
+                              backgroundColor: darkMode ? "#19302c" : "#e0f2f1",
+                              borderWidth: 1,
+                              borderColor: darkMode ? "#00695c" : "#b2dfdb",
+                              minHeight: (isMobile || Platform.OS !== "web") ? 98 : 90,
+                              justifyContent: "space-between"
                             }}
                           >
                             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
@@ -20988,8 +22141,8 @@ function MainApp() {
                               )}
                             </View>
                             <View>
-                              <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#b2dfdb" : "#004d40" }}>QR Code Permissions</Text>
-                              <Text style={{ fontSize: 11, color: darkMode ? "#80cbc4" : "#00796b", marginTop: 2 }}>
+                              <Text style={{ fontWeight: "bold", fontSize: (isMobile || Platform.OS !== "web") ? 12.5 : 13, color: darkMode ? "#b2dfdb" : "#004d40" }}>QR Code Permissions</Text>
+                              <Text style={{ fontSize: (isMobile || Platform.OS !== "web") ? 10.5 : 11, color: darkMode ? "#80cbc4" : "#00796b", marginTop: 2 }} numberOfLines={2}>
                                 {qrCount > 0 ? `${qrCount} student(s) requested QR` : "Scanner Security"}
                               </Text>
                             </View>
@@ -21004,8 +22157,14 @@ function MainApp() {
                           <TouchableOpacity
                             onPress={() => { setActiveTab("erp"); changeErpSub("edit-permissions"); }}
                             style={{
-                              width: "calc(33.33% - 8px)" as any, padding: 14, borderRadius: 12, backgroundColor: darkMode ? "#361b24" : "#fce4ec",
-                              borderWidth: 1, borderColor: darkMode ? "#880e4f" : "#f8bbd0", minHeight: 90, justifyContent: "space-between"
+                              width: (isMobile || Platform.OS !== "web") ? "48%" : ("calc(33.33% - 8px)" as any),
+                              padding: (isMobile || Platform.OS !== "web") ? 12 : 14,
+                              borderRadius: 12,
+                              backgroundColor: darkMode ? "#361b24" : "#fce4ec",
+                              borderWidth: 1,
+                              borderColor: darkMode ? "#880e4f" : "#f8bbd0",
+                              minHeight: (isMobile || Platform.OS !== "web") ? 98 : 90,
+                              justifyContent: "space-between"
                             }}
                           >
                             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
@@ -21019,8 +22178,8 @@ function MainApp() {
                               )}
                             </View>
                             <View>
-                              <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#f8bbd0" : "#880e4f" }}>Profile Edit Requests</Text>
-                              <Text style={{ fontSize: 11, color: darkMode ? "#f48fb1" : "#c2185b", marginTop: 2 }}>
+                              <Text style={{ fontWeight: "bold", fontSize: (isMobile || Platform.OS !== "web") ? 12.5 : 13, color: darkMode ? "#f8bbd0" : "#880e4f" }}>Profile Edit Requests</Text>
+                              <Text style={{ fontSize: (isMobile || Platform.OS !== "web") ? 10.5 : 11, color: darkMode ? "#f48fb1" : "#c2185b", marginTop: 2 }} numberOfLines={2}>
                                 {editCount > 0 ? `${editCount} edit request(s) awaiting review` : "Edit Permissions"}
                               </Text>
                             </View>
@@ -21029,78 +22188,54 @@ function MainApp() {
                       })()}
 
                       {/* Card 6: Fees Portal */}
-                      <TouchableOpacity
-                        onPress={() => { setActiveTab("erp"); changeErpSub("fees"); }}
-                        style={{
-                          width: "calc(33.33% - 8px)" as any, padding: 14, borderRadius: 12, backgroundColor: darkMode ? "#1b2e1e" : "#e8f5e9",
-                          borderWidth: 1, borderColor: darkMode ? "#1b5e20" : "#c8e6c9", minHeight: 90, justifyContent: "space-between"
-                        }}
-                      >
-                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                          <Ionicons name="cash-outline" size={20} color="#2e7d32" />
-                          <Ionicons name="arrow-forward" size={14} color="#2e7d32" />
-                        </View>
-                        <View>
-                          <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#c8e6c9" : "#1b5e20" }}>Fees Portal</Text>
-                          <Text style={{ fontSize: 11, color: darkMode ? "#81c784" : "#2e7d32", marginTop: 2 }}>Student Finance &amp; Ledger</Text>
-                        </View>
-                      </TouchableOpacity>
-
-                      {/* Card 7: Live Class */}
                       {(() => {
-                        const hasLive = (liveSessions || []).some((s: any) => s.status === "live");
+                        const pendingFeesCount = (adminAlerts || []).filter((a: any) => a.type === "payment").length;
                         return (
                           <TouchableOpacity
-                            onPress={() => { setActiveTab("lms"); changeLmsSub("live-classes"); }}
+                            onPress={() => { setActiveTab("erp"); changeErpSub("fees"); }}
                             style={{
-                              width: "calc(33.33% - 8px)" as any, padding: 14, borderRadius: 12, backgroundColor: darkMode ? "#3e1c1c" : "#ffebee",
-                              borderWidth: 1, borderColor: darkMode ? "#c62828" : "#ff8a80", minHeight: 90, justifyContent: "space-between"
+                              width: (isMobile || Platform.OS !== "web") ? "48%" : ("calc(33.33% - 8px)" as any),
+                              padding: (isMobile || Platform.OS !== "web") ? 12 : 14,
+                              borderRadius: 12,
+                              backgroundColor: darkMode ? "#1b2e1e" : "#e8f5e9",
+                              borderWidth: 1,
+                              borderColor: darkMode ? "#1b5e20" : "#c8e6c9",
+                              minHeight: (isMobile || Platform.OS !== "web") ? 98 : 90,
+                              justifyContent: "space-between"
                             }}
                           >
                             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                              <Ionicons name="videocam-outline" size={20} color="#c62828" />
-                              {hasLive ? (
-                                <View style={{ backgroundColor: "#c62828", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
-                                  <Text style={{ color: "#fff", fontSize: 10, fontWeight: "bold" }}>🔴 LIVE NOW</Text>
+                              <Ionicons name="cash-outline" size={20} color="#2e7d32" />
+                              {pendingFeesCount > 0 ? (
+                                <View style={{ backgroundColor: "#2e7d32", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
+                                  <Text style={{ color: "#fff", fontSize: 10, fontWeight: "bold" }}>{pendingFeesCount} New</Text>
                                 </View>
                               ) : (
-                                <Ionicons name="arrow-forward" size={14} color="#c62828" />
+                                <Ionicons name="arrow-forward" size={14} color="#2e7d32" />
                               )}
                             </View>
                             <View>
-                              <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#ff8a80" : "#c62828" }}>Live Class</Text>
-                              <Text style={{ fontSize: 11, color: darkMode ? "#ff8a80" : "#c62828", marginTop: 2 }}>
-                                {hasLive ? "Live Session in progress" : "Live Streaming Portal"}
+                              <Text style={{ fontWeight: "bold", fontSize: (isMobile || Platform.OS !== "web") ? 12.5 : 13, color: darkMode ? "#c8e6c9" : "#1b5e20" }}>Fees Portal</Text>
+                              <Text style={{ fontSize: (isMobile || Platform.OS !== "web") ? 10.5 : 11, color: darkMode ? "#81c784" : "#2e7d32", marginTop: 2 }} numberOfLines={2}>
+                                {pendingFeesCount > 0 ? `${pendingFeesCount} payment(s) to verify` : "Student Finance & Ledger"}
                               </Text>
                             </View>
                           </TouchableOpacity>
                         );
                       })()}
 
-                      {/* Card 8: Resources */}
-                      <TouchableOpacity
-                        onPress={() => { setActiveTab("lms"); changeLmsSub("resources"); }}
-                        style={{
-                          width: "calc(33.33% - 8px)" as any, padding: 14, borderRadius: 12, backgroundColor: darkMode ? "#1c2a38" : "#e3f2fd",
-                          borderWidth: 1, borderColor: darkMode ? "#1565c0" : "#90caf9", minHeight: 90, justifyContent: "space-between"
-                        }}
-                      >
-                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                          <Ionicons name="folder-open-outline" size={20} color="#1565c0" />
-                          <Ionicons name="arrow-forward" size={14} color="#1565c0" />
-                        </View>
-                        <View>
-                          <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#90caf9" : "#1565c0" }}>Resources</Text>
-                          <Text style={{ fontSize: 11, color: darkMode ? "#90caf9" : "#1565c0", marginTop: 2 }}>Study Materials &amp; Notes</Text>
-                        </View>
-                      </TouchableOpacity>
-
-                      {/* Card 9: Access Control */}
+                      {/* Card 7: Access Control */}
                       <TouchableOpacity
                         onPress={() => { setActiveTab("lms"); changeLmsSub("lms-access"); }}
                         style={{
-                          width: "calc(33.33% - 8px)" as any, padding: 14, borderRadius: 12, backgroundColor: darkMode ? "#2e1c38" : "#f3e5f5",
-                          borderWidth: 1, borderColor: darkMode ? "#6a1b9a" : "#ce93d8", minHeight: 90, justifyContent: "space-between"
+                          width: (isMobile || Platform.OS !== "web") ? "48%" : ("calc(33.33% - 8px)" as any),
+                          padding: (isMobile || Platform.OS !== "web") ? 12 : 14,
+                          borderRadius: 12,
+                          backgroundColor: darkMode ? "#2e1c38" : "#f3e5f5",
+                          borderWidth: 1,
+                          borderColor: darkMode ? "#6a1b9a" : "#ce93d8",
+                          minHeight: (isMobile || Platform.OS !== "web") ? 98 : 90,
+                          justifyContent: "space-between"
                         }}
                       >
                         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
@@ -21108,79 +22243,354 @@ function MainApp() {
                           <Ionicons name="arrow-forward" size={14} color="#6a1b9a" />
                         </View>
                         <View>
-                          <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#ce93d8" : "#6a1b9a" }}>Access Control</Text>
-                          <Text style={{ fontSize: 11, color: darkMode ? "#ce93d8" : "#6a1b9a", marginTop: 2 }}>SACS Security &amp; Permissions</Text>
-                        </View>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        onPress={() => { setActiveTab("erp"); changeErpSub("fees"); }}
-                        style={{
-                          width: "calc(33.33% - 8px)" as any, padding: 14, borderRadius: 12, backgroundColor: darkMode ? "#1b2e1e" : "#e8f5e9",
-                          borderWidth: 1, borderColor: darkMode ? "#1b5e20" : "#c8e6c9", minHeight: 90, justifyContent: "space-between"
-                        }}
-                      >
-                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                          <Ionicons name="cash-outline" size={20} color="#2e7d32" />
-                          <Ionicons name="arrow-forward" size={14} color="#2e7d32" />
-                        </View>
-                        <View>
-                          <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#c8e6c9" : "#1b5e20" }}>Fees Portal</Text>
-                          <Text style={{ fontSize: 11, color: darkMode ? "#81c784" : "#2e7d32", marginTop: 2 }}>Student Finance</Text>
-                        </View>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        onPress={() => { setActiveTab("lms"); changeLmsSub("live-classes"); }}
-                        style={{
-                          width: "calc(33.33% - 8px)" as any, padding: 14, borderRadius: 12, backgroundColor: darkMode ? "#3e1c1c" : "#ffebee",
-                          borderWidth: 1, borderColor: darkMode ? "#c62828" : "#ff8a80", minHeight: 90, justifyContent: "space-between"
-                        }}
-                      >
-                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                          <Ionicons name="videocam-outline" size={20} color="#c62828" />
-                          <Ionicons name="arrow-forward" size={14} color="#c62828" />
-                        </View>
-                        <View>
-                          <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#ff8a80" : "#c62828" }}>Live Class</Text>
-                          <Text style={{ fontSize: 11, color: darkMode ? "#ff8a80" : "#c62828", marginTop: 2 }}>Live Streaming</Text>
-                        </View>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        onPress={() => { setActiveTab("lms"); changeLmsSub("resources"); }}
-                        style={{
-                          width: "calc(33.33% - 8px)" as any, padding: 14, borderRadius: 12, backgroundColor: darkMode ? "#1c2a38" : "#e3f2fd",
-                          borderWidth: 1, borderColor: darkMode ? "#1565c0" : "#90caf9", minHeight: 90, justifyContent: "space-between"
-                        }}
-                      >
-                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                          <Ionicons name="folder-open-outline" size={20} color="#1565c0" />
-                          <Ionicons name="arrow-forward" size={14} color="#1565c0" />
-                        </View>
-                        <View>
-                          <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#90caf9" : "#1565c0" }}>Resources</Text>
-                          <Text style={{ fontSize: 11, color: darkMode ? "#90caf9" : "#1565c0", marginTop: 2 }}>Study Materials</Text>
-                        </View>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        onPress={() => { setActiveTab("lms"); changeLmsSub("lms-access"); }}
-                        style={{
-                          width: "calc(33.33% - 8px)" as any, padding: 14, borderRadius: 12, backgroundColor: darkMode ? "#2e1c38" : "#f3e5f5",
-                          borderWidth: 1, borderColor: darkMode ? "#6a1b9a" : "#ce93d8", minHeight: 90, justifyContent: "space-between"
-                        }}
-                      >
-                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                          <Ionicons name="shield-checkmark-outline" size={20} color="#6a1b9a" />
-                          <Ionicons name="arrow-forward" size={14} color="#6a1b9a" />
-                        </View>
-                        <View>
-                          <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#ce93d8" : "#6a1b9a" }}>Access Control</Text>
-                          <Text style={{ fontSize: 11, color: darkMode ? "#ce93d8" : "#6a1b9a", marginTop: 2 }}>SACS Security</Text>
+                          <Text style={{ fontWeight: "bold", fontSize: (isMobile || Platform.OS !== "web") ? 12.5 : 13, color: darkMode ? "#ce93d8" : "#6a1b9a" }}>Access Control</Text>
+                          <Text style={{ fontSize: (isMobile || Platform.OS !== "web") ? 10.5 : 11, color: darkMode ? "#ce93d8" : "#6a1b9a", marginTop: 2 }} numberOfLines={2}>SACS Security &amp; Permissions</Text>
                         </View>
                       </TouchableOpacity>
                     </View>
+
+                    {/* ══════════════════════════════════════════════════════════════════
+                        3. LIVE & ONGOING CLASSES (Direct Join & Host from Dashboard)
+                    ══════════════════════════════════════════════════════════════════ */}
+                    {(() => {
+                      const upcomingSessions: any[] = [];
+                      const onLiveSessions: any[] = [];
+                      const endedSessions: any[] = [];
+
+                      (lmsLiveSessions || []).forEach((session: any) => {
+                        const sessionStatus = session.status || 'scheduled';
+                        const scheduledTimeObj = session.scheduledStartTime
+                          ? new Date(session.scheduledStartTime._seconds ? session.scheduledStartTime._seconds * 1000 : session.scheduledStartTime)
+                          : null;
+                        const startTimeMs = scheduledTimeObj ? scheduledTimeObj.getTime() : 0;
+                        const durationMins = session.expectedDurationMinutes || session.liveSession?.expectedDurationMinutes || 60;
+                        const endTimeMs = startTimeMs + durationMins * 60 * 1000;
+                        const isExpired = startTimeMs > 0 && Date.now() > endTimeMs;
+
+                        const isEnded = sessionStatus === 'ENDED' || sessionStatus === 'CANCELLED' || sessionStatus === 'EXPIRED' || sessionStatus === 'ARCHIVED' || sessionStatus === 'ended' || isExpired;
+                        const isLive = !isEnded && (sessionStatus === 'live' || sessionStatus === 'active' || sessionStatus === 'in_progress' || sessionStatus === 'LIVE' || sessionStatus === 'JOINING' || sessionStatus === 'HOST_CONNECTED' || sessionStatus === 'ATTENDANCE_RUNNING');
+
+                        if (isEnded) endedSessions.push(session);
+                        else if (isLive) onLiveSessions.push(session);
+                        else upcomingSessions.push(session);
+                      });
+
+                      const handleDashboardStartClass = async (session: any) => {
+                        try {
+                          Alert.alert("Starting Class", "Initializing meeting links, please wait...");
+                          const sessionId = session.id || session._id;
+                          await api.post(`/live-sessions/${sessionId}/start`, {});
+
+                          let launched = false;
+                          if (session.provider !== 'youtube') {
+                            try {
+                              const tokenRes = await api.post(`/live-sessions/${sessionId}/join-token`, {});
+                              const token = tokenRes.data?.token || tokenRes.token;
+                              if (token) {
+                                const baseOrigin = (Platform.OS === 'web' && typeof window !== "undefined" && (window as any).location?.origin) ? (window as any).location.origin : "https://nermaiiasacademy-519c8.web.app";
+                                const apiBase = getBaseUrl().replace(/\/api$/, "");
+                                const popupUrl = `${baseOrigin}/meeting-hosts/zoom-client-launch.html?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(sessionId)}&apiUrl=${encodeURIComponent(apiBase)}`;
+                                if (Platform.OS === 'web' && typeof window !== "undefined") {
+                                  window.open(popupUrl, "nermai-meeting", "width=1280,height=760,menubar=no,toolbar=no,location=no,status=no,resizable=yes");
+                                } else {
+                                  Linking.openURL(popupUrl).catch(() => Alert.alert("Notice", "Unable to open meeting link."));
+                                }
+                                launched = true;
+                              }
+                            } catch (tokErr) {
+                              console.warn("Join token resolution failed, checking join API:", tokErr);
+                            }
+                          }
+
+                          if (!launched) {
+                            const freshSession = session.liveSession || session;
+                            const launchUrl = freshSession?.hostUrl || freshSession?.launchPayload?.start_url || freshSession?.launchPayload?.hostUrl || freshSession?.participantUrl || freshSession?.launchPayload?.join_url || freshSession?.launchPayload?.participantUrl || freshSession?.joinUrl || freshSession?.meetingUrl || null;
+
+                            if (launchUrl) {
+                              if (Platform.OS === 'web' && typeof window !== "undefined") {
+                                window.open(launchUrl, "_blank");
+                              } else {
+                                Linking.openURL(launchUrl).catch(() => Alert.alert("Notice", "Unable to open launch link."));
+                              }
+                            }
+                          }
+                          loadLiveSessions();
+                        } catch (err: any) {
+                          console.error("Failed to start session:", err);
+                          Alert.alert("Error", err.response?.data?.message || err.message || "Failed to start live session.");
+                        }
+                      };
+
+                      const handleDashboardEndClass = (session: any) => {
+                        const sessionId = session.id || session._id;
+                        const sessionTitle = session.title || session.className || session.topicName || "Live Session";
+                        const doEnd = () => {
+                          api.post(`/live-sessions/${sessionId}/end-with-conversion`, {
+                            convertToYoutube: false
+                          })
+                            .then(async () => {
+                              Alert.alert("Ended", "Live session ended successfully.");
+                              loadLiveSessions();
+                            })
+                            .catch((err: any) => {
+                              Alert.alert('Error', err?.response?.data?.message || 'Failed to end session');
+                            });
+                        };
+
+                        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                          const choice = window.confirm(`End "${sessionTitle}"?\n\nPress OK to end class.\nPress Cancel to stay.`);
+                          if (choice) doEnd();
+                        } else {
+                          Alert.alert(
+                            "End Class",
+                            `Are you sure you want to end "${sessionTitle}"?`,
+                            [
+                              { text: "Cancel", style: "cancel" },
+                              { text: "End Class", style: "destructive", onPress: doEnd }
+                            ]
+                          );
+                        }
+                      };
+
+                      const handleDashboardViewAttendance = async (session: any) => {
+                        const sessionId = session.id || session._id || session.classId;
+                        const sessionTitle = session.title || session.className || session.topicName || "Live Session";
+                        setSelectedAttendanceTitle(sessionTitle);
+                        setAttendanceLoading(true);
+                        setShowAttendanceModal(true);
+                        try {
+                          const res = await api.get(`/live-sessions/${sessionId}/attendance`);
+                          const attList = Array.isArray(res) ? res : (res?.records || res?.data || []);
+                          setAttendanceList(attList);
+                        } catch (err: any) {
+                          const errorMsg = err?.response?.data?.message || err?.message || 'Failed to fetch attendance';
+                          console.error("Attendance fetch error details:", errorMsg, err?.response?.status, err?.response?.data);
+                          Alert.alert('Error', `Fetch failed: ${errorMsg}`);
+                          setAttendanceList([]);
+                        } finally {
+                          setAttendanceLoading(false);
+                        }
+                      };
+
+                      return (
+                        <View style={{ marginTop: 22 }}>
+                          {/* Header */}
+                          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12, paddingHorizontal: 4, flexWrap: "wrap", gap: 8 }}>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap", flex: 1 }}>
+                              <View style={{
+                                width: (isMobile || Platform.OS !== "web") ? 8 : 10,
+                                height: (isMobile || Platform.OS !== "web") ? 8 : 10,
+                                borderRadius: 5,
+                                backgroundColor: onLiveSessions.length > 0 ? "#00e676" : "#757575"
+                              }} />
+                              <Ionicons name="videocam" size={(isMobile || Platform.OS !== "web") ? 18 : 20} color="#c62828" />
+                              <Text style={{ fontSize: (isMobile || Platform.OS !== "web") ? 14 : 16, fontWeight: "bold", color: darkMode ? "#ffffff" : "#1a237e" }}>
+                                Live Classes in Progress
+                              </Text>
+                              {onLiveSessions.length > 0 ? (
+                                <View style={{ backgroundColor: "#2e7d32", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 }}>
+                                  <Text style={{ color: "#ffffff", fontSize: 10, fontWeight: "bold" }}>
+                                    {onLiveSessions.length} {onLiveSessions.length === 1 ? "Active Session" : "Active Sessions"}
+                                  </Text>
+                                </View>
+                              ) : (
+                                <View style={{ backgroundColor: darkMode ? "#333333" : "#eeeeee", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 }}>
+                                  <Text style={{ color: darkMode ? "#aaaaaa" : "#757575", fontSize: 10, fontWeight: "600" }}>
+                                    No Active Sessions
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
+
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                              <TouchableOpacity
+                                onPress={loadLiveSessions}
+                                style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: darkMode ? "#2a2a2a" : "#f5f5f5", borderWidth: 1, borderColor: darkMode ? "#444" : "#e0e0e0" }}
+                              >
+                                <Ionicons name="refresh-outline" size={13} color={darkMode ? "#ffffff" : "#424242"} />
+                                <Text style={{ fontSize: 11, fontWeight: "600", color: darkMode ? "#ffffff" : "#424242" }}>Refresh</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                onPress={() => { setActiveTab("lms"); changeLmsSub("live-classes"); }}
+                                style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: darkMode ? "#2c1a1a" : "#ffebee", borderWidth: 1, borderColor: darkMode ? "#c62828" : "#ffcdd2" }}
+                              >
+                                <Text style={{ fontSize: 11, fontWeight: "bold", color: "#c62828" }}>LMS Live Stream →</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+
+                          {/* Sessions List or Fallback */}
+                          {onLiveSessions.length > 0 ? (
+                            <View style={{ gap: 12 }}>
+                              {onLiveSessions.map((session: any) => {
+                                const sessionTitle = session.title || session.className || session.topicName || "Live Session";
+                                const scheduledTimeObj = session.scheduledStartTime
+                                  ? new Date(session.scheduledStartTime._seconds ? session.scheduledStartTime._seconds * 1000 : session.scheduledStartTime)
+                                  : null;
+                                const scheduledTime = scheduledTimeObj
+                                  ? scheduledTimeObj.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })
+                                  : session.scheduledAt || "Time not set";
+
+                                const courseName = session.courseName || session.courseTitle || (lmsCourses.find((c: any) => c.id === session.courseId)?.title || lmsCourses.find((c: any) => c.id === session.courseId)?.name || "");
+                                let batchName = session.batchName || session.targetBatchName || "";
+                                if (!batchName) {
+                                  if (session.accessLevel === "free") batchName = "All Students";
+                                  else if (session.accessLevel === "batch") batchName = "Specific Batch";
+                                  else batchName = "All Enrolled Students";
+                                }
+                                const faculty = session.teacherName || session.staffName || session.instructorName || "";
+
+                                return (
+                                  <View
+                                    key={session.id || session._id}
+                                    style={[
+                                      styles.card,
+                                      darkMode && styles.cardDark,
+                                      {
+                                        padding: 16,
+                                        gap: 10,
+                                        borderLeftWidth: 4,
+                                        borderLeftColor: "#2e7d32",
+                                        shadowColor: "#000",
+                                        shadowOffset: { width: 0, height: 2 },
+                                        shadowOpacity: 0.08,
+                                        shadowRadius: 6,
+                                        elevation: 3
+                                      }
+                                    ]}
+                                  >
+                                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                                        <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: "#00e676" }} />
+                                        <View style={{ backgroundColor: "#2e7d3220", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4 }}>
+                                          <Text style={{ fontSize: 10, color: "#2e7d32", fontWeight: "bold" }}>🟢 LIVE NOW</Text>
+                                        </View>
+                                      </View>
+                                      <Text style={{ fontSize: 11, color: darkMode ? "#777" : "#9e9e9e" }}>{scheduledTime}</Text>
+                                    </View>
+
+                                    <Text style={{ fontSize: 15, fontWeight: "bold", color: darkMode ? "#fff" : "#212121" }}>
+                                      {sessionTitle}
+                                    </Text>
+
+                                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap", marginVertical: 2 }}>
+                                      {courseName ? (
+                                        <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: darkMode ? "#1a2a3a" : "#f0f4f8", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: darkMode ? "#29435c" : "#d0e1f9" }}>
+                                          <Ionicons name="book" size={13} color={darkMode ? "#90caf9" : "#1565c0"} />
+                                          <Text style={{ fontSize: 11, fontWeight: "bold", color: darkMode ? "#90caf9" : "#1565c0" }}>Course: {courseName}</Text>
+                                        </View>
+                                      ) : null}
+                                      {batchName ? (
+                                        <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: darkMode ? "#1c3320" : "#e8f5e9", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: darkMode ? "#27542c" : "#c8e6c9" }}>
+                                          <Ionicons name="people" size={13} color={darkMode ? "#81c784" : "#2e7d32"} />
+                                          <Text style={{ fontSize: 11, fontWeight: "bold", color: darkMode ? "#81c784" : "#1b5e20" }}>Batch: {batchName}</Text>
+                                        </View>
+                                      ) : null}
+                                      {faculty ? (
+                                        <Text style={{ fontSize: 12, color: darkMode ? "#aaa" : "#616161" }}>Faculty: {faculty}</Text>
+                                      ) : null}
+                                    </View>
+
+                                    {session.provider ? (
+                                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                                        <Ionicons name="videocam-outline" size={14} color={darkMode ? "#aaa" : "#757575"} />
+                                        <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#757575", textTransform: "capitalize" }}>
+                                          Provider: {session.provider}
+                                        </Text>
+                                      </View>
+                                    ) : null}
+
+                                    {/* Action Buttons: Host/Join Class, End Class, View Attendance */}
+                                    <View style={{ flexDirection: "row", gap: 10, marginTop: 4, flexWrap: "wrap", alignItems: "center" }}>
+                                      <TouchableOpacity
+                                        onPress={() => handleDashboardStartClass(session)}
+                                        style={[styles.primaryBtn, { backgroundColor: "#2e7d32", paddingVertical: 8, paddingHorizontal: 16, flexDirection: "row", alignItems: "center", gap: 6 }]}
+                                      >
+                                        <Ionicons name="play-circle-outline" size={16} color="#fff" />
+                                        <Text style={styles.primaryBtnTxt}>Join / Start Class</Text>
+                                      </TouchableOpacity>
+
+                                      <TouchableOpacity
+                                        onPress={() => handleDashboardEndClass(session)}
+                                        style={{ backgroundColor: "#c62828", paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8, flexDirection: "row", alignItems: "center", gap: 6 }}
+                                      >
+                                        <Ionicons name="stop-circle-outline" size={16} color="#fff" />
+                                        <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 13 }}>End Class</Text>
+                                      </TouchableOpacity>
+
+                                      <TouchableOpacity
+                                        onPress={() => handleDashboardViewAttendance(session)}
+                                        style={{ backgroundColor: "#1565c0", paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8, flexDirection: "row", alignItems: "center", gap: 6 }}
+                                      >
+                                        <Ionicons name="people-outline" size={16} color="#fff" />
+                                        <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 13 }}>View Attendance</Text>
+                                      </TouchableOpacity>
+                                    </View>
+                                  </View>
+                                );
+                              })}
+                            </View>
+                          ) : (
+                            <View
+                              style={[
+                                styles.card,
+                                darkMode && styles.cardDark,
+                                {
+                                  padding: 16,
+                                  borderLeftWidth: 4,
+                                  borderLeftColor: "#2e7d32",
+                                  flexDirection: (isMobile || Platform.OS !== "web") ? "column" : "row",
+                                  alignItems: (isMobile || Platform.OS !== "web") ? "flex-start" : "center",
+                                  justifyContent: "space-between",
+                                  gap: 12
+                                }
+                              ]}
+                            >
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}>
+                                <View style={{
+                                  width: 40,
+                                  height: 40,
+                                  borderRadius: 20,
+                                  backgroundColor: darkMode ? "#192d24" : "#e8f5e9",
+                                  alignItems: "center",
+                                  justifyContent: "center"
+                                }}>
+                                  <Ionicons name="videocam-outline" size={20} color="#2e7d32" />
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={{ fontSize: 13.5, fontWeight: "bold", color: darkMode ? "#fff" : "#212121" }}>
+                                    No Live Classes in Progress
+                                  </Text>
+                                  <Text style={{ fontSize: 11.5, color: darkMode ? "#aaa" : "#666", marginTop: 2, lineHeight: 16 }}>
+                                    {upcomingSessions.length > 0
+                                      ? `Next scheduled: "${upcomingSessions[0].title || "Upcoming Session"}" (${upcomingSessions[0].scheduledStartTime ? new Date(upcomingSessions[0].scheduledStartTime._seconds ? upcomingSessions[0].scheduledStartTime._seconds * 1000 : upcomingSessions[0].scheduledStartTime).toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" }) : "time not set"}).`
+                                      : "When faculty or admins start a live streaming class, it will appear here in real-time."}
+                                  </Text>
+                                </View>
+                              </View>
+                              <TouchableOpacity
+                                onPress={() => { setActiveTab("lms"); changeLmsSub("live-classes"); }}
+                                style={{
+                                  flexDirection: "row",
+                                  alignItems: "center",
+                                  gap: 6,
+                                  backgroundColor: darkMode ? "#2c1a1a" : "#ffebee",
+                                  paddingVertical: 7,
+                                  paddingHorizontal: 12,
+                                  borderRadius: 8,
+                                  borderWidth: 1,
+                                  borderColor: darkMode ? "#c62828" : "#ffcdd2",
+                                  alignSelf: (isMobile || Platform.OS !== "web") ? "flex-start" : "auto"
+                                }}
+                              >
+                                <Ionicons name="calendar-outline" size={14} color="#c62828" />
+                                <Text style={{ color: "#c62828", fontSize: 11.5, fontWeight: "bold" }}>LMS Live Schedule →</Text>
+                              </TouchableOpacity>
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })()}
                   </View>
                 ) : (
                   <>
@@ -21305,7 +22715,7 @@ function MainApp() {
                           </View>
                           <Text style={{ fontSize: 13, color: "#212121", fontWeight: "600", lineHeight: 20 }}>{latestNotif.message}</Text>
                           <TouchableOpacity
-                            onPress={() => { changeErpSub("fees"); setActiveTab("erp"); }}
+                            onPress={() => { changeErpSub("pay-fees"); setActiveTab("erp"); }}
                             style={{ marginTop: 10, backgroundColor: "#c62828", borderRadius: 8, paddingVertical: 8, paddingHorizontal: 14, alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 6 }}
                           >
                             <Ionicons name="card-outline" size={14} color="#ffffff" />
@@ -21663,22 +23073,22 @@ function MainApp() {
                 </View>
               )}
 
-              {/* Backdrop for mobile */}
-              {isMobile && !testSidebarCollapsed && (
+              {/* Backdrop for mobile & APK */}
+              {(isMobile || Platform.OS !== "web") && !testSidebarCollapsed && (
                 <TouchableOpacity
-                  style={{ position: "absolute", inset: 0, zIndex: 1999, backgroundColor: "rgba(0,0,0,0.18)" }}
+                  style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 1999, backgroundColor: "rgba(0,0,0,0.4)" }}
                   onPress={() => setTestSidebarCollapsed(true)}
                   activeOpacity={1}
                 />
               )}
 
               {/* Persistent/Responsive Sidebar */}
-              {(!isMobile || !testSidebarCollapsed) && (
+              {((!isMobile && Platform.OS === "web") || !testSidebarCollapsed) && (
                 <View
                   style={[
                     styles.sidebar,
                     darkMode && styles.sidebarDark,
-                    isMobile
+                    (isMobile || Platform.OS !== "web")
                       ? {
                         height: "100%",
                         paddingHorizontal: 12,
@@ -21689,10 +23099,11 @@ function MainApp() {
                         zIndex: 2000,
                         shadowColor: "#000",
                         shadowOffset: { width: 2, height: 0 },
-                        shadowOpacity: 0.15,
-                        shadowRadius: 4,
-                        elevation: 8,
-                        width: 240,
+                        shadowOpacity: 0.2,
+                        shadowRadius: 6,
+                        elevation: 10,
+                        width: 250,
+                        backgroundColor: darkMode ? "#1e1e1e" : "#ffffff",
                         alignItems: "stretch",
                       }
                       : {
@@ -21767,7 +23178,7 @@ function MainApp() {
                     showsVerticalScrollIndicator={false}
                   >
                     {!testSidebarCollapsed || isMobile ? <Text style={styles.categoryHeader}>EXAMS</Text> : null}
-                    {renderSidebarItem("available", testSub, "Available Exams", "document-text-outline", () => changeTestSub("available"), "test-available", undefined, testSidebarCollapsed && !isMobile, "examinations")}
+                    {renderSidebarItem("available", testSub, "Available Exams", "document-text-outline", () => changeTestSub("available"), "test-available", (offlineTestRequests || []).filter((r: any) => r && r.status === "pending" && !isRequestInvalidOrCompleted(r)).length || undefined, testSidebarCollapsed && !isMobile, "examinations")}
 
                     {isAdmin && (
                       <>
@@ -21784,34 +23195,55 @@ function MainApp() {
 
               {/* Subpage Content on the right */}
               <View style={{ flex: 1, position: "relative" }}>
-                {isMobile && testSidebarCollapsed && (
-                  <TouchableOpacity
-                    onPress={() => setTestSidebarCollapsed(false)}
-                    style={{
-                      position: "absolute",
-                      left: 10,
-                      top: 10,
-                      zIndex: 1000,
-                      backgroundColor: darkMode ? "#1e1e1e" : "#ffffff",
-                      borderRadius: 8,
-                      width: 36,
-                      height: 36,
+                {(isMobile || Platform.OS !== "web") && testSidebarCollapsed && (
+                  <View style={{
+                    backgroundColor: darkMode ? "#181818" : "#ffffff",
+                    borderBottomWidth: 1,
+                    borderBottomColor: darkMode ? "#2a2a2a" : "#eeeeee",
+                    zIndex: 10
+                  }}>
+                    <View style={{
+                      flexDirection: "row",
                       alignItems: "center",
-                      justifyContent: "center",
-                      borderWidth: 1,
-                      borderColor: darkMode ? "#333" : "#e0e0e0",
-                      shadowColor: "#000",
-                      shadowOffset: { width: 0, height: 2 },
-                      shadowOpacity: 0.15,
-                      shadowRadius: 2.5,
-                      elevation: 4
-                    }}
-                  >
-                    <Ionicons name="menu" size={20} color="#c62828" />
-                  </TouchableOpacity>
+                      justifyContent: "space-between",
+                      paddingHorizontal: 14,
+                      paddingVertical: 10,
+                    }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+                        <TouchableOpacity
+                          onPress={() => setTestSidebarCollapsed(false)}
+                          style={{
+                            width: 36,
+                            height: 36,
+                            borderRadius: 8,
+                            alignItems: "center",
+                            justifyContent: "center",
+                            backgroundColor: darkMode ? "#2a2a2a" : "#fff5f5",
+                            borderWidth: 1,
+                            borderColor: darkMode ? "#3a3a3a" : "#ffcdd2",
+                            shadowColor: "#000",
+                            shadowOffset: { width: 0, height: 1 },
+                            shadowOpacity: 0.08,
+                            shadowRadius: 2,
+                            elevation: 2
+                          }}
+                        >
+                          <Ionicons name="menu" size={20} color="#c62828" />
+                        </TouchableOpacity>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 14, fontWeight: "bold", color: darkMode ? "#ffffff" : "#1a237e" }} numberOfLines={1}>
+                            {testSub === "available" ? "Available Exams" : testSub === "pdf-create" ? "AI Test Creation" : testSub === "feedback" ? "Exams Feedback" : testSub === "results" ? "Results Log" : "Test Portal"}
+                          </Text>
+                          <Text style={{ fontSize: 10, color: "#888", fontWeight: "500" }} numberOfLines={1}>
+                            Test Portal • {testSub === "available" ? "Active Mock Tests" : testSub === "pdf-create" ? "Authoring & AI" : testSub === "feedback" ? "Student Feedback" : "Rankings & Scores"}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                  </View>
                 )}
 
-                <ScrollView style={[styles.body, { paddingTop: (isMobile && testSidebarCollapsed) ? 50 : 15 }]} contentContainerStyle={{ paddingBottom: 80 }}>
+                <ScrollView style={[styles.body, { paddingTop: ((isMobile || Platform.OS !== "web") && testSidebarCollapsed) ? 12 : 15 }]} contentContainerStyle={{ paddingBottom: 80 }}>
                   {checkAccessNone(getTestFeatureKey(testSub))}
                   {getFeatureAccess(getTestFeatureKey(testSub)) !== "none" && (
                     <>
@@ -21825,7 +23257,7 @@ function MainApp() {
                               <View style={{
                                 marginBottom: 20,
                                 borderRadius: 16,
-                                padding: 20,
+                                padding: (isMobile || Platform.OS !== "web") ? 14 : 20,
                                 backgroundColor: darkMode ? '#1e1b1b' : '#fff5f5',
                                 borderWidth: 1,
                                 borderColor: darkMode ? '#4a1515' : '#fecaca',
@@ -21839,7 +23271,7 @@ function MainApp() {
                                       </View>
                                       <Text style={{ color: darkMode ? '#9ca3af' : '#6b7280', fontSize: 12 }}>Academic Portal</Text>
                                     </View>
-                                    <Text style={{ fontSize: 20, fontWeight: '800', color: darkMode ? '#f9fafb' : '#111827', marginBottom: 4 }}>
+                                    <Text style={{ fontSize: (isMobile || Platform.OS !== "web") ? 17 : 20, fontWeight: '800', color: darkMode ? '#f9fafb' : '#111827', marginBottom: 4 }}>
                                       Welcome Back, Aspirant! 🎯
                                     </Text>
                                     <Text style={{ fontSize: 13, color: darkMode ? '#d1d5db' : '#4b5563', lineHeight: 18 }}>
@@ -21871,10 +23303,10 @@ function MainApp() {
                           const startMs = t.startTime ? parseTestTimeMs(t.startTime) : (t.createdAt ? parseTestTimeMs(t.createdAt) : 0);
                           const durationMs = (t.durationMinutes ? Number(t.durationMinutes) : 60) * 60 * 1000;
                           const endMs = t.endTime ? parseTestTimeMs(t.endTime) : (startMs ? startMs + durationMs : 0);
-                          
+
                           // If end time is past, it's ended (never LIVE)
                           if (endMs > 0 && now > endMs) return false;
-                          
+
                           // If start time is in future, it's scheduled (not LIVE)
                           if (startMs > 0 && now < startMs) return false;
 
@@ -21907,29 +23339,91 @@ function MainApp() {
                             ) : (
                               <>
                                 {(!showLive || liveTests.length === 0) && (!showScheduled || scheduledTests.length === 0) && (!showPast || pastTests.length === 0) && (
-                                  <View style={styles.emptyContainer}>
-                                    <Ionicons name="document-text-outline" size={40} color="#757575" />
-                                    <Text style={styles.emptyText}>No mock tests available right now.</Text>
-                                    <Text style={{ fontSize: 11, color: "#9e9e9e", marginTop: 4, textAlign: "center" }}>Check the Results Log for completed tests.</Text>
+                                  <View style={[styles.emptyContainer, {
+                                    paddingVertical: (isMobile || Platform.OS !== "web") ? 28 : 40,
+                                    backgroundColor: darkMode ? "#1e1e1e" : "#ffffff",
+                                    borderRadius: 14,
+                                    borderWidth: 1,
+                                    borderColor: darkMode ? "#2a2a2a" : "#eeeeee",
+                                    marginVertical: 4
+                                  }]}>
+                                    <Ionicons name="document-text-outline" size={(isMobile || Platform.OS !== "web") ? 36 : 40} color="#9e9e9e" />
+                                    <Text style={[styles.emptyText, { fontWeight: "600", fontSize: (isMobile || Platform.OS !== "web") ? 13 : 14, color: darkMode ? "#ddd" : "#555" }]}>No mock tests available right now.</Text>
+                                    <Text style={{ fontSize: 11, color: "#9e9e9e", marginTop: 2, textAlign: "center" }}>Check the Results Log for completed tests.</Text>
                                   </View>
                                 )}
 
                                 {/* ADMIN: OFFLINE STUDENT TEST REQUESTS MANAGER */}
                                 {isAdmin && (
-                                  <View style={{ marginBottom: 16, backgroundColor: darkMode ? "#1e1e1e" : "#ffffff", borderRadius: 12, padding: 14, borderWidth: 1, borderColor: darkMode ? "#333" : "#e0e0e0", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 2 }}>
-                                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                                        <Ionicons name="key-outline" size={20} color="#c62828" />
-                                        <Text style={{ fontSize: 14, fontWeight: "bold", color: darkMode ? "#fff" : "#111" }}>
-                                          Offline Student Test Requests ({offlineTestRequests.filter((r: any) => r.status === "pending" && !isRequestInvalidOrCompleted(r)).length} Pending)
+                                  <View style={{
+                                    marginBottom: 16,
+                                    backgroundColor: darkMode ? "#1e1e1e" : "#ffffff",
+                                    borderRadius: 12,
+                                    padding: (isMobile || Platform.OS !== "web") ? 12 : 14,
+                                    borderWidth: 1,
+                                    borderColor: darkMode ? "#333" : "#e0e0e0",
+                                    shadowColor: "#000",
+                                    shadowOffset: { width: 0, height: 2 },
+                                    shadowOpacity: 0.05,
+                                    shadowRadius: 3,
+                                    elevation: 2,
+                                    overflow: "hidden"
+                                  }}>
+                                    <View style={{
+                                      flexDirection: "row",
+                                      justifyContent: "space-between",
+                                      alignItems: "center",
+                                      marginBottom: 10,
+                                      flexWrap: "wrap",
+                                      gap: 8
+                                    }}>
+                                      <View style={{
+                                        flexDirection: "row",
+                                        alignItems: "center",
+                                        gap: 6,
+                                        flexShrink: 1,
+                                        flexWrap: "wrap"
+                                      }}>
+                                        <Ionicons name="key-outline" size={(isMobile || Platform.OS !== "web") ? 18 : 20} color="#c62828" />
+                                        <Text style={{
+                                          fontSize: (isMobile || Platform.OS !== "web") ? 13 : 14,
+                                          fontWeight: "bold",
+                                          color: darkMode ? "#fff" : "#111",
+                                        }}>
+                                          {(isMobile || Platform.OS !== "web") ? "Offline Requests" : "Offline Student Test Requests"}
                                         </Text>
+                                        <View style={{
+                                          backgroundColor: offlineTestRequests.filter((r: any) => r.status === "pending" && !isRequestInvalidOrCompleted(r)).length > 0 ? "#ffebee" : (darkMode ? "#333" : "#f0f0f0"),
+                                          paddingHorizontal: 7,
+                                          paddingVertical: 2,
+                                          borderRadius: 10,
+                                        }}>
+                                          <Text style={{
+                                            fontSize: 10,
+                                            fontWeight: "bold",
+                                            color: offlineTestRequests.filter((r: any) => r.status === "pending" && !isRequestInvalidOrCompleted(r)).length > 0 ? "#c62828" : "#757575",
+                                          }}>
+                                            {offlineTestRequests.filter((r: any) => r.status === "pending" && !isRequestInvalidOrCompleted(r)).length} Pending
+                                          </Text>
+                                        </View>
                                       </View>
-                                      <View style={{ flexDirection: "row", gap: 6 }}>
+                                      <View style={{ flexDirection: "row", gap: 6, alignItems: "center", flexShrink: 0 }}>
                                         <TouchableOpacity
                                           onPress={() => loadOfflineTestRequests()}
-                                          style={{ paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, backgroundColor: darkMode ? "#1a3a1a" : "#e8f5e9" }}
+                                          style={{
+                                            flexDirection: "row",
+                                            alignItems: "center",
+                                            gap: 4,
+                                            paddingHorizontal: 9,
+                                            paddingVertical: 5,
+                                            borderRadius: 6,
+                                            backgroundColor: darkMode ? "#1a3a1a" : "#e8f5e9",
+                                            borderWidth: 1,
+                                            borderColor: darkMode ? "#2e7d32" : "#c8e6c9"
+                                          }}
                                         >
-                                          <Text style={{ fontSize: 10, color: "#2e7d32", fontWeight: "bold" }}>↻ Refresh</Text>
+                                          <Ionicons name="refresh" size={12} color="#2e7d32" />
+                                          <Text style={{ fontSize: 10.5, color: "#2e7d32", fontWeight: "bold" }}>Refresh</Text>
                                         </TouchableOpacity>
                                         {offlineTestRequests.length > 0 && (
                                           <TouchableOpacity
@@ -21941,7 +23435,7 @@ function MainApp() {
                                                 Alert.alert("Error", e.message || "Failed to clear requests");
                                               }
                                             }}
-                                            style={{ paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, backgroundColor: darkMode ? "#333" : "#f5f5f5" }}
+                                            style={{ paddingHorizontal: 8, paddingVertical: 5, borderRadius: 6, backgroundColor: darkMode ? "#333" : "#f5f5f5" }}
                                           >
                                             <Text style={{ fontSize: 10, color: darkMode ? "#aaa" : "#666", fontWeight: "bold" }}>Clear All</Text>
                                           </TouchableOpacity>
@@ -21975,7 +23469,7 @@ function MainApp() {
                                       return (
                                         <View style={{ gap: 8, marginTop: 6 }}>
                                           {deduplicatedRequests.map((req: any) => (
-                                            <View key={req.id || `${req.testId}_${req.studentId}`} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 10, borderRadius: 8, backgroundColor: darkMode ? "#2a2a2a" : "#f9f9f9", borderWidth: 1, borderColor: darkMode ? "#3a3a3a" : "#eee" }}>
+                                            <View key={req.id || `${req.testId}_${req.studentId}`} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 10, borderRadius: 8, backgroundColor: darkMode ? "#2a2a2a" : "#f9f9f9", borderWidth: 1, borderColor: darkMode ? "#3a3a3a" : "#eee", flexWrap: "wrap", gap: 8 }}>
                                               <View style={{ flex: 1, paddingRight: 10 }}>
                                                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                                                   <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#111" }}>{req.studentName}</Text>
@@ -22074,11 +23568,11 @@ function MainApp() {
                                       const targetModes = targetBatchName && myStudent?.batchModes ? (myStudent.batchModes[targetBatchName] || []) : [];
 
                                       const studentType = (myStudent?.type || myStudent?.mode || myStudent?.admissionType || user?.type || "").toLowerCase();
-                                       const isOfflineStudent = !isAdmin && (
-                                         studentType === "offline" ||
-                                         myStudent?.isOffline === true
-                                       );
-                                       const requiresPermissionRequest = isOfflineStudent && !t.allowOfflineDirectly;
+                                      const isOfflineStudent = !isAdmin && (
+                                        studentType === "offline" ||
+                                        myStudent?.isOffline === true
+                                      );
+                                      const requiresPermissionRequest = isOfflineStudent && !t.allowOfflineDirectly;
 
                                       const matchingReqs = requiresPermissionRequest
                                         ? offlineTestRequests.filter((r: any) => {
@@ -22274,105 +23768,105 @@ function MainApp() {
                                     <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4, marginBottom: 2 }}>
                                       <Ionicons name="time-outline" size={14} color="#f57c00" />
                                       <Text style={{ fontSize: 13, fontWeight: "800", color: "#f57c00" }}>UPCOMING TESTS ({scheduledTests.length})</Text>
-                                     </View>
-                                     {scheduledTests.map((t: any) => {
-                                       const myStudent = getLoggedInStudent(user, students);
-                                       const targetBatchName = t.targetBatch;
-                                       const targetModes = targetBatchName && myStudent?.batchModes ? (myStudent.batchModes[targetBatchName] || []) : [];
+                                    </View>
+                                    {scheduledTests.map((t: any) => {
+                                      const myStudent = getLoggedInStudent(user, students);
+                                      const targetBatchName = t.targetBatch;
+                                      const targetModes = targetBatchName && myStudent?.batchModes ? (myStudent.batchModes[targetBatchName] || []) : [];
 
-                                       const studentType = (myStudent?.type || myStudent?.mode || myStudent?.admissionType || user?.type || "").toLowerCase();
-                                       const isOfflineStudent = !isAdmin && (
-                                         studentType === "offline" ||
-                                         myStudent?.isOffline === true
-                                       );
-                                       const requiresPermissionRequest = isOfflineStudent && !t.allowOfflineDirectly;
+                                      const studentType = (myStudent?.type || myStudent?.mode || myStudent?.admissionType || user?.type || "").toLowerCase();
+                                      const isOfflineStudent = !isAdmin && (
+                                        studentType === "offline" ||
+                                        myStudent?.isOffline === true
+                                      );
+                                      const requiresPermissionRequest = isOfflineStudent && !t.allowOfflineDirectly;
 
-                                       /* requiresPermissionRequest computed above */
+                                      /* requiresPermissionRequest computed above */
 
-                                       const matchingReqs = requiresPermissionRequest
-                                         ? offlineTestRequests.filter((r: any) => {
-                                           const rTestId = String(r.testId || "").trim();
-                                           const tId = String(t.id || t._id || "").trim();
-                                           if (rTestId !== tId) return false;
+                                      const matchingReqs = requiresPermissionRequest
+                                        ? offlineTestRequests.filter((r: any) => {
+                                          const rTestId = String(r.testId || "").trim();
+                                          const tId = String(t.id || t._id || "").trim();
+                                          if (rTestId !== tId) return false;
 
-                                           const rSId = String(r.studentId || "").trim().toLowerCase();
-                                           const rRoll = String(r.rollNumber || "").trim().toLowerCase();
-                                           const rUname = String(r.username || "").trim().toLowerCase();
+                                          const rSId = String(r.studentId || "").trim().toLowerCase();
+                                          const rRoll = String(r.rollNumber || "").trim().toLowerCase();
+                                          const rUname = String(r.username || "").trim().toLowerCase();
 
-                                           const mySId = String(myStudent?.id || "").trim().toLowerCase();
-                                           const myRoll = String(myStudent?.rollNumber || "").trim().toLowerCase();
-                                           const myUId = String(user?.userId || "").trim().toLowerCase();
-                                           const myUname = String(user?.username || "").trim().toLowerCase();
+                                          const mySId = String(myStudent?.id || "").trim().toLowerCase();
+                                          const myRoll = String(myStudent?.rollNumber || "").trim().toLowerCase();
+                                          const myUId = String(user?.userId || "").trim().toLowerCase();
+                                          const myUname = String(user?.username || "").trim().toLowerCase();
 
-                                           return (
-                                             (mySId && rSId === mySId) ||
-                                             (myUId && rSId === myUId) ||
-                                             (myRoll && (rRoll === myRoll || rSId === myRoll)) ||
-                                             (myUname && (rUname === myUname || rSId === myUname || rRoll === myUname))
-                                           );
-                                         })
-                                         : [];
+                                          return (
+                                            (mySId && rSId === mySId) ||
+                                            (myUId && rSId === myUId) ||
+                                            (myRoll && (rRoll === myRoll || rSId === myRoll)) ||
+                                            (myUname && (rUname === myUname || rSId === myUname || rRoll === myUname))
+                                          );
+                                        })
+                                        : [];
 
-                                       const hasApprovedReq = matchingReqs.some((r: any) => r.status === "approved");
-                                       const hasPendingReq = !hasApprovedReq && matchingReqs.some((r: any) => r.status === "pending");
-                                       const hasRejectedReq = !hasApprovedReq && !hasPendingReq && matchingReqs.some((r: any) => r.status === "rejected");
+                                      const hasApprovedReq = matchingReqs.some((r: any) => r.status === "approved");
+                                      const hasPendingReq = !hasApprovedReq && matchingReqs.some((r: any) => r.status === "pending");
+                                      const hasRejectedReq = !hasApprovedReq && !hasPendingReq && matchingReqs.some((r: any) => r.status === "rejected");
 
-                                       const req = hasApprovedReq
-                                         ? { status: "approved" }
-                                         : hasPendingReq
-                                           ? { status: "pending" }
-                                           : hasRejectedReq
-                                             ? { status: "rejected" }
-                                             : null;
+                                      const req = hasApprovedReq
+                                        ? { status: "approved" }
+                                        : hasPendingReq
+                                          ? { status: "pending" }
+                                          : hasRejectedReq
+                                            ? { status: "rejected" }
+                                            : null;
 
-                                       return (
-                                         <View key={t.id} style={[styles.card, { borderLeftWidth: 4, borderLeftColor: "#f57c00", opacity: 0.85 }]}>
-                                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
-                                          <Text style={[styles.noticeTitle, { flex: 1 }]}>{t.title}</Text>
-                                          <View style={{ backgroundColor: "#fff8e1", borderRadius: 12, paddingHorizontal: 8, paddingVertical: 3, marginLeft: 8 }}>
-                                            <Text style={{ fontSize: 10, color: "#f57c00", fontWeight: "800" }}>SCHEDULED</Text>
+                                      return (
+                                        <View key={t.id} style={[styles.card, { borderLeftWidth: 4, borderLeftColor: "#f57c00", opacity: 0.85 }]}>
+                                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+                                            <Text style={[styles.noticeTitle, { flex: 1 }]}>{t.title}</Text>
+                                            <View style={{ backgroundColor: "#fff8e1", borderRadius: 12, paddingHorizontal: 8, paddingVertical: 3, marginLeft: 8 }}>
+                                              <Text style={{ fontSize: 10, color: "#f57c00", fontWeight: "800" }}>SCHEDULED</Text>
+                                            </View>
                                           </View>
-                                        </View>
-                                        <Text style={styles.noticeContent}>{t.description}</Text>
-                                        <View style={{ marginTop: 6, gap: 2, marginBottom: 6 }}>
-                                          <Text style={{ fontSize: 12, color: "#f57c00", fontWeight: "600" }}>
-                                            Starts: {new Date(t.startTime).toLocaleString()}
-                                          </Text>
-                                          {t.endTime && <Text style={{ fontSize: 11, color: "#757575" }}>Ends: {new Date(t.endTime).toLocaleString()}</Text>}
-                                        </View>
-                                        <Text style={styles.noticeMeta}>Duration: {t.durationMinutes} Mins | Passing: {t.passingMarks}</Text>
-                                        {isAdmin ? (
-                                          <TouchableOpacity disabled style={[styles.primaryBtn, { marginTop: 10, backgroundColor: "#bdbdbd" }]}>
-                                            <Ionicons name="time-outline" size={15} color="#fff" style={{ marginRight: 6 }} />
-                                            <Text style={styles.primaryBtnTxt}>Not Started Yet</Text>
-                                          </TouchableOpacity>
-                                        ) : (
-                                          requiresPermissionRequest && req?.status !== "approved" ? (
-                                             req?.status === "pending" ? (
-                                               <View style={{ marginTop: 10, padding: 10, borderRadius: 8, backgroundColor: "#fff3e0", borderWidth: 1, borderColor: "#ffe0b2", flexDirection: "row", alignItems: "center", gap: 8 }}>
-                                                 <ActivityIndicator size="small" color="#e65100" />
-                                                 <Text style={{ fontSize: 12, fontWeight: "bold", color: "#e65100", flex: 1 }}>
-                                                   ⏳ Permission Requested — Awaiting Admin Approval
-                                                 </Text>
-                                               </View>
-                                             ) : (
-                                               <TouchableOpacity
-                                                 onPress={async () => {
-                                                   const cleanSId = String(myStudent?.id || user?.userId || user?.username || "std").toLowerCase().replace(/[^a-z0-9_-]/g, "");
-                                                   const reqDocId = `req_${t.id}_${cleanSId}`;
+                                          <Text style={styles.noticeContent}>{t.description}</Text>
+                                          <View style={{ marginTop: 6, gap: 2, marginBottom: 6 }}>
+                                            <Text style={{ fontSize: 12, color: "#f57c00", fontWeight: "600" }}>
+                                              Starts: {new Date(t.startTime).toLocaleString()}
+                                            </Text>
+                                            {t.endTime && <Text style={{ fontSize: 11, color: "#757575" }}>Ends: {new Date(t.endTime).toLocaleString()}</Text>}
+                                          </View>
+                                          <Text style={styles.noticeMeta}>Duration: {t.durationMinutes} Mins | Passing: {t.passingMarks}</Text>
+                                          {isAdmin ? (
+                                            <TouchableOpacity disabled style={[styles.primaryBtn, { marginTop: 10, backgroundColor: "#bdbdbd" }]}>
+                                              <Ionicons name="time-outline" size={15} color="#fff" style={{ marginRight: 6 }} />
+                                              <Text style={styles.primaryBtnTxt}>Not Started Yet</Text>
+                                            </TouchableOpacity>
+                                          ) : (
+                                            requiresPermissionRequest && req?.status !== "approved" ? (
+                                              req?.status === "pending" ? (
+                                                <View style={{ marginTop: 10, padding: 10, borderRadius: 8, backgroundColor: "#fff3e0", borderWidth: 1, borderColor: "#ffe0b2", flexDirection: "row", alignItems: "center", gap: 8 }}>
+                                                  <ActivityIndicator size="small" color="#e65100" />
+                                                  <Text style={{ fontSize: 12, fontWeight: "bold", color: "#e65100", flex: 1 }}>
+                                                    ⏳ Permission Requested — Awaiting Admin Approval
+                                                  </Text>
+                                                </View>
+                                              ) : (
+                                                <TouchableOpacity
+                                                  onPress={async () => {
+                                                    const cleanSId = String(myStudent?.id || user?.userId || user?.username || "std").toLowerCase().replace(/[^a-z0-9_-]/g, "");
+                                                    const reqDocId = `req_${t.id}_${cleanSId}`;
 
-                                                   const reqObj = {
-                                                     id: reqDocId,
-                                                     testId: t.id,
-                                                     testTitle: t.title,
-                                                     studentId: myStudent?.id || user?.userId || user?.username || cleanSId,
-                                                     studentName: getStudentName(myStudent) || user?.fullName || user?.username || "Offline Student",
-                                                     rollNumber: myStudent?.rollNumber || user?.username || "—",
-                                                     batch: myStudent?.batch || myStudent?.batchName || "Offline",
-                                                     username: user?.username || "",
-                                                     status: "pending",
-                                                     requestedAt: new Date().toISOString()
-                                                   };
+                                                    const reqObj = {
+                                                      id: reqDocId,
+                                                      testId: t.id,
+                                                      testTitle: t.title,
+                                                      studentId: myStudent?.id || user?.userId || user?.username || cleanSId,
+                                                      studentName: getStudentName(myStudent) || user?.fullName || user?.username || "Offline Student",
+                                                      rollNumber: myStudent?.rollNumber || user?.username || "—",
+                                                      batch: myStudent?.batch || myStudent?.batchName || "Offline",
+                                                      username: user?.username || "",
+                                                      status: "pending",
+                                                      requestedAt: new Date().toISOString()
+                                                    };
                                                     try {
                                                       await api.post("/test-portal/test-creation/permission-requests", reqObj);
                                                       try {
@@ -22398,28 +23892,28 @@ function MainApp() {
                                                       setOfflineTestRequests(prev => [reqObj, ...prev.filter((r: any) => !(String(r.testId || '') === String(t.id || '') && (r.studentId === reqObj.studentId || r.rollNumber === reqObj.rollNumber || r.id === reqDocId)))]);
                                                       Alert.alert("Permission Requested", "Your request to attend this test has been sent to Super Admin / Admin for approval.");
                                                     } catch (e: any) {
-                                                     Alert.alert("Error", e.message || "Failed to send permission request. Please check your connection.");
-                                                   }
-                                                 }}
-                                                 style={[styles.primaryBtn, { marginTop: 10, backgroundColor: "#e65100", flexDirection: "row", gap: 6 }]}
-                                               >
-                                                 <Ionicons name="hand-right-outline" size={18} color="#fff" />
-                                                 <Text style={styles.primaryBtnTxt}>{req?.status === "rejected" ? "❌ Request Rejected (Tap to Re-send)" : "✋ Request Permission to Attend Test"}</Text>
-                                               </TouchableOpacity>
-                                             )
-                                           ) : (
-                                             <TouchableOpacity
-                                               onPress={() => setWaitingRoomTest(t)}
-                                               style={[styles.primaryBtn, { marginTop: 10, backgroundColor: "#f57c00", flexDirection: "row", gap: 6 }]}
-                                             >
-                                               <Ionicons name="hourglass-outline" size={15} color="#fff" />
-                                               <Text style={styles.primaryBtnTxt}>Enter Waiting Room</Text>
+                                                      Alert.alert("Error", e.message || "Failed to send permission request. Please check your connection.");
+                                                    }
+                                                  }}
+                                                  style={[styles.primaryBtn, { marginTop: 10, backgroundColor: "#e65100", flexDirection: "row", gap: 6 }]}
+                                                >
+                                                  <Ionicons name="hand-right-outline" size={18} color="#fff" />
+                                                  <Text style={styles.primaryBtnTxt}>{req?.status === "rejected" ? "❌ Request Rejected (Tap to Re-send)" : "✋ Request Permission to Attend Test"}</Text>
+                                                </TouchableOpacity>
+                                              )
+                                            ) : (
+                                              <TouchableOpacity
+                                                onPress={() => setWaitingRoomTest(t)}
+                                                style={[styles.primaryBtn, { marginTop: 10, backgroundColor: "#f57c00", flexDirection: "row", gap: 6 }]}
+                                              >
+                                                <Ionicons name="hourglass-outline" size={15} color="#fff" />
+                                                <Text style={styles.primaryBtnTxt}>Enter Waiting Room</Text>
                                               </TouchableOpacity>
                                             )
-                                         )}
-                                       </View>
-                                     );
-                                   })}
+                                          )}
+                                        </View>
+                                      );
+                                    })}
                                   </>
                                 )}
                               </>
@@ -22517,31 +24011,14 @@ function MainApp() {
                                   {(() => {
                                     const uniqueSubjects = [...new Set(lmsSubjects.map(s => s.name || s.title || ""))].filter(Boolean);
                                     return (
-                                      <select
+                                      <UniversalDropdown
                                         value={newPdfTest.subject || ""}
-                                        onChange={e => {
-                                          const val = e.target.value;
-                                          setNewPdfTest({ ...newPdfTest, subject: val, topic: "" });
-                                        }}
-                                        style={{
-                                          width: "100%",
-                                          height: 40,
-                                          borderRadius: 8,
-                                          paddingLeft: 10,
-                                          paddingRight: 10,
-                                          fontSize: 14,
-                                          backgroundColor: darkMode ? "#2a2a2a" : "#fcfcfc",
-                                          color: darkMode ? "#e0e0e0" : "#212121",
-                                          border: "1px solid " + (darkMode ? "#3a3a3a" : "#e0e0e0"),
-                                          marginBottom: 12,
-                                          outline: "none"
-                                        }}
-                                      >
-                                        <option value="">-- Select Subject --</option>
-                                        {uniqueSubjects.map(sName => (
-                                          <option key={sName} value={sName}>{sName}</option>
-                                        ))}
-                                      </select>
+                                        placeholder="-- Select Subject --"
+                                        darkMode={darkMode}
+                                        options={uniqueSubjects.map(sName => ({ label: sName, value: sName }))}
+                                        onSelect={val => setNewPdfTest({ ...newPdfTest, subject: val, topic: "" })}
+                                        style={{ marginBottom: 12 }}
+                                      />
                                     );
                                   })()}
 
@@ -22551,32 +24028,15 @@ function MainApp() {
                                     const filteredTopics = lmsTopics.filter(t => matchedSubjectIds.includes(t.subjectId));
                                     const uniqueTopics = [...new Set(filteredTopics.map(t => t.name || t.title || ""))].filter(Boolean);
                                     return (
-                                      <select
+                                      <UniversalDropdown
                                         disabled={!newPdfTest.subject}
                                         value={newPdfTest.topic || ""}
-                                        onChange={e => {
-                                          setNewPdfTest({ ...newPdfTest, topic: e.target.value });
-                                        }}
-                                        style={{
-                                          width: "100%",
-                                          height: 40,
-                                          borderRadius: 8,
-                                          paddingLeft: 10,
-                                          paddingRight: 10,
-                                          fontSize: 14,
-                                          backgroundColor: darkMode ? "#2a2a2a" : "#fcfcfc",
-                                          color: darkMode ? "#e0e0e0" : "#212121",
-                                          border: "1px solid " + (darkMode ? "#3a3a3a" : "#e0e0e0"),
-                                          marginBottom: 12,
-                                          outline: "none",
-                                          opacity: !newPdfTest.subject ? 0.5 : 1
-                                        }}
-                                      >
-                                        <option value="">-- Select Sub-Topic --</option>
-                                        {uniqueTopics.map(tName => (
-                                          <option key={tName} value={tName}>{tName}</option>
-                                        ))}
-                                      </select>
+                                        placeholder="-- Select Sub-Topic --"
+                                        darkMode={darkMode}
+                                        options={uniqueTopics.map(tName => ({ label: tName, value: tName }))}
+                                        onSelect={val => setNewPdfTest({ ...newPdfTest, topic: val })}
+                                        style={{ marginBottom: 12 }}
+                                      />
                                     );
                                   })()}
                                 </>
@@ -23807,7 +25267,7 @@ SOURCE QUESTION PAPER:
                                     );
                                   })()}
 
-                                                                    <Text style={[styles.label, darkMode && styles.labelDark]}>Paste Questions JSON Array *:</Text>
+                                  <Text style={[styles.label, darkMode && styles.labelDark]}>Paste Questions JSON Array *:</Text>
                                   <TextInput
                                     style={[styles.input, darkMode && styles.inputDark, { minHeight: 220, maxHeight: 400, textAlignVertical: "top", padding: 12, fontFamily: "monospace", fontSize: 11 }]}
                                     placeholder={`[\n  {\n    "question": "Question text...",\n    "option a": "Choice 1",\n    "option b": "Choice 2",\n    ... \n  }\n]`}
@@ -23923,36 +25383,36 @@ SOURCE QUESTION PAPER:
                                       </TouchableOpacity>
                                     ))}
                                   </View>
-                                
+
 
                                   {/* Individual Test Duration Input Box - Only for Flexible mode */}
                                   {(newPdfTest.schedulingMode || "fixed") === "flexible" && (
                                     <View style={{ marginTop: 4, paddingTop: 8, borderTopWidth: 1, borderTopColor: darkMode ? "#333" : "#e0e0e0" }}>
-                                    <Text style={{ fontSize: 10, fontWeight: "bold", color: darkMode ? "#9fa8da" : "#3949ab", marginBottom: 4 }}>
-                                      Test Duration (in Minutes):
-                                    </Text>
-                                    <TextInput
-                                      style={{
-                                        backgroundColor: darkMode ? "#2a2a2a" : "#fff",
-                                        borderColor: darkMode ? "#444" : "#ccc",
-                                        borderWidth: 1,
-                                        borderRadius: 6,
-                                        paddingHorizontal: 10,
-                                        paddingVertical: 6,
-                                        color: darkMode ? "#fff" : "#000",
-                                        fontSize: 12
-                                      }}
-                                      placeholder="e.g. 120 (for 2 hours)"
-                                      placeholderTextColor={darkMode ? "#888" : "#999"}
-                                      keyboardType="numeric"
-                                      value={newPdfTest.duration ? String(newPdfTest.duration) : ""}
-                                      onChangeText={(t) => setNewPdfTest({ ...newPdfTest, duration: t })}
-                                    />
-                                    <Text style={{ fontSize: 9, color: darkMode ? "#aaa" : "#777", marginTop: 3 }}>
-                                      For flexible tests, students get this exact duration (e.g. 120 mins) from the moment they click Start within the availability window.
-                                    </Text>
-                                  </View>
-                                )}</View>
+                                      <Text style={{ fontSize: 10, fontWeight: "bold", color: darkMode ? "#9fa8da" : "#3949ab", marginBottom: 4 }}>
+                                        Test Duration (in Minutes):
+                                      </Text>
+                                      <TextInput
+                                        style={{
+                                          backgroundColor: darkMode ? "#2a2a2a" : "#fff",
+                                          borderColor: darkMode ? "#444" : "#ccc",
+                                          borderWidth: 1,
+                                          borderRadius: 6,
+                                          paddingHorizontal: 10,
+                                          paddingVertical: 6,
+                                          color: darkMode ? "#fff" : "#000",
+                                          fontSize: 12
+                                        }}
+                                        placeholder="e.g. 120 (for 2 hours)"
+                                        placeholderTextColor={darkMode ? "#888" : "#999"}
+                                        keyboardType="numeric"
+                                        value={newPdfTest.duration ? String(newPdfTest.duration) : ""}
+                                        onChangeText={(t) => setNewPdfTest({ ...newPdfTest, duration: t })}
+                                      />
+                                      <Text style={{ fontSize: 9, color: darkMode ? "#aaa" : "#777", marginTop: 3 }}>
+                                        For flexible tests, students get this exact duration (e.g. 120 mins) from the moment they click Start within the availability window.
+                                      </Text>
+                                    </View>
+                                  )}</View>
                               </View>
 
                               {/* Target Audience Fields */}
@@ -24154,7 +25614,7 @@ SOURCE QUESTION PAPER:
                                 <View style={{ backgroundColor: darkMode ? "#222" : "#f9f9f9", padding: 15, borderRadius: 12, marginBottom: 15, borderLeftWidth: 4, borderLeftColor: "#2e7d32" }}>
                                   <Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#212121", marginBottom: 10 }}>Test Settings (Marking Scheme)</Text>
                                   <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12, alignItems: "flex-start" }}>
-                                    
+
                                     {/* Correct Answer Marks */}
                                     <View style={{ flex: 1, minWidth: 140 }}>
                                       <Text style={[styles.label, darkMode && styles.labelDark]}>Correct Answer Marks:</Text>
@@ -25001,9 +26461,74 @@ SOURCE QUESTION PAPER:
                                             </View>
                                           )}
 
-                                          <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
-                                            {isAdmin ? (
-                                              <>
+                                          {(() => {
+                                            const isMobileBtn = isMobile || Platform.OS !== "web";
+                                            if (!isAdmin) {
+                                              return null;
+                                            }
+
+                                            if (isMobileBtn && hasSubjects) {
+                                              return (
+                                                <View style={{ gap: 8, marginTop: 8 }}>
+                                                  {/* Row 1: Analytics & Reports */}
+                                                  <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+                                                    <TouchableOpacity
+                                                      onPress={() => {
+                                                        const nextId = isDiagExpanded ? null : t.id;
+                                                        setExpandedClosedTestDiagId(nextId);
+                                                        if (nextId) fetchTestDiagnostics(t.id);
+                                                      }}
+                                                      style={{ flex: 1, backgroundColor: isDiagExpanded ? "#0369a1" : "#0284c7", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 5 }}
+                                                    >
+                                                      <Ionicons name="pie-chart-outline" size={14} color="#fff" />
+                                                      <Text style={{ color: "#fff", fontSize: 11, fontWeight: "700" }}>{isDiagExpanded ? "Hide Analytics" : "Analytics"}</Text>
+                                                    </TouchableOpacity>
+                                                    <TouchableOpacity
+                                                      onPress={() => {
+                                                        setReportsModalTestId(t.id);
+                                                        setReportsModalTestTitle(t.title || "Question Reports");
+                                                        fetchQuestionReports(t.id);
+                                                        setShowTopReportsModal(true);
+                                                      }}
+                                                      style={{ flex: 1, backgroundColor: "#d32f2f", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 5 }}
+                                                    >
+                                                      <Ionicons name="warning-outline" size={14} color="#fff" />
+                                                      <Text style={{ color: "#fff", fontSize: 11, fontWeight: "700" }}>Reports</Text>
+                                                    </TouchableOpacity>
+                                                  </View>
+
+                                                  {/* Row 2: View Leaderboard & Trash */}
+                                                  <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+                                                    <TouchableOpacity
+                                                      onPress={() => monitorTest(t.id)}
+                                                      style={{ flex: 1, backgroundColor: "#2e7d32", borderRadius: 8, paddingVertical: 8, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 6 }}
+                                                    >
+                                                      <Ionicons name="trophy-outline" size={14} color="#fff" />
+                                                      <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>View Leaderboard</Text>
+                                                    </TouchableOpacity>
+                                                    <TouchableOpacity
+                                                      onPress={() => {
+                                                        executeDelete("tests", t.id, async () => {
+                                                          try {
+                                                            await api.delete(`/test-portal/test-creation/${t.id}`);
+                                                            Alert.alert("Success", "Test deleted successfully.");
+                                                            loadTests();
+                                                          } catch (e: any) {
+                                                            Alert.alert("Error", e.message || "Failed to delete test.");
+                                                          }
+                                                        });
+                                                      }}
+                                                      style={{ width: 38, height: 38, borderRadius: 8, backgroundColor: "#ffebee", justifyContent: "center", alignItems: "center" }}
+                                                    >
+                                                      <Ionicons name="trash-outline" size={18} color="#c62828" />
+                                                    </TouchableOpacity>
+                                                  </View>
+                                                </View>
+                                              );
+                                            }
+
+                                            return (
+                                              <View style={{ flexDirection: "row", gap: 8, marginTop: 8, alignItems: "center" }}>
                                                 {hasSubjects && (
                                                   <TouchableOpacity
                                                     onPress={() => {
@@ -25052,8 +26577,11 @@ SOURCE QUESTION PAPER:
                                                 >
                                                   <Ionicons name="trash-outline" size={18} color="#c62828" />
                                                 </TouchableOpacity>
-                                              </>
-                                            ) : (
+                                              </View>
+                                            );
+                                          })()}
+                                          <View style={{ flexDirection: "row", gap: 8, marginTop: !isAdmin ? 8 : 0, alignItems: "center" }}>
+                                            {isAdmin ? null : (
                                               <>
                                                 {hasAttempt ? (
                                                   <TouchableOpacity
@@ -25247,126 +26775,126 @@ SOURCE QUESTION PAPER:
                                           </View>
 
                                           {isMobile ? (
-                                        <View style={{ padding: 8 }}>
-                                          {(testLog.entries || []).map((entry: any, idx: number) => {
-                                            const isGenericName = (name: string) => {
-                                              if (!name) return true;
-                                              const s = String(name).trim().toLowerCase();
-                                              return s === "student" || s === "guest" || s === "guest user" || s === "n/a" || s.startsWith("guest:") || s.startsWith("guest ") || s.startsWith("student (") || s.startsWith("stu-");
-                                            };
-                                            let sName = (entry.studentName && !isGenericName(entry.studentName)) ? entry.studentName : "";
-                                            if (!sName && user && (user.id === entry.studentId || user.userId === entry.studentId || user.leadId === entry.studentId || user.email === entry.studentId)) {
-                                              sName = user.name || user.email?.split("@")[0];
-                                            }
-                                            if (!sName) sName = entry.username || entry.name || "Guest User";
-                                            const displayRoll = (entry.rollNumber && !isGenericName(entry.rollNumber)) ? entry.rollNumber : sName;
-                                            const perf = getPerformanceStatus(entry.obtainedMarks ?? 0, entry.totalMarks ?? 0, entry.percentage);
-                                            const correct = entry.correct ?? 0;
-                                            const wrong = entry.wrong ?? 0;
-                                            const attended = correct + wrong;
-
-                                            return (
-                                              <View
-                                                key={entry.attemptId || idx}
-                                                style={{
-                                                  padding: 10,
-                                                  borderRadius: 8,
-                                                  borderWidth: 1,
-                                                  borderColor: darkMode ? "#333" : "#e0e0e0",
-                                                  backgroundColor: idx % 2 === 0 ? (darkMode ? "#1e1e1e" : "#ffffff") : (darkMode ? "#252525" : "#fafafa"),
-                                                  marginBottom: 6
-                                                }}
-                                              >
-                                                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                                                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1, marginRight: 6 }}>
-                                                    <Text style={{ fontSize: 12, fontWeight: "bold", color: idx === 0 ? "#fbc02d" : (darkMode ? "#aaa" : "#757575") }}>
-                                                      #{entry.serialNo || idx + 1}
-                                                    </Text>
-                                                    <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: "700", color: darkMode ? "#fff" : "#212121", flex: 1 }}>
-                                                      {displayRoll}
-                                                    </Text>
-                                                  </View>
-                                                </View>
-
-                                                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 8, paddingTop: 6, borderTopWidth: 1, borderTopColor: darkMode ? "#2a2a2a" : "#f0f0f0" }}>
-                                                  <Text style={{ fontSize: 11, color: "#1565c0", fontWeight: "600" }}>Attended: <Text style={{ fontWeight: "bold" }}>{attended}</Text></Text>
-                                                  <Text style={{ fontSize: 11, color: "#2e7d32", fontWeight: "600" }}>Correct: <Text style={{ fontWeight: "bold" }}>{correct}</Text></Text>
-                                                  <Text style={{ fontSize: 11, color: "#c62828", fontWeight: "600" }}>Wrong: <Text style={{ fontWeight: "bold" }}>{wrong}</Text></Text>
-                                                  <Text style={{ fontSize: 11, fontWeight: "bold", color: darkMode ? "#81c784" : "#1a237e" }}>{entry.obtainedMarks}/{entry.totalMarks}</Text>
-                                                </View>
-                                              </View>
-                                            );
-                                          })}
-                                        </View>
-                                      ) : (
-                                        <ScrollView horizontal showsHorizontalScrollIndicator={true}>
-                                          <View style={{ minWidth: isAdmin ? 840 : 650 }}>
-                                            {/* Table Header */}
-                                            <View style={{ flexDirection: "row", backgroundColor: darkMode ? "#2a2a2a" : "#f5f5f5", paddingVertical: 8, paddingHorizontal: 10, borderBottomWidth: 1, borderColor: darkMode ? "#333" : "#e0e0e0" }}>
-                                              {(isAdmin
-                                                ? ["#", "Roll No", "Name", "Correct", "Wrong", "Skipped", "Marks", "%", "Status"]
-                                                : ["#", "Roll No", "Attended", "Not Attended", "Correct Ans", "Wrong Ans", "Total Marks"]
-                                              ).map((h, i) => (
-                                                <Text key={i} style={{
-                                                  fontWeight: "bold", fontSize: 11, color: darkMode ? "#fff" : "#555", textAlign: (!isAdmin && i >= 2 && i < 7) || (isAdmin && i >= 3 && i < 8) ? "center" : i === 8 ? "center" : "left",
-                                                  width: isAdmin
-                                                    ? (i === 0 ? 36 : i === 1 ? 90 : i === 2 ? 130 : i === 3 ? 64 : i === 4 ? 64 : i === 5 ? 64 : i === 6 ? 90 : i === 7 ? 50 : 130)
-                                                    : (i === 0 ? 45 : i === 1 ? 120 : i === 2 ? 85 : i === 3 ? 95 : i === 4 ? 85 : i === 5 ? 85 : 95)
-                                                }}>{h}</Text>
-                                              ))}
-                                            </View>
-                                            {/* Table Rows */}
-                                            {(testLog.entries || []).map((entry: any, idx: number) => {
-                                              const isGenericName = (name: string) => {
-                                                if (!name) return true;
-                                                const s = String(name).trim().toLowerCase();
-                                                return s === "student" || s === "guest" || s === "guest user" || s === "n/a" || s.startsWith("guest:") || s.startsWith("guest ") || s.startsWith("student (") || s.startsWith("stu-");
-                                              };
-                                              let sName = (entry.studentName && !isGenericName(entry.studentName)) ? entry.studentName : "";
-                                              if (!sName && user && (user.id === entry.studentId || user.userId === entry.studentId || user.leadId === entry.studentId || user.email === entry.studentId)) {
-                                                sName = user.name || user.email?.split("@")[0];
-                                              }
-                                              if (!sName) sName = entry.username || entry.name || "Guest User";
-                                              const displayRoll = (entry.rollNumber && !isGenericName(entry.rollNumber)) ? entry.rollNumber : sName;
-                                              const perf = getPerformanceStatus(entry.obtainedMarks ?? 0, entry.totalMarks ?? 0, entry.percentage);
-                                              if (!isAdmin) {
+                                            <View style={{ padding: 8 }}>
+                                              {(testLog.entries || []).map((entry: any, idx: number) => {
+                                                const isGenericName = (name: string) => {
+                                                  if (!name) return true;
+                                                  const s = String(name).trim().toLowerCase();
+                                                  return s === "student" || s === "guest" || s === "guest user" || s === "n/a" || s.startsWith("guest:") || s.startsWith("guest ") || s.startsWith("student (") || s.startsWith("stu-");
+                                                };
+                                                let sName = (entry.studentName && !isGenericName(entry.studentName)) ? entry.studentName : "";
+                                                if (!sName && user && (user.id === entry.studentId || user.userId === entry.studentId || user.leadId === entry.studentId || user.email === entry.studentId)) {
+                                                  sName = user.name || user.email?.split("@")[0];
+                                                }
+                                                if (!sName) sName = entry.username || entry.name || "Guest User";
+                                                const displayRoll = (entry.rollNumber && !isGenericName(entry.rollNumber)) ? entry.rollNumber : sName;
+                                                const perf = getPerformanceStatus(entry.obtainedMarks ?? 0, entry.totalMarks ?? 0, entry.percentage);
                                                 const correct = entry.correct ?? 0;
                                                 const wrong = entry.wrong ?? 0;
-                                                const skipped = entry.skipped ?? 0;
                                                 const attended = correct + wrong;
+
                                                 return (
-                                                  <View key={entry.attemptId || idx} style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 10, borderBottomWidth: 1, borderColor: darkMode ? "#333" : "#f0f0f0", backgroundColor: idx % 2 === 0 ? (darkMode ? "#1e1e1e" : "#ffffff") : (darkMode ? "#252525" : "#fafafa") }}>
-                                                    <Text style={{ width: 45, fontSize: 12, color: idx === 0 ? "#fbc02d" : (darkMode ? "#aaa" : "#757575"), fontWeight: "bold" }}>#{entry.serialNo || idx + 1}</Text>
-                                                    <Text style={{ width: 120, fontSize: 12, fontWeight: "600", color: darkMode ? "#fff" : "#212121" }}>{displayRoll}</Text>
-                                                    <Text style={{ width: 85, fontSize: 12, color: "#1565c0", fontWeight: "bold", textAlign: "center" }}>{attended}</Text>
-                                                    <Text style={{ width: 95, fontSize: 12, color: darkMode ? "#aaa" : "#757575", textAlign: "center" }}>{skipped}</Text>
-                                                    <Text style={{ width: 85, fontSize: 12, color: "#2e7d32", fontWeight: "bold", textAlign: "center" }}>{correct}</Text>
-                                                    <Text style={{ width: 85, fontSize: 12, color: "#c62828", fontWeight: "bold", textAlign: "center" }}>{wrong}</Text>
-                                                    <Text style={{ width: 95, fontSize: 12, fontWeight: "bold", color: darkMode ? "#81c784" : "#1a237e", textAlign: "center" }}>{entry.obtainedMarks} / {entry.totalMarks}</Text>
+                                                  <View
+                                                    key={entry.attemptId || idx}
+                                                    style={{
+                                                      padding: 10,
+                                                      borderRadius: 8,
+                                                      borderWidth: 1,
+                                                      borderColor: darkMode ? "#333" : "#e0e0e0",
+                                                      backgroundColor: idx % 2 === 0 ? (darkMode ? "#1e1e1e" : "#ffffff") : (darkMode ? "#252525" : "#fafafa"),
+                                                      marginBottom: 6
+                                                    }}
+                                                  >
+                                                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                                                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1, marginRight: 6 }}>
+                                                        <Text style={{ fontSize: 12, fontWeight: "bold", color: idx === 0 ? "#fbc02d" : (darkMode ? "#aaa" : "#757575") }}>
+                                                          #{entry.serialNo || idx + 1}
+                                                        </Text>
+                                                        <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: "700", color: darkMode ? "#fff" : "#212121", flex: 1 }}>
+                                                          {displayRoll}
+                                                        </Text>
+                                                      </View>
+                                                    </View>
+
+                                                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 8, paddingTop: 6, borderTopWidth: 1, borderTopColor: darkMode ? "#2a2a2a" : "#f0f0f0" }}>
+                                                      <Text style={{ fontSize: 11, color: "#1565c0", fontWeight: "600" }}>Attended: <Text style={{ fontWeight: "bold" }}>{attended}</Text></Text>
+                                                      <Text style={{ fontSize: 11, color: "#2e7d32", fontWeight: "600" }}>Correct: <Text style={{ fontWeight: "bold" }}>{correct}</Text></Text>
+                                                      <Text style={{ fontSize: 11, color: "#c62828", fontWeight: "600" }}>Wrong: <Text style={{ fontWeight: "bold" }}>{wrong}</Text></Text>
+                                                      <Text style={{ fontSize: 11, fontWeight: "bold", color: darkMode ? "#81c784" : "#1a237e" }}>{entry.obtainedMarks}/{entry.totalMarks}</Text>
+                                                    </View>
                                                   </View>
                                                 );
-                                              }
-                                            return (
-                                              <View key={entry.attemptId || idx} style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 10, borderBottomWidth: 1, borderColor: darkMode ? "#333" : "#f0f0f0", backgroundColor: idx % 2 === 0 ? (darkMode ? "#1e1e1e" : "#ffffff") : (darkMode ? "#252525" : "#fafafa") }}>
-                                                <Text style={{ width: 36, fontSize: 12, color: idx === 0 ? "#fbc02d" : "#757575", fontWeight: "bold" }}>#{entry.serialNo}</Text>
-                                                <Text style={{ width: 90, fontSize: 12, color: darkMode ? "#fff" : "#212121" }}>{displayRoll}</Text>
-                                                <Text style={{ width: 130, fontSize: 12, color: darkMode ? "#fff" : "#212121" }} numberOfLines={1}>{entry.studentName}</Text>
-                                                <Text style={{ width: 64, fontSize: 12, color: "#2e7d32", fontWeight: "bold", textAlign: "center" }}>{entry.correct}</Text>
-                                                <Text style={{ width: 64, fontSize: 12, color: "#c62828", fontWeight: "bold", textAlign: "center" }}>{entry.wrong}</Text>
-                                                <Text style={{ width: 64, fontSize: 12, color: "#757575", textAlign: "center" }}>{entry.skipped}</Text>
-                                                <Text style={{ width: 90, fontSize: 12, fontWeight: "bold", color: darkMode ? "#81c784" : "#1a237e" }}>{entry.obtainedMarks} / {entry.totalMarks}</Text>
-                                                <Text style={{ width: 50, fontSize: 12, color: darkMode ? "#aaa" : "#555" }}>{Math.round(entry.percentage)}%</Text>
-                                                <View style={{ width: 130, alignItems: "center", justifyContent: "center" }}>
-                                                  <View style={{ backgroundColor: perf.bgColor, borderColor: perf.borderColor, borderWidth: 1, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
-                                                    <Text style={{ fontSize: 10, fontWeight: "bold", color: perf.color, textAlign: "center" }}>{perf.label}</Text>
-                                                  </View>
+                                              })}
+                                            </View>
+                                          ) : (
+                                            <ScrollView horizontal showsHorizontalScrollIndicator={true}>
+                                              <View style={{ minWidth: isAdmin ? 840 : 650 }}>
+                                                {/* Table Header */}
+                                                <View style={{ flexDirection: "row", backgroundColor: darkMode ? "#2a2a2a" : "#f5f5f5", paddingVertical: 8, paddingHorizontal: 10, borderBottomWidth: 1, borderColor: darkMode ? "#333" : "#e0e0e0" }}>
+                                                  {(isAdmin
+                                                    ? ["#", "Roll No", "Name", "Correct", "Wrong", "Skipped", "Marks", "%", "Status"]
+                                                    : ["#", "Roll No", "Attended", "Not Attended", "Correct Ans", "Wrong Ans", "Total Marks"]
+                                                  ).map((h, i) => (
+                                                    <Text key={i} style={{
+                                                      fontWeight: "bold", fontSize: 11, color: darkMode ? "#fff" : "#555", textAlign: (!isAdmin && i >= 2 && i < 7) || (isAdmin && i >= 3 && i < 8) ? "center" : i === 8 ? "center" : "left",
+                                                      width: isAdmin
+                                                        ? (i === 0 ? 36 : i === 1 ? 90 : i === 2 ? 130 : i === 3 ? 64 : i === 4 ? 64 : i === 5 ? 64 : i === 6 ? 90 : i === 7 ? 50 : 130)
+                                                        : (i === 0 ? 45 : i === 1 ? 120 : i === 2 ? 85 : i === 3 ? 95 : i === 4 ? 85 : i === 5 ? 85 : 95)
+                                                    }}>{h}</Text>
+                                                  ))}
                                                 </View>
+                                                {/* Table Rows */}
+                                                {(testLog.entries || []).map((entry: any, idx: number) => {
+                                                  const isGenericName = (name: string) => {
+                                                    if (!name) return true;
+                                                    const s = String(name).trim().toLowerCase();
+                                                    return s === "student" || s === "guest" || s === "guest user" || s === "n/a" || s.startsWith("guest:") || s.startsWith("guest ") || s.startsWith("student (") || s.startsWith("stu-");
+                                                  };
+                                                  let sName = (entry.studentName && !isGenericName(entry.studentName)) ? entry.studentName : "";
+                                                  if (!sName && user && (user.id === entry.studentId || user.userId === entry.studentId || user.leadId === entry.studentId || user.email === entry.studentId)) {
+                                                    sName = user.name || user.email?.split("@")[0];
+                                                  }
+                                                  if (!sName) sName = entry.username || entry.name || "Guest User";
+                                                  const displayRoll = (entry.rollNumber && !isGenericName(entry.rollNumber)) ? entry.rollNumber : sName;
+                                                  const perf = getPerformanceStatus(entry.obtainedMarks ?? 0, entry.totalMarks ?? 0, entry.percentage);
+                                                  if (!isAdmin) {
+                                                    const correct = entry.correct ?? 0;
+                                                    const wrong = entry.wrong ?? 0;
+                                                    const skipped = entry.skipped ?? 0;
+                                                    const attended = correct + wrong;
+                                                    return (
+                                                      <View key={entry.attemptId || idx} style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 10, borderBottomWidth: 1, borderColor: darkMode ? "#333" : "#f0f0f0", backgroundColor: idx % 2 === 0 ? (darkMode ? "#1e1e1e" : "#ffffff") : (darkMode ? "#252525" : "#fafafa") }}>
+                                                        <Text style={{ width: 45, fontSize: 12, color: idx === 0 ? "#fbc02d" : (darkMode ? "#aaa" : "#757575"), fontWeight: "bold" }}>#{entry.serialNo || idx + 1}</Text>
+                                                        <Text style={{ width: 120, fontSize: 12, fontWeight: "600", color: darkMode ? "#fff" : "#212121" }}>{displayRoll}</Text>
+                                                        <Text style={{ width: 85, fontSize: 12, color: "#1565c0", fontWeight: "bold", textAlign: "center" }}>{attended}</Text>
+                                                        <Text style={{ width: 95, fontSize: 12, color: darkMode ? "#aaa" : "#757575", textAlign: "center" }}>{skipped}</Text>
+                                                        <Text style={{ width: 85, fontSize: 12, color: "#2e7d32", fontWeight: "bold", textAlign: "center" }}>{correct}</Text>
+                                                        <Text style={{ width: 85, fontSize: 12, color: "#c62828", fontWeight: "bold", textAlign: "center" }}>{wrong}</Text>
+                                                        <Text style={{ width: 95, fontSize: 12, fontWeight: "bold", color: darkMode ? "#81c784" : "#1a237e", textAlign: "center" }}>{entry.obtainedMarks} / {entry.totalMarks}</Text>
+                                                      </View>
+                                                    );
+                                                  }
+                                                  return (
+                                                    <View key={entry.attemptId || idx} style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 10, borderBottomWidth: 1, borderColor: darkMode ? "#333" : "#f0f0f0", backgroundColor: idx % 2 === 0 ? (darkMode ? "#1e1e1e" : "#ffffff") : (darkMode ? "#252525" : "#fafafa") }}>
+                                                      <Text style={{ width: 36, fontSize: 12, color: idx === 0 ? "#fbc02d" : "#757575", fontWeight: "bold" }}>#{entry.serialNo}</Text>
+                                                      <Text style={{ width: 90, fontSize: 12, color: darkMode ? "#fff" : "#212121" }}>{displayRoll}</Text>
+                                                      <Text style={{ width: 130, fontSize: 12, color: darkMode ? "#fff" : "#212121" }} numberOfLines={1}>{entry.studentName}</Text>
+                                                      <Text style={{ width: 64, fontSize: 12, color: "#2e7d32", fontWeight: "bold", textAlign: "center" }}>{entry.correct}</Text>
+                                                      <Text style={{ width: 64, fontSize: 12, color: "#c62828", fontWeight: "bold", textAlign: "center" }}>{entry.wrong}</Text>
+                                                      <Text style={{ width: 64, fontSize: 12, color: "#757575", textAlign: "center" }}>{entry.skipped}</Text>
+                                                      <Text style={{ width: 90, fontSize: 12, fontWeight: "bold", color: darkMode ? "#81c784" : "#1a237e" }}>{entry.obtainedMarks} / {entry.totalMarks}</Text>
+                                                      <Text style={{ width: 50, fontSize: 12, color: darkMode ? "#aaa" : "#555" }}>{Math.round(entry.percentage)}%</Text>
+                                                      <View style={{ width: 130, alignItems: "center", justifyContent: "center" }}>
+                                                        <View style={{ backgroundColor: perf.bgColor, borderColor: perf.borderColor, borderWidth: 1, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
+                                                          <Text style={{ fontSize: 10, fontWeight: "bold", color: perf.color, textAlign: "center" }}>{perf.label}</Text>
+                                                        </View>
+                                                      </View>
+                                                    </View>
+                                                  );
+                                                })}
                                               </View>
-                                            );
-                                          })}
-                                        </View>
-                                      </ScrollView>
-                                    )}
+                                            </ScrollView>
+                                          )}
                                         </View>
                                       );
                                     })()}
@@ -25703,8 +27231,8 @@ SOURCE QUESTION PAPER:
                       <>
                         {!erpSidebarCollapsed || isMobile ? <Text style={styles.categoryHeader}>PERMISSIONS & REQUESTS</Text> : null}
                         {renderSidebarItem("profile-requests", erpSub, "Profile Requests", "person-add-outline", () => { changeErpSub("profile-requests"); loadProfileRequests(); }, undefined, profileRequests.filter((r: any) => r.status === "pending").length, erpSidebarCollapsed && !isMobile, "profile_requests")}
-                        {renderSidebarItem("qr-permissions", erpSub, "QR Code Permissions", "qr-code-outline", () => changeErpSub("qr-permissions"), "erp-qr-permissions", undefined, erpSidebarCollapsed && !isMobile, "id_card")}
-                        {renderSidebarItem("edit-permissions", erpSub, "Profile Edit Permissions", "shield-checkmark-outline", () => { changeErpSub("edit-permissions"); loadStudents(); }, "erp-edit-permissions", undefined, erpSidebarCollapsed && !isMobile, "profile_requests")}
+                        {renderSidebarItem("qr-permissions", erpSub, "QR Code Permissions", "qr-code-outline", () => changeErpSub("qr-permissions"), "erp-qr-permissions", (students || []).filter((s: any) => s.qrCodeRequested === true).length || undefined, erpSidebarCollapsed && !isMobile, "id_card")}
+                        {renderSidebarItem("edit-permissions", erpSub, "Profile Edit Permissions", "shield-checkmark-outline", () => { changeErpSub("edit-permissions"); loadStudents(); }, "erp-edit-permissions", (students || []).filter((s: any) => s.profileEditRequested === true).length || undefined, erpSidebarCollapsed && !isMobile, "profile_requests")}
                         {(user.role === "super_admin" || user.role === "developer" || user.role === "admin") && (
                           renderSidebarItem("device-alerts", erpSub, "Security Alerts", "alert-circle-outline", () => { changeErpSub("device-alerts"); loadDeviceAlerts(); }, undefined, deviceAlerts.filter((a: any) => !a.acknowledged).length || undefined, erpSidebarCollapsed && !isMobile)
                         )}
@@ -25712,7 +27240,7 @@ SOURCE QUESTION PAPER:
                         {!erpSidebarCollapsed || isMobile ? <Text style={styles.categoryHeader}>ACADEMICS & DIRECTORY</Text> : null}
                         {renderSidebarItem("students", erpSub, "Students", "people-outline", () => changeErpSub("students"), "erp-students", undefined, erpSidebarCollapsed && !isMobile, "student_management")}
                         {renderSidebarItem("announcements", erpSub, "Notices", "megaphone-outline", () => changeErpSub("announcements"), "erp-announcements", undefined, erpSidebarCollapsed && !isMobile, "notices_announcements")}
-                        {renderSidebarItem("fees", erpSub, "Fees", "cash-outline", () => changeErpSub("fees"), "erp-fees", undefined, erpSidebarCollapsed && !isMobile, "fees_management")}
+                        {renderSidebarItem("fees", erpSub, "Fees", "cash-outline", () => changeErpSub("fees"), "erp-fees", (adminAlerts || []).filter((a: any) => a.type === "payment").length || undefined, erpSidebarCollapsed && !isMobile, "fees_management")}
                         {renderSidebarItem("offline-attendance", erpSub, "Offline Attendance", "clipboard-outline", () => { changeErpSub("offline-attendance"); loadStudents(); loadBatches(); }, "erp-offline-attendance", undefined, erpSidebarCollapsed && !isMobile, "offline_attendance")}
 
                         {!erpSidebarCollapsed || isMobile ? <Text style={styles.categoryHeader}>ADMINISTRATION & GROUPS</Text> : null}
@@ -25749,32 +27277,50 @@ SOURCE QUESTION PAPER:
               {/* Subpage Content on the right */}
               <View style={{ flex: 1, position: "relative" }}>
                 {isMobile && erpSidebarCollapsed && (
-                  <TouchableOpacity
-                    onPress={() => setErpSidebarCollapsed(false)}
+                  <View
                     style={{
-                      position: "absolute",
-                      left: 10,
-                      top: 10,
-                      zIndex: 1000,
-                      backgroundColor: darkMode ? "#1e1e1e" : "#ffffff",
-                      borderRadius: 8,
-                      width: 36,
-                      height: 36,
+                      flexDirection: "row",
                       alignItems: "center",
-                      justifyContent: "center",
-                      borderWidth: 1,
-                      borderColor: darkMode ? "#333" : "#e0e0e0",
-                      shadowColor: "#000",
-                      shadowOffset: { width: 0, height: 2 },
-                      shadowOpacity: 0.15,
-                      shadowRadius: 2.5,
-                      elevation: 4
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      backgroundColor: darkMode ? "#1a1a2e" : "#ffffff",
+                      borderBottomWidth: 1,
+                      borderBottomColor: darkMode ? "#2a2a2a" : "#eeeeee",
+                      gap: 10,
+                      zIndex: 100,
                     }}
                   >
-                    <Ionicons name="menu" size={20} color="#c62828" />
-                  </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => setErpSidebarCollapsed(false)}
+                      style={{
+                        backgroundColor: darkMode ? "#26263a" : "#f5f5f5",
+                        borderRadius: 8,
+                        width: 36,
+                        height: 36,
+                        alignItems: "center",
+                        justifyContent: "center",
+                        borderWidth: 1,
+                        borderColor: darkMode ? "#3e3e55" : "#e0e0e0",
+                      }}
+                    >
+                      <Ionicons name="menu" size={20} color="#c62828" />
+                    </TouchableOpacity>
+                    <Text
+                      style={{
+                        fontSize: 15,
+                        fontWeight: "bold",
+                        color: darkMode ? "#ffffff" : "#212121",
+                        textTransform: "capitalize",
+                      }}
+                    >
+                      {erpSub ? erpSub.replace(/-/g, " ") : "ERP Portal"}
+                    </Text>
+                  </View>
                 )}
-                <ScrollView style={[styles.splitContent, { paddingTop: (isMobile && erpSidebarCollapsed) ? 50 : 15 }]} contentContainerStyle={{ paddingBottom: 80, alignItems: "stretch" }}>
+                <ScrollView
+                  style={[styles.splitContent, { paddingTop: isMobile ? 12 : 15 }]}
+                  contentContainerStyle={{ paddingBottom: isMobile ? 160 : 80, alignItems: "stretch" }}
+                >
                   {checkAccessNone(getErpFeatureKey(erpSub))}
                   {getFeatureAccess(getErpFeatureKey(erpSub)) !== "none" && (
                     <>
@@ -26061,7 +27607,7 @@ SOURCE QUESTION PAPER:
                                           {/* Attendance & Joining Section */}
                                           <View style={{ backgroundColor: "#f9fbe7", borderRadius: 8, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: "#dce775" }}>
                                             <Text style={{ fontWeight: "bold", color: "#33691e", marginBottom: 8, fontSize: 13 }}>📅 Joining Date & Attendance</Text>
-                                            
+
                                             <View style={{ marginBottom: 10 }}>
                                               <Text style={{ fontSize: 11, fontWeight: "600", color: "#444", marginBottom: 4 }}>Joining Date</Text>
                                               <TouchableOpacity
@@ -26582,8 +28128,8 @@ SOURCE QUESTION PAPER:
                               {/* Main Directory Split Layout */}
                               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 15 }}>
                                 {/* Left List Pane */}
-                                <View style={{ flex: 1, minWidth: 280, maxHeight: 500 }}>
-                                  <ScrollView style={{ borderRightWidth: 1, borderRightColor: "#eeeeee", paddingRight: 8 }}>
+                                <View style={{ flex: 1, minWidth: 280, maxHeight: isMobile ? undefined : 500 }}>
+                                  <ScrollView nestedScrollEnabled={true} style={{ borderRightWidth: isMobile ? 0 : 1, borderRightColor: "#eeeeee", paddingRight: isMobile ? 0 : 8 }}>
                                     {(() => {
                                       const filtered = students.filter((s: any) => {
                                         const q = searchDirQuery.toLowerCase();
@@ -27591,7 +29137,85 @@ SOURCE QUESTION PAPER:
                                       })}
                                     </select>
                                   ) : (
-                                    <TextInput style={styles.input} placeholder="Course (e.g. UDC / LDC)" placeholderTextColor="#999" value={editingBatch.course} onChangeText={v => setEditingBatch({ ...editingBatch, course: v })} />
+                                    <View style={{ position: "relative", zIndex: 1000, marginBottom: 10 }}>
+                                      <TouchableOpacity
+                                        onPress={() => setShowEditBatchCourseDropdown(!showEditBatchCourseDropdown)}
+                                        style={{
+                                          padding: 12,
+                                          borderWidth: 1,
+                                          borderColor: darkMode ? "#444" : "#e0e0e0",
+                                          borderRadius: 8,
+                                          backgroundColor: darkMode ? "#1e1e2e" : "#ffffff",
+                                          flexDirection: "row",
+                                          justifyContent: "space-between",
+                                          alignItems: "center"
+                                        }}
+                                      >
+                                        <Text style={{ fontSize: 13, color: editingBatch.course ? (darkMode ? "#fff" : "#212121") : "#888", fontWeight: "500" }}>
+                                          {editingBatch.course || "-- Select Master Course --"}
+                                        </Text>
+                                        <Ionicons name={showEditBatchCourseDropdown ? "chevron-up" : "chevron-down"} size={16} color={darkMode ? "#ccc" : "#666"} />
+                                      </TouchableOpacity>
+
+                                      {showEditBatchCourseDropdown && (
+                                        <View style={{
+                                          marginTop: 4,
+                                          borderWidth: 1,
+                                          borderColor: darkMode ? "#444" : "#e0e0e0",
+                                          borderRadius: 8,
+                                          backgroundColor: darkMode ? "#1e1e2e" : "#ffffff",
+                                          overflow: "hidden",
+                                          maxHeight: 180,
+                                          shadowColor: "#000",
+                                          shadowOffset: { width: 0, height: 2 },
+                                          shadowOpacity: 0.15,
+                                          shadowRadius: 4,
+                                          elevation: 6
+                                        }}>
+                                          <ScrollView nestedScrollEnabled={true}>
+                                            <TouchableOpacity
+                                              onPress={() => {
+                                                setEditingBatch({ ...editingBatch, course: "" });
+                                                setShowEditBatchCourseDropdown(false);
+                                              }}
+                                              style={{
+                                                padding: 10,
+                                                borderBottomWidth: 1,
+                                                borderBottomColor: darkMode ? "#2a2a2a" : "#f0f0f0",
+                                                backgroundColor: !editingBatch.course ? (darkMode ? "#2a2a3e" : "#e3f2fd") : "transparent"
+                                              }}
+                                            >
+                                              <Text style={{ fontSize: 12, color: !editingBatch.course ? "#1976d2" : (darkMode ? "#aaa" : "#555") }}>
+                                                -- Select Master Course --
+                                              </Text>
+                                            </TouchableOpacity>
+                                            {lmsCourses.map((c: any) => {
+                                              const cName = c.name || c.title || "";
+                                              const isSelected = editingBatch.course === cName;
+                                              return (
+                                                <TouchableOpacity
+                                                  key={c.id || cName}
+                                                  onPress={() => {
+                                                    setEditingBatch({ ...editingBatch, course: cName });
+                                                    setShowEditBatchCourseDropdown(false);
+                                                  }}
+                                                  style={{
+                                                    padding: 10,
+                                                    borderBottomWidth: 1,
+                                                    borderBottomColor: darkMode ? "#2a2a2a" : "#f0f0f0",
+                                                    backgroundColor: isSelected ? (darkMode ? "#2a2a3e" : "#e3f2fd") : "transparent"
+                                                  }}
+                                                >
+                                                  <Text style={{ fontSize: 12, color: isSelected ? "#1976d2" : (darkMode ? "#fff" : "#212121"), fontWeight: isSelected ? "bold" : "normal" }}>
+                                                    {cName}
+                                                  </Text>
+                                                </TouchableOpacity>
+                                              );
+                                            })}
+                                          </ScrollView>
+                                        </View>
+                                      )}
+                                    </View>
                                   )}
                                 </View>
 
@@ -27696,13 +29320,85 @@ SOURCE QUESTION PAPER:
                                       })}
                                     </select>
                                   ) : (
-                                    <TextInput
-                                      style={styles.input}
-                                      placeholder="Select Course (e.g. UDC / LDC)"
-                                      placeholderTextColor="#999"
-                                      value={newBatch.course}
-                                      onChangeText={v => setNewBatch({ ...newBatch, course: v })}
-                                    />
+                                    <View style={{ position: "relative", zIndex: 1000, marginBottom: 12 }}>
+                                      <TouchableOpacity
+                                        onPress={() => setShowNewBatchCourseDropdown(!showNewBatchCourseDropdown)}
+                                        style={{
+                                          padding: 12,
+                                          borderWidth: 1,
+                                          borderColor: darkMode ? "#444" : "#e0e0e0",
+                                          borderRadius: 8,
+                                          backgroundColor: darkMode ? "#1e1e2e" : "#ffffff",
+                                          flexDirection: "row",
+                                          justifyContent: "space-between",
+                                          alignItems: "center"
+                                        }}
+                                      >
+                                        <Text style={{ fontSize: 13, color: newBatch.course ? (darkMode ? "#fff" : "#212121") : "#888", fontWeight: "500" }}>
+                                          {newBatch.course || "-- Select Master Course --"}
+                                        </Text>
+                                        <Ionicons name={showNewBatchCourseDropdown ? "chevron-up" : "chevron-down"} size={16} color={darkMode ? "#ccc" : "#666"} />
+                                      </TouchableOpacity>
+
+                                      {showNewBatchCourseDropdown && (
+                                        <View style={{
+                                          marginTop: 4,
+                                          borderWidth: 1,
+                                          borderColor: darkMode ? "#444" : "#e0e0e0",
+                                          borderRadius: 8,
+                                          backgroundColor: darkMode ? "#1e1e2e" : "#ffffff",
+                                          overflow: "hidden",
+                                          maxHeight: 180,
+                                          shadowColor: "#000",
+                                          shadowOffset: { width: 0, height: 2 },
+                                          shadowOpacity: 0.15,
+                                          shadowRadius: 4,
+                                          elevation: 6
+                                        }}>
+                                          <ScrollView nestedScrollEnabled={true}>
+                                            <TouchableOpacity
+                                              onPress={() => {
+                                                setNewBatch({ ...newBatch, course: "" });
+                                                setShowNewBatchCourseDropdown(false);
+                                              }}
+                                              style={{
+                                                padding: 10,
+                                                borderBottomWidth: 1,
+                                                borderBottomColor: darkMode ? "#2a2a2a" : "#f0f0f0",
+                                                backgroundColor: !newBatch.course ? (darkMode ? "#2a2a3e" : "#e3f2fd") : "transparent"
+                                              }}
+                                            >
+                                              <Text style={{ fontSize: 12, color: !newBatch.course ? "#1976d2" : (darkMode ? "#aaa" : "#555") }}>
+                                                -- Select Master Course --
+                                              </Text>
+                                            </TouchableOpacity>
+                                            {lmsCourses.map((c: any) => {
+                                              const cName = c.name || c.title || "";
+                                              const isSelected = newBatch.course === cName;
+                                              return (
+                                                <TouchableOpacity
+                                                  key={c.id || cName}
+                                                  onPress={() => {
+                                                    setNewBatch({ ...newBatch, course: cName });
+                                                    setShowNewBatchCourseDropdown(false);
+                                                  }}
+                                                  style={{
+                                                    padding: 10,
+                                                    borderBottomWidth: 1,
+                                                    borderBottomColor: darkMode ? "#2a2a2a" : "#f0f0f0",
+                                                    backgroundColor: isSelected ? (darkMode ? "#2a2a3e" : "#e3f2fd") : "transparent"
+                                                  }}
+                                                >
+                                                  <Text style={{ fontSize: 12, color: isSelected ? "#1976d2" : (darkMode ? "#fff" : "#212121"), fontWeight: isSelected ? "bold" : "normal" }}>
+                                                    {cName}
+                                                  </Text>
+                                                </TouchableOpacity>
+                                              );
+                                            })}
+                                          </ScrollView>
+                                        </View>
+                                      )}
+                                    </View>
                                   )}
                                 </View>
 
@@ -27983,6 +29679,58 @@ SOURCE QUESTION PAPER:
                                   <View style={styles.card}>
                                     {incompleteStudents.map((s: any, idx: number) => {
                                       const hasPermission = !!s.profileEditPermission;
+                                      const isMobileCard = isMobile || Platform.OS !== "web";
+                                      if (isMobileCard) {
+                                        return (
+                                          <View key={s.id || idx} style={{ paddingVertical: 12, borderBottomWidth: 1, borderColor: "#f0f0f0" }}>
+                                            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                                              <Text style={{ fontWeight: "bold", color: "#212121", fontSize: 13 }}>{getStudentName(s) || s.loginUsername}</Text>
+                                              <View style={{ backgroundColor: "#fff3e0", borderRadius: 4, paddingHorizontal: 8, paddingVertical: 3 }}>
+                                                <Text style={{ fontSize: 10, fontWeight: "bold", color: "#e65100" }}>INCOMPLETE</Text>
+                                              </View>
+                                            </View>
+
+                                            <Text style={{ color: "#757575", fontSize: 11, marginTop: 4 }}>
+                                              Roll: {s.rollNumber || s.loginUsername || "—"} | Batch: {s.batch || "N/A"} | Phone: {s.phone || "—"}
+                                            </Text>
+
+                                            <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
+                                              <TouchableOpacity
+                                                onPress={async () => {
+                                                  try {
+                                                    await api.post("/announcement", {
+                                                      title: ` Action Required: Complete Your Profile - ${getStudentName(s)}`,
+                                                      content: `Dear ${getStudentName(s)}, your profile setup is incomplete. Please log in and complete your profile form & upload required documents soon.`,
+                                                      priority: "high",
+                                                      targetDashboard: "student",
+                                                      targetBatch: s.batch || "",
+                                                      createdBy: user?.name || "admin"
+                                                    });
+                                                    loadAnnouncements();
+                                                    Alert.alert("Reminder Published!", `Profile completion reminder notice sent to ${getStudentName(s)}.`);
+                                                  } catch (e: any) {
+                                                    Alert.alert("Error", e.message || "Failed to send reminder.");
+                                                  }
+                                                }}
+                                                style={{ backgroundColor: "#e65100", paddingHorizontal: 12, paddingVertical: 7, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 4 }}
+                                              >
+                                                <Ionicons name="notifications-outline" size={13} color="#fff" />
+                                                <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 11 }}>Remind</Text>
+                                              </TouchableOpacity>
+
+                                              <TouchableOpacity
+                                                onPress={() => toggleProfileEditPermission(s.id, hasPermission)}
+                                                style={{ backgroundColor: hasPermission ? "#4caf50" : "#1976d2", paddingHorizontal: 12, paddingVertical: 7, borderRadius: 6 }}
+                                              >
+                                                <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 11 }}>
+                                                  {hasPermission ? "Permission Granted" : "Grant Edit"}
+                                                </Text>
+                                              </TouchableOpacity>
+                                            </View>
+                                          </View>
+                                        );
+                                      }
+
                                       return (
                                         <View key={s.id || idx} style={{ flexDirection: "row", alignItems: "center", paddingVertical: 12, borderBottomWidth: 1, borderColor: "#f0f0f0" }}>
                                           <View style={{ flex: 1 }}>
@@ -28395,9 +30143,48 @@ SOURCE QUESTION PAPER:
                                   {profileFormStep === 1 && (
                                     <View style={{ gap: 10 }}>
                                       <Text style={{ color: "#757575", fontSize: 12, marginBottom: 4, fontWeight: "bold" }}>🔑 Change Account Password *</Text>
-                                      <TextInput style={[styles.input, { marginBottom: 12 }, showValidationErrors && !studentOldPassword && { borderColor: "#c62828", borderWidth: 2 }]} placeholder="Old Password (created by admin) *" secureTextEntry placeholderTextColor="#999" value={studentOldPassword} onChangeText={setStudentOldPassword} />
-                                      <TextInput style={[styles.input, { marginBottom: 12 }, showValidationErrors && !studentNewPassword && { borderColor: "#c62828", borderWidth: 2 }]} placeholder="New Password (modified by student) *" secureTextEntry placeholderTextColor="#999" value={studentNewPassword} onChangeText={setStudentNewPassword} />
-                                      <TextInput style={[styles.input, { marginBottom: 12 }, showValidationErrors && !studentConfirmPassword && { borderColor: "#c62828", borderWidth: 2 }]} placeholder="Confirm New Password *" secureTextEntry placeholderTextColor="#999" value={studentConfirmPassword} onChangeText={setStudentConfirmPassword} />
+                                      
+                                      <View style={{ position: "relative", justifyContent: "center", marginBottom: 12 }}>
+                                        <TextInput
+                                          style={[styles.input, { marginBottom: 0, paddingRight: 45 }, showValidationErrors && !studentOldPassword && { borderColor: "#c62828", borderWidth: 2 }]}
+                                          placeholder="Old Password (created by admin) *"
+                                          secureTextEntry={!showStudentOldPassword}
+                                          placeholderTextColor="#999"
+                                          value={studentOldPassword}
+                                          onChangeText={setStudentOldPassword}
+                                        />
+                                        <TouchableOpacity onPress={() => setShowStudentOldPassword(!showStudentOldPassword)} style={{ position: "absolute", right: 15, padding: 4 }}>
+                                          <Ionicons name={showStudentOldPassword ? "eye-off-outline" : "eye-outline"} size={20} color="#757575" />
+                                        </TouchableOpacity>
+                                      </View>
+
+                                      <View style={{ position: "relative", justifyContent: "center", marginBottom: 12 }}>
+                                        <TextInput
+                                          style={[styles.input, { marginBottom: 0, paddingRight: 45 }, showValidationErrors && !studentNewPassword && { borderColor: "#c62828", borderWidth: 2 }]}
+                                          placeholder="New Password (modified by student) *"
+                                          secureTextEntry={!showStudentNewPassword}
+                                          placeholderTextColor="#999"
+                                          value={studentNewPassword}
+                                          onChangeText={setStudentNewPassword}
+                                        />
+                                        <TouchableOpacity onPress={() => setShowStudentNewPassword(!showStudentNewPassword)} style={{ position: "absolute", right: 15, padding: 4 }}>
+                                          <Ionicons name={showStudentNewPassword ? "eye-off-outline" : "eye-outline"} size={20} color="#757575" />
+                                        </TouchableOpacity>
+                                      </View>
+
+                                      <View style={{ position: "relative", justifyContent: "center", marginBottom: 12 }}>
+                                        <TextInput
+                                          style={[styles.input, { marginBottom: 0, paddingRight: 45 }, showValidationErrors && !studentConfirmPassword && { borderColor: "#c62828", borderWidth: 2 }]}
+                                          placeholder="Confirm New Password *"
+                                          secureTextEntry={!showStudentConfirmPassword}
+                                          placeholderTextColor="#999"
+                                          value={studentConfirmPassword}
+                                          onChangeText={setStudentConfirmPassword}
+                                        />
+                                        <TouchableOpacity onPress={() => setShowStudentConfirmPassword(!showStudentConfirmPassword)} style={{ position: "absolute", right: 15, padding: 4 }}>
+                                          <Ionicons name={showStudentConfirmPassword ? "eye-off-outline" : "eye-outline"} size={20} color="#757575" />
+                                        </TouchableOpacity>
+                                      </View>
                                     </View>
                                   )}
 
@@ -29595,7 +31382,7 @@ SOURCE QUESTION PAPER:
                                   <View style={styles.card}>
                                     <Text style={[styles.sectionTitle, { fontSize: 14, marginBottom: 12 }]}>Configure Access for: {roles.find(r => r.key === activePermissionRole)?.label}</Text>
 
-                                    <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 500 }}>
+                                    <ScrollView showsVerticalScrollIndicator={false} nestedScrollEnabled={true} style={isMobile ? { maxHeight: undefined } : { maxHeight: 500 }}>
                                       <View style={{ gap: 16 }}>
                                         {(() => {
                                           let lastSubCategory = "";
@@ -29746,10 +31533,26 @@ SOURCE QUESTION PAPER:
                                             {/* Payload Field Chips Summary */}
                                             {parsed.fields.length > 0 && (
                                               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 2 }}>
+                                                {parsed.hasDiff && (
+                                                  <View style={{ backgroundColor: darkMode ? "#1b5e20" : "#e8f5e9", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: darkMode ? "#2e7d32" : "#a5d6a7" }}>
+                                                    <Text style={{ fontSize: 9, fontWeight: "bold", color: darkMode ? "#a5d6a7" : "#2e7d32" }}>
+                                                      ⚡ {parsed.changedFields.length} {parsed.changedFields.length === 1 ? "change" : "changes"}
+                                                    </Text>
+                                                  </View>
+                                                )}
                                                 {parsed.fields.slice(0, 2).map((f, fIdx) => (
                                                   <View key={fIdx} style={{ backgroundColor: darkMode ? "#2e2e2e" : "#f0f4f8", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: darkMode ? "#444" : "#d0d7de" }}>
                                                     <Text style={{ fontSize: 9, color: darkMode ? "#bbb" : "#444" }}>
-                                                      <Text style={{ fontWeight: "bold" }}>{f.label}:</Text> {f.value.length > 18 ? f.value.substring(0, 18) + '…' : f.value}
+                                                      <Text style={{ fontWeight: "bold" }}>{f.label}:</Text>{" "}
+                                                      {f.isChanged && f.oldValue && f.oldValue !== "(empty)" ? (
+                                                        <>
+                                                          <Text style={{ textDecorationLine: "line-through", color: "#888" }}>{f.oldValue.length > 10 ? f.oldValue.substring(0, 10) + '…' : f.oldValue}</Text>
+                                                          <Text> ➔ </Text>
+                                                          <Text style={{ fontWeight: "bold", color: darkMode ? "#81c784" : "#2e7d32" }}>{f.newValue.length > 12 ? f.newValue.substring(0, 12) + '…' : f.newValue}</Text>
+                                                        </>
+                                                      ) : (
+                                                        f.value.length > 18 ? f.value.substring(0, 18) + '…' : f.value
+                                                      )}
                                                     </Text>
                                                   </View>
                                                 ))}
@@ -29761,7 +31564,10 @@ SOURCE QUESTION PAPER:
 
                                             {/* View Details Link */}
                                             <TouchableOpacity
-                                              onPress={() => setViewingApprovalItem(item)}
+                                              onPress={() => {
+                                                setApprovalViewMode("diff");
+                                                setViewingApprovalItem(item);
+                                              }}
                                               style={{ alignSelf: "flex-start", marginTop: 2 }}
                                             >
                                               <Text style={{ fontSize: 10, color: "#1976d2", fontWeight: "bold" }}>🔍 View Full Details</Text>
@@ -30004,7 +31810,7 @@ SOURCE QUESTION PAPER:
                                 </View>
 
                                 <View style={styles.card}>
-                                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                                  <View style={{ flexDirection: isMobile ? "column" : "row", justifyContent: "space-between", alignItems: isMobile ? "stretch" : "center", gap: 10, marginBottom: 12 }}>
                                     <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Student Fees Directory</Text>
                                     <TouchableOpacity
                                       onPress={() => {
@@ -30030,201 +31836,579 @@ SOURCE QUESTION PAPER:
                                     </TouchableOpacity>
                                   </View>
 
-                                  {/* Search bar inside admin fees panel */}
-                                  <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
-                                    <TextInput
-                                      style={[styles.input, { flex: 1, marginBottom: 0 }]}
-                                      placeholder="Search student name or roll..."
-                                      placeholderTextColor="#999"
-                                      value={studentSearchQuery}
-                                      onChangeText={setStudentSearchQuery}
-                                    />
-                                    {studentSearchQuery ? (
-                                      <TouchableOpacity onPress={() => setStudentSearchQuery("")} style={{ padding: 10, backgroundColor: "#eeeeee", borderRadius: 8, justifyContent: "center" }}>
-                                        <Text style={{ fontSize: 11, color: "#333" }}>Clear</Text>
-                                      </TouchableOpacity>
-                                    ) : null}
-                                  </View>
+                                  {/* Available Courses & Batches for Filters */}
+                                  {(() => {
+                                    const feeCourseList = Array.from(new Set([
+                                      ...courses.map((c: any) => c.title || c.name || c.courseName).filter(Boolean),
+                                      ...(Array.isArray(lmsCourses) ? lmsCourses.map((c: any) => c.title || c.name).filter(Boolean) : []),
+                                      ...students.map((s: any) => s.course).filter(Boolean)
+                                    ])).sort();
 
-                                  {/* Status filter buttons */}
-                                  <View style={{ flexDirection: "row", gap: 8, marginBottom: 15, alignItems: "center" }}>
-                                    <Text style={{ fontSize: 12, fontWeight: "bold", color: "#555" }}>Status:</Text>
-                                    {(["all", "pending", "paid"] as const).map(status => {
-                                      const isSelected = feeFilterStatus === status;
-                                      return (
-                                        <TouchableOpacity
-                                          key={status}
-                                          onPress={() => setFeeFilterStatus(status)}
-                                          style={{
-                                            paddingVertical: 6,
-                                            paddingHorizontal: 12,
-                                            borderRadius: 20,
-                                            borderWidth: 1,
-                                            borderColor: isSelected ? "#c62828" : "#e0e0e0",
-                                            backgroundColor: isSelected ? "#ffebee" : "#f9f9f9"
-                                          }}
-                                        >
-                                          <Text style={{
-                                            fontSize: 11,
-                                            color: isSelected ? "#c62828" : "#555",
-                                            fontWeight: isSelected ? "bold" : "normal"
-                                          }}>
-                                            {status.toUpperCase()}
-                                          </Text>
-                                        </TouchableOpacity>
-                                      );
-                                    })}
-                                  </View>
+                                    const feeBatchList = Array.from(new Set([
+                                      ...batches.map((b: any) => b.batchName || b.name).filter(Boolean),
+                                      ...students.flatMap((s: any) => Array.isArray(s.batches) ? s.batches : (s.batch ? [s.batch] : [])).filter(Boolean)
+                                    ])).sort();
 
-                                  <ScrollView style={{ maxHeight: 500 }}>
-                                    {sortedStudentsForFees
-                                      .filter((s: any) => {
-                                        const name = getStudentName(s).toLowerCase();
-                                        const roll = String(s.rollNumber || "").toLowerCase();
-                                        const q = studentSearchQuery.toLowerCase();
-                                        if (!name.includes(q) && !roll.includes(q)) return false;
+                                    const filteredFeeStudents = sortedStudentsForFees.filter((s: any) => {
+                                      const name = getStudentName(s).toLowerCase();
+                                      const roll = String(s.rollNumber || "").toLowerCase();
+                                      const q = studentSearchQuery.toLowerCase();
+                                      if (q && !name.includes(q) && !roll.includes(q)) return false;
 
-                                        const tot = Number(s.totalFees) || 0;
-                                        const paid = Number(s.feesPaid) || 0;
-                                        const pending = tot - paid;
+                                      if (feeFilterCourse !== "all" && s.course !== feeFilterCourse) return false;
 
-                                        if (feeFilterStatus === "pending") {
-                                          return pending > 0;
-                                        }
-                                        if (feeFilterStatus === "paid") {
-                                          return tot > 0 && paid >= tot;
-                                        }
-                                        return true;
-                                      })
-                                      .map((s: any) => {
-                                        const tot = Number(s.totalFees) || 0;
-                                        const paid = Number(s.feesPaid) || 0;
-                                        const pending = tot - paid;
-                                        const isPending = pending > 0;
-                                        const isBlocked = isStudentFeeBlocked(s);
-                                        const isOverdue = s.feeAlertActive && s.feeAlertDueDate && isPending && (new Date().toISOString().slice(0, 10) > s.feeAlertDueDate);
+                                      if (feeFilterBatch !== "all") {
+                                        const bList = Array.isArray(s.batches) ? s.batches : (s.batch ? [s.batch] : []);
+                                        if (!bList.includes(feeFilterBatch) && s.batch !== feeFilterBatch) return false;
+                                      }
 
-                                        return (
-                                          <View key={s.id} style={{ paddingVertical: 12, borderBottomWidth: 1, borderColor: "#eeeeee", flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                                            <View style={{ flex: 1, paddingRight: 8 }}>
-                                              <Text style={{ fontWeight: "bold", color: "#212121", fontSize: 13 }}>{getStudentName(s)}</Text>
-                                              <Text style={{ fontSize: 11, color: "#757575", marginTop: 1 }}>Roll: {s.rollNumber || s.loginUsername || "N/A"} | Batch: {s.batch || "N/A"}</Text>
-                                              <Text style={{ fontSize: 11, color: "#757575" }}>Total: ₹{tot.toLocaleString()} | Paid: ₹{paid.toLocaleString()}</Text>
-                                            </View>
-                                            <View style={{ alignItems: "flex-end", gap: 6 }}>
-                                              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                                                {isPending ? (
-                                                  <View style={{ backgroundColor: "#ffebee", borderRadius: 4, paddingHorizontal: 8, paddingVertical: 2 }}>
-                                                    <Text style={{ color: "#c62828", fontSize: 11, fontWeight: "bold" }}>Pending: ₹{pending.toLocaleString()}</Text>
-                                                  </View>
-                                                ) : tot > 0 ? (
-                                                  <View style={{ backgroundColor: "#e8f5e9", borderRadius: 4, paddingHorizontal: 8, paddingVertical: 2 }}>
-                                                    <Text style={{ color: "#2e7d32", fontSize: 11, fontWeight: "bold" }}>Paid in Full</Text>
-                                                  </View>
-                                                ) : (
-                                                  <View style={{ backgroundColor: "#f5f5f5", borderRadius: 4, paddingHorizontal: 8, paddingVertical: 2 }}>
-                                                    <Text style={{ color: "#757575", fontSize: 11 }}>No Fees Set</Text>
-                                                  </View>
-                                                )}
-                                                {isBlocked ? (
-                                                  <View style={{ backgroundColor: "#fee2e2", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2, borderWidth: 1, borderColor: "#fca5a5" }}>
-                                                    <Text style={{ color: "#b91c1c", fontSize: 10, fontWeight: "bold" }}>
-                                                      {isOverdue ? "🚫 Overdue Block" : "🚫 Blocked"}
-                                                    </Text>
-                                                  </View>
-                                                ) : (
-                                                  <View style={{ backgroundColor: "#dcfce7", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
-                                                    <Text style={{ color: "#15803d", fontSize: 10, fontWeight: "bold" }}>🟢 Active Access</Text>
-                                                  </View>
-                                                )}
-                                              </View>
+                                      const tot = Number(s.totalFees) || 0;
+                                      const paid = Number(s.feesPaid) || 0;
+                                      const pending = tot - paid;
 
-                                              <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                                                {/* Manual Block / Unblock Toggle Button */}
-                                                <TouchableOpacity
-                                                  onPress={() => handleToggleStudentFeeBlock(s)}
-                                                  style={{
-                                                    paddingHorizontal: 8,
-                                                    paddingVertical: 4,
-                                                    backgroundColor: isBlocked ? "#15803d" : "#475569",
-                                                    borderRadius: 4,
-                                                    flexDirection: "row",
-                                                    alignItems: "center",
-                                                    gap: 3
-                                                  }}
-                                                >
-                                                  <Ionicons name={isBlocked ? "lock-open-outline" : "lock-closed-outline"} size={11} color="#ffffff" />
-                                                  <Text style={{ color: "#ffffff", fontSize: 10, fontWeight: "bold" }}>
-                                                    {isBlocked ? "Unblock Access" : "Block Access"}
-                                                  </Text>
-                                                </TouchableOpacity>
+                                      if (feeFilterStatus === "pending") {
+                                        return pending > 0;
+                                      }
+                                      if (feeFilterStatus === "paid") {
+                                        return tot > 0 && paid >= tot;
+                                      }
+                                      return true;
+                                    });
 
-                                                {isPending && (
-                                                  <TouchableOpacity
-                                                    onPress={() => {
-                                                      setFeeAlertModalStudent({ ...s });
-                                                      const in7Days = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-                                                      setFeeAlertDueDate(in7Days);
-                                                      setFeeAlertNote("");
-                                                    }}
-                                                    style={{ paddingHorizontal: 8, paddingVertical: 4, backgroundColor: "#c62828", borderRadius: 4, flexDirection: "row", alignItems: "center", gap: 3 }}
-                                                  >
-                                                    <Ionicons name="notifications-outline" size={11} color="#ffffff" />
-                                                    <Text style={{ color: "#ffffff", fontSize: 10, fontWeight: "bold" }}>Fee Alert</Text>
-                                                  </TouchableOpacity>
-                                                )}
+                                    const FEE_ITEMS_PER_PAGE = 20;
+                                    const totalFeePages = Math.ceil(filteredFeeStudents.length / FEE_ITEMS_PER_PAGE) || 1;
+                                    const safeFeePage = Math.max(1, Math.min(feeCurrentPage, totalFeePages));
+                                    const startFeeIndex = (safeFeePage - 1) * FEE_ITEMS_PER_PAGE;
+                                    const paginatedFeeStudents = filteredFeeStudents.slice(startFeeIndex, startFeeIndex + FEE_ITEMS_PER_PAGE);
+
+                                    return (
+                                      <>
+                                        {/* Search bar inside admin fees panel */}
+                                        <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
+                                          <TextInput
+                                            style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                                            placeholder="Search student name or roll..."
+                                            placeholderTextColor="#999"
+                                            value={studentSearchQuery}
+                                            onChangeText={(txt) => {
+                                              setStudentSearchQuery(txt);
+                                              setFeeCurrentPage(1);
+                                            }}
+                                          />
+                                          {studentSearchQuery ? (
+                                            <TouchableOpacity onPress={() => { setStudentSearchQuery(""); setFeeCurrentPage(1); }} style={{ padding: 10, backgroundColor: "#eeeeee", borderRadius: 8, justifyContent: "center" }}>
+                                              <Text style={{ fontSize: 11, color: "#333" }}>Clear</Text>
+                                            </TouchableOpacity>
+                                          ) : null}
+                                        </View>
+
+                                        {/* Filter row: Course Dropdown, Batch Dropdown, Status Buttons */}
+                                        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 15, alignItems: "flex-end", zIndex: 100 }}>
+                                          {/* Course Filter Dropdown */}
+                                          <View style={{ flex: 1, minWidth: 150, position: "relative" }}>
+                                            <Text style={{ fontSize: 11, fontWeight: "bold", color: "#555", marginBottom: 4 }}>Filter Course:</Text>
+                                            {Platform.OS === 'web' ? (
+                                              <>
                                                 <TouchableOpacity
                                                   onPress={() => {
-                                                    setFeeEditStudent({ ...s, _originalFeesPaid: s.feesPaid });
-                                                    setFeeEditModeOfPayment("cash");
-                                                    setFeeEditTransactionId("");
+                                                    setShowFeeCourseDropdown(!showFeeCourseDropdown);
+                                                    setShowFeeBatchDropdown(false);
                                                   }}
-                                                  style={{ paddingHorizontal: 8, paddingVertical: 4, backgroundColor: "#0288d1", borderRadius: 4 }}
+                                                  style={{
+                                                    padding: 10,
+                                                    borderWidth: 1,
+                                                    borderColor: "#e0e0e0",
+                                                    borderRadius: 8,
+                                                    backgroundColor: "#ffffff",
+                                                    flexDirection: "row",
+                                                    justifyContent: "space-between",
+                                                    alignItems: "center"
+                                                  }}
                                                 >
-                                                  <Text style={{ color: "#ffffff", fontSize: 10, fontWeight: "bold" }}>Update Fees</Text>
+                                                  <Text style={{ fontSize: 12, color: "#212121", fontWeight: "500" }} numberOfLines={1}>
+                                                    {feeFilterCourse === "all" ? "All Courses" : feeFilterCourse}
+                                                  </Text>
+                                                  <Ionicons name="chevron-down" size={16} color="#666" />
                                                 </TouchableOpacity>
-                                              </View>
+
+                                                {showFeeCourseDropdown && (
+                                                  <View style={{
+                                                    position: "absolute",
+                                                    top: 55, left: 0, right: 0,
+                                                    borderWidth: 1,
+                                                    borderColor: "#e0e0e0",
+                                                    borderRadius: 8,
+                                                    backgroundColor: "#ffffff",
+                                                    marginTop: 4,
+                                                    overflow: "hidden",
+                                                    zIndex: 99999, elevation: 20,
+                                                    maxHeight: 160,
+                                                    shadowColor: "#000",
+                                                    shadowOffset: { width: 0, height: 2 },
+                                                    shadowOpacity: 0.15,
+                                                    shadowRadius: 4,
+                                                  }}>
+                                                    <ScrollView nestedScrollEnabled={true} showsVerticalScrollIndicator={true}>
+                                                      <TouchableOpacity
+                                                        onPress={() => {
+                                                          setFeeFilterCourse("all");
+                                                          setFeeCurrentPage(1);
+                                                          setShowFeeCourseDropdown(false);
+                                                        }}
+                                                        style={{ padding: 10, borderBottomWidth: 1, borderBottomColor: "#f0f0f0", backgroundColor: feeFilterCourse === "all" ? "#e3f2fd" : "#ffffff" }}
+                                                      >
+                                                        <Text style={{ fontSize: 12, color: feeFilterCourse === "all" ? "#1976d2" : "#212121", fontWeight: feeFilterCourse === "all" ? "bold" : "normal" }}>All Courses</Text>
+                                                      </TouchableOpacity>
+                                                      {feeCourseList.map((cName: string) => (
+                                                        <TouchableOpacity
+                                                          key={cName}
+                                                          onPress={() => {
+                                                            setFeeFilterCourse(cName);
+                                                            setFeeCurrentPage(1);
+                                                            setShowFeeCourseDropdown(false);
+                                                          }}
+                                                          style={{ padding: 10, borderBottomWidth: 1, borderBottomColor: "#f0f0f0", backgroundColor: feeFilterCourse === cName ? "#e3f2fd" : "#ffffff" }}
+                                                        >
+                                                          <Text style={{ fontSize: 12, color: feeFilterCourse === cName ? "#1976d2" : "#212121", fontWeight: feeFilterCourse === cName ? "bold" : "normal" }}>{cName}</Text>
+                                                        </TouchableOpacity>
+                                                      ))}
+                                                    </ScrollView>
+                                                  </View>
+                                                )}
+                                              </>
+                                            ) : (
+                                              <UniversalDropdown
+                                                value={feeFilterCourse}
+                                                options={[
+                                                  { value: "all", label: "All Courses" },
+                                                  ...feeCourseList.map((cName: string) => ({ value: cName, label: cName }))
+                                                ]}
+                                                onSelect={(val) => {
+                                                  setFeeFilterCourse(val);
+                                                  setFeeCurrentPage(1);
+                                                }}
+                                                placeholder="All Courses"
+                                                darkMode={darkMode}
+                                              />
+                                            )}
+                                          </View>
+
+                                          {/* Batch Filter Dropdown */}
+                                          <View style={{ flex: 1, minWidth: 150, position: "relative" }}>
+                                            <Text style={{ fontSize: 11, fontWeight: "bold", color: "#555", marginBottom: 4 }}>Filter Batch:</Text>
+                                            {Platform.OS === 'web' ? (
+                                              <>
+                                                <TouchableOpacity
+                                                  onPress={() => {
+                                                    setShowFeeBatchDropdown(!showFeeBatchDropdown);
+                                                    setShowFeeCourseDropdown(false);
+                                                  }}
+                                                  style={{
+                                                    padding: 10,
+                                                    borderWidth: 1,
+                                                    borderColor: "#e0e0e0",
+                                                    borderRadius: 8,
+                                                    backgroundColor: "#ffffff",
+                                                    flexDirection: "row",
+                                                    justifyContent: "space-between",
+                                                    alignItems: "center"
+                                                  }}
+                                                >
+                                                  <Text style={{ fontSize: 12, color: "#212121", fontWeight: "500" }} numberOfLines={1}>
+                                                    {feeFilterBatch === "all" ? "All Batches" : feeFilterBatch}
+                                                  </Text>
+                                                  <Ionicons name="chevron-down" size={16} color="#666" />
+                                                </TouchableOpacity>
+
+                                                {showFeeBatchDropdown && (
+                                                  <View style={{
+                                                    position: "absolute",
+                                                    top: 55, left: 0, right: 0,
+                                                    borderWidth: 1,
+                                                    borderColor: "#e0e0e0",
+                                                    borderRadius: 8,
+                                                    backgroundColor: "#ffffff",
+                                                    marginTop: 4,
+                                                    overflow: "hidden",
+                                                    zIndex: 99999, elevation: 20,
+                                                    maxHeight: 160,
+                                                    shadowColor: "#000",
+                                                    shadowOffset: { width: 0, height: 2 },
+                                                    shadowOpacity: 0.15,
+                                                    shadowRadius: 4,
+                                                  }}>
+                                                    <ScrollView nestedScrollEnabled={true} showsVerticalScrollIndicator={true}>
+                                                      <TouchableOpacity
+                                                        onPress={() => {
+                                                          setFeeFilterBatch("all");
+                                                          setFeeCurrentPage(1);
+                                                          setShowFeeBatchDropdown(false);
+                                                        }}
+                                                        style={{ padding: 10, borderBottomWidth: 1, borderBottomColor: "#f0f0f0", backgroundColor: feeFilterBatch === "all" ? "#e3f2fd" : "#ffffff" }}
+                                                      >
+                                                        <Text style={{ fontSize: 12, color: feeFilterBatch === "all" ? "#1976d2" : "#212121", fontWeight: feeFilterBatch === "all" ? "bold" : "normal" }}>All Batches</Text>
+                                                      </TouchableOpacity>
+                                                      {feeBatchList.map((bName: string) => (
+                                                        <TouchableOpacity
+                                                          key={bName}
+                                                          onPress={() => {
+                                                            setFeeFilterBatch(bName);
+                                                            setFeeCurrentPage(1);
+                                                            setShowFeeBatchDropdown(false);
+                                                          }}
+                                                          style={{ padding: 10, borderBottomWidth: 1, borderBottomColor: "#f0f0f0", backgroundColor: feeFilterBatch === bName ? "#e3f2fd" : "#ffffff" }}
+                                                        >
+                                                          <Text style={{ fontSize: 12, color: feeFilterBatch === bName ? "#1976d2" : "#212121", fontWeight: feeFilterBatch === bName ? "bold" : "normal" }}>{bName}</Text>
+                                                        </TouchableOpacity>
+                                                      ))}
+                                                    </ScrollView>
+                                                  </View>
+                                                )}
+                                              </>
+                                            ) : (
+                                              <UniversalDropdown
+                                                value={feeFilterBatch}
+                                                options={[
+                                                  { value: "all", label: "All Batches" },
+                                                  ...feeBatchList.map((bName: string) => ({ value: bName, label: bName }))
+                                                ]}
+                                                onSelect={(val) => {
+                                                  setFeeFilterBatch(val);
+                                                  setFeeCurrentPage(1);
+                                                }}
+                                                placeholder="All Batches"
+                                                darkMode={darkMode}
+                                              />
+                                            )}
+                                          </View>
+
+                                          {/* Status filter buttons */}
+                                          <View style={{ flex: 1, minWidth: 180 }}>
+                                            <Text style={{ fontSize: 11, fontWeight: "bold", color: "#555", marginBottom: 4 }}>Filter Status:</Text>
+                                            <View style={{ flexDirection: "row", gap: 5 }}>
+                                              {(["all", "pending", "paid"] as const).map(status => {
+                                                const isSelected = feeFilterStatus === status;
+                                                return (
+                                                  <TouchableOpacity
+                                                    key={status}
+                                                    onPress={() => {
+                                                      setFeeFilterStatus(status);
+                                                      setFeeCurrentPage(1);
+                                                    }}
+                                                    style={{
+                                                      flex: 1,
+                                                      paddingVertical: 8,
+                                                      borderRadius: 6,
+                                                      borderWidth: 1,
+                                                      borderColor: isSelected ? "#c62828" : "#e0e0e0",
+                                                      backgroundColor: isSelected ? "#ffebee" : "#f9f9f9",
+                                                      alignItems: "center"
+                                                    }}
+                                                  >
+                                                    <Text style={{
+                                                      fontSize: 11,
+                                                      color: isSelected ? "#c62828" : "#555",
+                                                      fontWeight: isSelected ? "bold" : "normal"
+                                                    }}>
+                                                      {status.toUpperCase()}
+                                                    </Text>
+                                                  </TouchableOpacity>
+                                                );
+                                              })}
                                             </View>
                                           </View>
-                                        );
-                                      })}
-                                  </ScrollView>
+                                        </View>
+
+                                        <ScrollView style={isMobile ? { maxHeight: undefined } : { maxHeight: 500 }} nestedScrollEnabled={true}>
+                                          {paginatedFeeStudents.length === 0 ? (
+                                            <Text style={[styles.emptyText, { marginVertical: 20 }]}>No matching student records found.</Text>
+                                          ) : (
+                                            paginatedFeeStudents.map((s: any) => {
+                                              const tot = Number(s.totalFees) || 0;
+                                              const paid = Number(s.feesPaid) || 0;
+                                              const pending = tot - paid;
+                                              const isPending = pending > 0;
+                                              const isBlocked = isStudentFeeBlocked(s);
+                                              const isOverdue = s.feeAlertActive && s.feeAlertDueDate && isPending && (new Date().toISOString().slice(0, 10) > s.feeAlertDueDate);
+
+                                              return isMobile ? (
+                                                <View
+                                                  key={s.id}
+                                                  style={{
+                                                    padding: 12,
+                                                    borderRadius: 10,
+                                                    marginBottom: 10,
+                                                    borderWidth: 1,
+                                                    borderColor: darkMode ? "#2a2a2a" : "#e8e8e8",
+                                                    backgroundColor: darkMode ? "#1a1a2e" : "#fcfcfc",
+                                                    gap: 8,
+                                                  }}
+                                                >
+                                                  {/* Row 1: Student Name & Badges */}
+                                                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                                                    <Text style={{ fontWeight: "bold", color: darkMode ? "#ffffff" : "#212121", fontSize: 14, flex: 1 }}>
+                                                      {getStudentName(s)}
+                                                    </Text>
+                                                    <View style={{ flexDirection: "row", alignItems: "center", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                                                      {isPending ? (
+                                                        <View style={{ backgroundColor: "#ffebee", borderRadius: 4, paddingHorizontal: 7, paddingVertical: 2.5 }}>
+                                                          <Text style={{ color: "#c62828", fontSize: 10.5, fontWeight: "bold" }}>Pending: ₹{pending.toLocaleString()}</Text>
+                                                        </View>
+                                                      ) : tot > 0 ? (
+                                                        <View style={{ backgroundColor: "#e8f5e9", borderRadius: 4, paddingHorizontal: 7, paddingVertical: 2.5 }}>
+                                                          <Text style={{ color: "#2e7d32", fontSize: 10.5, fontWeight: "bold" }}>Paid in Full</Text>
+                                                        </View>
+                                                      ) : (
+                                                        <View style={{ backgroundColor: "#f5f5f5", borderRadius: 4, paddingHorizontal: 7, paddingVertical: 2.5 }}>
+                                                          <Text style={{ color: "#757575", fontSize: 10.5 }}>No Fees Set</Text>
+                                                        </View>
+                                                      )}
+                                                      {isBlocked ? (
+                                                        <View style={{ backgroundColor: "#fee2e2", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2.5, borderWidth: 1, borderColor: "#fca5a5" }}>
+                                                          <Text style={{ color: "#b91c1c", fontSize: 10, fontWeight: "bold" }}>
+                                                            {isOverdue ? "🚫 Overdue Block" : "🚫 Blocked"}
+                                                          </Text>
+                                                        </View>
+                                                      ) : (
+                                                        <View style={{ backgroundColor: "#dcfce7", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2.5 }}>
+                                                          <Text style={{ color: "#15803d", fontSize: 10, fontWeight: "bold" }}>🟢 Active Access</Text>
+                                                        </View>
+                                                      )}
+                                                    </View>
+                                                  </View>
+
+                                                  {/* Row 2: Roll, Batch, Course */}
+                                                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                                                    <Text style={{ fontSize: 11.5, color: darkMode ? "#a0a0a0" : "#616161" }}>
+                                                      Roll: <Text style={{ fontWeight: "600", color: darkMode ? "#e0e0e0" : "#333333" }}>{s.rollNumber || s.loginUsername || "N/A"}</Text>
+                                                    </Text>
+                                                    <Text style={{ fontSize: 11.5, color: darkMode ? "#555" : "#ccc" }}>|</Text>
+                                                    <Text style={{ fontSize: 11.5, color: darkMode ? "#a0a0a0" : "#616161" }}>
+                                                      Batch: <Text style={{ fontWeight: "600", color: darkMode ? "#e0e0e0" : "#333333" }}>{s.batch || "N/A"}</Text>
+                                                    </Text>
+                                                    {s.course ? (
+                                                      <>
+                                                        <Text style={{ fontSize: 11.5, color: darkMode ? "#555" : "#ccc" }}>|</Text>
+                                                        <Text style={{ fontSize: 11.5, color: darkMode ? "#a0a0a0" : "#616161" }}>
+                                                          Course: <Text style={{ fontWeight: "600", color: darkMode ? "#e0e0e0" : "#333333" }}>{s.course}</Text>
+                                                        </Text>
+                                                      </>
+                                                    ) : null}
+                                                  </View>
+
+                                                  {/* Row 3: Total & Paid Fees */}
+                                                  <View style={{ flexDirection: "row", gap: 14, alignItems: "center" }}>
+                                                    <Text style={{ fontSize: 11.5, color: darkMode ? "#a0a0a0" : "#616161" }}>
+                                                      Total: <Text style={{ fontWeight: "bold", color: darkMode ? "#e0e0e0" : "#212121" }}>₹{tot.toLocaleString()}</Text>
+                                                    </Text>
+                                                    <Text style={{ fontSize: 11.5, color: darkMode ? "#a0a0a0" : "#616161" }}>
+                                                      Paid: <Text style={{ fontWeight: "bold", color: "#2e7d32" }}>₹{paid.toLocaleString()}</Text>
+                                                    </Text>
+                                                  </View>
+
+                                                  {/* Row 4: Action Buttons (comfortable touch targets) */}
+                                                  <View style={{ flexDirection: "row", gap: 8, marginTop: 4, alignItems: "center" }}>
+                                                    {/* Manual Block / Unblock Toggle Button */}
+                                                    <TouchableOpacity
+                                                      onPress={() => handleToggleStudentFeeBlock(s)}
+                                                      style={{
+                                                        flex: 1,
+                                                        paddingVertical: 7,
+                                                        paddingHorizontal: 8,
+                                                        backgroundColor: isBlocked ? "#15803d" : "#475569",
+                                                        borderRadius: 6,
+                                                        flexDirection: "row",
+                                                        alignItems: "center",
+                                                        justifyContent: "center",
+                                                        gap: 4
+                                                      }}
+                                                    >
+                                                      <Ionicons name={isBlocked ? "lock-open-outline" : "lock-closed-outline"} size={12} color="#ffffff" />
+                                                      <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "bold" }}>
+                                                        {isBlocked ? "Unblock Access" : "Block Access"}
+                                                      </Text>
+                                                    </TouchableOpacity>
+
+                                                    {isPending && (
+                                                      <TouchableOpacity
+                                                        onPress={() => {
+                                                          setFeeAlertModalStudent({ ...s });
+                                                          const in7Days = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+                                                          setFeeAlertDueDate(in7Days);
+                                                          setFeeAlertNote("");
+                                                        }}
+                                                        style={{
+                                                          flex: 1,
+                                                          paddingVertical: 7,
+                                                          paddingHorizontal: 8,
+                                                          backgroundColor: "#c62828",
+                                                          borderRadius: 6,
+                                                          flexDirection: "row",
+                                                          alignItems: "center",
+                                                          justifyContent: "center",
+                                                          gap: 4
+                                                        }}
+                                                      >
+                                                        <Ionicons name="notifications-outline" size={12} color="#ffffff" />
+                                                        <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "bold" }}>Fee Alert</Text>
+                                                      </TouchableOpacity>
+                                                    )}
+
+                                                    <TouchableOpacity
+                                                      onPress={() => {
+                                                        setFeeEditStudent({ ...s, _originalFeesPaid: s.feesPaid });
+                                                        setFeeEditModeOfPayment("cash");
+                                                        setFeeEditTransactionId("");
+                                                      }}
+                                                      style={{
+                                                        flex: 1,
+                                                        paddingVertical: 7,
+                                                        paddingHorizontal: 8,
+                                                        backgroundColor: "#0288d1",
+                                                        borderRadius: 6,
+                                                        alignItems: "center",
+                                                        justifyContent: "center"
+                                                      }}
+                                                    >
+                                                      <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "bold" }}>Update Fees</Text>
+                                                    </TouchableOpacity>
+                                                  </View>
+                                                </View>
+                                              ) : (
+                                                /* Desktop view - 100% untouched */
+                                                <View key={s.id} style={{ paddingVertical: 12, borderBottomWidth: 1, borderColor: "#eeeeee", flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                                                  <View style={{ flex: 1, paddingRight: 8 }}>
+                                                    <Text style={{ fontWeight: "bold", color: "#212121", fontSize: 13 }}>{getStudentName(s)}</Text>
+                                                    <Text style={{ fontSize: 11, color: "#757575", marginTop: 1 }}>Roll: {s.rollNumber || s.loginUsername || "N/A"} | Batch: {s.batch || "N/A"}{s.course ? ` | Course: ${s.course}` : ""}</Text>
+                                                    <Text style={{ fontSize: 11, color: "#757575" }}>Total: ₹{tot.toLocaleString()} | Paid: ₹{paid.toLocaleString()}</Text>
+                                                  </View>
+                                                  <View style={{ alignItems: "flex-end", gap: 6 }}>
+                                                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                                                      {isPending ? (
+                                                        <View style={{ backgroundColor: "#ffebee", borderRadius: 4, paddingHorizontal: 8, paddingVertical: 2 }}>
+                                                          <Text style={{ color: "#c62828", fontSize: 11, fontWeight: "bold" }}>Pending: ₹{pending.toLocaleString()}</Text>
+                                                        </View>
+                                                      ) : tot > 0 ? (
+                                                        <View style={{ backgroundColor: "#e8f5e9", borderRadius: 4, paddingHorizontal: 8, paddingVertical: 2 }}>
+                                                          <Text style={{ color: "#2e7d32", fontSize: 11, fontWeight: "bold" }}>Paid in Full</Text>
+                                                        </View>
+                                                      ) : (
+                                                        <View style={{ backgroundColor: "#f5f5f5", borderRadius: 4, paddingHorizontal: 8, paddingVertical: 2 }}>
+                                                          <Text style={{ color: "#757575", fontSize: 11 }}>No Fees Set</Text>
+                                                        </View>
+                                                      )}
+                                                      {isBlocked ? (
+                                                        <View style={{ backgroundColor: "#fee2e2", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2, borderWidth: 1, borderColor: "#fca5a5" }}>
+                                                          <Text style={{ color: "#b91c1c", fontSize: 10, fontWeight: "bold" }}>
+                                                            {isOverdue ? "🚫 Overdue Block" : "🚫 Blocked"}
+                                                          </Text>
+                                                        </View>
+                                                      ) : (
+                                                        <View style={{ backgroundColor: "#dcfce7", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+                                                          <Text style={{ color: "#15803d", fontSize: 10, fontWeight: "bold" }}>🟢 Active Access</Text>
+                                                        </View>
+                                                      )}
+                                                    </View>
+
+                                                    <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                                                      {/* Manual Block / Unblock Toggle Button */}
+                                                      <TouchableOpacity
+                                                        onPress={() => handleToggleStudentFeeBlock(s)}
+                                                        style={{
+                                                          paddingHorizontal: 8,
+                                                          paddingVertical: 4,
+                                                          backgroundColor: isBlocked ? "#15803d" : "#475569",
+                                                          borderRadius: 4,
+                                                          flexDirection: "row",
+                                                          alignItems: "center",
+                                                          gap: 3
+                                                        }}
+                                                      >
+                                                        <Ionicons name={isBlocked ? "lock-open-outline" : "lock-closed-outline"} size={11} color="#ffffff" />
+                                                        <Text style={{ color: "#ffffff", fontSize: 10, fontWeight: "bold" }}>
+                                                          {isBlocked ? "Unblock Access" : "Block Access"}
+                                                        </Text>
+                                                      </TouchableOpacity>
+
+                                                      {isPending && (
+                                                        <TouchableOpacity
+                                                          onPress={() => {
+                                                            setFeeAlertModalStudent({ ...s });
+                                                            const in7Days = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+                                                            setFeeAlertDueDate(in7Days);
+                                                            setFeeAlertNote("");
+                                                          }}
+                                                          style={{ paddingHorizontal: 8, paddingVertical: 4, backgroundColor: "#c62828", borderRadius: 4, flexDirection: "row", alignItems: "center", gap: 3 }}
+                                                        >
+                                                          <Ionicons name="notifications-outline" size={11} color="#ffffff" />
+                                                          <Text style={{ color: "#ffffff", fontSize: 10, fontWeight: "bold" }}>Fee Alert</Text>
+                                                        </TouchableOpacity>
+                                                      )}
+                                                      <TouchableOpacity
+                                                        onPress={() => {
+                                                          setFeeEditStudent({ ...s, _originalFeesPaid: s.feesPaid });
+                                                          setFeeEditModeOfPayment("cash");
+                                                          setFeeEditTransactionId("");
+                                                        }}
+                                                        style={{ paddingHorizontal: 8, paddingVertical: 4, backgroundColor: "#0288d1", borderRadius: 4 }}
+                                                      >
+                                                        <Text style={{ color: "#ffffff", fontSize: 10, fontWeight: "bold" }}>Update Fees</Text>
+                                                      </TouchableOpacity>
+                                                    </View>
+                                                  </View>
+                                                </View>
+                                              );
+                                            })
+                                          )}
+                                        </ScrollView>
+
+                                        {/* Pagination Footer */}
+                                        {totalFeePages > 1 && (
+                                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8, paddingHorizontal: 6, borderTopWidth: 1, borderTopColor: darkMode ? "#444" : "#eee", marginTop: 8, marginBottom: isMobile ? 16 : 0 }}>
+                                            <TouchableOpacity disabled={safeFeePage <= 1} onPress={() => setFeeCurrentPage(safeFeePage - 1)} style={{ paddingHorizontal: isMobile ? 12 : 8, paddingVertical: isMobile ? 7 : 4, opacity: safeFeePage <= 1 ? 0.4 : 1, backgroundColor: isMobile ? (darkMode ? "#222" : "#f5f5f5") : "transparent", borderRadius: 6 }}>
+                                              <Text style={{ fontSize: 12, fontWeight: "bold", color: darkMode ? "#ffffff" : "#333333" }}>‹ Prev</Text>
+                                            </TouchableOpacity>
+                                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 4, alignItems: "center", paddingHorizontal: 4 }}>
+                                              {Array.from({ length: totalFeePages }, (_, i) => i + 1).map((p) => (
+                                                <TouchableOpacity key={p} onPress={() => setFeeCurrentPage(p)} style={{ paddingHorizontal: 10, paddingVertical: isMobile ? 7 : 4, borderRadius: 6, borderWidth: 1, borderColor: p === safeFeePage ? "#c62828" : (darkMode ? "#444" : "#e0e0e0"), backgroundColor: p === safeFeePage ? "#c62828" : (darkMode ? "#2a2a2a" : "#ffffff") }}>
+                                                  <Text style={{ fontSize: 12, color: p === safeFeePage ? "#ffffff" : (darkMode ? "#cccccc" : "#333333"), fontWeight: p === safeFeePage ? "bold" : "normal" }}>{p}</Text>
+                                                </TouchableOpacity>
+                                              ))}
+                                            </ScrollView>
+                                            <TouchableOpacity disabled={safeFeePage >= totalFeePages} onPress={() => setFeeCurrentPage(safeFeePage + 1)} style={{ paddingHorizontal: isMobile ? 12 : 8, paddingVertical: isMobile ? 7 : 4, opacity: safeFeePage >= totalFeePages ? 0.4 : 1, backgroundColor: isMobile ? (darkMode ? "#222" : "#f5f5f5") : "transparent", borderRadius: 6 }}>
+                                              <Text style={{ fontSize: 12, fontWeight: "bold", color: darkMode ? "#ffffff" : "#333333" }}>Next ›</Text>
+                                            </TouchableOpacity>
+                                          </View>
+                                        )}
+                                      </>
+                                    );
+                                  })()}
                                 </View>
                               </>
                             )}
 
-                            {(user.role !== "student" || displayFees.length > 0) && (
+                            {user.role === "student" && displayFees.length > 0 && (
                               <View style={styles.card}>
-                                <Text style={styles.sectionTitle}>{user.role === "student" ? "Payment Receipts & History" : "Tuition Ledger Assignments"}</Text>
-                                {displayFees.length === 0 ? (
-                                  <Text style={styles.emptyText}>{user.role === "student" ? "No fee records found for your account." : "No active fee records assigned."}</Text>
-                                ) : (
-                                  displayFees.map((f: any) => {
-                                    const stud = students.find((s: any) => s.id === f.studentId);
-                                    const isPaid = f.status === "paid";
-                                    return (
-                                      <View key={f.id} style={{ paddingVertical: 12, borderBottomWidth: 1, borderColor: "#eeeeee" }}>
-                                        {user.role !== "student" && (
-                                          <Text style={{ fontWeight: "bold", color: "#212121", marginBottom: 4 }}>
-                                            {stud ? getStudentName(stud) : `ID: ${f.studentId}`}
+                                <Text style={styles.sectionTitle}>Payment Receipts & History</Text>
+                                {displayFees.map((f: any) => {
+                                  const isPaid = f.status === "paid";
+                                  return (
+                                    <View key={f.id} style={{ paddingVertical: 12, borderBottomWidth: 1, borderColor: "#eeeeee" }}>
+                                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                                        <View>
+                                          <Text style={{ color: "#555", fontSize: 13 }}>Total Fee: <Text style={{ fontWeight: "bold", color: "#212121" }}>₹{f.totalAmount}</Text></Text>
+                                          <Text style={{ color: "#555", fontSize: 12 }}>Paid: ₹{f.paidAmount || 0} | Due: ₹{(f.totalAmount || 0) - (f.paidAmount || 0)}</Text>
+                                          {f.dueDate && <Text style={{ color: "#888", fontSize: 11 }}>Due Date: {f.dueDate}</Text>}
+                                        </View>
+                                        <View style={{ backgroundColor: isPaid ? "#e8f5e9" : "#fff3e0", borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4 }}>
+                                          <Text style={{ color: isPaid ? "#2e7d32" : "#e65100", fontWeight: "bold", fontSize: 12 }}>
+                                            {(f.status || "pending").toUpperCase()}
                                           </Text>
-                                        )}
-                                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                                          <View>
-                                            <Text style={{ color: "#555", fontSize: 13 }}>Total Fee: <Text style={{ fontWeight: "bold", color: "#212121" }}>₹{f.totalAmount}</Text></Text>
-                                            <Text style={{ color: "#555", fontSize: 12 }}>Paid: ₹{f.paidAmount || 0} | Due: ₹{(f.totalAmount || 0) - (f.paidAmount || 0)}</Text>
-                                            {f.dueDate && <Text style={{ color: "#888", fontSize: 11 }}>Due Date: {f.dueDate}</Text>}
-                                          </View>
-                                          <View style={{ backgroundColor: isPaid ? "#e8f5e9" : "#fff3e0", borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4 }}>
-                                            <Text style={{ color: isPaid ? "#2e7d32" : "#e65100", fontWeight: "bold", fontSize: 12 }}>
-                                              {(f.status || "pending").toUpperCase()}
-                                            </Text>
-                                          </View>
                                         </View>
                                       </View>
-                                    );
-                                  })
-                                )}
+                                    </View>
+                                  );
+                                })}
                               </View>
                             )}
                           </View>
@@ -30233,15 +32417,26 @@ SOURCE QUESTION PAPER:
 
                       {erpSub === "qr-permissions" && isAdmin && (
                         <View style={{ flex: 1, padding: 16 }}>
-                          <LMSProvider>
+                          {Platform.OS === "web" && !isMobile ? (
+                            <LMSProvider>
+                              <Suspense fallback={<RNTableSkeleton rows={6} darkMode={darkMode} />}>
+                                <QRCodePermissionsPage erpStudents={students} erpBatches={batches} erpCourses={courses} />
+                              </Suspense>
+                            </LMSProvider>
+                          ) : (
                             <Suspense fallback={<RNTableSkeleton rows={6} darkMode={darkMode} />}>
-                              <QRCodePermissionsPage />
+                              <MobileQRCodePermissions
+                                erpStudents={students}
+                                erpBatches={batches}
+                                erpCourses={courses}
+                                darkMode={darkMode}
+                              />
                             </Suspense>
-                          </LMSProvider>
+                          )}
                         </View>
                       )}
 
-                      {erpSub === "pay-fees" && user.role === "student" && (
+                      {(erpSub === "pay-fees" || erpSub === "fees") && user.role === "student" && (
                         <View style={{ flex: 1, padding: 16 }}>
                           <LMSProvider>
                             <Suspense fallback={<RNContainerSkeleton rows={3} darkMode={darkMode} />}>
@@ -30291,76 +32486,306 @@ SOURCE QUESTION PAPER:
                                 </TouchableOpacity>
                               </View>
 
-                              {/* Individual Student Mode: List with Search */}
-                              {generationMode === "individual" && (
-                                <View style={styles.card}>
-                                  <Text style={styles.sectionTitle}>Select Student – Design & Generate Credentials</Text>
+                              {/* Individual Student Mode: List with Search & Filters */}
+                              {generationMode === "individual" && (() => {
+                                const idCourseList = Array.from(new Set([
+                                  ...courses.map((c: any) => c.title || c.name || c.courseName).filter(Boolean),
+                                  ...(Array.isArray(lmsCourses) ? lmsCourses.map((c: any) => c.title || c.name).filter(Boolean) : []),
+                                  ...students.map((s: any) => s.course).filter(Boolean)
+                                ])).sort();
 
-                                  {/* Search Input */}
-                                  <View style={{ marginBottom: 12 }}>
-                                    <TextInput
-                                      style={styles.input}
-                                      value={studentSearchQuery}
-                                      onChangeText={setStudentSearchQuery}
-                                      placeholder="Search student by roll number or name..."
-                                      placeholderTextColor="#999"
-                                    />
-                                  </View>
+                                const idBatchList = Array.from(new Set([
+                                  ...batches.map((b: any) => b.batchName || b.name).filter(Boolean),
+                                  ...students.flatMap((s: any) => Array.isArray(s.batches) ? s.batches : (s.batch ? [s.batch] : [])).filter(Boolean)
+                                ])).sort();
 
-                                  <ScrollView style={{ maxHeight: 180 }} nestedScrollEnabled={true}>
-                                    {(() => {
-                                      const filteredStudents = students.filter((s: any) =>
-                                        (s.rollNumber || "").toLowerCase().includes(studentSearchQuery.toLowerCase()) ||
-                                        (`${s.firstName || ""} ${s.lastName || ""}`).toLowerCase().includes(studentSearchQuery.toLowerCase())
-                                      );
+                                const filteredStudents = students.filter((s: any) => {
+                                  const name = (`${s.firstName || ""} ${s.lastName || ""}`).toLowerCase();
+                                  const roll = String(s.rollNumber || s.loginUsername || "").toLowerCase();
+                                  const q = studentSearchQuery.toLowerCase();
+                                  if (q && !name.includes(q) && !roll.includes(q)) return false;
 
-                                      if (filteredStudents.length === 0) {
-                                        return <Text style={styles.emptyText}>No matching student profiles found.</Text>;
-                                      }
+                                  if (idFilterCourse !== "all" && s.course !== idFilterCourse) return false;
 
-                                      return filteredStudents.map((s: any) => {
-                                        const isSelected = selectedIdStudent?.id === s.id;
-                                        return (
-                                          <TouchableOpacity
-                                            key={s.id}
-                                            onPress={() => setSelectedIdStudent(s)}
-                                            style={{
-                                              paddingVertical: 10,
-                                              paddingHorizontal: 8,
-                                              borderBottomWidth: 1,
-                                              borderColor: "#eeeeee",
-                                              backgroundColor: isSelected ? "#ffebee" : "transparent",
-                                              borderRadius: 6,
-                                              marginBottom: 4
+                                  if (idFilterBatch !== "all") {
+                                    const bList = Array.isArray(s.batches) ? s.batches : (s.batch ? [s.batch] : []);
+                                    if (!bList.includes(idFilterBatch) && s.batch !== idFilterBatch) return false;
+                                  }
+                                  return true;
+                                });
+
+                                const ID_ITEMS_PER_PAGE = 20;
+                                const totalIdPages = Math.ceil(filteredStudents.length / ID_ITEMS_PER_PAGE) || 1;
+                                const safeIdPage = Math.max(1, Math.min(idCurrentPage, totalIdPages));
+                                const startIdIndex = (safeIdPage - 1) * ID_ITEMS_PER_PAGE;
+                                const paginatedStudents = filteredStudents.slice(startIdIndex, startIdIndex + ID_ITEMS_PER_PAGE);
+
+                                return (
+                                  <View style={styles.card}>
+                                    <Text style={styles.sectionTitle}>Select Student – Design & Generate Credentials</Text>
+
+                                    {/* Search Input */}
+                                    <View style={{ marginBottom: 12 }}>
+                                      <TextInput
+                                        style={styles.input}
+                                        value={studentSearchQuery}
+                                        onChangeText={(txt) => {
+                                          setStudentSearchQuery(txt);
+                                          setIdCurrentPage(1);
+                                        }}
+                                        placeholder="Search student by roll number or name..."
+                                        placeholderTextColor="#999"
+                                      />
+                                    </View>
+
+                                    {/* Filter row: Course Dropdown, Batch Dropdown */}
+                                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 12, alignItems: "flex-end", zIndex: 100 }}>
+                                      {/* Course Filter Dropdown */}
+                                      <View style={{ flex: 1, minWidth: 150, position: "relative" }}>
+                                        <Text style={{ fontSize: 11, fontWeight: "bold", color: "#555", marginBottom: 4 }}>Filter Course:</Text>
+                                        {Platform.OS === 'web' ? (
+                                          <>
+                                            <TouchableOpacity
+                                              onPress={() => {
+                                                setShowIdCourseDropdown(!showIdCourseDropdown);
+                                                setShowIdBatchDropdown(false);
+                                              }}
+                                              style={{
+                                                padding: 10,
+                                                borderWidth: 1,
+                                                borderColor: "#e0e0e0",
+                                                borderRadius: 8,
+                                                backgroundColor: "#ffffff",
+                                                flexDirection: "row",
+                                                justifyContent: "space-between",
+                                                alignItems: "center"
+                                              }}
+                                            >
+                                              <Text style={{ fontSize: 12, color: "#212121", fontWeight: "500" }} numberOfLines={1}>
+                                                {idFilterCourse === "all" ? "All Courses" : idFilterCourse}
+                                              </Text>
+                                              <Ionicons name="chevron-down" size={16} color="#666" />
+                                            </TouchableOpacity>
+
+                                            {showIdCourseDropdown && (
+                                              <View style={{
+                                                position: "absolute",
+                                                top: 55, left: 0, right: 0,
+                                                borderWidth: 1,
+                                                borderColor: "#e0e0e0",
+                                                borderRadius: 8,
+                                                backgroundColor: "#ffffff",
+                                                marginTop: 4,
+                                                overflow: "hidden",
+                                                zIndex: 99999, elevation: 20,
+                                                maxHeight: 160,
+                                                shadowColor: "#000",
+                                                shadowOffset: { width: 0, height: 2 },
+                                                shadowOpacity: 0.15,
+                                                shadowRadius: 4,
+                                              }}>
+                                                <ScrollView nestedScrollEnabled={true} showsVerticalScrollIndicator={true}>
+                                                  <TouchableOpacity
+                                                    onPress={() => {
+                                                      setIdFilterCourse("all");
+                                                      setIdCurrentPage(1);
+                                                      setShowIdCourseDropdown(false);
+                                                    }}
+                                                    style={{ padding: 10, borderBottomWidth: 1, borderBottomColor: "#f0f0f0", backgroundColor: idFilterCourse === "all" ? "#e3f2fd" : "#ffffff" }}
+                                                  >
+                                                    <Text style={{ fontSize: 12, color: idFilterCourse === "all" ? "#1976d2" : "#212121", fontWeight: idFilterCourse === "all" ? "bold" : "normal" }}>All Courses</Text>
+                                                  </TouchableOpacity>
+                                                  {idCourseList.map((cName: string) => (
+                                                    <TouchableOpacity
+                                                      key={cName}
+                                                      onPress={() => {
+                                                        setIdFilterCourse(cName);
+                                                        setIdCurrentPage(1);
+                                                        setShowIdCourseDropdown(false);
+                                                      }}
+                                                      style={{ padding: 10, borderBottomWidth: 1, borderBottomColor: "#f0f0f0", backgroundColor: idFilterCourse === cName ? "#e3f2fd" : "#ffffff" }}
+                                                    >
+                                                      <Text style={{ fontSize: 12, color: idFilterCourse === cName ? "#1976d2" : "#212121", fontWeight: idFilterCourse === cName ? "bold" : "normal" }}>{cName}</Text>
+                                                    </TouchableOpacity>
+                                                  ))}
+                                                </ScrollView>
+                                              </View>
+                                            )}
+                                          </>
+                                        ) : (
+                                          <UniversalDropdown
+                                            value={idFilterCourse}
+                                            options={[
+                                              { value: "all", label: "All Courses" },
+                                              ...idCourseList.map((cName: string) => ({ value: cName, label: cName }))
+                                            ]}
+                                            onSelect={(val) => {
+                                              setIdFilterCourse(val);
+                                              setIdCurrentPage(1);
                                             }}
-                                          >
-                                            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                                              <View>
-                                                <Text style={{ color: isSelected ? "#c62828" : "#212121", fontWeight: "bold", fontSize: 13 }}>
-                                                  {s.firstName} {s.lastName}
-                                                </Text>
-                                                <Text style={{ fontSize: 11, color: "#757575", marginTop: 2 }}>Roll: {s.rollNumber || s.loginUsername || "N/A"} | {s.batch || "General"}</Text>
+                                            placeholder="All Courses"
+                                            darkMode={darkMode}
+                                          />
+                                        )}
+                                      </View>
+
+                                      {/* Batch Filter Dropdown */}
+                                      <View style={{ flex: 1, minWidth: 150, position: "relative" }}>
+                                        <Text style={{ fontSize: 11, fontWeight: "bold", color: "#555", marginBottom: 4 }}>Filter Batch:</Text>
+                                        {Platform.OS === 'web' ? (
+                                          <>
+                                            <TouchableOpacity
+                                              onPress={() => {
+                                                setShowIdBatchDropdown(!showIdBatchDropdown);
+                                                setShowIdCourseDropdown(false);
+                                              }}
+                                              style={{
+                                                padding: 10,
+                                                borderWidth: 1,
+                                                borderColor: "#e0e0e0",
+                                                borderRadius: 8,
+                                                backgroundColor: "#ffffff",
+                                                flexDirection: "row",
+                                                justifyContent: "space-between",
+                                                alignItems: "center"
+                                              }}
+                                            >
+                                              <Text style={{ fontSize: 12, color: "#212121", fontWeight: "500" }} numberOfLines={1}>
+                                                {idFilterBatch === "all" ? "All Batches" : idFilterBatch}
+                                              </Text>
+                                              <Ionicons name="chevron-down" size={16} color="#666" />
+                                            </TouchableOpacity>
+
+                                            {showIdBatchDropdown && (
+                                              <View style={{
+                                                position: "absolute",
+                                                top: 55, left: 0, right: 0,
+                                                borderWidth: 1,
+                                                borderColor: "#e0e0e0",
+                                                borderRadius: 8,
+                                                backgroundColor: "#ffffff",
+                                                marginTop: 4,
+                                                overflow: "hidden",
+                                                zIndex: 99999, elevation: 20,
+                                                maxHeight: 160,
+                                                shadowColor: "#000",
+                                                shadowOffset: { width: 0, height: 2 },
+                                                shadowOpacity: 0.15,
+                                                shadowRadius: 4,
+                                              }}>
+                                                <ScrollView nestedScrollEnabled={true} showsVerticalScrollIndicator={true}>
+                                                  <TouchableOpacity
+                                                    onPress={() => {
+                                                      setIdFilterBatch("all");
+                                                      setIdCurrentPage(1);
+                                                      setShowIdBatchDropdown(false);
+                                                    }}
+                                                    style={{ padding: 10, borderBottomWidth: 1, borderBottomColor: "#f0f0f0", backgroundColor: idFilterBatch === "all" ? "#e3f2fd" : "#ffffff" }}
+                                                  >
+                                                    <Text style={{ fontSize: 12, color: idFilterBatch === "all" ? "#1976d2" : "#212121", fontWeight: idFilterBatch === "all" ? "bold" : "normal" }}>All Batches</Text>
+                                                  </TouchableOpacity>
+                                                  {idBatchList.map((bName: string) => (
+                                                    <TouchableOpacity
+                                                      key={bName}
+                                                      onPress={() => {
+                                                        setIdFilterBatch(bName);
+                                                        setIdCurrentPage(1);
+                                                        setShowIdBatchDropdown(false);
+                                                      }}
+                                                      style={{ padding: 10, borderBottomWidth: 1, borderBottomColor: "#f0f0f0", backgroundColor: idFilterBatch === bName ? "#e3f2fd" : "#ffffff" }}
+                                                    >
+                                                      <Text style={{ fontSize: 12, color: idFilterBatch === bName ? "#1976d2" : "#212121", fontWeight: idFilterBatch === bName ? "bold" : "normal" }}>{bName}</Text>
+                                                    </TouchableOpacity>
+                                                  ))}
+                                                </ScrollView>
                                               </View>
-                                              <View style={{ flexDirection: "row", gap: 4 }}>
-                                                {s.idCardGenerated && (
-                                                  <View style={{ backgroundColor: "#e8f5e9", borderRadius: 4, paddingHorizontal: 4, paddingVertical: 2 }}>
-                                                    <Text style={{ fontSize: 9, color: "#2e7d32", fontWeight: "bold" }}>🪪 ID</Text>
-                                                  </View>
-                                                )}
-                                                {s.hallTicketGenerated && (
-                                                  <View style={{ backgroundColor: "#e8f5e9", borderRadius: 4, paddingHorizontal: 4, paddingVertical: 2 }}>
-                                                    <Text style={{ fontSize: 9, color: "#2e7d32", fontWeight: "bold" }}> TICKET</Text>
-                                                  </View>
-                                                )}
+                                            )}
+                                          </>
+                                        ) : (
+                                          <UniversalDropdown
+                                            value={idFilterBatch}
+                                            options={[
+                                              { value: "all", label: "All Batches" },
+                                              ...idBatchList.map((bName: string) => ({ value: bName, label: bName }))
+                                            ]}
+                                            onSelect={(val) => {
+                                              setIdFilterBatch(val);
+                                              setIdCurrentPage(1);
+                                            }}
+                                            placeholder="All Batches"
+                                            darkMode={darkMode}
+                                          />
+                                        )}
+                                      </View>
+                                    </View>
+
+                                    <ScrollView style={isMobile ? { maxHeight: undefined } : { maxHeight: 380 }} nestedScrollEnabled={true}>
+                                      {paginatedStudents.length === 0 ? (
+                                        <Text style={[styles.emptyText, { marginVertical: 20 }]}>No matching student profiles found.</Text>
+                                      ) : (
+                                        paginatedStudents.map((s: any) => {
+                                          const isSelected = selectedIdStudent?.id === s.id;
+                                          return (
+                                            <TouchableOpacity
+                                              key={s.id}
+                                              onPress={() => setSelectedIdStudent(s)}
+                                              style={{
+                                                paddingVertical: 10,
+                                                paddingHorizontal: 8,
+                                                borderBottomWidth: 1,
+                                                borderColor: "#eeeeee",
+                                                backgroundColor: isSelected ? "#ffebee" : "transparent",
+                                                borderRadius: 6,
+                                                marginBottom: 4
+                                              }}
+                                            >
+                                              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                                                <View>
+                                                  <Text style={{ color: isSelected ? "#c62828" : "#212121", fontWeight: "bold", fontSize: 13 }}>
+                                                    {s.firstName} {s.lastName}
+                                                  </Text>
+                                                  <Text style={{ fontSize: 11, color: "#757575", marginTop: 2 }}>Roll: {s.rollNumber || s.loginUsername || "N/A"} | {s.batch || "General"}{s.course ? ` | ${s.course}` : ""}</Text>
+                                                </View>
+                                                <View style={{ flexDirection: "row", gap: 4 }}>
+                                                  {s.idCardGenerated && (
+                                                    <View style={{ backgroundColor: "#e8f5e9", borderRadius: 4, paddingHorizontal: 4, paddingVertical: 2 }}>
+                                                      <Text style={{ fontSize: 9, color: "#2e7d32", fontWeight: "bold" }}>🪪 ID</Text>
+                                                    </View>
+                                                  )}
+                                                  {s.hallTicketGenerated && (
+                                                    <View style={{ backgroundColor: "#e8f5e9", borderRadius: 4, paddingHorizontal: 4, paddingVertical: 2 }}>
+                                                      <Text style={{ fontSize: 9, color: "#2e7d32", fontWeight: "bold" }}>🎟️ TICKET</Text>
+                                                    </View>
+                                                  )}
+                                                </View>
                                               </View>
-                                            </View>
-                                          </TouchableOpacity>
-                                        );
-                                      });
-                                    })()}
-                                  </ScrollView>
-                                </View>
-                              )}
+                                            </TouchableOpacity>
+                                          );
+                                        })
+                                      )}
+                                    </ScrollView>
+
+                                    {/* Pagination Footer */}
+                                    {totalIdPages > 1 && (
+                                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8, paddingHorizontal: 6, borderTopWidth: 1, borderTopColor: darkMode ? "#444" : "#eee", marginTop: 8 }}>
+                                        <TouchableOpacity disabled={safeIdPage <= 1} onPress={() => setIdCurrentPage(safeIdPage - 1)} style={{ paddingHorizontal: 8, paddingVertical: 4, opacity: safeIdPage <= 1 ? 0.4 : 1 }}>
+                                          <Text style={{ fontSize: 12, fontWeight: "bold", color: darkMode ? "#ffffff" : "#333333" }}>‹ Prev</Text>
+                                        </TouchableOpacity>
+                                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 4, alignItems: "center", paddingHorizontal: 4 }}>
+                                          {Array.from({ length: totalIdPages }, (_, i) => i + 1).map((p) => (
+                                            <TouchableOpacity key={p} onPress={() => setIdCurrentPage(p)} style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: p === safeIdPage ? "#c62828" : (darkMode ? "#444" : "#e0e0e0"), backgroundColor: p === safeIdPage ? "#c62828" : (darkMode ? "#2a2a2a" : "#ffffff") }}>
+                                              <Text style={{ fontSize: 12, color: p === safeIdPage ? "#ffffff" : (darkMode ? "#cccccc" : "#333333"), fontWeight: p === safeIdPage ? "bold" : "normal" }}>{p}</Text>
+                                            </TouchableOpacity>
+                                          ))}
+                                        </ScrollView>
+                                        <TouchableOpacity disabled={safeIdPage >= totalIdPages} onPress={() => setIdCurrentPage(safeIdPage + 1)} style={{ paddingHorizontal: 8, paddingVertical: 4, opacity: safeIdPage >= totalIdPages ? 0.4 : 1 }}>
+                                          <Text style={{ fontSize: 12, fontWeight: "bold", color: darkMode ? "#ffffff" : "#333333" }}>Next ›</Text>
+                                        </TouchableOpacity>
+                                      </View>
+                                    )}
+                                  </View>
+                                );
+                              })()}
 
                               {/* Batch Operations Mode: Batch Selector */}
                               {generationMode === "batch" && (
@@ -31790,17 +34215,17 @@ SOURCE QUESTION PAPER:
 
                               const displayResults = user.role === "student"
                                 ? erpTestResults.filter((r: any) => {
-                                    const rStudentId = String(r.studentId || "").toLowerCase();
-                                    const rRollNumber = String(r.rollNumber || r.rollNo || "").toLowerCase();
-                                    const rStudentName = String(r.studentName || "").toLowerCase();
-                                    const userName = String(user.name || user.fullName || "").toLowerCase();
-                                    const myStudName = myStudent ? String(getStudentName(myStudent) || "").toLowerCase() : "";
+                                  const rStudentId = String(r.studentId || "").toLowerCase();
+                                  const rRollNumber = String(r.rollNumber || r.rollNo || "").toLowerCase();
+                                  const rStudentName = String(r.studentName || "").toLowerCase();
+                                  const userName = String(user.name || user.fullName || "").toLowerCase();
+                                  const myStudName = myStudent ? String(getStudentName(myStudent) || "").toLowerCase() : "";
 
-                                    if (myStudentUserIds.has(rStudentId) || myStudentUserIds.has(rRollNumber)) return true;
-                                    if (userName && rStudentName && (rStudentName.includes(userName) || userName.includes(rStudentName))) return true;
-                                    if (myStudName && rStudentName && (rStudentName.includes(myStudName) || myStudName.includes(rStudentName))) return true;
-                                    return false;
-                                  })
+                                  if (myStudentUserIds.has(rStudentId) || myStudentUserIds.has(rRollNumber)) return true;
+                                  if (userName && rStudentName && (rStudentName.includes(userName) || userName.includes(rStudentName))) return true;
+                                  if (myStudName && rStudentName && (rStudentName.includes(myStudName) || myStudName.includes(rStudentName))) return true;
+                                  return false;
+                                })
                                 : erpTestResults;
 
                               if (displayResults.length === 0) {
@@ -31810,92 +34235,92 @@ SOURCE QUESTION PAPER:
                               return (
                                 <View style={{ gap: 5, marginTop: 10 }}>
                                   {/* Table Header */}
-                                   <View style={[
-                                     styles.tableRow,
-                                     {
-                                       backgroundColor: darkMode ? "#252525" : "#f9f9f9",
-                                       paddingVertical: 10,
-                                       paddingHorizontal: 12,
-                                       borderTopWidth: 1,
-                                       borderTopColor: darkMode ? "#444" : "#e0e0e0",
-                                       borderBottomWidth: 2,
-                                       borderBottomColor: darkMode ? "#555" : "#bdbdbd",
-                                       borderTopLeftRadius: 8,
-                                       borderTopRightRadius: 8,
-                                     }
-                                   ]}>
-                                     <Text style={[styles.th, { flex: 2.5, color: darkMode ? "#ff8a80" : "#c62828" }]}>Student Name</Text>
-                                     <Text style={[styles.th, { flex: 1, textAlign: "center", color: darkMode ? "#ff8a80" : "#c62828" }]}>Score</Text>
-                                     {user.role !== "student" && (
-                                       <Text style={[styles.th, { flex: 1.2, textAlign: "center", color: darkMode ? "#ff8a80" : "#c62828" }]}>Tab Exits</Text>
-                                     )}
-                                     <Text style={[styles.th, { flex: 0.8, textAlign: "center", color: darkMode ? "#ff8a80" : "#c62828" }]}>Rank</Text>
-                                     {user.role !== "student" && (
-                                       <Text style={[styles.th, { flex: 1, textAlign: "right", color: darkMode ? "#ff8a80" : "#c62828" }]}>Status</Text>
-                                     )}
-                                   </View>
+                                  <View style={[
+                                    styles.tableRow,
+                                    {
+                                      backgroundColor: darkMode ? "#252525" : "#f9f9f9",
+                                      paddingVertical: 10,
+                                      paddingHorizontal: 12,
+                                      borderTopWidth: 1,
+                                      borderTopColor: darkMode ? "#444" : "#e0e0e0",
+                                      borderBottomWidth: 2,
+                                      borderBottomColor: darkMode ? "#555" : "#bdbdbd",
+                                      borderTopLeftRadius: 8,
+                                      borderTopRightRadius: 8,
+                                    }
+                                  ]}>
+                                    <Text style={[styles.th, { flex: 2.5, color: darkMode ? "#ff8a80" : "#c62828" }]}>Student Name</Text>
+                                    <Text style={[styles.th, { flex: 1, textAlign: "center", color: darkMode ? "#ff8a80" : "#c62828" }]}>Score</Text>
+                                    {user.role !== "student" && (
+                                      <Text style={[styles.th, { flex: 1.2, textAlign: "center", color: darkMode ? "#ff8a80" : "#c62828" }]}>Tab Exits</Text>
+                                    )}
+                                    <Text style={[styles.th, { flex: 0.8, textAlign: "center", color: darkMode ? "#ff8a80" : "#c62828" }]}>Rank</Text>
+                                    {user.role !== "student" && (
+                                      <Text style={[styles.th, { flex: 1, textAlign: "right", color: darkMode ? "#ff8a80" : "#c62828" }]}>Status</Text>
+                                    )}
+                                  </View>
 
-                                   {/* Table Body */}
-                                   {displayResults.map((r, idx) => {
-                                     const stud = students.find((s) => s.id === r.studentId || s.userId === r.studentId || s.loginUsername === r.rollNumber || s.rollNumber === r.rollNumber);
-                                     const lead = leads.find((ld) => ld.id === r.studentId || ld.userId === r.studentId);
-                                     const resolvedName = r.studentName || (stud ? getStudentName(stud) : (lead ? lead.name : (r.studentId ? `Student (${String(r.studentId).substring(0, 8)})` : "Student")));
-                                     const resolvedRoll = (r.rollNumber && r.rollNumber !== "N/A") ? r.rollNumber : (stud ? (stud.rollNumber || stud.loginUsername) : "");
-                                     const rollLabel = resolvedRoll ? ` (${resolvedRoll})` : "";
-                                     const name = user.role === "student" ? `My Score${rollLabel}` : `${resolvedName}${rollLabel}`;
-                                     const isPass = r.status === "pass" && (r.obtainedMarks || 0) > 0;
-                                     const isLast = idx === displayResults.length - 1;
-                                     return (
-                                       <View
-                                         key={r.id}
-                                         style={[
-                                           styles.tableRow,
-                                           {
-                                             paddingVertical: 12,
-                                             paddingHorizontal: 12,
-                                             borderColor: darkMode ? "#444" : "#e0e0e0",
-                                             borderBottomWidth: isLast ? 0 : 1,
-                                             backgroundColor: darkMode ? "#1e1e1e" : "#ffffff",
-                                             borderBottomLeftRadius: isLast ? 8 : 0,
-                                             borderBottomRightRadius: isLast ? 8 : 0,
-                                           }
-                                         ]}
-                                       >
-                                         <Text style={{ flex: 2.5, color: darkMode ? "#e0e0e0" : "#212121", fontSize: 13, fontWeight: "500" }} numberOfLines={1} ellipsizeMode="tail">
-                                           {name}
-                                         </Text>
-                                         <Text style={{ flex: 1, textAlign: "center", color: darkMode ? "#e0e0e0" : "#212121", fontSize: 13 }}>
-                                           {r.obtainedMarks} / {r.totalMarks}
-                                         </Text>
-                                         {user.role !== "student" && (
-                                           <Text style={{
-                                             flex: 1.2,
-                                             textAlign: "center",
-                                             color: (r.tabLeaveCount || 0) > 0 ? "#e53935" : (darkMode ? "#e0e0e0" : "#212121"),
-                                             fontWeight: (r.tabLeaveCount || 0) > 0 ? "bold" : "normal",
-                                             fontSize: 13
-                                           }}>
-                                             {r.tabLeaveCount || 0}
-                                           </Text>
-                                         )}
-                                         <Text style={{ flex: 0.8, textAlign: "center", color: darkMode ? "#b0bec5" : "#616161", fontSize: 13, fontWeight: "bold" }}>
-                                           #{r.rank || 1}
-                                         </Text>
-                                         {user.role !== "student" && (
-                                           <Text style={{ flex: 1, textAlign: "right" }}>
-                                             {(() => {
-                                               const perf = getPerformanceStatus(r.obtainedMarks || 0, r.totalMarks || 0, r.percentage);
-                                               return (
-                                                 <Text style={{ color: perf.color, fontWeight: "bold", fontSize: 11 }}>
-                                                   {perf.label}
-                                                 </Text>
-                                               );
-                                             })()}
-                                           </Text>
-                                         )}
-                                       </View>
-                                     );
-                                   })}
+                                  {/* Table Body */}
+                                  {displayResults.map((r, idx) => {
+                                    const stud = students.find((s) => s.id === r.studentId || s.userId === r.studentId || s.loginUsername === r.rollNumber || s.rollNumber === r.rollNumber);
+                                    const lead = leads.find((ld) => ld.id === r.studentId || ld.userId === r.studentId);
+                                    const resolvedName = r.studentName || (stud ? getStudentName(stud) : (lead ? lead.name : (r.studentId ? `Student (${String(r.studentId).substring(0, 8)})` : "Student")));
+                                    const resolvedRoll = (r.rollNumber && r.rollNumber !== "N/A") ? r.rollNumber : (stud ? (stud.rollNumber || stud.loginUsername) : "");
+                                    const rollLabel = resolvedRoll ? ` (${resolvedRoll})` : "";
+                                    const name = user.role === "student" ? `My Score${rollLabel}` : `${resolvedName}${rollLabel}`;
+                                    const isPass = r.status === "pass" && (r.obtainedMarks || 0) > 0;
+                                    const isLast = idx === displayResults.length - 1;
+                                    return (
+                                      <View
+                                        key={r.id}
+                                        style={[
+                                          styles.tableRow,
+                                          {
+                                            paddingVertical: 12,
+                                            paddingHorizontal: 12,
+                                            borderColor: darkMode ? "#444" : "#e0e0e0",
+                                            borderBottomWidth: isLast ? 0 : 1,
+                                            backgroundColor: darkMode ? "#1e1e1e" : "#ffffff",
+                                            borderBottomLeftRadius: isLast ? 8 : 0,
+                                            borderBottomRightRadius: isLast ? 8 : 0,
+                                          }
+                                        ]}
+                                      >
+                                        <Text style={{ flex: 2.5, color: darkMode ? "#e0e0e0" : "#212121", fontSize: 13, fontWeight: "500" }} numberOfLines={1} ellipsizeMode="tail">
+                                          {name}
+                                        </Text>
+                                        <Text style={{ flex: 1, textAlign: "center", color: darkMode ? "#e0e0e0" : "#212121", fontSize: 13 }}>
+                                          {r.obtainedMarks} / {r.totalMarks}
+                                        </Text>
+                                        {user.role !== "student" && (
+                                          <Text style={{
+                                            flex: 1.2,
+                                            textAlign: "center",
+                                            color: (r.tabLeaveCount || 0) > 0 ? "#e53935" : (darkMode ? "#e0e0e0" : "#212121"),
+                                            fontWeight: (r.tabLeaveCount || 0) > 0 ? "bold" : "normal",
+                                            fontSize: 13
+                                          }}>
+                                            {r.tabLeaveCount || 0}
+                                          </Text>
+                                        )}
+                                        <Text style={{ flex: 0.8, textAlign: "center", color: darkMode ? "#b0bec5" : "#616161", fontSize: 13, fontWeight: "bold" }}>
+                                          #{r.rank || 1}
+                                        </Text>
+                                        {user.role !== "student" && (
+                                          <Text style={{ flex: 1, textAlign: "right" }}>
+                                            {(() => {
+                                              const perf = getPerformanceStatus(r.obtainedMarks || 0, r.totalMarks || 0, r.percentage);
+                                              return (
+                                                <Text style={{ color: perf.color, fontWeight: "bold", fontSize: 11 }}>
+                                                  {perf.label}
+                                                </Text>
+                                              );
+                                            })()}
+                                          </Text>
+                                        )}
+                                      </View>
+                                    );
+                                  })}
                                 </View>
                               );
                             })()}
@@ -33410,10 +35835,10 @@ SOURCE QUESTION PAPER:
                     contentContainerStyle={{ alignItems: lmsTabsCollapsed && !isMobile ? "center" : "stretch", gap: 6, paddingBottom: 60 }}
                     showsVerticalScrollIndicator={false}
                   >
-                    {isAdmin && Platform.OS === 'web' && renderSidebarItem("lms-access", lmsSub, "Access Control", "shield-checkmark-outline", () => changeLmsSub("lms-access"), "lms-admin-access", undefined, lmsTabsCollapsed && !isMobile, "lms_sacs_access")}
+                    {isAdmin && renderSidebarItem("lms-access", lmsSub, "Access Control", "shield-checkmark-outline", () => changeLmsSub("lms-access"), "lms-admin-access", undefined, lmsTabsCollapsed && !isMobile, "lms_sacs_access")}
 
                     {!lmsTabsCollapsed || isMobile ? <Text style={styles.categoryHeader}>LEARNING</Text> : null}
-                    {isAdmin && renderSidebarItem("live-classes", lmsSub, "Live", "videocam-outline", () => changeLmsSub("live-classes"), "lms-live-classes", undefined, lmsTabsCollapsed && !isMobile, "lms_live_classes")}
+                    {isAdmin && renderSidebarItem("live-classes", lmsSub, "Live", "videocam-outline", () => changeLmsSub("live-classes"), "lms-live-classes", (lmsLiveSessions || []).filter((s: any) => s.status === "live").length || undefined, lmsTabsCollapsed && !isMobile, "lms_live_classes")}
                     {renderSidebarItem("daily-content", lmsSub, "Daily Content", "calendar-outline", () => changeLmsSub("daily-content"), "lms-daily-content", undefined, lmsTabsCollapsed && !isMobile, "lms_daily_content")}
                     {renderSidebarItem("quiz", (lmsSub === "quiz" || lmsSub === "all-quizzes" || lmsSub === "create-quiz") ? "quiz" : lmsSub, "Quiz", "help-circle-outline", () => changeLmsSub("quiz"), "lms-quiz", undefined, lmsTabsCollapsed && !isMobile, "lms_quiz_posting")}
                     {renderSidebarItem("recorded", lmsSub, "Recorded", "play-circle-outline", () => changeLmsSub("recorded"), "lms-recorded", undefined, lmsTabsCollapsed && !isMobile, "lms_recorded_videos")}
@@ -33425,19 +35850,19 @@ SOURCE QUESTION PAPER:
                     {renderSidebarItem("resources", lmsSub, "Resources", "folder-outline", () => changeLmsSub("resources"), "lms-resources", undefined, lmsTabsCollapsed && !isMobile, "lms_resources")}
 
                     {/* Admin-only: Full LMS Management */}
-                    {isAdmin && Platform.OS === 'web' && (!lmsTabsCollapsed || isMobile) && <Text style={styles.categoryHeader}>LMS MANAGEMENT</Text>}
-                    {isAdmin && Platform.OS === 'web' && renderSidebarItem("lms-teachers", lmsSub, "Teachers/Staffs", "people-outline", () => changeLmsSub("lms-teachers"), "lms-admin-teachers", undefined, lmsTabsCollapsed && !isMobile, "lms_teachers")}
-                    {isAdmin && Platform.OS === 'web' && renderSidebarItem("lms-courses", lmsSub, "Courses", "library-outline", () => changeLmsSub("lms-courses"), "lms-admin-courses", undefined, lmsTabsCollapsed && !isMobile, "lms_courses")}
-                    {isAdmin && Platform.OS === 'web' && renderSidebarItem("lms-subjects", lmsSub, "Subjects", "layers-outline", () => changeLmsSub("lms-subjects"), "lms-admin-subjects", undefined, lmsTabsCollapsed && !isMobile, "lms_subjects")}
-                    {isAdmin && Platform.OS === 'web' && renderSidebarItem("lms-topics", lmsSub, "Topics", "list-outline", () => changeLmsSub("lms-topics"), "lms-admin-topics", undefined, lmsTabsCollapsed && !isMobile, "lms_topics")}
-                    {isAdmin && Platform.OS === 'web' && renderSidebarItem("lms-subtopics", lmsSub, "Subtopics", "git-commit-outline", () => changeLmsSub("lms-subtopics"), "lms-admin-subtopics", undefined, lmsTabsCollapsed && !isMobile, "lms_subtopics")}
-                    {(isAdmin || isTeacher) && Platform.OS === 'web' && renderSidebarItem("lms-syllabus", lmsSub, "Syllabus Tracker", "checkbox-outline", () => changeLmsSub("lms-syllabus"), "lms-admin-syllabus", undefined, lmsTabsCollapsed && !isMobile, "lms_syllabus")}
+                    {isAdmin && (!lmsTabsCollapsed || isMobile) && <Text style={styles.categoryHeader}>LMS MANAGEMENT</Text>}
+                    {isAdmin && renderSidebarItem("lms-teachers", lmsSub, "Teachers/Staffs", "people-outline", () => changeLmsSub("lms-teachers"), "lms-admin-teachers", undefined, lmsTabsCollapsed && !isMobile, "lms_teachers")}
+                    {isAdmin && renderSidebarItem("lms-courses", lmsSub, "Courses", "library-outline", () => changeLmsSub("lms-courses"), "lms-admin-courses", undefined, lmsTabsCollapsed && !isMobile, "lms_courses")}
+                    {isAdmin && renderSidebarItem("lms-subjects", lmsSub, "Subjects", "layers-outline", () => changeLmsSub("lms-subjects"), "lms-admin-subjects", undefined, lmsTabsCollapsed && !isMobile, "lms_subjects")}
+                    {isAdmin && renderSidebarItem("lms-topics", lmsSub, "Topics", "list-outline", () => changeLmsSub("lms-topics"), "lms-admin-topics", undefined, lmsTabsCollapsed && !isMobile, "lms_topics")}
+                    {isAdmin && renderSidebarItem("lms-subtopics", lmsSub, "Subtopics", "git-commit-outline", () => changeLmsSub("lms-subtopics"), "lms-admin-subtopics", undefined, lmsTabsCollapsed && !isMobile, "lms_subtopics")}
+                    {(isAdmin || isTeacher) && renderSidebarItem("lms-syllabus", lmsSub, "Syllabus Tracker", "checkbox-outline", () => changeLmsSub("lms-syllabus"), "lms-admin-syllabus", undefined, lmsTabsCollapsed && !isMobile, "lms_syllabus")}
 
                     {/* Remaining LMS management items at the bottom */}
-                    {isAdmin && Platform.OS === 'web' && renderSidebarItem("lms-zoom-accounts", lmsSub, "Zoom Accounts", "videocam-outline", () => changeLmsSub("lms-zoom-accounts"), "lms-admin-zoom-accounts", undefined, lmsTabsCollapsed && !isMobile, "lms_zoom_accounts")}
+                    {isAdmin && renderSidebarItem("lms-zoom-accounts", lmsSub, "Zoom Accounts", "videocam-outline", () => changeLmsSub("lms-zoom-accounts"), "lms-admin-zoom-accounts", undefined, lmsTabsCollapsed && !isMobile, "lms_zoom_accounts")}
 
-                    {isAdmin && Platform.OS === 'web' && (!lmsTabsCollapsed || isMobile) && <Text style={styles.categoryHeader}>AI STUDIO</Text>}
-                    {isAdmin && Platform.OS === 'web' && renderSidebarItem("lms-chatbot", lmsSub, "NERMAI AI Studio", "chatbubbles-outline", () => changeLmsSub("lms-chatbot"), "lms-admin-chatbot", undefined, lmsTabsCollapsed && !isMobile, "lms_chatbot_cms")}
+                    {isAdmin && (!lmsTabsCollapsed || isMobile) && <Text style={styles.categoryHeader}>AI STUDIO</Text>}
+                    {isAdmin && renderSidebarItem("lms-chatbot", lmsSub, "NERMAI AI Studio", "chatbubbles-outline", () => changeLmsSub("lms-chatbot"), "lms-admin-chatbot", undefined, lmsTabsCollapsed && !isMobile, "lms_chatbot_cms")}
                   </ScrollView>
                 </View>
               )}
@@ -33736,7 +36161,7 @@ SOURCE QUESTION PAPER:
                             />
                           </View>
                           <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
-                            {["All", "pdf", "video", "image", "document", "link"].map((cat) => (
+                            {["All", "pdf", "image"].map((cat) => (
                               <TouchableOpacity
                                 key={cat}
                                 onPress={() => setLmsResourceCategory(cat)}
@@ -34113,6 +36538,8 @@ SOURCE QUESTION PAPER:
                                                   topicId: session.topicId || "",
                                                   provider: session.provider || "zoom",
                                                   accessLevel: session.accessLevel || "premium",
+                                                  batchTargetType: (session.accessLevel === "batch" || (session.targetBatchIds && session.targetBatchIds.length > 0)) ? "select" : "all",
+                                                  selectedBatchIds: session.targetBatchIds || session.targetBatches || [],
                                                   startDate: formatDate(d),
                                                   startTime: formatTime(d),
                                                   expectedDurationMinutes: session.liveSession?.expectedDurationMinutes || session.expectedDurationMinutes || 60,
@@ -34190,12 +36617,14 @@ SOURCE QUESTION PAPER:
                                                       const tokenRes = await api.post(`/live-sessions/${sessionId}/join-token`, {});
                                                       const token = tokenRes.data?.token || tokenRes.token;
                                                       if (token) {
-                                                        const baseOrigin = typeof window !== "undefined" ? window.location.origin : "https://nermaiiasacademy-519c8.web.app";
+                                                        const baseOrigin = (Platform.OS === 'web' && typeof window !== "undefined" && (window as any).location?.origin) ? (window as any).location.origin : "https://nermaiiasacademy-519c8.web.app";
                                                         const apiBase = getBaseUrl().replace(/\/api$/, "");
                                                         const popupUrl = `${baseOrigin}/meeting-hosts/zoom-client-launch.html?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(sessionId)}&apiUrl=${encodeURIComponent(apiBase)}`;
-                                                        if (typeof window !== "undefined") {
-                                                          window.open(popupUrl, "nermai-meeting", "width=1280,height=760,menubar=no,toolbar=no,location=no,status=no,resizable=yes");
-                                                        }
+                                                        if (Platform.OS === 'web' && typeof window !== "undefined") {
+    window.open(popupUrl, "nermai-meeting", "width=1280,height=760,menubar=no,toolbar=no,location=no,status=no,resizable=yes");
+  } else {
+    Linking.openURL(popupUrl).catch(() => Alert.alert("Notice", "Unable to open meeting link."));
+  }
                                                         launched = true;
                                                       }
                                                     } catch (tokErr) {
@@ -34208,9 +36637,11 @@ SOURCE QUESTION PAPER:
                                                     const launchUrl = freshSession?.hostUrl || freshSession?.launchPayload?.start_url || freshSession?.launchPayload?.hostUrl || freshSession?.participantUrl || freshSession?.launchPayload?.join_url || freshSession?.launchPayload?.participantUrl || freshSession?.joinUrl || freshSession?.meetingUrl || null;
 
                                                     if (launchUrl) {
-                                                      if (typeof window !== "undefined") {
-                                                        window.open(launchUrl, "_blank");
-                                                      }
+                                                      if (Platform.OS === 'web' && typeof window !== "undefined") {
+    window.open(launchUrl, "_blank");
+  } else {
+    Linking.openURL(launchUrl).catch(() => Alert.alert("Notice", "Unable to open launch link."));
+  }
                                                     }
                                                   }
                                                   loadLiveSessions();
@@ -34231,31 +36662,47 @@ SOURCE QUESTION PAPER:
                                             <TouchableOpacity
                                               onPress={() => {
                                                 const sessionId = session.id || session._id;
-                                                if (typeof window !== 'undefined') {
+                                                const doEnd = (convertToYoutube = false, ytUrl?: string) => {
+                                                  api.post(`/live-sessions/${sessionId}/end-with-conversion`, {
+                                                    convertToYoutube,
+                                                    youtubeUrl: ytUrl || undefined
+                                                  })
+                                                    .then(async () => {
+                                                      Alert.alert("Ended", "Live session ended successfully.");
+                                                      loadLiveSessions();
+                                                      try {
+                                                        const res = await api.get(`/live-sessions/${sessionId}/attendance`);
+                                                        const list = Array.isArray(res) ? res : (res?.records || res?.data || []);
+                                                        setAttendanceList(list);
+                                                      } catch (attErr) {}
+                                                    })
+                                                    .catch((err: any) => {
+                                                      Alert.alert('Error', err?.response?.data?.message || 'Failed to end session');
+                                                    });
+                                                };
+
+                                                if (Platform.OS === 'web' && typeof window !== 'undefined') {
                                                   const choice = window.confirm(
                                                     `End "${sessionTitle}"?\n\nPress OK to end class only.\nPress Cancel to stay.`
                                                   );
                                                   if (!choice) return;
+
+                                                  // Ask about YouTube conversion
+                                                  const convertYt = window.confirm('Convert to YouTube Recorded Class?\n\nOK = Yes (you will enter a URL)\nCancel = No, just end it.');
+                                                  const ytUrl = convertYt
+                                                    ? window.prompt('Paste the YouTube recording URL:', 'https://www.youtube.com/watch?v=')
+                                                    : null;
+                                                  doEnd(convertYt && !!ytUrl, ytUrl || undefined);
+                                                } else {
+                                                  Alert.alert(
+                                                    "End Class",
+                                                    `Are you sure you want to end "${sessionTitle}"?`,
+                                                    [
+                                                      { text: "Cancel", style: "cancel" },
+                                                      { text: "End Class", style: "destructive", onPress: () => doEnd(false) }
+                                                    ]
+                                                  );
                                                 }
-                                                // Ask about YouTube conversion
-                                                const convertYt = typeof window !== 'undefined'
-                                                  ? window.confirm('Convert to YouTube Recorded Class?\n\nOK = Yes (you will enter a URL)\nCancel = No, just end it.')
-                                                  : false;
-                                                const ytUrl = convertYt && typeof window !== 'undefined'
-                                                  ? window.prompt('Paste the YouTube recording URL:', 'https://www.youtube.com/watch?v=')
-                                                  : null;
-                                                api.post(`/live-sessions/${sessionId}/end-with-conversion`, {
-                                                  convertToYoutube: convertYt && !!ytUrl,
-                                                  youtubeUrl: ytUrl || undefined
-                                                })
-                                                  .then(async () => {
-                                                    const res = await api.get(`/live-sessions/${sessionId}/attendance`);
-                                                    const list = Array.isArray(res) ? res : (res?.records || res?.data || []);
-                                                    setAttendanceList(list);
-                                                  })
-                                                  .catch((err: any) => {
-                                                    Alert.alert('Error', err?.response?.data?.message || 'Failed to end session');
-                                                  });
                                               }}
                                               style={{ backgroundColor: "#c62828", paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8, flexDirection: "row", alignItems: "center", gap: 6 }}
                                             >
@@ -34269,23 +36716,27 @@ SOURCE QUESTION PAPER:
                                             <TouchableOpacity
                                               onPress={() => {
                                                 const sessionId = session.id || session._id;
-                                                const ytUrl = typeof window !== 'undefined'
-                                                  ? window.prompt('Paste the YouTube recording URL:', 'https://www.youtube.com/watch?v=')
-                                                  : null;
+                                                if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                                                  const ytUrl = typeof window.prompt === 'function'
+                                                    ? window.prompt('Paste the YouTube recording URL:', 'https://www.youtube.com/watch?v=')
+                                                    : null;
 
-                                                if (!ytUrl) return; // cancelled
+                                                  if (!ytUrl) return; // cancelled
 
-                                                api.post(`/live-sessions/${sessionId}/end-with-conversion`, {
-                                                  convertToYoutube: true,
-                                                  youtubeUrl: ytUrl
-                                                })
-                                                  .then(() => {
-                                                    Alert.alert('Done', 'Session converted to recorded class!');
-                                                    loadLiveSessions();
+                                                  api.post(`/live-sessions/${sessionId}/end-with-conversion`, {
+                                                    convertToYoutube: true,
+                                                    youtubeUrl: ytUrl
                                                   })
-                                                  .catch((err: any) => {
-                                                    Alert.alert('Error', err?.response?.data?.message || 'Failed to convert session');
-                                                  });
+                                                    .then(() => {
+                                                      Alert.alert('Done', 'Session converted to recorded class!');
+                                                      loadLiveSessions();
+                                                    })
+                                                    .catch((err: any) => {
+                                                      Alert.alert('Error', err?.response?.data?.message || 'Failed to convert session');
+                                                    });
+                                                } else {
+                                                  Alert.alert("Convert to YouTube", "YouTube conversion with custom URL is supported on web portal.");
+                                                }
                                               }}
                                               style={{ backgroundColor: "#1565c0", paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8, flexDirection: "row", alignItems: "center", gap: 6 }}
                                             >
@@ -34350,12 +36801,14 @@ SOURCE QUESTION PAPER:
                                                   const tokenRes = await api.post(`/live-sessions/${sessionId}/join-token`, {});
                                                   const token = tokenRes.data?.token || tokenRes.token;
                                                   if (token) {
-                                                    const baseOrigin = typeof window !== "undefined" ? window.location.origin : "https://nermaiiasacademy-519c8.web.app";
+                                                    const baseOrigin = (Platform.OS === 'web' && typeof window !== "undefined" && (window as any).location?.origin) ? (window as any).location.origin : "https://nermaiiasacademy-519c8.web.app";
                                                     const apiBase = getBaseUrl().replace(/\/api$/, "");
                                                     const popupUrl = `${baseOrigin}/meeting-hosts/zoom-client-launch.html?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(sessionId)}&apiUrl=${encodeURIComponent(apiBase)}`;
-                                                    if (typeof window !== "undefined") {
-                                                      window.open(popupUrl, "nermai-meeting", "width=1280,height=760,menubar=no,toolbar=no,location=no,status=no,resizable=yes");
-                                                    }
+                                                    if (Platform.OS === 'web' && typeof window !== "undefined") {
+    window.open(popupUrl, "nermai-meeting", "width=1280,height=760,menubar=no,toolbar=no,location=no,status=no,resizable=yes");
+  } else {
+    Linking.openURL(popupUrl).catch(() => Alert.alert("Notice", "Unable to open meeting link."));
+  }
                                                     launched = true;
                                                   }
                                                 } catch (tokErr) {
@@ -34377,10 +36830,10 @@ SOURCE QUESTION PAPER:
                                               const launchUrl = payload?.joinUrl || payload?.join_url || payload?.meetUrl || payload?.url || payload?.sdk?.joinUrl || payload?.sdk?.join_url || (payload?.videoId ? `https://www.youtube.com/watch?v=${payload.videoId}` : null);
 
                                               if (launchUrl) {
-                                                if (typeof window !== "undefined") {
-                                                  window.open(launchUrl, "_blank");
-                                                } else {
-                                                  Alert.alert("Join Session", `Opening: ${launchUrl}`);
+                                                if (Platform.OS === 'web' && typeof window !== "undefined") {
+    window.open(launchUrl, "_blank");
+  } else {
+    Linking.openURL(launchUrl).catch(() => Alert.alert("Notice", "Unable to open launch link."));
                                                 }
                                               } else {
                                                 Alert.alert("Notice", "The live meeting link is pending. Please wait for the instructor to start.");
@@ -34584,14 +37037,20 @@ SOURCE QUESTION PAPER:
                     {/* ── LMS Recorded Classes Tab                {/* ── LMS Recorded Classes Tab (Real API Data) ───────────────────── */}
                     {lmsSub === "recorded" && (
                       <View style={{ gap: 16 }}>
-                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                        <View style={{ 
+                          flexDirection: isMobile ? "column" : "row", 
+                          justifyContent: "space-between", 
+                          alignItems: isMobile ? "flex-start" : "center",
+                          gap: isMobile ? 12 : 10,
+                          flexWrap: "wrap"
+                        }}>
                           <View>
                             <Text style={{ fontSize: 15, fontWeight: "bold", color: darkMode ? "#fff" : "#212121" }}>Recorded Video Library</Text>
                             <Text style={{ fontSize: 12, color: darkMode ? "#aaa" : "#757575", marginTop: 2 }}>
                               {lmsRecordedClasses.length} lecture{lmsRecordedClasses.length !== 1 ? "s" : ""} available
                             </Text>
                           </View>
-                          <View style={{ flexDirection: "row", gap: 10 }}>
+                          <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap", width: isMobile ? "100%" : "auto" }}>
                             {isAdmin && (
                               <TouchableOpacity
                                 onPress={() => {
@@ -35084,11 +37543,16 @@ SOURCE QUESTION PAPER:
                                     <option value="batch">Specific Batch</option>
                                   </select>
                                 ) : (
-                                  <TextInput
-                                    style={styles.input}
-                                    placeholder="all / paid / batch"
+                                  <UniversalDropdown
                                     value={dailyContentForm.targetAudience}
-                                    onChangeText={v => setDailyContentForm({ ...dailyContentForm, targetAudience: v as any })}
+                                    options={[
+                                      { value: "all", label: "All Students (Free & Enrolled)" },
+                                      { value: "paid", label: "All Enrolled Students" },
+                                      { value: "batch", label: "Specific Batch" }
+                                    ]}
+                                    onSelect={v => setDailyContentForm({ ...dailyContentForm, targetAudience: v as any })}
+                                    placeholder="Select Target Audience"
+                                    darkMode={darkMode}
                                   />
                                 )}
                               </View>
@@ -35293,7 +37757,7 @@ SOURCE QUESTION PAPER:
                                   Select File from Computer (.pdf or .jpeg / .jpg / .png) *
                                 </Text>
                                 <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                                  {Platform.OS === 'web' && (
+                                  {Platform.OS === 'web' ? (
                                     <input
                                       type="file"
                                       accept=".pdf,image/jpeg,image/png,image/jpg"
@@ -35309,6 +37773,61 @@ SOURCE QUESTION PAPER:
                                         flex: 1
                                       }}
                                     />
+                                  ) : (
+                                    <TouchableOpacity
+                                      onPress={async () => {
+                                        try {
+                                          const res = await DocumentPicker.getDocumentAsync({
+                                            type: ['application/pdf', 'image/*'],
+                                            copyToCacheDirectory: true
+                                          });
+                                          if (!res.canceled && res.assets && res.assets.length > 0) {
+                                            const asset = res.assets[0];
+                                            let mimeType = asset.mimeType || (asset.name?.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg');
+                                            const isImg = mimeType.startsWith('image/');
+                                            try {
+                                              const resp = await fetch(asset.uri);
+                                              const blob = await resp.blob();
+                                              const reader = new FileReader();
+                                              reader.onloadend = () => {
+                                                const base64Str = reader.result as string;
+                                                setDailyContentForm(prev => ({
+                                                  ...prev,
+                                                  fileBase64: base64Str,
+                                                  fileName: asset.name,
+                                                  type: isImg ? 'image' : 'pdf'
+                                                }));
+                                                Alert.alert("Success", `Selected file: ${asset.name}`);
+                                              };
+                                              reader.onerror = (err) => {
+                                                console.warn("FileReader error:", err);
+                                                Alert.alert("Error", "Could not read file data.");
+                                              };
+                                              reader.readAsDataURL(blob);
+                                            } catch (e: any) {
+                                              console.warn("Fetch blob base64 error:", e);
+                                              Alert.alert("Error", "Could not process file: " + (e.message || e));
+                                            }
+                                          }
+                                        } catch (e: any) {
+                                          console.warn("DocumentPicker daily content error:", e);
+                                          Alert.alert("Error", "DocumentPicker failed: " + (e.message || e));
+                                        }
+                                      }}
+                                      style={{
+                                        flexDirection: "row",
+                                        alignItems: "center",
+                                        gap: 6,
+                                        backgroundColor: "#c62828",
+                                        paddingHorizontal: 16,
+                                        paddingVertical: 10,
+                                        borderRadius: 8,
+                                        alignSelf: "flex-start"
+                                      }}
+                                    >
+                                      <Ionicons name="cloud-upload-outline" size={16} color="#fff" />
+                                      <Text style={{ color: "#fff", fontSize: 13, fontWeight: "bold" }}>Choose File from Device</Text>
+                                    </TouchableOpacity>
                                   )}
                                 </View>
                                 {dailyContentForm.fileName ? (
@@ -35485,7 +38004,8 @@ SOURCE QUESTION PAPER:
 
 
                     {/* ─── WEB/MOBILE: Admin LMS (Web) & Student LMS (Web/Mobile) ─────────────── */}
-                    {(Platform.OS === 'web' || !isAdmin) && (
+                    {/* ─── WEB/MOBILE: Admin LMS (Web) & Student LMS (Web/Mobile) ─────────────── */}
+                    {Platform.OS === 'web' && !isMobile ? (
                       <LMSProvider>
                         <>
                           {/* Admin — Course Management */}
@@ -35578,6 +38098,18 @@ SOURCE QUESTION PAPER:
                           )}
                         </>
                       </LMSProvider>
+                    ) : (
+                      <Suspense fallback={<RNTableSkeleton rows={6} darkMode={darkMode} />}>
+                        <MobileLMSPages
+                          lmsSub={lmsSub}
+                          isAdmin={isAdmin}
+                          isTeacher={isTeacher}
+                          darkMode={darkMode}
+                          executeEditOrApproval={executeEditOrApproval}
+                          getFeatureAccess={getFeatureAccess}
+                          changeLmsSub={changeLmsSub}
+                        />
+                      </Suspense>
                     )}
                   </>
                 )}
@@ -35700,11 +38232,11 @@ SOURCE QUESTION PAPER:
                     showsVerticalScrollIndicator={false}
                   >
                     {!crmSidebarCollapsed || isMobile ? <Text style={styles.categoryHeader}>ADMISSIONS & LEADS</Text> : null}
-                    {renderSidebarItem("merged-leads", crmSub, "Applications & Leads (New)", "people-outline", () => changeCrmSub("merged-leads"), "crm-leads", undefined, crmSidebarCollapsed && !isMobile, "leads")}
-                    {renderSidebarItem("admissions", crmSub, "Admission Application", "mail-outline", () => changeCrmSub("admissions"), "crm-admissions", undefined, crmSidebarCollapsed && !isMobile, "admissions")}
+                    {renderSidebarItem("merged-leads", crmSub, "Applications & Leads (New)", "people-outline", () => changeCrmSub("merged-leads"), "crm-leads", (((admissions || []).filter((a: any) => a.status === "pending" || a.status === "new" || !a.status).length) + ((enquiries || []).filter((e: any) => e.status === "pending" || e.status === "new").length)) || undefined, crmSidebarCollapsed && !isMobile, "leads")}
+                    {renderSidebarItem("admissions", crmSub, "Admission Application", "mail-outline", () => changeCrmSub("admissions"), "crm-admissions", (admissions || []).filter((a: any) => a.status === "pending" || a.status === "new" || !a.status).length || undefined, crmSidebarCollapsed && !isMobile, "admissions")}
                     {renderSidebarItem("leads", crmSub, "Leads", "funnel-outline", () => changeCrmSub("leads"), "crm-leads", undefined, crmSidebarCollapsed && !isMobile, "leads")}
                     {renderSidebarItem("custom-leads", crmSub, "Custom Leads", "clipboard-outline", () => changeCrmSub("custom-leads"), "crm-leads", undefined, crmSidebarCollapsed && !isMobile, "leads")}
-                    {renderSidebarItem("inquiries", crmSub, "Inquiries", "chatbubble-ellipses-outline", () => changeCrmSub("inquiries"), "crm-inquiries", undefined, crmSidebarCollapsed && !isMobile, "admissions")}
+                    {renderSidebarItem("inquiries", crmSub, "Inquiries", "chatbubble-ellipses-outline", () => changeCrmSub("inquiries"), "crm-inquiries", (enquiries || []).filter((e: any) => e.status === "pending" || e.status === "new").length || undefined, crmSidebarCollapsed && !isMobile, "admissions")}
 
                     {!crmSidebarCollapsed || isMobile ? <Text style={styles.categoryHeader}>FORM BUILDER</Text> : null}
                     {renderSidebarItem("custom-form", crmSub, "Customize Application", "create-outline", () => changeCrmSub("custom-form"), "crm-campaigns", undefined, crmSidebarCollapsed && !isMobile, "campaigns")}
@@ -36512,6 +39044,7 @@ SOURCE QUESTION PAPER:
               </View>
             </View>
           )
+        )}
         {/* ================== 6. AUDIT LOGS TAB (Super Admin Only) ================== */}
         {activeTab === "audit-logs" && (user?.role === "super_admin" || user?.role === "developer") && (
           <View style={{ flex: 1, backgroundColor: darkMode ? "#121212" : "#f4f6f8" }}>
@@ -36529,7 +39062,7 @@ SOURCE QUESTION PAPER:
                     Immutable history of all operations across the academy. Data is fetched strictly by date to optimize performance and prevent unnecessary database reads.
                   </Text>
                 </View>
-                
+
                 <TouchableOpacity
                   onPress={() => loadDateLogs(selectedLogDate)}
                   style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: darkMode ? "#2a2a2a" : "#ffffff", paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8, borderWidth: 1, borderColor: darkMode ? "#444" : "#e0e0e0" }}
@@ -36550,28 +39083,55 @@ SOURCE QUESTION PAPER:
                   <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#e0e0e0" : "#424242" }}>
                     Select Date:
                   </Text>
-                  <input
-                    type="date"
-                    value={selectedLogDate}
-                    onChange={(e: any) => {
-                      const d = e.target.value;
-                      if (d) {
+                  {Platform.OS === "web" ? (
+                    <input
+                      type="date"
+                      value={selectedLogDate}
+                      onChange={(e: any) => {
+                        const d = e.target.value;
+                        if (d) {
+                          setSelectedLogDate(d);
+                          loadDateLogs(d);
+                        }
+                      }}
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: 8,
+                        border: darkMode ? "1px solid #555" : "1px solid #ccc",
+                        backgroundColor: darkMode ? "#2a2a2a" : "#ffffff",
+                        color: darkMode ? "#ffffff" : "#000000",
+                        fontSize: 13,
+                        fontWeight: "600",
+                        outline: "none",
+                        cursor: "pointer"
+                      }}
+                    />
+                  ) : (
+                    <TextInput
+                      style={{
+                        paddingHorizontal: 10,
+                        paddingVertical: 6,
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: darkMode ? "#555" : "#ccc",
+                        backgroundColor: darkMode ? "#2a2a2a" : "#ffffff",
+                        color: darkMode ? "#ffffff" : "#000000",
+                        fontSize: 13,
+                        fontWeight: "600",
+                        minWidth: 110,
+                        textAlign: "center"
+                      }}
+                      placeholder="YYYY-MM-DD"
+                      placeholderTextColor="#999"
+                      value={selectedLogDate}
+                      onChangeText={(d) => {
                         setSelectedLogDate(d);
-                        loadDateLogs(d);
-                      }
-                    }}
-                    style={{
-                      padding: "8px 12px",
-                      borderRadius: 8,
-                      border: darkMode ? "1px solid #555" : "1px solid #ccc",
-                      backgroundColor: darkMode ? "#2a2a2a" : "#ffffff",
-                      color: darkMode ? "#ffffff" : "#000000",
-                      fontSize: 13,
-                      fontWeight: "600",
-                      outline: "none",
-                      cursor: "pointer"
-                    }}
-                  />
+                        if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+                          loadDateLogs(d);
+                        }
+                      }}
+                    />
+                  )}
                   <TouchableOpacity
                     onPress={() => {
                       const today = new Date().toISOString().split("T")[0];
@@ -36670,16 +39230,31 @@ SOURCE QUESTION PAPER:
                   minWidth: 220
                 }}>
                   <Ionicons name="search" size={14} color="#757575" />
-                  <input
-                    type="text"
-                    placeholder="Search by operator or detail..."
-                    value={logSearchQuery}
-                    onChange={(e: any) => setLogSearchQuery(e.target.value)}
-                    style={{
-                      border: "none", outline: "none", background: "transparent",
-                      color: darkMode ? "#fff" : "#000", fontSize: 12, width: "100%"
-                    }}
-                  />
+                  {Platform.OS === "web" ? (
+                    <input
+                      type="text"
+                      placeholder="Search by operator or detail..."
+                      value={logSearchQuery}
+                      onChange={(e: any) => setLogSearchQuery(e.target.value)}
+                      style={{
+                        border: "none", outline: "none", background: "transparent",
+                        color: darkMode ? "#fff" : "#000", fontSize: 12, width: "100%"
+                      }}
+                    />
+                  ) : (
+                    <TextInput
+                      placeholder="Search by operator or detail..."
+                      placeholderTextColor={darkMode ? "#888" : "#757575"}
+                      value={logSearchQuery}
+                      onChangeText={setLogSearchQuery}
+                      style={{
+                        flex: 1,
+                        color: darkMode ? "#fff" : "#000",
+                        fontSize: 12,
+                        paddingVertical: 2
+                      }}
+                    />
+                  )}
                   {logSearchQuery ? (
                     <TouchableOpacity onPress={() => setLogSearchQuery("")}>
                       <Ionicons name="close-circle" size={14} color="#757575" />
@@ -36803,141 +39378,192 @@ SOURCE QUESTION PAPER:
         )}
       </View>
       {/* Bottom Tab Bar */}
-      <View style={[styles.bottomTabBar, darkMode && styles.bottomTabBarDark]}>
-        <TouchableOpacity
-          onPress={() => handleTabPress("dashboard", () => { setActiveTab("dashboard"); loadTodayQuiz(); })}
-          style={[styles.bottomTab, activeTab === "dashboard" && styles.bottomTabSelected, activeTab === "dashboard" && darkMode && styles.sidebarTabActiveDark]}
-        >
-          <View style={{ position: "relative" }}>
-            <Ionicons
-              name={activeTab === "dashboard" ? "home" : "home-outline"}
-              size={22}
-              color={activeTab === "dashboard" ? "#c62828" : darkMode ? "#555" : "#757575"}
-            />
-            {isPageLocked("dashboard") && (
-              <View style={{ position: "absolute", top: -4, right: -6, backgroundColor: "#c62828", borderRadius: 6, padding: 1 }}>
-                <Ionicons name="lock-closed" size={8} color="#fff" />
+      {(() => {
+        const bottomTestBadge = isAdmin ? (offlineTestRequests || []).filter((r: any) => r && r.status === "pending" && !isRequestInvalidOrCompleted(r)).length : 0;
+        const bottomErpBadge = isAdmin ? (
+          ((students || []).filter((s: any) => s.qrCodeRequested === true).length) +
+          ((students || []).filter((s: any) => s.profileEditRequested === true).length) +
+          ((profileRequests || []).filter((r: any) => r.status === "pending").length) +
+          ((pendingApprovals || []).length) +
+          ((deviceAlerts || []).filter((a: any) => !a.acknowledged).length) +
+          ((adminAlerts || []).filter((a: any) => a.type === "payment").length)
+        ) : 0;
+        const bottomCrmBadge = isAdmin ? (
+          ((admissions || []).filter((a: any) => a.status === "pending" || a.status === "new" || !a.status).length) +
+          ((enquiries || []).filter((e: any) => e.status === "pending" || e.status === "new").length)
+        ) : 0;
+        const hasLiveClass = (lmsLiveSessions || []).some((s: any) => s.status === "live");
+        const bottomDashboardBadge = isAdmin ? (adminAlerts || []).length : 0;
+
+        return (
+          <View style={[styles.bottomTabBar, darkMode && styles.bottomTabBarDark]}>
+            <TouchableOpacity
+              onPress={() => handleTabPress("dashboard", () => { setActiveTab("dashboard"); loadTodayQuiz(); loadLiveSessions(); })}
+              style={[styles.bottomTab, activeTab === "dashboard" && styles.bottomTabSelected, activeTab === "dashboard" && darkMode && styles.sidebarTabActiveDark]}
+            >
+              <View style={{ position: "relative" }}>
+                <Ionicons
+                  name={activeTab === "dashboard" ? "home" : "home-outline"}
+                  size={22}
+                  color={activeTab === "dashboard" ? "#c62828" : darkMode ? "#555" : "#757575"}
+                />
+                {isPageLocked("dashboard") && (
+                  <View style={{ position: "absolute", top: -4, right: -6, backgroundColor: "#c62828", borderRadius: 6, padding: 1 }}>
+                    <Ionicons name="lock-closed" size={8} color="#fff" />
+                  </View>
+                )}
+                {bottomDashboardBadge > 0 && !isPageLocked("dashboard") && (
+                  <View style={{ position: "absolute", top: -4, right: -8, backgroundColor: "#c62828", borderRadius: 8, minWidth: 16, height: 16, alignItems: "center", justifyContent: "center", paddingHorizontal: 3 }}>
+                    <Text style={{ color: "#fff", fontSize: 9, fontWeight: "bold" }}>
+                      {bottomDashboardBadge > 99 ? "99+" : bottomDashboardBadge}
+                    </Text>
+                  </View>
+                )}
               </View>
+              <Text style={[styles.bottomTabLabel, activeTab === "dashboard" && styles.bottomTabLabelActive, !(activeTab === "dashboard") && darkMode && styles.bottomTabLabelDark]}>Dashboard</Text>
+            </TouchableOpacity>
+
+            {user?.role !== "teacher" && (
+              <TouchableOpacity
+                onPress={() => handleTabPress("test", () => setActiveTab("test"))}
+                style={[styles.bottomTab, activeTab === "test" && styles.bottomTabSelected, activeTab === "test" && darkMode && styles.sidebarTabActiveDark]}
+              >
+                <View style={{ position: "relative" }}>
+                  <Ionicons
+                    name={activeTab === "test" ? "document-text" : "document-text-outline"}
+                    size={22}
+                    color={activeTab === "test" ? "#c62828" : darkMode ? "#555" : "#757575"}
+                  />
+                  {isPageLocked("test") && (
+                    <View style={{ position: "absolute", top: -4, right: -6, backgroundColor: "#c62828", borderRadius: 6, padding: 1 }}>
+                      <Ionicons name="lock-closed" size={8} color="#fff" />
+                    </View>
+                  )}
+                  {bottomTestBadge > 0 && !isPageLocked("test") && (
+                    <View style={{ position: "absolute", top: -4, right: -8, backgroundColor: "#c62828", borderRadius: 8, minWidth: 16, height: 16, alignItems: "center", justifyContent: "center", paddingHorizontal: 3 }}>
+                      <Text style={{ color: "#fff", fontSize: 9, fontWeight: "bold" }}>
+                        {bottomTestBadge > 99 ? "99+" : bottomTestBadge}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={[styles.bottomTabLabel, activeTab === "test" && styles.bottomTabLabelActive, !(activeTab === "test") && darkMode && styles.bottomTabLabelDark]}>{isAdmin ? "Test Portal" : "Tests & Exams"}</Text>
+              </TouchableOpacity>
+            )}
+
+            {user?.role !== "teacher" && (
+              <TouchableOpacity
+                onPress={() => handleTabPress("erp", () => {
+                  setActiveTab("erp");
+                  if (!isAdmin) {
+                    changeErpSub("my-profile");
+                    const myStudent = getLoggedInStudent(user, students);
+                    if (myStudent) loadMyProfileRequest(myStudent.id);
+                  }
+                })}
+                style={[styles.bottomTab, activeTab === "erp" && styles.bottomTabSelected, activeTab === "erp" && darkMode && styles.sidebarTabActiveDark]}
+              >
+                <View style={{ position: "relative" }}>
+                  <Ionicons
+                    name={activeTab === "erp" ? "grid" : "grid-outline"}
+                    size={22}
+                    color={activeTab === "erp" ? "#c62828" : darkMode ? "#555" : "#757575"}
+                  />
+                  {isPageLocked("erp") && (
+                    <View style={{ position: "absolute", top: -4, right: -6, backgroundColor: "#c62828", borderRadius: 6, padding: 1 }}>
+                      <Ionicons name="lock-closed" size={8} color="#fff" />
+                    </View>
+                  )}
+                  {bottomErpBadge > 0 && !isPageLocked("erp") && (
+                    <View style={{ position: "absolute", top: -4, right: -8, backgroundColor: "#c62828", borderRadius: 8, minWidth: 16, height: 16, alignItems: "center", justifyContent: "center", paddingHorizontal: 3 }}>
+                      <Text style={{ color: "#fff", fontSize: 9, fontWeight: "bold" }}>
+                        {bottomErpBadge > 99 ? "99+" : bottomErpBadge}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={[styles.bottomTabLabel, activeTab === "erp" && styles.bottomTabLabelActive, !(activeTab === "erp") && darkMode && styles.bottomTabLabelDark]}>{isAdmin ? "ERP" : "My Profile"}</Text>
+              </TouchableOpacity>
+            )}
+
+            {user?.role !== "teacher" && (
+              <TouchableOpacity
+                onPress={() => handleTabPress("lms", () => {
+                  setActiveTab("lms");
+                  if (!isAdmin) {
+                    changeLmsSub("my-live");
+                  }
+                })}
+                style={[styles.bottomTab, activeTab === "lms" && styles.bottomTabSelected, activeTab === "lms" && darkMode && styles.sidebarTabActiveDark]}
+              >
+                <View style={{ position: "relative" }}>
+                  <Ionicons
+                    name={activeTab === "lms" ? "book" : "book-outline"}
+                    size={22}
+                    color={activeTab === "lms" ? "#c62828" : darkMode ? "#555" : "#757575"}
+                  />
+                  {isPageLocked("lms") && (
+                    <View style={{ position: "absolute", top: -4, right: -6, backgroundColor: "#c62828", borderRadius: 6, padding: 1 }}>
+                      <Ionicons name="lock-closed" size={8} color="#fff" />
+                    </View>
+                  )}
+                  {hasLiveClass && !isPageLocked("lms") && (
+                    <View style={{ position: "absolute", top: -2, right: -4, width: 8, height: 8, borderRadius: 4, backgroundColor: "#c62828" }} />
+                  )}
+                </View>
+                <Text style={[styles.bottomTabLabel, activeTab === "lms" && styles.bottomTabLabelActive, !(activeTab === "lms") && darkMode && styles.bottomTabLabelDark]}>{isAdmin ? "LMS" : "Classes"}</Text>
+              </TouchableOpacity>
+            )}
+
+            {isAdmin && (
+              <TouchableOpacity
+                onPress={() => handleTabPress("crm", () => setActiveTab("crm"))}
+                style={[styles.bottomTab, activeTab === "crm" && styles.bottomTabSelected, activeTab === "crm" && darkMode && styles.sidebarTabActiveDark]}
+              >
+                <View style={{ position: "relative" }}>
+                  <Ionicons
+                    name={activeTab === "crm" ? "people" : "people-outline"}
+                    size={22}
+                    color={activeTab === "crm" ? "#c62828" : darkMode ? "#555" : "#757575"}
+                  />
+                  {isPageLocked("crm") && (
+                    <View style={{ position: "absolute", top: -4, right: -6, backgroundColor: "#c62828", borderRadius: 6, padding: 1 }}>
+                      <Ionicons name="lock-closed" size={8} color="#fff" />
+                    </View>
+                  )}
+                  {bottomCrmBadge > 0 && !isPageLocked("crm") && (
+                    <View style={{ position: "absolute", top: -4, right: -8, backgroundColor: "#c62828", borderRadius: 8, minWidth: 16, height: 16, alignItems: "center", justifyContent: "center", paddingHorizontal: 3 }}>
+                      <Text style={{ color: "#fff", fontSize: 9, fontWeight: "bold" }}>
+                        {bottomCrmBadge > 99 ? "99+" : bottomCrmBadge}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={[styles.bottomTabLabel, activeTab === "crm" && styles.bottomTabLabelActive, !(activeTab === "crm") && darkMode && styles.bottomTabLabelDark]}>CRM</Text>
+              </TouchableOpacity>
+            )}
+
+            {(user?.role === "super_admin" || user?.role === "developer") && (
+              <TouchableOpacity
+                onPress={() => handleTabPress("audit-logs", () => {
+                  setActiveTab("audit-logs");
+                  loadDateLogs(selectedLogDate);
+                })}
+                style={[styles.bottomTab, activeTab === "audit-logs" && styles.bottomTabSelected, activeTab === "audit-logs" && darkMode && styles.sidebarTabActiveDark]}
+              >
+                <View style={{ position: "relative" }}>
+                  <Ionicons
+                    name={activeTab === "audit-logs" ? "receipt" : "receipt-outline"}
+                    size={22}
+                    color={activeTab === "audit-logs" ? "#c62828" : darkMode ? "#555" : "#757575"}
+                  />
+                </View>
+                <Text style={[styles.bottomTabLabel, activeTab === "audit-logs" && styles.bottomTabLabelActive, !(activeTab === "audit-logs") && darkMode && styles.bottomTabLabelDark]}>Audit Logs</Text>
+              </TouchableOpacity>
             )}
           </View>
-          <Text style={[styles.bottomTabLabel, activeTab === "dashboard" && styles.bottomTabLabelActive, !(activeTab === "dashboard") && darkMode && styles.bottomTabLabelDark]}>Dashboard</Text>
-        </TouchableOpacity>
-
-        {user?.role !== "teacher" && (
-          <TouchableOpacity
-            onPress={() => handleTabPress("test", () => setActiveTab("test"))}
-            style={[styles.bottomTab, activeTab === "test" && styles.bottomTabSelected, activeTab === "test" && darkMode && styles.sidebarTabActiveDark]}
-          >
-            <View style={{ position: "relative" }}>
-              <Ionicons
-                name={activeTab === "test" ? "document-text" : "document-text-outline"}
-                size={22}
-                color={activeTab === "test" ? "#c62828" : darkMode ? "#555" : "#757575"}
-              />
-              {isPageLocked("test") && (
-                <View style={{ position: "absolute", top: -4, right: -6, backgroundColor: "#c62828", borderRadius: 6, padding: 1 }}>
-                  <Ionicons name="lock-closed" size={8} color="#fff" />
-                </View>
-              )}
-            </View>
-            <Text style={[styles.bottomTabLabel, activeTab === "test" && styles.bottomTabLabelActive, !(activeTab === "test") && darkMode && styles.bottomTabLabelDark]}>{isAdmin ? "Test Portal" : "Tests & Exams"}</Text>
-          </TouchableOpacity>
-        )}
-
-        {user?.role !== "teacher" && (
-          <TouchableOpacity
-            onPress={() => handleTabPress("erp", () => {
-              setActiveTab("erp");
-              if (!isAdmin) {
-                changeErpSub("my-profile");
-                const myStudent = getLoggedInStudent(user, students);
-                if (myStudent) loadMyProfileRequest(myStudent.id);
-              }
-            })}
-            style={[styles.bottomTab, activeTab === "erp" && styles.bottomTabSelected, activeTab === "erp" && darkMode && styles.sidebarTabActiveDark]}
-          >
-            <View style={{ position: "relative" }}>
-              <Ionicons
-                name={activeTab === "erp" ? "grid" : "grid-outline"}
-                size={22}
-                color={activeTab === "erp" ? "#c62828" : darkMode ? "#555" : "#757575"}
-              />
-              {isPageLocked("erp") && (
-                <View style={{ position: "absolute", top: -4, right: -6, backgroundColor: "#c62828", borderRadius: 6, padding: 1 }}>
-                  <Ionicons name="lock-closed" size={8} color="#fff" />
-                </View>
-              )}
-            </View>
-            <Text style={[styles.bottomTabLabel, activeTab === "erp" && styles.bottomTabLabelActive, !(activeTab === "erp") && darkMode && styles.bottomTabLabelDark]}>{isAdmin ? "ERP" : "My Profile"}</Text>
-          </TouchableOpacity>
-        )}
-
-        {user?.role !== "teacher" && (
-          <TouchableOpacity
-            onPress={() => handleTabPress("lms", () => {
-              setActiveTab("lms");
-              if (!isAdmin) {
-                changeLmsSub("my-live");
-              }
-            })}
-            style={[styles.bottomTab, activeTab === "lms" && styles.bottomTabSelected, activeTab === "lms" && darkMode && styles.sidebarTabActiveDark]}
-          >
-            <View style={{ position: "relative" }}>
-              <Ionicons
-                name={activeTab === "lms" ? "book" : "book-outline"}
-                size={22}
-                color={activeTab === "lms" ? "#c62828" : darkMode ? "#555" : "#757575"}
-              />
-              {isPageLocked("lms") && (
-                <View style={{ position: "absolute", top: -4, right: -6, backgroundColor: "#c62828", borderRadius: 6, padding: 1 }}>
-                  <Ionicons name="lock-closed" size={8} color="#fff" />
-                </View>
-              )}
-            </View>
-            <Text style={[styles.bottomTabLabel, activeTab === "lms" && styles.bottomTabLabelActive, !(activeTab === "lms") && darkMode && styles.bottomTabLabelDark]}>{isAdmin ? "LMS" : "Classes"}</Text>
-          </TouchableOpacity>
-        )}
-
-        {isAdmin && (
-          <TouchableOpacity
-            onPress={() => handleTabPress("crm", () => setActiveTab("crm"))}
-            style={[styles.bottomTab, activeTab === "crm" && styles.bottomTabSelected, activeTab === "crm" && darkMode && styles.sidebarTabActiveDark]}
-          >
-            <View style={{ position: "relative" }}>
-              <Ionicons
-                name={activeTab === "crm" ? "people" : "people-outline"}
-                size={22}
-                color={activeTab === "crm" ? "#c62828" : darkMode ? "#555" : "#757575"}
-              />
-              {isPageLocked("crm") && (
-                <View style={{ position: "absolute", top: -4, right: -6, backgroundColor: "#c62828", borderRadius: 6, padding: 1 }}>
-                  <Ionicons name="lock-closed" size={8} color="#fff" />
-                </View>
-              )}
-            </View>
-            <Text style={[styles.bottomTabLabel, activeTab === "crm" && styles.bottomTabLabelActive, !(activeTab === "crm") && darkMode && styles.bottomTabLabelDark]}>CRM</Text>
-          </TouchableOpacity>
-        )}
-
-        {(user?.role === "super_admin" || user?.role === "developer") && (
-          <TouchableOpacity
-            onPress={() => handleTabPress("audit-logs", () => {
-              setActiveTab("audit-logs");
-              loadDateLogs(selectedLogDate);
-            })}
-            style={[styles.bottomTab, activeTab === "audit-logs" && styles.bottomTabSelected, activeTab === "audit-logs" && darkMode && styles.sidebarTabActiveDark]}
-          >
-            <View style={{ position: "relative" }}>
-              <Ionicons
-                name={activeTab === "audit-logs" ? "receipt" : "receipt-outline"}
-                size={22}
-                color={activeTab === "audit-logs" ? "#c62828" : darkMode ? "#555" : "#757575"}
-              />
-            </View>
-            <Text style={[styles.bottomTabLabel, activeTab === "audit-logs" && styles.bottomTabLabelActive, !(activeTab === "audit-logs") && darkMode && styles.bottomTabLabelDark]}>Audit Logs</Text>
-          </TouchableOpacity>
-        )}
-      </View>
+        );
+      })()}
 
       {/* ─── Locked Page Info Modal ─── */}
       {lockedPageInfoModal.visible && (
@@ -37194,8 +39820,8 @@ SOURCE QUESTION PAPER:
                                     const resolvedStudent = students.find((s: any) => s.id === log.studentId || s.userId === log.studentId);
                                     const resolvedLead = leads.find((ld: any) => ld.id === log.studentId || ld.userId === log.studentId);
                                     let name = resolvedStudent ? (getStudentName(resolvedStudent) || resolvedStudent.firstName)
-                                             : resolvedLead ? (resolvedLead.name || resolvedLead.username)
-                                             : (log.studentName && !isGenericName(log.studentName)) ? log.studentName : "";
+                                      : resolvedLead ? (resolvedLead.name || resolvedLead.username)
+                                        : (log.studentName && !isGenericName(log.studentName)) ? log.studentName : "";
                                     if (!name && user && (user.id === log.studentId || user.userId === log.studentId || user.leadId === log.studentId || user.email === log.studentId)) {
                                       name = user.name || user.email?.split("@")[0];
                                     }
@@ -37977,7 +40603,7 @@ SOURCE QUESTION PAPER:
         if (!isBlocked) return null;
 
         // If the student is currently on the pay-fees subpage, let them view and complete their fee payment
-        if (activeTab === "erp" && erpSub === "pay-fees") return null;
+        if (activeTab === "erp" && (erpSub === "pay-fees" || erpSub === "fees")) return null;
 
         const tot = Number(loggedStudent.totalFees) || 0;
         const paid = Number(loggedStudent.feesPaid) || 0;
@@ -38022,8 +40648,8 @@ SOURCE QUESTION PAPER:
                   {isOverdue
                     ? `Your academy account access has been placed on hold because your fee payment due date (${loggedStudent.feeAlertDueDate}) has passed. Please pay your pending fee to restore full access.`
                     : loggedStudent.feeBlocked
-                    ? "Your academy account services have been temporarily restricted due to pending tuition dues. Please pay the pending fee to get access."
-                    : "Your portal access is restricted due to outstanding fee dues. Please pay the pending fee to get access."}
+                      ? "Your academy account services have been temporarily restricted due to pending tuition dues. Please pay the pending fee to get access."
+                      : "Your portal access is restricted due to outstanding fee dues. Please pay the pending fee to get access."}
                 </Text>
 
                 {/* Outstanding Fee Summary Card */}
@@ -38143,168 +40769,40 @@ SOURCE QUESTION PAPER:
       })()}
 
       {/* Preview Modal for Daily Content (PDF & JPEG) */}
-      {selectedDailyContentPreview && (
-        <Modal
-          visible={true}
-          transparent={true}
-          animationType="fade"
-          onRequestClose={() => setSelectedDailyContentPreview(null)}
-        >
-          <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.75)", justifyContent: "center", alignItems: "center", padding: 16 }}>
-            <View style={{
-              width: "100%",
-              maxWidth: 900,
-              height: "88%",
-              backgroundColor: darkMode ? "#1e1e1e" : "#ffffff",
-              borderRadius: 12,
-              overflow: "hidden",
-              display: "flex",
-              flexDirection: "column"
-            }}>
-              {/* Modal Header */}
-              <View style={{
-                flexDirection: "row",
-                justifyContent: "space-between",
-                alignItems: "center",
-                padding: 14,
-                backgroundColor: "#c62828"
-              }}>
-                <View style={{ flex: 1, paddingRight: 10 }}>
-                  <Text style={{ color: "#fff", fontSize: 15, fontWeight: "bold" }} numberOfLines={1}>
-                    {selectedDailyContentPreview.title || "Daily Study Material"}
-                  </Text>
-                  <Text style={{ color: "rgba(255,255,255,0.8)", fontSize: 11 }}>
-                    {selectedDailyContentPreview.date} • {selectedDailyContentPreview.type ? selectedDailyContentPreview.type.toUpperCase() : 'PDF'}
-                  </Text>
-                </View>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                  {isAdmin && (selectedDailyContentPreview.fileBase64 || selectedDailyContentPreview.url) && (
-                    <TouchableOpacity
-                      onPress={() => {
-                        if (typeof window !== "undefined") {
-                          const targetSrc = resolveFileUrl(selectedDailyContentPreview.url || selectedDailyContentPreview.fileBase64);
-                          if (selectedDailyContentPreview.url) {
-                            window.open(targetSrc, "_blank");
-                          } else if (selectedDailyContentPreview.fileBase64) {
-                            const win = window.open();
-                            if (win) {
-                              win.document.write(`<iframe src="${targetSrc}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
-                            }
-                          }
-                        }
-                      }}
-                      style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6, backgroundColor: "rgba(255,255,255,0.2)" }}
-                    >
-                      <Text style={{ color: "#fff", fontSize: 11, fontWeight: "bold" }}>Open In New Tab ↗</Text>
-                    </TouchableOpacity>
-                  )}
-                  <TouchableOpacity onPress={() => setSelectedDailyContentPreview(null)}>
-                    <Ionicons name="close-circle" size={24} color="#fff" />
-                  </TouchableOpacity>
-                </View>
+      {selectedDailyContentPreview && (() => {
+        let rawSrc = selectedDailyContentPreview.fileBase64 || selectedDailyContentPreview.url;
+        if (selectedDailyContentPreview.url && (selectedDailyContentPreview.url.startsWith("http://") || selectedDailyContentPreview.url.startsWith("https://"))) {
+          rawSrc = selectedDailyContentPreview.url;
+        }
+        let displaySrc = resolveFileUrl(rawSrc, selectedDailyContentPreview.type);
+
+        if (Platform.OS === 'web') {
+          return (
+            <Suspense fallback={
+              <View style={{ position: 'fixed' as any, top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#0f1219', zIndex: 99999, justifyContent: 'center', alignItems: 'center' }}>
+                <ActivityIndicator size="large" color="#c62828" />
+                <Text style={{ color: '#fff', marginTop: 12 }}>Loading secure viewer module...</Text>
               </View>
+            }>
+              <DailyContentViewer
+                content={selectedDailyContentPreview}
+                displaySrc={displaySrc}
+                onClose={() => setSelectedDailyContentPreview(null)}
+                isAdmin={isAdmin}
+              />
+            </Suspense>
+          );
+        }
 
-              {/* Modal Body */}
-              <View style={{ flex: 1, backgroundColor: darkMode ? "#111" : "#f5f5f5", justifyContent: "center", alignItems: "center", padding: 8 }}>
-                {(() => {
-                  let rawSrc = selectedDailyContentPreview.fileBase64 || selectedDailyContentPreview.url;
-                  if (selectedDailyContentPreview.url && (selectedDailyContentPreview.url.startsWith("http://") || selectedDailyContentPreview.url.startsWith("https://"))) {
-                    rawSrc = selectedDailyContentPreview.url;
-                  }
-                  let displaySrc = resolveFileUrl(rawSrc, selectedDailyContentPreview.type);
-
-                  if (!displaySrc) {
-                    return <Text style={{ color: darkMode ? "#ccc" : "#333" }}>Preview is not available for this item.</Text>;
-                  }
-
-                  // Helper to extract Google Drive file ID
-                  const getGoogleDriveId = (urlStr: string) => {
-                    if (!urlStr) return null;
-                    const m1 = urlStr.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-                    if (m1) return m1[1];
-                    const m2 = urlStr.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-                    if (m2) return m2[1];
-                    return null;
-                  };
-
-                  const driveId = getGoogleDriveId(displaySrc);
-                  if (selectedDailyContentPreview.type === "image" && driveId) {
-                    displaySrc = `https://lh3.googleusercontent.com/d/${driveId}`;
-                  }
-
-                  // 1. If running on native mobile phone (Android / iOS), do NOT render HTML iframe or img tags to avoid crashes
-                  if (Platform.OS !== "web") {
-                    if (selectedDailyContentPreview.type === "image") {
-                      return <NativeDailyImageZoomView imgSrc={displaySrc} darkMode={darkMode} />;
-                    }
-                    // For PDFs and other documents — use WebView to render inline inside the modal (no browser redirect)
-                    const { WebView } = require("react-native-webview");
-                    const pdfViewUrl = displaySrc.startsWith("http")
-                      ? `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(displaySrc)}`
-                      : displaySrc;
-                    return (
-                      <WebView
-                        source={{ uri: pdfViewUrl }}
-                        style={{ flex: 1, width: "100%", backgroundColor: darkMode ? "#111" : "#fff" }}
-                        javaScriptEnabled={true}
-                        domStorageEnabled={true}
-                        startInLoadingState={true}
-                        renderLoading={() => (
-                          <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: darkMode ? "#111" : "#f5f5f5" }}>
-                            <ActivityIndicator size="large" color="#c62828" />
-                            <Text style={{ color: darkMode ? "#ccc" : "#555", marginTop: 10 }}>Loading document…</Text>
-                          </View>
-                        )}
-                      />
-                    );
-                  }
-
-                  if (selectedDailyContentPreview.type === "image") {
-                    const imgSrc = driveId
-                      ? `https://lh3.googleusercontent.com/d/${driveId}`
-                      : displaySrc;
-                    return <WebDailyImageZoomView imgSrc={imgSrc} alt={selectedDailyContentPreview.title} driveId={driveId} darkMode={darkMode} />;
-                  }
-
-                  if (selectedDailyContentPreview.type === "pdf") {
-                    return (
-                      <View style={{ flex: 1, width: "100%", height: "100%" }}>
-                        <Suspense fallback={
-                          <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: darkMode ? "#111" : "#2a2a2a" }}>
-                            <ActivityIndicator size="large" color="#c62828" />
-                            <Text style={{ color: "#fff", marginTop: 10 }}>Loading Secure PDF Viewer...</Text>
-                          </View>
-                        }>
-                          <SecurePDFViewer url={displaySrc} />
-                        </Suspense>
-                      </View>
-                    );
-                  }
-
-                  // Fallback for non-PDF files / embeds
-                  const isDriveUrl = displaySrc.includes("drive.google.com") || displaySrc.includes("docs.google.com");
-                  if (isDriveUrl && !displaySrc.includes("/preview") && !displaySrc.includes("/embeddedfolderview")) {
-                    displaySrc = formatGoogleDriveUrl(displaySrc);
-                  }
-                  return (
-                    <View style={{ flex: 1, width: "100%", position: "relative" }}>
-                      <iframe
-                        key={displaySrc}
-                        src={displaySrc}
-                        title={selectedDailyContentPreview.title}
-                        style={{ width: "100%", height: "100%", border: "none", borderRadius: 8, backgroundColor: "#fff" }}
-                        allow="autoplay; encrypted-media; fullscreen"
-                        allowFullScreen
-                        referrerPolicy="no-referrer-when-downgrade"
-                      />
-                    </View>
-                  );
-                })()}
-              </View>
-            </View>
-          </View>
-        </Modal>
-      )}
+        return (
+          <NativeDailyContentModal
+            content={selectedDailyContentPreview}
+            displaySrc={displaySrc}
+            onClose={() => setSelectedDailyContentPreview(null)}
+            darkMode={darkMode}
+          />
+        );
+      })()}
 
       {/* Universal Image Preview Modal */}
       {renderUniversalImagePreviewModal()}
@@ -38464,24 +40962,24 @@ SOURCE QUESTION PAPER:
                     const wrong = entry.wrong ?? entry.wrongCount ?? 0;
                     const skipped = entry.skipped ?? entry.unattended ?? entry.skippedCount ?? 0;
                     const attended = correct + wrong;
-                    
+
                     const resolvedStudent = students.find((s: any) => s.id === entry.studentId || s.userId === entry.studentId || s.loginUsername === entry.rollNumber || s.rollNumber === entry.rollNumber);
                     const resolvedLead = leads.find((ld: any) => ld.id === entry.studentId || ld.userId === entry.studentId);
                     const resolvedUser = user && (user.id === entry.studentId || user.userId === entry.studentId || user.username === entry.studentId) ? user : null;
 
                     const sName = resolvedStudent ? (getStudentName(resolvedStudent) || resolvedStudent.loginUsername || resolvedStudent.firstName)
-                                : resolvedLead ? (resolvedLead.name || resolvedLead.username)
-                                : resolvedUser ? (resolvedUser.name || resolvedUser.username || resolvedUser.email?.split("@")[0])
-                                : (entry.studentName && entry.studentName !== "Student" && !entry.studentName.startsWith("Student (") ? entry.studentName : (entry.username || entry.name || "Guest User"));
+                      : resolvedLead ? (resolvedLead.name || resolvedLead.username)
+                        : resolvedUser ? (resolvedUser.name || resolvedUser.username || resolvedUser.email?.split("@")[0])
+                          : (entry.studentName && entry.studentName !== "Student" && !entry.studentName.startsWith("Student (") ? entry.studentName : (entry.username || entry.name || "Guest User"));
 
                     const isPhoneNum = (val: string) => /^\d{7,15}$/.test(String(val || "").trim().replace(/[\s\-\+\(\)]/g, ""));
                     const validRoll = (entry.rollNumber && entry.rollNumber !== "N/A" && entry.rollNumber !== "Guest" && entry.rollNumber !== "Student" && !isPhoneNum(entry.rollNumber))
-                                    ? entry.rollNumber
-                                    : (resolvedStudent?.rollNumber || resolvedStudent?.rollNo || resolvedStudent?.loginUsername);
+                      ? entry.rollNumber
+                      : (resolvedStudent?.rollNumber || resolvedStudent?.rollNo || resolvedStudent?.loginUsername);
 
                     const rollVal = (validRoll && !isPhoneNum(validRoll)) ? validRoll : "Guest";
-                    const studentLabel = sName 
-                      ? (rollVal && rollVal !== sName && rollVal !== "N/A" && rollVal !== "Guest" && rollVal !== "Student" ? `${sName} (${rollVal})` : sName) 
+                    const studentLabel = sName
+                      ? (rollVal && rollVal !== sName && rollVal !== "N/A" && rollVal !== "Guest" && rollVal !== "Student" ? `${sName} (${rollVal})` : sName)
                       : rollVal;
 
                     const obtainedMarks = entry.obtainedMarks ?? entry.score ?? 0;
@@ -38547,24 +41045,24 @@ SOURCE QUESTION PAPER:
                         const wrong = entry.wrong ?? entry.wrongCount ?? 0;
                         const skipped = entry.skipped ?? entry.unattended ?? entry.skippedCount ?? 0;
                         const attended = correct + wrong;
-                        
+
                         const resolvedStudent = students.find((s: any) => s.id === entry.studentId || s.userId === entry.studentId || s.loginUsername === entry.rollNumber || s.rollNumber === entry.rollNumber);
                         const resolvedLead = leads.find((ld: any) => ld.id === entry.studentId || ld.userId === entry.studentId);
                         const resolvedUser = user && (user.id === entry.studentId || user.userId === entry.studentId || user.username === entry.studentId) ? user : null;
 
                         const sName = resolvedStudent ? (getStudentName(resolvedStudent) || resolvedStudent.loginUsername || resolvedStudent.firstName)
-                                    : resolvedLead ? (resolvedLead.name || resolvedLead.username)
-                                    : resolvedUser ? (resolvedUser.name || resolvedUser.username || resolvedUser.email?.split("@")[0])
-                                    : (entry.studentName && entry.studentName !== "Student" && !entry.studentName.startsWith("Student (") ? entry.studentName : (entry.username || entry.name || "Guest User"));
+                          : resolvedLead ? (resolvedLead.name || resolvedLead.username)
+                            : resolvedUser ? (resolvedUser.name || resolvedUser.username || resolvedUser.email?.split("@")[0])
+                              : (entry.studentName && entry.studentName !== "Student" && !entry.studentName.startsWith("Student (") ? entry.studentName : (entry.username || entry.name || "Guest User"));
 
                         const isPhoneNum = (val: string) => /^\d{7,15}$/.test(String(val || "").trim().replace(/[\s\-\+\(\)]/g, ""));
                         const validRoll = (entry.rollNumber && entry.rollNumber !== "N/A" && entry.rollNumber !== "Guest" && entry.rollNumber !== "Student" && !isPhoneNum(entry.rollNumber))
-                                        ? entry.rollNumber
-                                        : (resolvedStudent?.rollNumber || resolvedStudent?.rollNo || resolvedStudent?.loginUsername);
+                          ? entry.rollNumber
+                          : (resolvedStudent?.rollNumber || resolvedStudent?.rollNo || resolvedStudent?.loginUsername);
 
                         const rollVal = (validRoll && !isPhoneNum(validRoll)) ? validRoll : "Guest";
-                        const studentLabel = sName 
-                          ? (rollVal && rollVal !== sName && rollVal !== "N/A" && rollVal !== "Guest" && rollVal !== "Student" ? `${sName} (${rollVal})` : sName) 
+                        const studentLabel = sName
+                          ? (rollVal && rollVal !== sName && rollVal !== "N/A" && rollVal !== "Guest" && rollVal !== "Student" ? `${sName} (${rollVal})` : sName)
                           : rollVal;
 
                         const obtainedMarks = entry.obtainedMarks ?? entry.score ?? 0;
@@ -38587,10 +41085,10 @@ SOURCE QUESTION PAPER:
                               paddingHorizontal: 12,
                               borderBottomWidth: 1,
                               borderBottomColor: darkMode ? "#333" : "#f0f0f0",
-                              backgroundColor: isTop3 
-                                ? (darkMode ? "#2a2206" : "#fffbeb") 
-                                : isTop10 
-                                  ? (darkMode ? "#172554" : "#eff6ff") 
+                              backgroundColor: isTop3
+                                ? (darkMode ? "#2a2206" : "#fffbeb")
+                                : isTop10
+                                  ? (darkMode ? "#172554" : "#eff6ff")
                                   : (idx % 2 === 0 ? (darkMode ? "#1e1e1e" : "#ffffff") : (darkMode ? "#252525" : "#fafafa"))
                             }}
                           >
@@ -38635,7 +41133,7 @@ SOURCE QUESTION PAPER:
       )}
 
       {/* Secure PDF Container Modal */}
-      {selectedResourceId && (
+      {selectedResourceId && (Platform.OS === 'web' ? (
         <Suspense fallback={
           <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#0f1219', zIndex: 9999, justifyContent: 'center', alignItems: 'center' }}>
             <RNSkeleton style={{ width: '90%', height: 44, marginBottom: 16 }} darkMode={darkMode} />
@@ -38647,7 +41145,13 @@ SOURCE QUESTION PAPER:
             onClose={() => setSelectedResourceId(null)}
           />
         </Suspense>
-      )}
+      ) : (
+        <NativeResourceModal
+          resourceId={selectedResourceId}
+          onClose={() => setSelectedResourceId(null)}
+          darkMode={darkMode}
+        />
+      ))}
 
       {/* Video Player Modal */}
       {videoPlayerModal.visible && (
@@ -38669,9 +41173,28 @@ SOURCE QUESTION PAPER:
                   allowFullScreen
                 />
               ) : (
-                <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#000" }}>
-                  <Text style={{ color: "#fff" }}>Video player is only supported on web right now.</Text>
-                </View>
+                (() => {
+                  const { WebView } = require("react-native-webview");
+                  const playerSrc = `${getBaseUrl().replace(/\/api\/v1\/?$/, "")}/player/${encodeURIComponent(videoPlayerModal.playerToken)}`;
+                  return (
+                    <WebView
+                      key={videoPlayerModal.playerToken}
+                      source={{ uri: playerSrc }}
+                      style={{ flex: 1, width: "100%", height: "100%", backgroundColor: "#000" }}
+                      javaScriptEnabled={true}
+                      domStorageEnabled={true}
+                      allowsFullscreenVideo={true}
+                      mediaPlaybackRequiresUserAction={false}
+                      startInLoadingState={true}
+                      renderLoading={() => (
+                        <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "center", alignItems: "center", backgroundColor: "#000" }}>
+                          <ActivityIndicator size="large" color="#c62828" />
+                          <Text style={{ color: "#fff", marginTop: 10, fontSize: 13 }}>Loading video player...</Text>
+                        </View>
+                      )}
+                    />
+                  );
+                })()
               )}
             </View>
           </View>
@@ -38819,27 +41342,115 @@ SOURCE QUESTION PAPER:
 
                     {/* Proposed Payload Field Changes */}
                     <View>
+                      {/* View Mode Toggle when Diff is Available */}
+                      {parsed.hasDiff && parsed.allPopulatedFields.length > parsed.changedFields.length && (
+                        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+                          <View style={{ flexDirection: "row", gap: 8 }}>
+                            <TouchableOpacity
+                              onPress={() => setApprovalViewMode("diff")}
+                              style={{
+                                paddingVertical: 5,
+                                paddingHorizontal: 12,
+                                borderRadius: 16,
+                                backgroundColor: approvalViewMode === "diff" ? (darkMode ? "#1565c0" : "#e3f2fd") : (darkMode ? "#2a2a2a" : "#f0f0f0"),
+                                borderWidth: 1,
+                                borderColor: approvalViewMode === "diff" ? "#1976d2" : (darkMode ? "#444" : "#e0e0e0")
+                              }}
+                            >
+                              <Text style={{ fontSize: 11, fontWeight: "bold", color: approvalViewMode === "diff" ? (darkMode ? "#ffffff" : "#1565c0") : (darkMode ? "#aaa" : "#666") }}>
+                                ⚡ Changes Only ({parsed.changedFields.length})
+                              </Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => setApprovalViewMode("all")}
+                              style={{
+                                paddingVertical: 5,
+                                paddingHorizontal: 12,
+                                borderRadius: 16,
+                                backgroundColor: approvalViewMode === "all" ? (darkMode ? "#1565c0" : "#e3f2fd") : (darkMode ? "#2a2a2a" : "#f0f0f0"),
+                                borderWidth: 1,
+                                borderColor: approvalViewMode === "all" ? "#1976d2" : (darkMode ? "#444" : "#e0e0e0")
+                              }}
+                            >
+                              <Text style={{ fontSize: 11, fontWeight: "bold", color: approvalViewMode === "all" ? (darkMode ? "#ffffff" : "#1565c0") : (darkMode ? "#aaa" : "#666") }}>
+                                📋 All Data ({parsed.allPopulatedFields.length})
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                          <Text style={{ fontSize: 11, color: darkMode ? "#999" : "#777" }}>
+                            {approvalViewMode === "diff" ? "Comparing requested edits vs existing data" : "Showing all non-empty record fields"}
+                          </Text>
+                        </View>
+                      )}
+
+                      {/* Header Title */}
                       <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#ffffff" : "#212121", marginBottom: 10 }}>
-                        Proposed Field Changes ({parsed.fields.length})
+                        {isDelete
+                          ? "Target Record Details"
+                          : isCreate
+                          ? `New Record Fields (${parsed.fields.length})`
+                          : approvalViewMode === "diff" && parsed.changedFields.length > 0
+                          ? `Requested Modifications (${parsed.changedFields.length})`
+                          : `Populated Record Fields (${parsed.allPopulatedFields.length})`}
                       </Text>
-                      {parsed.fields.length === 0 ? (
+
+                      {isDelete ? (
+                        <View style={{ backgroundColor: darkMode ? "#331515" : "#ffebee", padding: 16, borderRadius: 8, borderWidth: 1, borderColor: darkMode ? "#c62828" : "#ef9a9a", gap: 6 }}>
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                            <Ionicons name="warning" size={18} color="#c62828" />
+                            <Text style={{ fontSize: 13, fontWeight: "bold", color: "#c62828" }}>Delete Request</Text>
+                          </View>
+                          <Text style={{ fontSize: 12, color: darkMode ? "#e0e0e0" : "#424242" }}>
+                            Administrator has requested to delete target record <Text style={{ fontWeight: "bold" }}>{getTargetName(item)}</Text>.
+                          </Text>
+                          <Text style={{ fontSize: 11, color: "#888" }}>
+                            Approving will permanently remove or soft-delete this record.
+                          </Text>
+                        </View>
+                      ) : (approvalViewMode === "diff" && parsed.changedFields.length > 0 ? parsed.changedFields : parsed.fields).length === 0 ? (
                         <View style={{ backgroundColor: darkMode ? "#252525" : "#fafafa", padding: 16, borderRadius: 8, borderWidth: 1, borderColor: darkMode ? "#333333" : "#eeeeee", alignItems: "center" }}>
                           <Text style={{ fontSize: 12, color: darkMode ? "#aaaaaa" : "#757575" }}>
-                            {isDelete ? "Action: Soft/Hard delete target document" : isOneTime ? "Action: Grant single-use upload authorization" : "No specific fields payload attached"}
+                            {isOneTime ? "Action: Grant single-use upload authorization" : "No specific field changes detected"}
                           </Text>
                         </View>
                       ) : (
                         <View style={{ borderRadius: 8, borderWidth: 1, borderColor: darkMode ? "#333333" : "#e0e0e0", overflow: "hidden" }}>
-                          <View style={{ flexDirection: "row", backgroundColor: darkMode ? "#2a2a2a" : "#f0f2f5", paddingVertical: 8, paddingHorizontal: 12, borderBottomWidth: 1, borderColor: darkMode ? "#333333" : "#e0e0e0" }}>
-                            <Text style={{ width: 180, fontWeight: "bold", fontSize: 11, color: darkMode ? "#ef9a9a" : "#37474f" }}>FIELD</Text>
-                            <Text style={{ flex: 1, fontWeight: "bold", fontSize: 11, color: darkMode ? "#ef9a9a" : "#37474f" }}>PROPOSED VALUE</Text>
-                          </View>
-                          {parsed.fields.map((f, idx) => (
-                            <View key={f.key || idx} style={{ flexDirection: "row", paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: idx === parsed.fields.length - 1 ? 0 : 1, borderColor: darkMode ? "#2a2a2a" : "#eeeeee", backgroundColor: idx % 2 === 0 ? (darkMode ? "#1e1e1e" : "#ffffff") : (darkMode ? "#242424" : "#fafafa") }}>
-                              <Text style={{ width: 180, fontSize: 12, fontWeight: "600", color: darkMode ? "#e0e0e0" : "#333333", paddingRight: 8 }}>{f.label}</Text>
-                              <Text style={{ flex: 1, fontSize: 12, color: darkMode ? "#4fc3f7" : "#1565c0", fontFamily: "monospace" }} selectable>{f.value}</Text>
-                            </View>
-                          ))}
+                          {/* 3-Column Diff Table for Changes Only */}
+                          {approvalViewMode === "diff" && parsed.changedFields.length > 0 && parsed.existingRecordFound ? (
+                            <>
+                              <View style={{ flexDirection: "row", backgroundColor: darkMode ? "#2a2a2a" : "#f0f2f5", paddingVertical: 8, paddingHorizontal: 12, borderBottomWidth: 1, borderColor: darkMode ? "#333333" : "#e0e0e0" }}>
+                                <Text style={{ width: 140, fontWeight: "bold", fontSize: 11, color: darkMode ? "#ef9a9a" : "#37474f" }}>FIELD</Text>
+                                <Text style={{ flex: 1, fontWeight: "bold", fontSize: 11, color: darkMode ? "#aaa" : "#616161" }}>CURRENT VALUE</Text>
+                                <Text style={{ flex: 1, fontWeight: "bold", fontSize: 11, color: darkMode ? "#81c784" : "#2e7d32" }}>➔ PROPOSED NEW VALUE</Text>
+                              </View>
+                              {parsed.changedFields.map((f, idx) => (
+                                <View key={f.key || idx} style={{ flexDirection: "row", paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: idx === parsed.changedFields.length - 1 ? 0 : 1, borderColor: darkMode ? "#2a2a2a" : "#eeeeee", backgroundColor: idx % 2 === 0 ? (darkMode ? "#1e1e1e" : "#ffffff") : (darkMode ? "#242424" : "#fafafa"), alignItems: "center" }}>
+                                  <Text style={{ width: 140, fontSize: 12, fontWeight: "600", color: darkMode ? "#e0e0e0" : "#333333", paddingRight: 8 }}>{f.label}</Text>
+                                  <View style={{ flex: 1, paddingRight: 8 }}>
+                                    <Text style={{ fontSize: 12, color: darkMode ? "#888" : "#757575", fontFamily: "monospace" }} selectable>{f.oldValue}</Text>
+                                  </View>
+                                  <View style={{ flex: 1 }}>
+                                    <View style={{ backgroundColor: darkMode ? "#1b5e20" : "#e8f5e9", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, alignSelf: "flex-start", borderWidth: 1, borderColor: darkMode ? "#2e7d32" : "#a5d6a7" }}>
+                                      <Text style={{ fontSize: 12, fontWeight: "bold", color: darkMode ? "#a5d6a7" : "#2e7d32", fontFamily: "monospace" }} selectable>{f.newValue}</Text>
+                                    </View>
+                                  </View>
+                                </View>
+                              ))}
+                            </>
+                          ) : (
+                            <>
+                              <View style={{ flexDirection: "row", backgroundColor: darkMode ? "#2a2a2a" : "#f0f2f5", paddingVertical: 8, paddingHorizontal: 12, borderBottomWidth: 1, borderColor: darkMode ? "#333333" : "#e0e0e0" }}>
+                                <Text style={{ width: 180, fontWeight: "bold", fontSize: 11, color: darkMode ? "#ef9a9a" : "#37474f" }}>FIELD</Text>
+                                <Text style={{ flex: 1, fontWeight: "bold", fontSize: 11, color: darkMode ? "#ef9a9a" : "#37474f" }}>VALUE</Text>
+                              </View>
+                              {(approvalViewMode === "all" ? parsed.allPopulatedFields : parsed.fields).map((f, idx) => (
+                                <View key={f.key || idx} style={{ flexDirection: "row", paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: idx === (approvalViewMode === "all" ? parsed.allPopulatedFields : parsed.fields).length - 1 ? 0 : 1, borderColor: darkMode ? "#2a2a2a" : "#eeeeee", backgroundColor: idx % 2 === 0 ? (darkMode ? "#1e1e1e" : "#ffffff") : (darkMode ? "#242424" : "#fafafa") }}>
+                                  <Text style={{ width: 180, fontSize: 12, fontWeight: "600", color: darkMode ? "#e0e0e0" : "#333333", paddingRight: 8 }}>{f.label}</Text>
+                                  <Text style={{ flex: 1, fontSize: 12, color: darkMode ? "#4fc3f7" : "#1565c0", fontFamily: "monospace" }} selectable>{f.newValue || f.value}</Text>
+                                </View>
+                              ))}
+                            </>
+                          )}
                         </View>
                       )}
                     </View>
@@ -38887,10 +41498,17 @@ SOURCE QUESTION PAPER:
 }
 
 export default function App() {
-  const [splashDone, setSplashDone] = useState(true);
-  const [onboardDone, setOnboardDone] = useState(true);
+  const [splashDone, setSplashDone] = useState(() => Platform.OS === "web");
+  const [onboardDone, setOnboardDone] = useState(() => Platform.OS === "web");
 
   useEffect(() => {
+    // Native mobile app launch guard: enable FLAG_SECURE on startup for APK
+    if (Platform.OS !== "web") {
+      try {
+        ScreenCapture.preventScreenCaptureAsync().catch(() => { });
+      } catch (_) { }
+    }
+
     if (Platform.OS === "web" && typeof window !== "undefined") {
       const handleHashChange = () => {
         if (window.location.hash && window.location.hash.includes("onboarding")) {
@@ -38899,6 +41517,12 @@ export default function App() {
       };
       window.addEventListener("hashchange", handleHashChange);
       return () => window.removeEventListener("hashchange", handleHashChange);
+    } else {
+      AsyncStorage.getItem(ONBOARDING_KEY).then(val => {
+        if (val === "true") {
+          setOnboardDone(true);
+        }
+      }).catch(() => { });
     }
   }, []);
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StudentApi, BatchApi } from '../core/services';
+import { StudentApi, BatchApi, CourseApi } from '../core/services';
 import { AdminTable, AdminInput, AdminSelect, AdminButton, AdminModal } from '../components/admin-ui';
 import { Upload, Trash2, ShieldCheck, QrCode, Search, Users, Clock, CheckCircle2, XCircle, AlertCircle, Eye, Check, X, Download } from 'lucide-react';
 import { db } from '../../firebaseConfig';
@@ -40,11 +40,27 @@ const TimerCountdownCell = ({ enabledAt, duration, unit }: { enabledAt: string; 
   );
 };
 
-export const QRCodePermissionsPage = () => {
-  const [students, setStudents] = useState<any[]>([]);
-  const [batches, setBatches] = useState<any[]>([]);
+interface QRCodePermissionsPageProps {
+  erpStudents?: any[];
+  erpBatches?: any[];
+  erpCourses?: any[];
+}
+
+export const QRCodePermissionsPage: React.FC<QRCodePermissionsPageProps> = ({
+  erpStudents,
+  erpBatches,
+  erpCourses
+}) => {
+  const [students, setStudents] = useState<any[]>(erpStudents || []);
+  const [batches, setBatches] = useState<any[]>(erpBatches || []);
+  const [courses, setCourses] = useState<any[]>(erpCourses || []);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Course, Batch & Pagination filter states
+  const [filterCourse, setFilterCourse] = useState<string>('all');
+  const [filterBatch, setFilterBatch] = useState<string>('all');
+  const [currentPage, setCurrentPage] = useState<number>(1);
   
   // QR code upload states
   const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
@@ -66,13 +82,25 @@ export const QRCodePermissionsPage = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [studRes, batchRes, settingsRes] = await Promise.all([
+      const [studRes, batchRes, settingsRes, courseRes] = await Promise.all([
         StudentApi.listStudents(),
         BatchApi.listBatches(),
-        StudentApi.getQrSettings()
+        StudentApi.getQrSettings(),
+        CourseApi.listCourses().catch(() => ({ data: { data: [] } }))
       ]);
-      setStudents(studRes.data?.data || []);
-      setBatches(batchRes.data?.data || []);
+      const rawStudents = studRes.data?.data || [];
+      const mergedStudents = rawStudents.map((s: any) => {
+        const erpMatch = erpStudents?.find((e: any) => e.id === s.id);
+        return {
+          ...s,
+          course: s.course || erpMatch?.course || null,
+          batch: s.batch || erpMatch?.batch || (Array.isArray(erpMatch?.batches) ? erpMatch?.batches[0] : null) || null,
+          batches: s.batches || erpMatch?.batches || (erpMatch?.batch ? [erpMatch?.batch] : []),
+        };
+      });
+      setStudents(mergedStudents.length > 0 ? mergedStudents : (erpStudents || []));
+      setBatches(batchRes.data?.data?.length ? batchRes.data.data : (erpBatches || []));
+      setCourses(courseRes.data?.data?.length ? courseRes.data.data : (erpCourses || []));
       
       const settings = settingsRes.data?.data;
       if (settings) {
@@ -249,13 +277,37 @@ export const QRCodePermissionsPage = () => {
   const requestCount = students.filter(s => s.qrCodeRequested === true).length;
   const pendingAckCount = acknowledgements.filter(a => a.status === 'pending').length;
 
+  // Available Courses & Batches for filters
+  const courseList = Array.from(new Set([
+    ...courses.map((c: any) => c.title || c.name || c.courseName).filter(Boolean),
+    ...students.map((s: any) => s.course).filter(Boolean),
+    ...(erpCourses || []).map((c: any) => c.title || c.name || c.courseName).filter(Boolean)
+  ])).sort();
+
+  const batchList = Array.from(new Set([
+    ...batches.map((b: any) => b.batchName || b.name || b.title).filter(Boolean),
+    ...students.flatMap((s: any) => Array.isArray(s.batches) ? s.batches : (s.batch ? [s.batch] : [])).filter(Boolean),
+    ...(erpBatches || []).map((b: any) => b.batchName || b.name).filter(Boolean)
+  ])).sort();
+
   // 2. Filter & Sort Students
   // - Students who requested show on top
   const filteredStudents = students
-    .filter(s => 
-      s.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.rollNo?.toLowerCase().includes(searchQuery.toLowerCase())
-    )
+    .filter(s => {
+      const q = searchQuery.toLowerCase().trim();
+      const name = (s.displayName || `${s.firstName || ''} ${s.lastName || ''}`).toLowerCase();
+      const roll = String(s.rollNo || s.rollNumber || s.loginUsername || '').toLowerCase();
+      if (q && !name.includes(q) && !roll.includes(q)) return false;
+
+      if (filterCourse !== 'all' && s.course !== filterCourse) return false;
+
+      if (filterBatch !== 'all') {
+        const bList = Array.isArray(s.batches) ? s.batches : (s.batch ? [s.batch] : []);
+        if (!bList.includes(filterBatch) && s.batch !== filterBatch) return false;
+      }
+
+      return true;
+    })
     .sort((a, b) => {
       const aRequested = a.qrCodeRequested === true ? 1 : 0;
       const bRequested = b.qrCodeRequested === true ? 1 : 0;
@@ -274,6 +326,12 @@ export const QRCodePermissionsPage = () => {
       return (a.displayName || '').localeCompare(b.displayName || '');
     });
 
+  const QR_ITEMS_PER_PAGE = 20;
+  const totalQrPages = Math.ceil(filteredStudents.length / QR_ITEMS_PER_PAGE) || 1;
+  const safeQrPage = Math.max(1, Math.min(currentPage, totalQrPages));
+  const startQrIndex = (safeQrPage - 1) * QR_ITEMS_PER_PAGE;
+  const paginatedStudents = filteredStudents.slice(startQrIndex, startQrIndex + QR_ITEMS_PER_PAGE);
+
   const columns = [
     { 
       key: 'rollNo', 
@@ -284,11 +342,18 @@ export const QRCodePermissionsPage = () => {
       key: 'displayName', 
       label: 'Name',
       render: (val: string, row: any) => (
-        <div className="flex items-center gap-3">
-          <span className="font-semibold text-gray-900 dark:text-white">{val}</span>
-          {row.qrCodeRequested === true && (
-            <span className="bg-red-500/20 text-red-650 dark:text-red-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-red-500/30">
-              Requested
+        <div className="flex flex-col">
+          <div className="flex items-center gap-3">
+            <span className="font-semibold text-gray-900 dark:text-white">{val}</span>
+            {row.qrCodeRequested === true && (
+              <span className="bg-red-500/20 text-red-650 dark:text-red-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-red-500/30">
+                Requested
+              </span>
+            )}
+          </div>
+          {(row.batch || row.course) && (
+            <span className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+              {row.batch ? `${row.batch}` : ''}{row.batch && row.course ? ' • ' : ''}{row.course ? `${row.course}` : ''}
             </span>
           )}
         </div>
@@ -547,29 +612,139 @@ export const QRCodePermissionsPage = () => {
 
       {/* Directory Table Area */}
       <div className="bg-white dark:bg-[#1a1a2e] border border-gray-200 dark:border-[#8B0000]/30 rounded-2xl p-6 shadow-sm">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
           <div>
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Student Permissions Directory</h2>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+              Student Permissions Directory ({filteredStudents.length})
+            </h2>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Pending requests are automatically sorted to the top.</p>
           </div>
-          
-          <div className="relative w-full md:w-80">
-            <Search className="absolute left-3 top-3.5 text-gray-400 w-4 h-4" />
-            <input
-              type="text"
-              placeholder="Search by name or roll number..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2.5 bg-gray-50 dark:bg-[#0f0f1a] border border-gray-200 dark:border-[#8B0000]/30 rounded-xl text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#8B0000] focus:ring-2 focus:ring-[#8B0000]/20 transition-all font-medium"
-            />
+        </div>
+
+        {/* Filter Bar: Search Input, Course Dropdown, Batch Dropdown */}
+        <div className="flex flex-wrap items-end gap-4 mb-6">
+          {/* Search bar (compact, controlled width) */}
+          <div style={{ width: 280, maxWidth: '100%', flexShrink: 0 }}>
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 mb-1">
+              Search Student:
+            </label>
+            <div className="relative">
+              <Search className="absolute left-3 top-2.5 text-gray-400 w-4 h-4 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Search name or roll number..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="w-full pl-9 pr-8 bg-gray-50 dark:bg-[#0f0f1a] border border-gray-200 dark:border-[#8B0000]/30 rounded-xl text-xs text-gray-900 dark:text-white focus:outline-none focus:border-[#8B0000] focus:ring-1 focus:ring-[#8B0000] font-medium"
+                style={{ height: 38 }}
+              />
+              {searchQuery ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setCurrentPage(1);
+                  }}
+                  className="absolute right-2.5 top-2.5 text-xs font-bold text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                >
+                  ✕
+                </button>
+              ) : null}
+            </div>
+          </div>
+
+          {/* Filter Course (proper readable width) */}
+          <div style={{ minWidth: 200, flex: '1 1 200px', maxWidth: 280 }}>
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 mb-1">
+              Filter Course:
+            </label>
+            <select
+              value={filterCourse}
+              onChange={(e) => {
+                setFilterCourse(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full bg-gray-50 dark:bg-[#0f0f1a] border border-gray-200 dark:border-[#8B0000]/30 rounded-xl px-3 text-xs font-semibold text-gray-900 dark:text-white focus:outline-none focus:border-[#8B0000] focus:ring-1 focus:ring-[#8B0000] cursor-pointer"
+              style={{ height: 38 }}
+            >
+              <option value="all">All Courses</option>
+              {courseList.map((cName: string) => (
+                <option key={cName} value={cName}>
+                  {cName}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Filter Batch (proper readable width) */}
+          <div style={{ minWidth: 200, flex: '1 1 200px', maxWidth: 280 }}>
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 mb-1">
+              Filter Batch:
+            </label>
+            <select
+              value={filterBatch}
+              onChange={(e) => {
+                setFilterBatch(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full bg-gray-50 dark:bg-[#0f0f1a] border border-gray-200 dark:border-[#8B0000]/30 rounded-xl px-3 text-xs font-semibold text-gray-900 dark:text-white focus:outline-none focus:border-[#8B0000] focus:ring-1 focus:ring-[#8B0000] cursor-pointer"
+              style={{ height: 38 }}
+            >
+              <option value="all">All Batches</option>
+              {batchList.map((bName: string) => (
+                <option key={bName} value={bName}>
+                  {bName}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
         <AdminTable
           columns={columns}
-          data={filteredStudents}
+          data={paginatedStudents}
           isLoading={loading}
         />
+
+        {/* Pagination Footer */}
+        {totalQrPages > 1 && (
+          <div className="flex items-center justify-between pt-4 mt-4 border-t border-gray-200 dark:border-[#8B0000]/20">
+            <button
+              disabled={safeQrPage <= 1}
+              onClick={() => setCurrentPage(safeQrPage - 1)}
+              className="px-3 py-1.5 text-xs font-bold rounded-lg border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-[#8B0000]/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+            >
+              ‹ Prev
+            </button>
+
+            <div className="flex items-center gap-1.5 overflow-x-auto max-w-[65%] px-2">
+              {Array.from({ length: totalQrPages }, (_, i) => i + 1).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setCurrentPage(p)}
+                  className={`px-3 py-1 text-xs font-bold rounded-lg border transition-all ${
+                    p === safeQrPage
+                      ? 'bg-[#8B0000] border-[#8B0000] text-white shadow-sm'
+                      : 'border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5'
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+
+            <button
+              disabled={safeQrPage >= totalQrPages}
+              onClick={() => setCurrentPage(safeQrPage + 1)}
+              className="px-3 py-1.5 text-xs font-bold rounded-lg border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-[#8B0000]/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+            >
+              Next ›
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Payment Acknowledgements Verification Queue */}

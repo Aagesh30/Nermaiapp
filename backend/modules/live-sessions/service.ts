@@ -68,10 +68,16 @@ export class LiveSessionService {
       courseMap.set(d.id, d.data().title || d.data().name || '');
     });
 
-    const batchesSnap = await db.collection('student_batches').get();
+    const [batchesSnap, erpBatchesSnap] = await Promise.all([
+      db.collection('student_batches').get().catch(() => ({ docs: [] })),
+      db.collection('batches').get().catch(() => ({ docs: [] }))
+    ]);
+    const allBatchDocs = [...(batchesSnap.docs || []), ...(erpBatchesSnap.docs || [])];
+
     const batchMap = new Map<string, string>();
-    batchesSnap.docs.forEach(d => {
-      batchMap.set(d.id, d.data().name || d.data().code || d.data().batchName || d.id);
+    allBatchDocs.forEach(d => {
+      const data = d.data();
+      batchMap.set(d.id, data.name || data.code || data.batchName || d.id);
     });
 
     // Query all live classes from 'classes' collection
@@ -477,7 +483,9 @@ export class LiveSessionService {
       const hasKnownBatchType = hasOnlineBatch || hasOfflineBatch || hasRecordedBatch;
       const isUnknownBatchType = !hasKnownBatchType;
 
-      const canViewLive     = hasOnlineBatch || hasRecordedBatch || isUnknownBatchType;
+      // Only online students (or unknown legacy type) can view/join live classes directly without permission
+      // Offline and recorded students must request permission
+      const canViewLive     = hasOnlineBatch || isUnknownBatchType;
       const canViewRecorded = hasRecordedBatch;
 
       // ── Class Scope Resolution ──
@@ -489,12 +497,13 @@ export class LiveSessionService {
         targetBatches.includes('all_free');
 
       // Primary course security gate: student must be enrolled in this class's course.
-      // (Bypassed only by explicit admin grant)
+      // (Bypassed only by explicit admin grant or direct batch targeting)
       const classCourseTitle = courseMap.get(classCourseId) || cls.courseName || '';
-      const hasCourseEnrollment =
-        !classCourseId ||
+      const isCourseEnrolled = Boolean(classCourseId) && (
         uniqueUserCourseIds.includes(classCourseId) ||
-        (classCourseTitle && uniqueUserCourseIds.includes(classCourseTitle));
+        (classCourseTitle && uniqueUserCourseIds.includes(classCourseTitle))
+      );
+      const hasCourseEnrollment = !classCourseId || isCourseEnrolled;
 
       // ── Targeting Resolution ──
       const targetCourseIds: string[] = Array.isArray(cls.targetCourses)
@@ -506,11 +515,25 @@ export class LiveSessionService {
       const hasBatchTargeting  = specificBatchTargets.length > 0;
       const hasCourseTargeting = targetCourseIds.length > 0;
 
-      const matchesTargetBatch  = !hasBatchTargeting  || specificBatchTargets.some((bId: string) => userBatchIds.includes(bId));
+      // Robust matching: matches whether stored as batch ID or batch name
+      const matchesTargetBatch = !hasBatchTargeting || specificBatchTargets.some((bId: string) => {
+        if (userBatchIds.includes(bId)) return true;
+        const mappedName = batchMap.get(bId);
+        if (mappedName && userBatchIds.includes(mappedName)) return true;
+        for (const [id, name] of batchMap.entries()) {
+          if (name === bId && userBatchIds.includes(id)) return true;
+        }
+        return false;
+      });
+
       const matchesTargetCourse = !hasCourseTargeting || targetCourseIds.some((cId: string) => 
         uniqueUserCourseIds.includes(cId) || (courseMap.get(cId) && uniqueUserCourseIds.includes(courseMap.get(cId)!))
       );
-      const passesTargeting = matchesTargetBatch && matchesTargetCourse;
+      // Direct batch targeting override: if student's enrolled batch is explicitly in the targeted batches list,
+      // allow them through the course gate (enables cross-course / combined classes e.g. LDC + TB18)
+      const isDirectlyTargetedBatch = hasBatchTargeting && matchesTargetBatch;
+      const passesTargeting = isCourseEnrolled || isDirectlyTargetedBatch || (!classCourseId && !hasBatchTargeting);
+      const isEligibleForClass = isCourseEnrolled || isDirectlyTargetedBatch || isOpenClass || (!classCourseId && !hasBatchTargeting);
 
       // ── Grant-based override: admin approved a CLASS or higher-level grant ──
       const hasGrant = activeGrantEntityIds.has(cls.id);
@@ -521,26 +544,21 @@ export class LiveSessionService {
       } else if (!isEnrolled) {
         hasAccess = false;
         hasRecordedAccess = false;
-      } else if (!hasCourseEnrollment) {
-        // Enrolled somewhere, but NOT in this class's course - strictly deny!
-        // This stops UDC students from having access to LDC classes
+      } else if (!isEligibleForClass) {
+        // Enrolled somewhere, but NOT in this class's course AND NOT in any targeted batch - strictly deny!
+        // This stops unrelated students from seeing the class
         hasAccess = false;
         hasRecordedAccess = false;
       } else if (isOpenClass) {
         hasAccess = canViewLive;
         hasRecordedAccess = canViewRecorded;
       } else if (!passesTargeting) {
-        // STEP 5: TARGET MISMATCH
-        // Fallback: If enrolled in the course AND has live capability, grant access.
-        // This handles data format mismatch e.g. student batch is "43" (name) vs class targets UUIDs.
-        if (hasCourseEnrollment && canViewLive) {
-          hasAccess = true;
-          hasRecordedAccess = canViewRecorded;
-        } else {
-          hasAccess = false;
-          hasRecordedAccess = false;
-        }
+        // Target mismatch: Student is in the course, but NOT in the targeted batch(es) (e.g. Batch 45 when 43 is targeted)
+        // Access is restricted so they see "🔒 Access restricted for your batch" + "Request Access" button!
+        hasAccess = false;
+        hasRecordedAccess = false;
       } else {
+        // Student matches the target batch (or all enrolled)
         hasAccess = canViewLive;
         hasRecordedAccess = canViewRecorded;
       }
@@ -645,14 +663,14 @@ export class LiveSessionService {
             derivedStatus = 'RECORDED_AVAILABLE';
         }
 
-        // Cross-course security gate: classes from different courses MUST NOT be visible!
-        // (e.g. UDC student viewing LDC class)
-        if (!hasCourseEnrollment) {
+        // Cross-course security gate: classes from different courses MUST NOT be visible
+        // unless the student's batch was explicitly targeted or class is open!
+        if (!isEligibleForClass) {
           continue;
         }
 
-        // Only show denied-access classes if they are still upcoming/scheduled (not ended)
-        const requestableStatuses = ['SCHEDULED', 'DRAFT'];
+        // Show denied-access classes if they are scheduled or live so students can request access
+        const requestableStatuses = ['SCHEDULED', 'DRAFT', 'LIVE', 'JOINING', 'HOST_CONNECTED', 'ATTENDANCE_RUNNING'];
         if (requestableStatuses.includes(derivedStatus)) {
           const scheduledStartTime = cls.scheduledStartTime || null;
           const durationMinutes = cls.expectedDurationMinutes || 60;

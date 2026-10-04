@@ -107,7 +107,7 @@ export const ZoomWebViewPlayer: React.FC<ZoomWebViewPlayerProps> = ({ payload })
         <iframe
           src={playerUrl}
           style={{ width: '100%', height: '100%', border: 'none' }}
-          allow="camera; microphone; display-capture"
+          allow="autoplay; camera; microphone; display-capture; fullscreen"
           title="Zoom SDK"
         />
       </View>
@@ -123,6 +123,7 @@ export const ZoomWebViewPlayer: React.FC<ZoomWebViewPlayerProps> = ({ payload })
         domStorageEnabled={true}
         allowsInlineMediaPlayback={true}
         mediaPlaybackRequiresUserAction={false}
+        mediaCapturePermissionGrantType="grant"
         onMessage={handleMessage}
         bounces={false}
       />

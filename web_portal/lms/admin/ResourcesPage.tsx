@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, lazy, Suspense } from 'react';
 import { ResourceApi  } from '../core/services';
-import { Plus, Search, FileText, Lock, Globe, UploadCloud, Edit } from 'lucide-react';
+import { Plus, Search, FileText, Lock, Globe, UploadCloud, Edit, Eye } from 'lucide-react';
 import ResourceForm from './ResourceForm';
 import { TableSkeleton } from '../components/ui/Skeleton';
+
+const ResourceViewer = lazy(() => import('../student/ResourceViewer').then(m => ({ default: m.ResourceViewer })));
 
 export function ResourcesPage() {
   const [resources, setResources] = useState<any[]>([]);
@@ -12,6 +14,7 @@ export function ResourcesPage() {
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingResource, setEditingResource] = useState<any>(null);
+  const [previewResourceId, setPreviewResourceId] = useState<string | null>(null);
   
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -128,14 +131,23 @@ export function ResourcesPage() {
                       </td>
                       <td className="p-4 text-right">
                         <button
-                          onClick={() => { setEditingResource(res); setIsFormOpen(true); }}
+                          onClick={() => setPreviewResourceId(res.id)}
                           className="text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white p-2"
+                          title="Preview in Secure Viewer"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => { setEditingResource(res); setIsFormOpen(true); }}
+                          className="text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white p-2 ml-1"
+                          title="Edit Resource"
                         >
                           <Edit className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => setDeleteConfirm(res.id)}
-                          className="text-gray-500 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400 p-2 ml-2 transition-colors"
+                          className="text-gray-500 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400 p-2 ml-1 transition-colors"
+                          title="Delete Resource"
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
                         </button>
@@ -155,6 +167,16 @@ export function ResourcesPage() {
           onSuccess={() => { setIsFormOpen(false); fetchResources(); }}
           initialData={editingResource}
         />
+      )}
+
+      {/* Admin Secure Viewer Preview Modal */}
+      {previewResourceId && (
+        <Suspense fallback={null}>
+          <ResourceViewer
+            resourceId={previewResourceId}
+            onClose={() => setPreviewResourceId(null)}
+          />
+        </Suspense>
       )}
 
       {deleteConfirm && (
