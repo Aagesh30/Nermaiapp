@@ -13,6 +13,36 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 const COLLECTION = "announcements";
 
+import { sendPushNotification } from "../../services/pushService";
+
+async function dispatchPushToExpo(targets: {
+    title: string;
+    body: string;
+    targetGroup?: string;
+    targetStudentId?: string | null;
+    targetBatch?: string | null;
+    data?: Record<string, any>;
+}) {
+    let targetRole: "all" | "student" | "guest" | "admin" | "staff" | "super_admin" = "all";
+    if (targets.targetGroup === "student") targetRole = "student";
+    else if (targets.targetGroup === "guest" || targets.targetGroup === "free") targetRole = "guest";
+    else if (targets.targetGroup === "staff") targetRole = "staff";
+
+    try {
+        return await sendPushNotification({
+            title: targets.title,
+            body: targets.body,
+            targetRole,
+            targetUserId: targets.targetStudentId || null,
+            targetBatch: targets.targetBatch || null,
+            data: targets.data
+        });
+    } catch (e: any) {
+        console.log("[Backend Notification] Push dispatch note:", e?.message);
+        return { tokensFound: 0, ticketsOk: 0, ticketsError: 0, expoCount: 0, webCount: 0, totalTokens: 0, success: false };
+    }
+}
+
 export class NotificationController {
     /**
      * CREATE NOTIFICATION (ALIAS FOR ANNOUNCEMENT CREATION)
@@ -110,9 +140,28 @@ export class NotificationController {
             // Invalidate student-facing cache so new notice is immediately visible
             generalCache.delete('all_active_announcements');
 
+            // Dispatch remote push notification via Expo Push API to reached devices even if APK is closed
+            const isFeeAlert = String(title).includes("Fee Payment Alert") || String(message).toLowerCase().includes("pending tuition fee");
+            const pushResult = await dispatchPushToExpo({
+                title,
+                body: message,
+                targetGroup,
+                targetStudentId,
+                targetBatch,
+                data: {
+                    targetTab: isFeeAlert ? "erp" : (targetGroup === "guest" ? "home" : "dashboard"),
+                    targetSub: isFeeAlert ? "pay-fees" : "notices",
+                    screen: isFeeAlert ? "erp" : (targetGroup === "guest" ? "home" : "dashboard"),
+                    subTab: isFeeAlert ? "pay-fees" : "notices"
+                }
+            });
+
             return res.status(201).json({
                 success: true,
                 message: "Notification sent successfully",
+                tokensFound: pushResult.tokensFound,
+                ticketsOk: pushResult.ticketsOk,
+                ticketsError: pushResult.ticketsError,
                 data: {
                     ...payload,
                     createdAt: new Date().toISOString()
@@ -209,16 +258,50 @@ export class NotificationController {
                 results.push(payload);
             }
 
+            let aggregateTokensFound = 0;
+            let aggregateTicketsOk = 0;
+            let aggregateTicketsError = 0;
+
             if (results.length > 0) {
                 await batch.commit();
                 // Invalidate student-facing cache so bulk notices are immediately visible
                 generalCache.delete('all_active_announcements');
+
+                // Trigger push notifications for bulk items (fee alerts or notices) in batches of 10
+                const pushTasks = notifications.slice(0, 50).map(notifItem => {
+                    const isFeeAlert = String(notifItem.title || "").includes("Fee Payment Alert");
+                    return dispatchPushToExpo({
+                        title: notifItem.title || "Academy Alert",
+                        body: notifItem.message || notifItem.content || "Payment Reminder",
+                        targetGroup: notifItem.targetGroup || "student",
+                        targetStudentId: notifItem.targetStudentId || null,
+                        targetBatch: notifItem.targetBatch || null,
+                        data: {
+                            targetTab: isFeeAlert ? "erp" : "dashboard",
+                            targetSub: isFeeAlert ? "pay-fees" : "notices",
+                            screen: isFeeAlert ? "erp" : "dashboard",
+                            subTab: isFeeAlert ? "pay-fees" : "notices"
+                        }
+                    });
+                });
+
+                const pushResults = await Promise.allSettled(pushTasks);
+                pushResults.forEach((res) => {
+                    if (res.status === "fulfilled" && res.value) {
+                        aggregateTokensFound += res.value.tokensFound || 0;
+                        aggregateTicketsOk += res.value.ticketsOk || 0;
+                        aggregateTicketsError += res.value.ticketsError || 0;
+                    }
+                });
             }
 
             return res.status(201).json({
                 success: true,
                 message: `Successfully sent ${results.length} notifications`,
-                count: results.length
+                count: results.length,
+                tokensFound: aggregateTokensFound,
+                ticketsOk: aggregateTicketsOk,
+                ticketsError: aggregateTicketsError
             });
         } catch (error: any) {
             return res.status(500).json({
@@ -337,6 +420,54 @@ export class NotificationController {
             return res.status(500).json({
                 success: false,
                 message: error.message || "An error occurred while deleting the notification"
+            });
+        }
+    }
+
+    /**
+     * UNREGISTER DEVICE PUSH TOKEN ON LOGOUT
+     * POST /api/notification/unregister-token
+     */
+    static async unregisterToken(req: Request, res: Response) {
+        try {
+            const user = req.user;
+            const targetId = user?.userId || user?.studentId || user?.id;
+            const { token } = req.body;
+
+            if (!targetId && !token) {
+                return res.status(400).json({ success: false, message: "Authentication or token is required" });
+            }
+
+            const batch = db.batch();
+            let count = 0;
+
+            if (token) {
+                const cleanDocId = token.replace(/[^a-zA-Z0-9_-]/g, "_");
+                const webCleanDocId = "web_" + token.slice(-24).replace(/[^a-zA-Z0-9_-]/g, "_");
+                batch.delete(db.collection("device_push_tokens").doc(cleanDocId));
+                batch.delete(db.collection("device_push_tokens").doc(webCleanDocId));
+                count++;
+            }
+
+            if (targetId) {
+                const q1 = await db.collection("device_push_tokens").where("userId", "==", String(targetId)).get();
+                q1.forEach((d) => batch.delete(d.ref));
+                const q2 = await db.collection("device_push_tokens").where("studentId", "==", String(targetId)).get();
+                q2.forEach((d) => batch.delete(d.ref));
+                count += q1.size + q2.size;
+            }
+
+            await batch.commit();
+
+            return res.status(200).json({
+                success: true,
+                message: "Token unregistered successfully",
+                count
+            });
+        } catch (error: any) {
+            return res.status(500).json({
+                success: false,
+                message: error.message || "Failed to unregister token"
             });
         }
     }

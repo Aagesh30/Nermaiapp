@@ -95,18 +95,26 @@ export class AnnouncementService {
   }
 
   /**
-   * Internal function to send push notifications via NotificationCenter (BullMQ)
+   * Internal function to send push notifications directly via sendPushNotification
    */
   private async dispatchPushNotifications(announcement: IAnnouncement): Promise<void> {
-    await notificationService.dispatchNotification({
-      tenantId: announcement.tenantId,
-      title: 'New Announcement',
-      body: announcement.title,
-      visibility: announcement.visibility as any,
-      targetBatchIds: announcement.targetBatchIds,
-      targetCourseIds: announcement.targetCourseIds,
-      metadata: { type: 'announcement', id: announcement.id! },
-      announcementId: announcement.id
+    const { sendPushNotification } = await import('../../services/pushService');
+    const targetRole = announcement.visibility === 'global' ? 'all' : (announcement.visibility === 'batch' ? 'student' : 'student');
+    const targetBatch = announcement.targetBatchIds && announcement.targetBatchIds.length > 0 ? announcement.targetBatchIds[0] : null;
+
+    await sendPushNotification({
+      title: 'New Announcement: ' + announcement.title,
+      body: announcement.content || announcement.title,
+      targetRole: targetRole as any,
+      targetBatch,
+      data: {
+        targetTab: 'dashboard',
+        targetSub: 'notices',
+        type: 'announcement',
+        announcementId: announcement.id
+      }
+    }).catch(err => {
+      console.warn('[AnnouncementService] Push dispatch note:', err?.message);
     });
   }
 }

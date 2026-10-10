@@ -15,4 +15,7 @@ router.get("/", NotificationController.getNotifications);
 // Delete notification
 router.delete("/:id", NotificationController.delete);
 
+// Unregister token on logout
+router.post("/unregister-token", NotificationController.unregisterToken);
+
 export default router;

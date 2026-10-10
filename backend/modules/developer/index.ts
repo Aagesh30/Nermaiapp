@@ -68,6 +68,9 @@ router.post("/consume-one-time-permission", requireRole(['super_admin', 'admin',
 // Approve one-time permission (super_admin/developer only)
 router.post("/approve-one-time-permission", requireRole(['super_admin', 'developer']), DeveloperController.approveOneTimePermission);
 
+// Push test endpoint for admins and developers
+router.post("/push-test", requireRole(['super_admin', 'admin', 'staff', 'developer']), DeveloperController.pushTest);
+
 // All other developer routes require developer or super_admin role only (admin is forbidden)
 router.use(requireDeveloperOrSuperAdmin);
 

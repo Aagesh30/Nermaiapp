@@ -50,6 +50,7 @@ export class AnnouncementController {
                 content: content.trim(),
                 priority: priority === "high" ? "high" : "normal",
                 targetDashboard: targetDashboard || "all", // "student", "staff", "all", "batch", "free", "paid"
+                targetAudience: targetDashboard || "all",
                 targetBatch: targetBatch || null,
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -64,6 +65,24 @@ export class AnnouncementController {
             };
 
             await db.collection(COLLECTION).doc(id).set(payload);
+
+            // Dispatch remote push notification on notice creation
+            try {
+                const { sendPushNotification } = await import("../../services/pushService");
+                const targetRole = targetDashboard === "student" || targetDashboard === "paid" ? "student" : (targetDashboard === "free" ? "guest" : "all");
+                sendPushNotification({
+                    title: title.trim(),
+                    body: content.trim(),
+                    targetRole: targetRole as any,
+                    targetBatch: targetBatch || null,
+                    data: {
+                        targetTab: targetDashboard === "free" ? "home" : "dashboard",
+                        targetSub: "notices",
+                        screen: targetDashboard === "free" ? "home" : "dashboard",
+                        subTab: "notices"
+                    }
+                }).catch(e => console.log("[AnnouncementController] Push note:", e?.message));
+            } catch (_) {}
 
             return res.status(201).json({
                 success: true,
@@ -257,7 +276,10 @@ export class AnnouncementController {
             if (title !== undefined) updateData.title = title;
             if (content !== undefined) updateData.content = content;
             if (priority !== undefined) updateData.priority = priority === "high" ? "high" : "normal";
-            if (targetDashboard !== undefined) updateData.targetDashboard = targetDashboard;
+            if (targetDashboard !== undefined) {
+                updateData.targetDashboard = targetDashboard;
+                updateData.targetAudience = targetDashboard;
+            }
             if (targetBatch !== undefined) updateData.targetBatch = targetBatch;
             if (publishedAt !== undefined) {
                 updateData.publishedAt = publishedAt ? admin.firestore.Timestamp.fromDate(new Date(publishedAt)) : admin.firestore.FieldValue.serverTimestamp();

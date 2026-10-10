@@ -301,6 +301,27 @@ export class AccessRequestService {
       await this.addTemporaryGrantToEntity(eId, request.studentId, adminId, requestId, expiresAt);
     }
 
+    try {
+      const { invalidateAccessCache } = await import('../../core/security/AccessCache');
+      await invalidateAccessCache(request.studentId);
+    } catch (cErr) {
+      // Non-blocking cache invalidation
+    }
+
+    try {
+      const { sendPushNotification } = await import('../../services/pushService');
+      sendPushNotification({
+        title: 'Access Request Approved',
+        body: `Your request for ${request.contentName || 'content'} has been approved!`,
+        targetUserId: request.studentId,
+        data: {
+          targetTab: 'lms',
+          targetSub: 'courses',
+          contentId: request.contentId
+        }
+      }).catch(() => {});
+    } catch (_) {}
+
     return { success: true, message: 'Request approved successfully.' };
   }
 

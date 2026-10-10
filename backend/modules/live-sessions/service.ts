@@ -1088,6 +1088,26 @@ Launch Payload Exists: ${!!session.launchPayload}
       // We emit class:joining instead of live here
       interactionEventBus.emit('class:joining', { classId: session.classId, sessionId: session.id });
 
+      // Dispatch push notification when live class starts
+      try {
+        const { sendPushNotification } = await import('../../services/pushService');
+        const classRepo = new ClassRepository();
+        classRepo.findById(session.classId).then((clsData) => {
+          sendPushNotification({
+            title: 'Live Class Started 🔴',
+            body: `${clsData?.title || 'Live Session'} is now live! Tap to join.`,
+            targetRole: 'student',
+            targetBatch: clsData?.targetBatchIds?.[0] || null,
+            data: {
+              targetTab: 'lms',
+              targetSub: 'live-classes',
+              classId: session.classId,
+              sessionId: session.id
+            }
+          }).catch(() => {});
+        }).catch(() => {});
+      } catch (_) {}
+
       return {
         sessionId: session.id,
         provider: session.provider,

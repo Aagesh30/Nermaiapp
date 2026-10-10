@@ -810,4 +810,61 @@ export class DeveloperController {
             return res.status(500).json({ success: false, message: error.message || "Failed to approve permission" });
         }
     }
+
+    /**
+     * TEST PUSH NOTIFICATION (Admin / Developer)
+     * POST /developer/push-test
+     * Body: { targetUserId?, targetToken?, title?, body? }
+     */
+    static async pushTest(req: Request, res: Response) {
+        try {
+            if (process.env.NODE_ENV === "production" && process.env.ENABLE_DEV_ROUTES !== "true") {
+                return res.status(403).json({ success: false, message: "Dev push-test disabled in production unless ENABLE_DEV_ROUTES=true" });
+            }
+
+            const { targetUserId, targetToken, title, body } = req.body;
+            const { sendPushNotification } = await import("../../services/pushService");
+
+            if (targetToken) {
+                const resp = await fetch("https://exp.host/--/api/v2/push/send", {
+                    method: "POST",
+                    headers: {
+                        Accept: "application/json",
+                        "Accept-Encoding": "gzip, deflate",
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify([{
+                        to: targetToken,
+                        sound: "default",
+                        title: title || "Push Test 🔔",
+                        body: body || "Test push notification payload from admin panel",
+                        priority: "high",
+                        channelId: "default",
+                        data: { targetTab: "dashboard", screen: "dashboard" }
+                    }]),
+                });
+                const resData = await resp.json().catch(() => null);
+                return res.status(200).json({
+                    success: true,
+                    targetToken,
+                    ticket: resData
+                });
+            }
+
+            const result = await sendPushNotification({
+                title: title || "Push Test 🔔",
+                body: body || "Test push notification payload from admin panel",
+                targetUserId: targetUserId || null,
+                targetRole: targetUserId ? undefined : "all",
+                data: { targetTab: "dashboard", screen: "dashboard" }
+            });
+
+            return res.status(200).json({
+                success: true,
+                result
+            });
+        } catch (error: any) {
+            return res.status(500).json({ success: false, message: error.message || "Push test failed" });
+        }
+    }
 }
