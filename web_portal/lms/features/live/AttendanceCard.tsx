@@ -88,15 +88,15 @@ export const AttendanceCard: React.FC<Props> = ({
 
 const styles = StyleSheet.create({
   container: { backgroundColor: '#1E1E1E', borderRadius: 12, margin: 16, overflow: 'hidden' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: '#333' },
-  title: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
-  badge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#111', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 18, borderBottomWidth: 1, borderBottomColor: '#333' },
+  title: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
+  badge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#111', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12 },
   dot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
-  badgeText: { color: '#FFF', fontSize: 10, fontWeight: 'bold' },
-  content: { padding: 16 },
-  desc: { color: '#AAA', fontSize: 13, lineHeight: 20, marginBottom: 20 },
-  btn: { padding: 16, borderRadius: 8, alignItems: 'center' },
+  badgeText: { color: '#FFF', fontSize: 12, fontWeight: 'bold' },
+  content: { padding: 18 },
+  desc: { color: '#AAA', fontSize: 15, lineHeight: 20, marginBottom: 20 },
+  btn: { padding: 18, borderRadius: 8, alignItems: 'center' },
   btnPrimary: { backgroundColor: '#D4AF37' },
   btnDanger: { backgroundColor: '#FF6B6B' },
-  btnText: { color: '#000', fontWeight: 'bold', fontSize: 14 }
+  btnText: { color: '#000', fontWeight: 'bold', fontSize: 16 }
 });

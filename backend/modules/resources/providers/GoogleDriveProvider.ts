@@ -19,10 +19,12 @@ export class GoogleDriveProvider implements IResourceProvider {
     }
     
     // We proxy the "Anyone with the link" download URL
-    const downloadUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
+    const downloadUrl = `https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`;
     
     try {
-      const headers: any = {};
+      const headers: any = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+      };
       
       if (options?.start !== undefined && options?.end !== undefined) {
         headers['Range'] = `bytes=${options.start}-${options.end}`;
@@ -33,6 +35,8 @@ export class GoogleDriveProvider implements IResourceProvider {
         method: 'GET',
         responseType: 'stream',
         headers,
+        maxRedirects: 5,
+        timeout: 30000,
       });
 
       // Attempt to read Accept-Ranges / Content-Range from upstream

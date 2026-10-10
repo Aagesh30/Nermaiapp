@@ -3,6 +3,7 @@ import admin from "firebase-admin";
 import { randomUUID } from "crypto";
 import jwt from "jsonwebtoken";
 import { env } from "../../../config/env";
+import { sendPushNotification } from "../../../services/pushService";
 
 const db = admin.firestore();
 const LEADS_COLLECTION = "leads";
@@ -60,6 +61,7 @@ export class LeadsController {
                 notes: notes || "",
                 courseInterest: courseInterest || [],
                 status: "new",
+                joinStatus: "new",
                 registeredAt: now,
                 lastSeenAt: now,
                 createdAt: now,
@@ -67,6 +69,18 @@ export class LeadsController {
                 isDeleted: false,
                 createdBy: createdBy || "system"
             });
+
+            // Dispatch high priority push to admin devices
+            sendPushNotification({
+                title: "💬 New Student Inquiry",
+                body: `${name} (${phone}) registered as a new prospect.`,
+                targetRole: "admin",
+                data: {
+                    targetTab: "crm",
+                    targetSub: "leads",
+                    leadId: id
+                }
+            }).catch(err => console.log("[Push] Lead push note:", err?.message));
 
             return res.status(201).json({
                 success: true,
@@ -239,16 +253,84 @@ export class LeadsController {
     static async updateStatus(req: Request, res: Response) {
         try {
             const { id } = req.params;
-            const { status, notes, updatedBy } = req.body;
+            const docRef = db.collection(LEADS_COLLECTION).doc(id);
+            const doc = await docRef.get();
+            if (!doc.exists || doc.data()?.isDeleted) {
+                return res.status(404).json({ success: false, message: "Lead not found" });
+            }
 
-            await db.collection(LEADS_COLLECTION).doc(id).update({
-                status: status || "new",
-                notes: notes || "",
+            const adminName = (req as any).user?.name || (req as any).user?.username || (req as any).user?.email || "Admin Staff";
+            const updateData: any = {
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                updatedBy: updatedBy || "admin"
-            });
+                updatedBy: req.body.updatedBy || adminName,
+                updatedByAdminName: req.body.updatedByAdminName || req.body.atten || adminName
+            };
 
-            return res.status(200).json({ success: true, message: "Lead updated" });
+            const allowedFields = [
+                'status',
+                'joinStatus',
+                'updatedByAdminName',
+                'natureOfEnquiry',
+                'mode',
+                'preferredMode',
+                'atten',
+                'attendedBy',
+                'reminder1',
+                'reminder2',
+                'reminder3',
+                'reference',
+                'remarks1',
+                'remarks2',
+                'notes',
+                'name',
+                'phone',
+                'mobile',
+                'email',
+                'course',
+                'preferredCourse',
+                'city'
+            ];
+
+            for (const field of allowedFields) {
+                if (req.body[field] !== undefined) {
+                    updateData[field] = req.body[field];
+                }
+            }
+
+            // Synchronize status and joinStatus
+            if (req.body.joinStatus) {
+                updateData.joinStatus = req.body.joinStatus;
+                if (!req.body.status) {
+                    updateData.status = req.body.joinStatus === 'joined' ? 'converted' : 'pending';
+                }
+            } else if (req.body.status) {
+                if (!req.body.joinStatus) {
+                    if (req.body.status === 'converted') updateData.joinStatus = 'joined';
+                    else if (req.body.status === 'applied') updateData.joinStatus = 'follow_up';
+                    else if (req.body.status === 'new') updateData.joinStatus = 'new';
+                }
+            }
+
+            await docRef.update(updateData);
+
+            return res.status(200).json({ success: true, message: "Lead updated", data: updateData });
+        } catch (e: any) {
+            return res.status(500).json({ success: false, message: e.message });
+        }
+    }
+
+    /**
+     * DELETE LEAD (Admin - Soft delete)
+     * DELETE /api/crm/leads/:id
+     */
+    static async delete(req: Request, res: Response) {
+        try {
+            const { id } = req.params;
+            await db.collection(LEADS_COLLECTION).doc(id).update({
+                isDeleted: true,
+                deletedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+            return res.status(200).json({ success: true, message: "Lead deleted" });
         } catch (e: any) {
             return res.status(500).json({ success: false, message: e.message });
         }
@@ -376,6 +458,7 @@ export class LeadsController {
                     notes: "",
                     courseInterest: [],
                     status: "new",
+                    joinStatus: "new",
                     registeredAt: now,
                     lastSeenAt: now,
                     createdAt: now,

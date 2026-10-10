@@ -2,16 +2,11 @@
   "expo": {
     "name": "NERMAI IAS Academy",
     "slug": "nermai-ias-academy-web-portal",
-    "scheme": "nermaiiasacademy",
+    "scheme": ["nermaiiasacademy", "com.nermai.iasacademy"],
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
     "ios": {
       "supportsTablet": true
     },
@@ -40,17 +35,29 @@
           "color": "#c62828"
         }
       ],
-      "expo-web-browser"
+      "@react-native-google-signin/google-signin",
+      "expo-web-browser",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 35,
+            "minSdkVersion": 24,
+            "buildToolsVersion": "36.0.0"
+          }
+        }
+      ]
     ],
     "web": {
       "favicon": "./assets/favicon.png",
       "bundler": "metro"
     },
+    "owner": "a_k_j_d",
     "extra": {
       "eas": {
-        "projectId": "a0b3bbab-3bea-4ced-82f5-e61600fddd7f"
+        "projectId": "7b9009b2-f209-4d9b-8e24-21f04e78de96"
       }
-    },
-    "owner": "ak_jd"
+    }
   }
 }

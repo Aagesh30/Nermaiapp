@@ -68,13 +68,13 @@ export const GMeetDeepLinkPlayer: React.FC<GMeetDeepLinkPlayerProps> = ({ payloa
 };
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#0a0a0a', justifyContent: 'center', alignItems: 'center', padding: 24 },
-  icon: { fontSize: 56, marginBottom: 16 },
-  title: { fontSize: 22, fontWeight: '800', color: '#fff', marginBottom: 8, textAlign: 'center' },
-  status: { fontSize: 15, color: 'rgba(255,255,255,0.55)', marginBottom: 20, textAlign: 'center' },
-  error: { color: '#fca5a5', fontSize: 13, marginBottom: 16, textAlign: 'center' },
-  btn: { backgroundColor: '#1a73e8', paddingVertical: 14, paddingHorizontal: 32, borderRadius: 12, marginBottom: 12, width: '100%', alignItems: 'center' },
-  btnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  backBtn: { paddingVertical: 10 },
-  backBtnText: { color: 'rgba(255,255,255,0.4)', fontSize: 15 },
+  root: { flex: 1, backgroundColor: '#0a0a0a', justifyContent: 'center', alignItems: 'center', padding: 26 },
+  icon: { fontSize: 58, marginBottom: 16 },
+  title: { fontSize: 24, fontWeight: '800', color: '#fff', marginBottom: 8, textAlign: 'center' },
+  status: { fontSize: 17, color: 'rgba(255,255,255,0.55)', marginBottom: 20, textAlign: 'center' },
+  error: { color: '#fca5a5', fontSize: 15, marginBottom: 16, textAlign: 'center' },
+  btn: { backgroundColor: '#1a73e8', paddingVertical: 16, paddingHorizontal: 34, borderRadius: 12, marginBottom: 12, width: '100%', alignItems: 'center' },
+  btnText: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  backBtn: { paddingVertical: 12 },
+  backBtnText: { color: 'rgba(255,255,255,0.4)', fontSize: 17 },
 });

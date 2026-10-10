@@ -86,6 +86,27 @@ export async function adminManualMark(req: Request, res: Response) {
   } catch (err) { fail(res, err); }
 }
 
+export async function adminCreateManualRecord(req: Request, res: Response) {
+  try {
+    const { userId } = req.user!;
+    const { studentId, studentName, className, batchName, mode, status, date, note } = req.body;
+    if (!studentId || !status) throw new AppError('studentId and status are required', 400);
+    if (!['PRESENT', 'ABSENT'].includes(status)) throw new AppError('status must be PRESENT or ABSENT', 400);
+
+    const result = await lmsAttendanceService.adminCreateManualRecord(userId, {
+      studentId,
+      studentName: studentName || 'Student',
+      className: className || 'Manual Class Attendance',
+      batchName: batchName || '',
+      mode: mode || 'online',
+      status,
+      date,
+      note,
+    });
+    ok(res, result, 201);
+  } catch (err) { fail(res, err); }
+}
+
 export async function adminListCorrections(req: Request, res: Response) {
   try {
     const filters = req.query as any;

@@ -55,4 +55,9 @@ router.post("/recalculate/:attemptId", requireRole(adminRoles), EvaluationContro
  */
 router.delete("/result/:resultId", requireRole(['super_admin', 'admin']), EvaluationController.deleteResult);
 
+/**
+ * Upload Offline Results (Excel) & Auto-Evaluate
+ */
+router.post("/offline-upload/:testId", requireRole(adminRoles), EvaluationController.uploadOfflineResults);
+
 export default router;

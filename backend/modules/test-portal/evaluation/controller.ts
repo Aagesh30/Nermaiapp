@@ -746,4 +746,137 @@ export class EvaluationController {
             });
         }
     }
+
+    /**
+     * UPLOAD OFFLINE EXCEL RESULTS & AUTO-EVALUATE
+     * POST /offline-upload/:testId
+     */
+    static async uploadOfflineResults(req: Request, res: Response) {
+        try {
+            const { testId } = req.params;
+            const { records } = req.body;
+
+            if (!Array.isArray(records) || records.length === 0) {
+                return res.status(400).json({ success: false, message: "No records found in upload payload" });
+            }
+
+            const testDoc = await db.collection("tests").doc(testId).get();
+            if (!testDoc.exists) {
+                return res.status(404).json({ success: false, message: "Test not found" });
+            }
+            const test = testDoc.data()!;
+            const marksPerQ = Number(test.marksPerQuestion) || 1;
+            const negMarksPerQ = Math.abs(Number(test.negativeMarks) || 0.33);
+            const unattendedMarksPerQ = test.unattendedMarks !== undefined ? Number(test.unattendedMarks) : 0;
+            const questionIds: string[] = test.questionIds || [];
+
+            // Load test questions to get correct answers
+            const questionsMap = new Map<number, any>();
+            if (questionIds.length > 0) {
+                const chunks: string[][] = [];
+                for (let i = 0; i < questionIds.length; i += 30) {
+                    chunks.push(questionIds.slice(i, i + 30));
+                }
+                const allQuestions: any[] = [];
+                for (const chunk of chunks) {
+                    const snap = await db.collection("questions").where(admin.firestore.FieldPath.documentId(), "in", chunk).get();
+                    snap.docs.forEach(d => allQuestions.push({ id: d.id, ...d.data() }));
+                }
+                questionIds.forEach((qId, idx) => {
+                    const found = allQuestions.find(q => q.id === qId);
+                    if (found) questionsMap.set(idx + 1, found);
+                });
+            }
+
+            const now = admin.firestore.FieldValue.serverTimestamp();
+            const totalQuestions = questionIds.length > 0 ? questionIds.length : (Number(test.totalQuestions) || 100);
+            const totalMarks = totalQuestions * marksPerQ;
+            let addedCount = 0;
+
+            const recordBatches: any[][] = [];
+            for (let i = 0; i < records.length; i += 400) {
+                recordBatches.push(records.slice(i, i + 400));
+            }
+
+            for (const chunk of recordBatches) {
+                const writeBatch = db.batch();
+                for (const rec of chunk) {
+                    const studentName = String(rec.studentName || rec.name || "Offline Student").trim();
+                    const rollNumber = String(rec.rollNumber || rec.rollNo || "Guest").trim();
+                    const answers = rec.answers || {};
+
+                    let correctCount = 0;
+                    let wrongCount = 0;
+                    let skippedCount = 0;
+                    let obtainedMarks = 0;
+
+                    for (let qNo = 1; qNo <= totalQuestions; qNo++) {
+                        const q = questionsMap.get(qNo);
+                        let correctAns = String(q?.correctAnswer || "").trim().toUpperCase();
+                        if (!correctAns && q?.options && Array.isArray(q.options)) {
+                            correctAns = String(q.answer || "").trim().toUpperCase();
+                        }
+                        const rawChosen = answers[qNo] ?? answers[`Q${qNo}`] ?? answers[`q${qNo}`] ?? answers[`Q.${qNo}`] ?? answers[`q.${qNo}`] ?? "";
+                        const chosen = String(rawChosen).trim().toUpperCase();
+
+                        if (!chosen) {
+                            skippedCount++;
+                            obtainedMarks += unattendedMarksPerQ;
+                        } else if (chosen === correctAns && correctAns !== "") {
+                            correctCount++;
+                            obtainedMarks += marksPerQ;
+                        } else {
+                            wrongCount++;
+                            obtainedMarks -= negMarksPerQ;
+                        }
+                    }
+
+                    const finalObtainedMarks = Math.max(0, Math.round(obtainedMarks * 100) / 100);
+                    const percentage = totalMarks > 0 ? (finalObtainedMarks / totalMarks) * 100 : 0;
+                    const passingMarks = Number(test.passingMarks) || 0;
+                    const status = finalObtainedMarks >= (passingMarks > 0 ? passingMarks : totalMarks * 0.35) ? "pass" : "fail";
+
+                    const safeRoll = rollNumber.replace(/[^a-zA-Z0-9_-]/g, "_");
+                    const attemptId = `offline_${testId}_${safeRoll || Date.now()}_${addedCount}`;
+                    const resultRef = db.collection("results").doc(attemptId);
+
+                    writeBatch.set(resultRef, {
+                        id: attemptId,
+                        attemptId,
+                        testId,
+                        studentId: attemptId,
+                        studentName,
+                        rollNumber,
+                        totalMarks,
+                        obtainedMarks: finalObtainedMarks,
+                        percentage: Math.round(percentage * 100) / 100,
+                        status,
+                        correct: correctCount,
+                        wrong: wrongCount,
+                        skipped: skippedCount,
+                        isOffline: true,
+                        evaluatedAt: now,
+                        isDeleted: false,
+                        createdAt: now,
+                        updatedAt: now
+                    });
+                    addedCount++;
+                }
+                await writeBatch.commit();
+            }
+
+            return res.status(200).json({
+                success: true,
+                message: `Successfully evaluated and imported ${addedCount} offline student result(s)`,
+                count: addedCount
+            });
+
+        } catch (error: any) {
+            console.error("Error in uploadOfflineResults:", error);
+            return res.status(500).json({
+                success: false,
+                message: error.message || "An error occurred while evaluating offline results"
+            });
+        }
+    }
 }

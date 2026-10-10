@@ -687,6 +687,13 @@ export class ReviewController {
                 if (isGenericName(sName)) sName = "Guest User";
                 if (isGenericName(rNum) || isPhoneNum(rNum) || rNum === sName) rNum = "Guest";
 
+                // Enrich with special mock sequential roll number if test has mockConfig or offline entry
+                if (testData?.mockConfig?.mockRollNumbers && entry.studentId && testData.mockConfig.mockRollNumbers[entry.studentId]) {
+                    rNum = testData.mockConfig.mockRollNumbers[entry.studentId];
+                } else if (entry.mockRollNumber) {
+                    rNum = entry.mockRollNumber;
+                }
+
                 return {
                     ...entry,
                     studentName: sName,

@@ -352,6 +352,8 @@ export const LmsAttendanceApi = {
   // Admin
   adminGetRecords: (filters?: any) =>
     api.get('/lms-attendance/admin/records', { params: filters }),
+  adminCreateManualRecord: (data: { studentId: string; studentName?: string; className?: string; batchName?: string; mode?: string; status: 'PRESENT' | 'ABSENT'; date?: string; note?: string }) =>
+    api.post('/lms-attendance/admin/manual-create', data),
   adminMarkManual: (id: string, status: 'PRESENT' | 'ABSENT', note: string) =>
     api.patch(`/lms-attendance/admin/${id}/mark`, { status, note }),
   adminGetCorrections: (filters?: any) =>

@@ -48,8 +48,8 @@ export const TemplateManager: React.FC = () => {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 800, color: C.text, margin: 0 }}>Permission Templates</h1>
-          <p style={{ color: C.muted, margin: '4px 0 0 0', fontSize: 14 }}>
+          <h1 style={{ fontSize: 26, fontWeight: 800, color: C.text, margin: 0 }}>Permission Templates</h1>
+          <p style={{ color: C.muted, margin: '4px 0 0 0', fontSize: 16 }}>
             Create reusable access configurations to apply quickly across courses.
           </p>
         </div>
@@ -69,11 +69,11 @@ export const TemplateManager: React.FC = () => {
                   <BookTemplate size={18} color={C.gold} />
                 </div>
                 <div>
-                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.text }}>{tpl.name}</h3>
+                  <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: C.text }}>{tpl.name}</h3>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
                     <span style={badgeStyle}>{tpl.visibility.toUpperCase()}</span>
                     {tpl.targetBatchIds.length > 0 && (
-                      <span style={{ fontSize: 12, color: C.muted }}>
+                      <span style={{ fontSize: 14, color: C.muted }}>
                         • {tpl.targetBatchIds.length} Batches
                       </span>
                     )}
@@ -82,7 +82,7 @@ export const TemplateManager: React.FC = () => {
               </div>
             </div>
 
-            <p style={{ fontSize: 13, color: C.muted, margin: '0 0 20px 0', lineHeight: 1.5 }}>
+            <p style={{ fontSize: 15, color: C.muted, margin: '0 0 20px 0', lineHeight: 1.5 }}>
               {tpl.description}
             </p>
 
@@ -110,7 +110,7 @@ const gridStyle: React.CSSProperties = {
 };
 
 const cardStyle: React.CSSProperties = {
-  backgroundColor: C.surface, borderRadius: 16, padding: 20,
+  backgroundColor: C.surface, borderRadius: 16, padding: 22,
   border: `1px solid ${C.border}`, boxShadow: NM_RAISED,
   display: 'flex', flexDirection: 'column'
 };
@@ -124,21 +124,21 @@ const iconWrapStyle: React.CSSProperties = {
 
 const badgeStyle: React.CSSProperties = {
   padding: '2px 8px', borderRadius: 6, backgroundColor: `${C.gold}20`,
-  color: C.gold, fontSize: 10, fontWeight: 800, letterSpacing: 0.5
+  color: C.gold, fontSize: 12, fontWeight: 800, letterSpacing: 0.5
 };
 
 const createBtnStyle: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 8,
   padding: '10px 20px', borderRadius: 10, border: 'none',
   background: `linear-gradient(135deg, ${C.gold}, #c9a732)`,
-  color: C.bg, fontSize: 14, fontWeight: 800, cursor: 'pointer',
+  color: C.bg, fontSize: 16, fontWeight: 800, cursor: 'pointer',
   boxShadow: `0 4px 16px rgba(212,175,55,0.3)`
 };
 
 const actionBtnStyle: React.CSSProperties = {
   flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
   padding: '8px 12px', borderRadius: 8, border: `1px solid ${C.border}`,
-  backgroundColor: C.surfH, color: C.text, fontSize: 13, fontWeight: 600,
+  backgroundColor: C.surfH, color: C.text, fontSize: 15, fontWeight: 600,
   cursor: 'pointer', boxShadow: NM_FLAT, transition: 'all 0.2s'
 };
 

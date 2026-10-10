@@ -61,6 +61,10 @@ const envSchema = z.object({
   // Redis removed — in-memory cache is used instead
   FCM_SERVER_KEY: z.string().optional(),
   FIREBASE_API_KEY: z.string().optional(),
+  GCP_PROJECT_ID: z.string().optional(),
+  GCP_STORAGE_BUCKET: z.string().optional(),
+  GCP_CLIENT_EMAIL: z.string().optional(),
+  GCP_PRIVATE_KEY: z.string().optional(),
   ALLOWED_ORIGINS: z.string().default('http://localhost:8081,http://localhost:3000'),
   WATCH_PROGRESS_INTERVAL: z.coerce.number().default(90),
   ATTENDANCE_HEARTBEAT_INTERVAL: z.coerce.number().default(300),

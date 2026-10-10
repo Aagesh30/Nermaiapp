@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import admin from "firebase-admin";
 import { randomUUID } from "crypto";
+import { sendPushNotification } from "../../../services/pushService";
 
 const db = admin.firestore();
 const ADMISSIONS_COLLECTION = "admissions";
@@ -13,7 +14,26 @@ export class AdmissionController {
      */
     static async create(req: Request, res: Response) {
         try {
-            const { name, email, phone, city, preferredCourse, course, preferredMode, message, createdBy } = req.body;
+            const {
+                name,
+                email,
+                phone,
+                city,
+                preferredCourse,
+                course,
+                preferredMode,
+                mode,
+                message,
+                notes,
+                remarks1,
+                remarks2,
+                natureOfEnquiry,
+                atten,
+                reference,
+                joinStatus,
+                status,
+                createdBy
+            } = req.body;
 
             if (!name || !phone) {
                 return res.status(400).json({
@@ -34,9 +54,17 @@ export class AdmissionController {
                 preferredCourse: preferredCourse || course || "",
                 // legacy compat
                 course: preferredCourse || course || "",
-                preferredMode: preferredMode || "",   // "online" | "offline" | "recorded"
+                preferredMode: preferredMode || mode || "",   // "online" | "offline" | "recorded"
+                mode: mode || preferredMode || "Offline",
                 message: message || "",
-                status: "pending",
+                notes: notes || remarks1 || "",
+                remarks1: remarks1 || notes || "",
+                remarks2: remarks2 || "",
+                natureOfEnquiry: natureOfEnquiry || "phone",
+                atten: atten || "Admin Staff",
+                reference: reference || "",
+                joinStatus: joinStatus || "new",
+                status: status || (joinStatus === 'joined' ? 'converted' : 'pending'),
                 submittedAt,
                 createdAt: submittedAt,
                 updatedAt: submittedAt,
@@ -63,6 +91,18 @@ export class AdmissionController {
                 });
                 await batch.commit();
             }
+
+            // Dispatch push to admins
+            sendPushNotification({
+                title: "🎓 New Admission Application",
+                body: `${name} (${phone}) submitted an application for ${preferredCourse || course || 'Academy Course'}.`,
+                targetRole: "admin",
+                data: {
+                    targetTab: "crm",
+                    targetSub: "admissions",
+                    admissionId: id
+                }
+            }).catch(err => console.log("[Push] Admission push note:", err?.message));
 
             return res.status(201).json({
                 success: true,
@@ -134,8 +174,6 @@ export class AdmissionController {
     static async updateStatus(req: Request, res: Response) {
         try {
             const { id } = req.params;
-            const { status, notes, updatedBy } = req.body;
-
             const docRef = db.collection(ADMISSIONS_COLLECTION).doc(id);
             const doc = await docRef.get();
 
@@ -143,14 +181,63 @@ export class AdmissionController {
                 return res.status(404).json({ success: false, message: "Admission not found" });
             }
 
-            await docRef.update({
-                status: status || "pending",
-                notes: notes || "",
+            const adminName = (req as any).user?.name || (req as any).user?.username || (req as any).user?.email || "Admin Staff";
+            const updateData: any = {
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                updatedBy: updatedBy || "admin"
-            });
+                updatedBy: req.body.updatedBy || adminName,
+                updatedByAdminName: req.body.updatedByAdminName || req.body.atten || adminName
+            };
 
-            return res.status(200).json({ success: true, message: "Admission status updated" });
+            const allowedFields = [
+                'status',
+                'joinStatus',
+                'updatedByAdminName',
+                'natureOfEnquiry',
+                'mode',
+                'preferredMode',
+                'atten',
+                'attendedBy',
+                'reminder1',
+                'reminder2',
+                'reminder3',
+                'reference',
+                'remarks1',
+                'remarks2',
+                'notes',
+                'name',
+                'studentName',
+                'phone',
+                'mobile',
+                'email',
+                'course',
+                'preferredCourse',
+                'city',
+                'address'
+            ];
+
+            for (const field of allowedFields) {
+                if (req.body[field] !== undefined) {
+                    updateData[field] = req.body[field];
+                }
+            }
+
+            // Synchronize status and joinStatus
+            if (req.body.joinStatus) {
+                updateData.joinStatus = req.body.joinStatus;
+                if (!req.body.status) {
+                    updateData.status = req.body.joinStatus === 'joined' ? 'converted' : 'pending';
+                }
+            } else if (req.body.status) {
+                if (!req.body.joinStatus) {
+                    if (req.body.status === 'converted') updateData.joinStatus = 'joined';
+                    else if (req.body.status === 'applied') updateData.joinStatus = 'follow_up';
+                    else if (req.body.status === 'new' || req.body.status === 'pending') updateData.joinStatus = 'new';
+                }
+            }
+
+            await docRef.update(updateData);
+
+            return res.status(200).json({ success: true, message: "Admission status updated", data: updateData });
         } catch (e: any) {
             return res.status(500).json({ success: false, message: e.message });
         }

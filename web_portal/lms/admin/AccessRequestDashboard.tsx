@@ -86,8 +86,8 @@ export const AccessRequestDashboard: React.FC = () => {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 800, color: C.text, margin: 0 }}>Access Requests</h1>
-          <p style={{ color: C.muted, margin: '4px 0 0 0', fontSize: 14 }}>
+          <h1 style={{ fontSize: 26, fontWeight: 800, color: C.text, margin: 0 }}>Access Requests</h1>
+          <p style={{ color: C.muted, margin: '4px 0 0 0', fontSize: 16 }}>
             Manage {pendingCount} pending student access requests
           </p>
         </div>
@@ -109,13 +109,13 @@ export const AccessRequestDashboard: React.FC = () => {
       {selectedIds.size > 0 && (
         <div style={bulkActionBarStyle}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>
+            <span style={{ fontSize: 16, fontWeight: 700, color: C.text }}>
               {selectedIds.size} Selected
             </span>
             <div style={{ width: 1, height: 16, backgroundColor: C.border }} />
             
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 12, color: C.muted }}>Grant duration:</span>
+              <span style={{ fontSize: 14, color: C.muted }}>Grant duration:</span>
               <select 
                 value={expiresIn} 
                 onChange={e => setExpiresIn(e.target.value)}
@@ -177,20 +177,20 @@ export const AccessRequestDashboard: React.FC = () => {
                     </div>
                   </td>
                   <td style={tdStyle}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{req.studentName}</div>
-                    <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{req.studentBatch}</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>{req.studentName}</div>
+                    <div style={{ fontSize: 14, color: C.muted, marginTop: 2 }}>{req.studentBatch}</div>
                   </td>
                   <td style={tdStyle}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{req.entityName}</div>
-                    <div style={{ display: 'inline-flex', padding: '2px 6px', borderRadius: 4, backgroundColor: `${C.gold}15`, border: `1px solid ${C.gold}30`, fontSize: 10, color: C.gold, marginTop: 4, textTransform: 'uppercase', fontWeight: 800 }}>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: C.text }}>{req.entityName}</div>
+                    <div style={{ display: 'inline-flex', padding: '2px 6px', borderRadius: 4, backgroundColor: `${C.gold}15`, border: `1px solid ${C.gold}30`, fontSize: 12, color: C.gold, marginTop: 4, textTransform: 'uppercase', fontWeight: 800 }}>
                       {req.entityType}
                     </div>
                   </td>
                   <td style={tdStyle}>
-                    <div style={{ fontSize: 13, color: C.text }}>{req.reason}</div>
+                    <div style={{ fontSize: 15, color: C.text }}>{req.reason}</div>
                   </td>
                   <td style={tdStyle}>
-                    <div style={{ fontSize: 12, color: C.muted, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <div style={{ fontSize: 14, color: C.muted, display: 'flex', alignItems: 'center', gap: 4 }}>
                       <Clock size={12} />
                       {new Date(req.createdAt).toLocaleDateString()}
                     </div>
@@ -206,7 +206,7 @@ export const AccessRequestDashboard: React.FC = () => {
                         </button>
                       </div>
                     ) : (
-                      <div style={{ fontSize: 12, fontWeight: 700, color: req.status === 'approved' ? C.green : C.red }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: req.status === 'approved' ? C.green : C.red }}>
                         {req.status === 'approved' ? 'Approved' : 'Rejected'}
                       </div>
                     )}
@@ -230,7 +230,7 @@ const filterWrapStyle: React.CSSProperties = {
 };
 
 const selectStyle: React.CSSProperties = {
-  background: 'none', border: 'none', color: C.text, fontSize: 13,
+  background: 'none', border: 'none', color: C.text, fontSize: 15,
   outline: 'none', cursor: 'pointer', fontWeight: 600
 };
 
@@ -240,7 +240,7 @@ const tableContainerStyle: React.CSSProperties = {
 };
 
 const thStyle: React.CSSProperties = {
-  padding: '16px', textAlign: 'left', fontSize: 11, fontWeight: 800,
+  padding: '16px', textAlign: 'left', fontSize: 13, fontWeight: 800,
   color: C.muted, textTransform: 'uppercase', letterSpacing: 1,
   borderBottom: `1px solid ${C.border}`, backgroundColor: C.surfH
 };
@@ -259,7 +259,7 @@ const checkboxStyle = (checked: boolean): React.CSSProperties => ({
 const actionBtnStyle = (color: string): React.CSSProperties => ({
   display: 'flex', alignItems: 'center', gap: 6,
   padding: '6px 12px', borderRadius: 8, border: `1px solid ${color}40`,
-  backgroundColor: `${color}15`, color: color, fontSize: 12, fontWeight: 700,
+  backgroundColor: `${color}15`, color: color, fontSize: 14, fontWeight: 700,
   cursor: 'pointer', transition: 'all 0.2s', boxShadow: NM_FLAT
 });
 
@@ -280,20 +280,20 @@ const bulkActionBarStyle: React.CSSProperties = {
 
 const inlineSelectStyle: React.CSSProperties = {
   background: C.bg, border: `1px solid ${C.border}`, color: C.text,
-  fontSize: 12, borderRadius: 6, padding: '4px 8px', outline: 'none',
+  fontSize: 14, borderRadius: 6, padding: '4px 8px', outline: 'none',
   boxShadow: NM_INSET
 };
 
 const bulkApproveBtnStyle: React.CSSProperties = {
   padding: '8px 16px', borderRadius: 8, border: 'none',
   background: `linear-gradient(135deg, ${C.gold}, #c9a732)`,
-  color: C.bg, fontSize: 13, fontWeight: 800, cursor: 'pointer',
+  color: C.bg, fontSize: 15, fontWeight: 800, cursor: 'pointer',
   boxShadow: `0 4px 12px rgba(212,175,55,0.3)`
 };
 
 const bulkRejectBtnStyle: React.CSSProperties = {
   padding: '8px 16px', borderRadius: 8, border: `1px solid ${C.red}40`,
-  background: `${C.red}15`, color: C.red, fontSize: 13, fontWeight: 700,
+  background: `${C.red}15`, color: C.red, fontSize: 15, fontWeight: 700,
   cursor: 'pointer', boxShadow: NM_FLAT
 };
 

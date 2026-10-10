@@ -19,7 +19,7 @@ export class LmsAttendanceService {
 
   // ── STUDENT: Record Join ──────────────────────────────────────────────────
   // Called silently when student clicks "Join Now". Upserts a record.
-  // If attendance already submitted for this class, skip to avoid overwriting.
+  // Attending a live class automatically marks student as PRESENT for that session.
   async recordJoin(
     studentId: string,
     studentName: string,
@@ -27,7 +27,8 @@ export class LmsAttendanceService {
     className: string,
     courseId: string,
     courseName: string,
-    batchName: string
+    batchName: string,
+    mode: string = 'online'
   ) {
     // Check if record already exists for this student+class
     const snap = await db.collection(ATTENDANCE_COL)
@@ -40,16 +41,17 @@ export class LmsAttendanceService {
 
     if (!snap.empty) {
       const existing = snap.docs[0].data();
-      // If attendance already submitted, don't overwrite joinedAt
-      if (existing.attendanceSubmittedAt) {
-        return { id: snap.docs[0].id, ...existing };
-      }
-      // Update joinedAt (student re-joined before submitting)
-      await snap.docs[0].ref.update({ joinedAt: now, updatedAt: now });
-      return { id: snap.docs[0].id, ...existing, joinedAt: now };
+      // If attendance already submitted or marked, keep status as PRESENT
+      await snap.docs[0].ref.update({
+        joinedAt: now,
+        status: 'PRESENT',
+        mode: existing.mode || mode,
+        updatedAt: now
+      });
+      return { id: snap.docs[0].id, ...existing, joinedAt: now, status: 'PRESENT' };
     }
 
-    // Create new record
+    // Create new record (attending live session automatically grants PRESENT)
     const id = uuidv4();
     const record = {
       id,
@@ -60,10 +62,11 @@ export class LmsAttendanceService {
       courseId,
       courseName,
       batchName,
+      mode: mode || 'online',
       joinedAt: now,
-      attendanceSubmittedAt: null,
-      durationMinutes: null,
-      status: 'PENDING',
+      attendanceSubmittedAt: now,
+      durationMinutes: 0,
+      status: 'PRESENT',
       manuallyMarked: false,
       markedBy: null,
       manualNote: null,
@@ -92,33 +95,17 @@ export class LmsAttendanceService {
     const doc = snap.docs[0];
     const record = doc.data();
 
-    if (record.attendanceSubmittedAt) {
-      throw new AppError('Attendance already submitted for this class.', 409);
-    }
-
-    // Look up the class to get its configured attendance threshold
-    let thresholdMinutes = DEFAULT_THRESHOLD_MINUTES;
-    const classDoc = await db.collection(CLASSES_COL).doc(classId).get();
-    if (classDoc.exists) {
-      const cls = classDoc.data() as any;
-      if (typeof cls.attendanceThresholdMinutes === 'number' && cls.attendanceThresholdMinutes > 0) {
-        thresholdMinutes = cls.attendanceThresholdMinutes;
-      }
-    }
-
     const now = new Date().toISOString();
-    const durationMinutes = calcDurationMinutes(record.joinedAt, now);
-    const status = durationMinutes >= thresholdMinutes ? 'PRESENT' : 'ABSENT';
+    const durationMinutes = calcDurationMinutes(record.joinedAt || now, now);
 
     await doc.ref.update({
       attendanceSubmittedAt: now,
       durationMinutes,
-      thresholdMinutes,
-      status,
+      status: 'PRESENT',
       updatedAt: now,
     });
 
-    return { id: doc.id, ...record, attendanceSubmittedAt: now, durationMinutes, thresholdMinutes, status };
+    return { id: doc.id, ...record, attendanceSubmittedAt: now, durationMinutes, status: 'PRESENT' };
   }
 
   // ── STUDENT: Get My Attendance ─────────────────────────────────────────────
@@ -133,18 +120,45 @@ export class LmsAttendanceService {
       new Date(b.joinedAt || b.createdAt).getTime() - new Date(a.joinedAt || a.createdAt).getTime()
     );
 
-    // Compute summary
-    const submitted = records.filter((r: any) => r.attendanceSubmittedAt);
-    const presentCount = submitted.filter((r: any) => r.status === 'PRESENT').length;
-    const absentCount = submitted.filter((r: any) => r.status === 'ABSENT').length;
-    const totalMinutes = submitted
+    // ── Daily Deduplication (Group by YYYY-MM-DD) ───────────────────────────
+    // If student attends 1, 2, or 3 live classes on the same day, it counts as 1 Present day.
+    const dailyMap: Record<string, { date: string; status: 'PRESENT' | 'ABSENT'; sessionsCount: number; sessions: any[] }> = {};
+
+    records.forEach((r: any) => {
+      const dtIso = r.joinedAt || r.createdAt || new Date().toISOString();
+      const dateStr = dtIso.split('T')[0]; // YYYY-MM-DD
+      if (!dailyMap[dateStr]) {
+        dailyMap[dateStr] = {
+          date: dateStr,
+          status: 'ABSENT',
+          sessionsCount: 0,
+          sessions: [],
+        };
+      }
+      dailyMap[dateStr].sessionsCount += 1;
+      dailyMap[dateStr].sessions.push(r);
+      if (r.status === 'PRESENT') {
+        dailyMap[dateStr].status = 'PRESENT';
+      }
+    });
+
+    const dailyRecords = Object.values(dailyMap).sort((a, b) => b.date.localeCompare(a.date));
+    const totalPresentDays = dailyRecords.filter(d => d.status === 'PRESENT').length;
+    const totalAbsentDays = dailyRecords.filter(d => d.status === 'ABSENT').length;
+
+    const presentCount = records.filter((r: any) => r.status === 'PRESENT').length;
+    const absentCount = records.filter((r: any) => r.status === 'ABSENT').length;
+    const totalMinutes = records
       .filter((r: any) => r.status === 'PRESENT')
       .reduce((sum: number, r: any) => sum + (r.durationMinutes || 0), 0);
 
     return {
       records,
+      dailyRecords,
       summary: {
-        totalClasses: submitted.length,
+        totalClasses: records.length,
+        totalPresentDays,
+        totalAbsentDays,
         presentCount,
         absentCount,
         totalMinutes,
@@ -249,7 +263,7 @@ export class LmsAttendanceService {
     return records;
   }
 
-  // ── ADMIN: Manual Mark ────────────────────────────────────────────────────
+  // ── ADMIN: Manual Mark Existing ────────────────────────────────────────────
   async adminManualMark(attendanceId: string, adminId: string, status: 'PRESENT' | 'ABSENT', note: string) {
     const doc = await db.collection(ATTENDANCE_COL).doc(attendanceId).get();
     if (!doc.exists) throw new AppError('Attendance record not found', 404);
@@ -264,6 +278,51 @@ export class LmsAttendanceService {
     });
 
     return { success: true };
+  }
+
+  // ── ADMIN: Create Manual Attendance Record (Online & Offline) ──────────────
+  async adminCreateManualRecord(
+    adminId: string,
+    data: {
+      studentId: string;
+      studentName: string;
+      className: string;
+      batchName?: string;
+      mode?: string;
+      status: 'PRESENT' | 'ABSENT';
+      date?: string;
+      note?: string;
+    }
+  ) {
+    const now = new Date().toISOString();
+    const id = uuidv4();
+    const joinedAt = data.date ? new Date(data.date).toISOString() : now;
+
+    const record = {
+      id,
+      studentId: data.studentId,
+      studentName: data.studentName || 'Student',
+      classId: `manual_${Date.now()}`,
+      className: data.className || 'Manual Attendance',
+      courseId: 'general',
+      courseName: 'General Course',
+      batchName: data.batchName || 'General Batch',
+      mode: data.mode || 'online',
+      joinedAt,
+      attendanceSubmittedAt: joinedAt,
+      durationMinutes: data.status === 'PRESENT' ? 60 : 0,
+      status: data.status,
+      manuallyMarked: true,
+      markedBy: adminId,
+      manualNote: data.note || 'Manually entered by admin',
+      correctionRequested: false,
+      correctionRequestId: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await db.collection(ATTENDANCE_COL).doc(id).set(record);
+    return record;
   }
 
   // ── ADMIN: List Correction Requests ──────────────────────────────────────

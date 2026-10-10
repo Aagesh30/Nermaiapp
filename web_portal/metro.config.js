@@ -106,6 +106,19 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     }
   }
 
+  // Stub native-only packages on web platform
+  if (platform === 'web') {
+    if (
+      moduleName === '@react-native-google-signin/google-signin' ||
+      moduleName.startsWith('@react-native-google-signin/google-signin/')
+    ) {
+      return {
+        filePath: path.resolve(__dirname, 'lms/stubs/native-only-stub.js'),
+        type: 'sourceFile',
+      };
+    }
+  }
+
   return (originalResolveRequest || context.resolveRequest)(context, moduleName, platform);
 };
 

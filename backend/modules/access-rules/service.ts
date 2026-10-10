@@ -618,6 +618,9 @@ export class AccessRulesService {
         ...(grantExpiresAt ? { grantExpiresAt } : {}),
       },
     }).catch(() => {});
+
+    // Remove the admin_alerts dashboard notification for this access request
+    db.collection('admin_alerts').doc(`sacs_req_${requestId}`).delete().catch(() => {});
   }
 
   async rejectRequest(requestId: string, adminId: string, tenantId: string): Promise<void> {
@@ -640,6 +643,9 @@ export class AccessRulesService {
       targetStudentIds: [request.studentId],
       metadata: { studentId: request.studentId, entityId: request.entityId },
     }).catch(() => {});
+
+    // Remove the admin_alerts dashboard notification for this access request
+    db.collection('admin_alerts').doc(`sacs_req_${requestId}`).delete().catch(() => {});
   }
 
   async bulkApproveRequests(

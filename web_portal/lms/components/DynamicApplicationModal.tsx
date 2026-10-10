@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -37,6 +37,7 @@ export default function DynamicApplicationModal({
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const isSubmittingRef = useRef(false);
 
   // Dynamic Form Values (keyed by field id or label)
   const [formValues, setFormValues] = useState<Record<string, any>>({});
@@ -46,6 +47,8 @@ export default function DynamicApplicationModal({
     if (visible) {
       loadActiveForm();
       setSubmitted(false);
+      setSubmitting(false);
+      isSubmittingRef.current = false;
       setErrorMessage(null);
 
       try {
@@ -106,7 +109,18 @@ export default function DynamicApplicationModal({
     setFormValues(prev => ({ ...prev, [fieldId]: val }));
   };
 
+  const handleClose = () => {
+    if (submitting) return;
+    setSubmitted(false);
+    setSubmitting(false);
+    isSubmittingRef.current = false;
+    setErrorMessage(null);
+    onClose();
+  };
+
   const handleSubmit = async () => {
+    if (isSubmittingRef.current || submitting || submitted) return;
+
     setErrorMessage(null);
 
     const fields = formConfig?.customFields || [];
@@ -147,6 +161,12 @@ export default function DynamicApplicationModal({
     if (!leadName) leadName = prefillName || 'Aspirant';
     if (!leadPhone) leadPhone = prefillPhone || '';
 
+    if (!leadPhone || leadPhone.length < 10) {
+      setErrorMessage('Please enter a valid 10-digit phone number');
+      return;
+    }
+
+    isSubmittingRef.current = true;
     setSubmitting(true);
     try {
       const res = await api.post('/crm/custom-leads', {
@@ -173,6 +193,7 @@ export default function DynamicApplicationModal({
       setErrorMessage(msg);
     } finally {
       setSubmitting(false);
+      isSubmittingRef.current = false;
     }
   };
 
@@ -183,24 +204,26 @@ export default function DynamicApplicationModal({
       visible={visible}
       transparent={true}
       animationType="fade"
-      onRequestClose={onClose}
+      onRequestClose={handleClose}
     >
       <View style={styles.modalOverlay}>
         <View style={styles.dialogContainer}>
           {/* Header */}
           <View style={styles.dialogHeader}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <Text style={{ fontSize: 24 }}>📋</Text>
+              <Text style={{ fontSize: 26 }}>{submitted ? '✅' : '📋'}</Text>
               <View>
                 <Text style={styles.formTitle}>
                   {formConfig?.title || 'Mock Test Application Form'}
                 </Text>
                 <Text style={styles.formSubtitle}>
-                  {formConfig?.subtitle || 'Complete your registration details below.'}
+                  {submitted
+                    ? 'Registration Confirmed'
+                    : (formConfig?.subtitle || 'Complete your registration details below.')}
                 </Text>
               </View>
             </View>
-            <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
+            <TouchableOpacity style={styles.closeBtn} onPress={handleClose} disabled={submitting}>
               <MaterialCommunityIcons name="close" size={22} color="#64748b" />
             </TouchableOpacity>
           </View>
@@ -208,7 +231,7 @@ export default function DynamicApplicationModal({
           {loading ? (
             <View style={styles.loadingBox}>
               <ActivityIndicator size="large" color="#b91c1c" />
-              <Text style={{ marginTop: 12, color: '#64748b', fontSize: 13 }}>Loading application form...</Text>
+              <Text style={{ marginTop: 12, color: '#64748b', fontSize: 15 }}>Loading application form...</Text>
             </View>
           ) : formConfig?.isActive === false ? (
             /* INACTIVE FORM NOTICE */
@@ -220,15 +243,33 @@ export default function DynamicApplicationModal({
               <Text style={styles.successSubtitle}>
                 Registration for <Text style={{ fontWeight: '700' }}>{formConfig?.title || 'this application'}</Text> is currently inactive or closed. Please contact academy support or check back later.
               </Text>
-              <TouchableOpacity style={[styles.successDoneBtn, { backgroundColor: '#475569' }]} onPress={onClose}>
+              <TouchableOpacity style={[styles.successDoneBtn, { backgroundColor: '#475569' }]} onPress={handleClose}>
                 <Text style={styles.successDoneBtnText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          ) : submitted ? (
+            /* SUCCESS ACKNOWLEDGMENT VIEW */
+            <View style={styles.successBox}>
+              <View style={styles.successIconCircle}>
+                <MaterialCommunityIcons name="check-circle" size={44} color="#15803d" />
+              </View>
+              <Text style={styles.successTitle}>Application Submitted!</Text>
+              <Text style={styles.successSubtitle}>
+                Thank you! Your registration for <Text style={{ fontWeight: '700', color: '#0f172a' }}>{formConfig?.title || 'the Mock Test'}</Text> has been received successfully. Our team will contact you shortly.
+              </Text>
+              <TouchableOpacity
+                style={styles.successDoneBtn}
+                onPress={handleClose}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.successDoneBtnText}>OK, Done</Text>
               </TouchableOpacity>
             </View>
           ) : (
             /* DYNAMIC APPLICATION FORM INPUTS */
             <ScrollView
               style={styles.formBody}
-              contentContainerStyle={{ padding: 20, gap: 14 }}
+              contentContainerStyle={{ padding: 22, gap: 14 }}
               showsVerticalScrollIndicator={false}
             >
               {errorMessage && (
@@ -298,16 +339,20 @@ export default function DynamicApplicationModal({
 
               {/* Action Buttons */}
               <View style={styles.actionsRow}>
-                <TouchableOpacity style={styles.cancelBtn} onPress={onClose} disabled={submitting}>
+                <TouchableOpacity style={styles.cancelBtn} onPress={handleClose} disabled={submitting}>
                   <Text style={styles.cancelBtnText}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.submitBtn, submitting && { opacity: 0.7 }]}
+                  style={[styles.submitBtn, (submitting || submitted) && { opacity: 0.7 }]}
                   onPress={handleSubmit}
-                  disabled={submitting}
+                  disabled={submitting || submitted}
+                  activeOpacity={0.8}
                 >
                   {submitting ? (
-                    <ActivityIndicator size="small" color="#fff" />
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                      <ActivityIndicator size="small" color="#fff" />
+                      <Text style={styles.submitBtnText}>Submitting...</Text>
+                    </View>
                   ) : (
                     <Text style={styles.submitBtnText}>Submit Application</Text>
                   )}
@@ -327,12 +372,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.65)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 16
+    paddingHorizontal: 12,
+    paddingVertical: 18
   },
   dialogContainer: {
-    width: '100%',
-    maxWidth: 520,
-    maxHeight: '90%',
+    width: '95%',
+    maxWidth: 500,
+    maxHeight: '92%',
     backgroundColor: '#fff',
     borderRadius: 16,
     overflow: 'hidden',
@@ -349,7 +395,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: '#fff',
-    paddingHorizontal: 20,
+    paddingHorizontal: 18,
     paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9'
@@ -360,17 +406,17 @@ const styles = StyleSheet.create({
     color: '#b91c1c'
   },
   formSubtitle: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#64748b',
     marginTop: 2
   },
   closeBtn: {
-    padding: 6,
+    padding: 8,
     borderRadius: 6,
     backgroundColor: '#f8fafc'
   },
   loadingBox: {
-    padding: 60,
+    padding: 62,
     alignItems: 'center',
     justifyContent: 'center'
   },
@@ -384,13 +430,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#fee2e2',
     borderWidth: 1,
     borderColor: '#fca5a5',
-    padding: 10,
+    padding: 12,
     borderRadius: 8,
     marginBottom: 4
   },
   errorBannerText: {
     color: '#b91c1c',
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '600',
     flex: 1
   },
@@ -398,7 +444,7 @@ const styles = StyleSheet.create({
     marginBottom: 4
   },
   inputLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: '#334155',
     marginBottom: 6,
@@ -410,7 +456,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    fontSize: 13,
+    fontSize: 14,
     color: '#0f172a',
     backgroundColor: '#fff'
   },
@@ -421,11 +467,11 @@ const styles = StyleSheet.create({
   },
   dropdownPill: {
     flex: 1,
-    minWidth: 100,
+    minWidth: 75,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 10,
-    paddingHorizontal: 14,
+    paddingHorizontal: 10,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#e2e8f0',
@@ -436,12 +482,12 @@ const styles = StyleSheet.create({
     borderColor: '#b91c1c'
   },
   dropdownPillText: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '600',
     color: '#64748b'
   },
   dropdownPillTextActive: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '700',
     color: '#b91c1c'
   },
@@ -457,14 +503,14 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#cbd5e1',
     backgroundColor: '#fff'
   },
   cancelBtnText: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '600',
     color: '#475569'
   },
@@ -472,7 +518,7 @@ const styles = StyleSheet.create({
     flex: 2,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderRadius: 8,
     backgroundColor: '#b91c1c',
     shadowColor: '#b91c1c',
@@ -481,14 +527,14 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 }
   },
   submitBtnText: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '700',
     color: '#fff'
   },
 
   /* SUCCESS BOX */
   successBox: {
-    padding: 36,
+    padding: 38,
     alignItems: 'center',
     justifyContent: 'center'
   },
@@ -502,14 +548,14 @@ const styles = StyleSheet.create({
     marginBottom: 16
   },
   successTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '800',
     color: '#15803d',
     textAlign: 'center',
     marginBottom: 8
   },
   successSubtitle: {
-    fontSize: 13,
+    fontSize: 15,
     color: '#475569',
     textAlign: 'center',
     lineHeight: 20,
@@ -518,13 +564,13 @@ const styles = StyleSheet.create({
   },
   successDoneBtn: {
     backgroundColor: '#15803d',
-    paddingHorizontal: 36,
-    paddingVertical: 10,
+    paddingHorizontal: 38,
+    paddingVertical: 12,
     borderRadius: 8
   },
   successDoneBtnText: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '700'
   }
 });

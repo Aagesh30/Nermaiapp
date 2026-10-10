@@ -11,7 +11,7 @@ export const AdminInput = React.forwardRef<HTMLInputElement, React.InputHTMLAttr
       <label className="text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300">{label}</label>
       <input
         ref={ref}
-        className={`bg-white dark:bg-[#1a1a2e] border border-gray-300 dark:border-[#8B0000]/40 rounded-xl px-4 py-2.5 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:border-[#8B0000] focus:ring-2 focus:ring-[#8B0000]/20 transition-all text-sm font-medium shadow-sm ${className}`}
+        className={`bg-white dark:bg-[#1a1a2e] border border-gray-300 dark:border-[#8B0000]/40 rounded-xl px-4.5 py-3 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:border-[#8B0000] focus:ring-2 focus:ring-[#8B0000]/20 transition-all text-sm font-medium shadow-sm ${className}`}
         {...props}
       />
     </div>
@@ -29,7 +29,7 @@ export const AdminSelect = React.forwardRef<
     <label className="text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300">{label}</label>
     <select
       ref={ref}
-      className={`bg-white dark:bg-[#1a1a2e] border border-gray-300 dark:border-[#8B0000]/40 rounded-xl px-4 py-2.5 text-gray-900 dark:text-white focus:outline-none focus:border-[#8B0000] focus:ring-2 focus:ring-[#8B0000]/20 transition-all appearance-none text-sm font-medium shadow-sm cursor-pointer ${className}`}
+      className={`bg-white dark:bg-[#1a1a2e] border border-gray-300 dark:border-[#8B0000]/40 rounded-xl px-4.5 py-3 text-gray-900 dark:text-white focus:outline-none focus:border-[#8B0000] focus:ring-2 focus:ring-[#8B0000]/20 transition-all appearance-none text-sm font-medium shadow-sm cursor-pointer ${className}`}
       {...props}
     >
       {options.map((opt) => (
@@ -50,7 +50,7 @@ interface AdminButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement>
 }
 
 export const AdminButton: React.FC<AdminButtonProps> = ({ variant = 'primary', isLoading, children, className = '', disabled, ...props }) => {
-  const baseStyle = 'px-5 py-2.5 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm active:scale-95';
+  const baseStyle = 'px-5.5 py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm active:scale-95';
   const variants = {
     primary: 'bg-gradient-to-r from-[#8B0000] to-[#b71c1c] text-white hover:shadow-lg hover:shadow-[#8B0000]/30 border border-transparent hover:brightness-110',
     secondary: 'bg-white dark:bg-[#1a1a2e] text-gray-700 dark:text-white border border-gray-300 dark:border-[#8B0000]/30 hover:bg-gray-100 dark:hover:bg-[#8B0000]/20',

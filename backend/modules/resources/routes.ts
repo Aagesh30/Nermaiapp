@@ -66,6 +66,9 @@ resourceRoutes.post('/', requireAuth, requireRole(adminRoles), multerCloudWrappe
 // Express 5 changed path matching — /:id will shadow /:id/access etc unless ordered correctly.
 resourceRoutes.get('/course/:courseId/hierarchy', requireAuth, Controller.getCourseHierarchy);
 
+// Generic Drive PDF stream proxy (for Daily Content & direct drive links)
+resourceRoutes.get('/stream/drive/:driveId', Controller.streamDriveContent);
+
 // IMPORTANT: /:id/access and /:id/content BEFORE /:id (generic)
 resourceRoutes.get('/:id/access', requireAuth, Controller.getAccess);
 

@@ -42,8 +42,9 @@ export class AccessEngine {
     const accessCtx = await getAccessContext(userId, tenantId);
 
     // ─── Step 1.5: Admin / Staff Bypass ─────────────────────────────────────────
-    const effectiveRole = (tokenPayload?.role || params.tokenPayload?.role || accessCtx.role || '').toLowerCase();
-    const isAdminOrStaff = ['super_admin', 'admin', 'teacher', 'staff', 'creator'].includes(effectiveRole) || ['super_admin', 'admin', 'teacher', 'staff', 'creator'].includes((accessCtx.role || '').toLowerCase());
+    const adminRoles = ['super_admin', 'superadmin', 'super admin', 'admin', 'teacher', 'staff', 'creator', 'management', 'developer'];
+    const effectiveRole = ((tokenPayload as any)?.role || accessCtx.role || '').toLowerCase();
+    const isAdminOrStaff = adminRoles.includes(effectiveRole) || adminRoles.includes((accessCtx.role || '').toLowerCase());
 
     // ─── Step 1.8: Check SACS Temporary Grant Override ───────────────────────────
     let hasTemporaryGrant = false;
@@ -64,16 +65,18 @@ export class AccessEngine {
 
       switch (visibility) {
         case 'batch': {
+          const isEnrolledStudent = accessCtx.accessProfiles.includes('batch') || accessCtx.batchIds.length > 0 || accessCtx.role === 'student';
           const hasBatchAccess = 
             !targetBatchIds ||
             targetBatchIds.length === 0 ||
             targetBatchIds.includes('all') ||
-            (targetBatchIds.includes('all_paid') && (accessCtx.accessProfiles.includes('batch') || accessCtx.batchIds.length > 0)) ||
-            (targetBatchIds.includes('all_free') && !accessCtx.accessProfiles.includes('batch') && accessCtx.batchIds.length === 0) ||
+            (targetBatchIds.includes('all_paid') && isEnrolledStudent) ||
+            (targetBatchIds.includes('all_free') && !isEnrolledStudent) ||
+            isEnrolledStudent ||
             accessCtx.batchIds.some(id => targetBatchIds.some(tb => String(tb).trim().toLowerCase() === String(id).trim().toLowerCase()));
 
           if (!hasBatchAccess) {
-            throw new AppError('Access denied: You are not in the assigned batch for this resource', 403);
+            throw new AppError('Access denied: You are not enrolled to access this resource', 403);
           }
           break;
         }
@@ -148,8 +151,9 @@ export class AccessEngine {
           expires: Date.now() + ttl * 1000,
         });
         signedUrl = url;
-      } catch (err) {
-        throw new AppError('Failed to generate secure resource URL', 500);
+      } catch (err: any) {
+        console.warn(`[AccessEngine] Could not generate signed URL for ${params.storagePath} (${err?.message || err}). Falling back to proxy stream.`);
+        signedUrl = null;
       }
     }
 

@@ -67,24 +67,24 @@ export const LockedContentCard: React.FC<LockedContentCardProps> = ({
       </div>
 
       {/* Text */}
-      <h2 style={{ fontSize: 20, fontWeight: 800, color: C.text, margin: '0 0 8px 0', textAlign: 'center' }}>
+      <h2 style={{ fontSize: 22, fontWeight: 800, color: C.text, margin: '0 0 8px 0', textAlign: 'center' }}>
         {isHidden ? 'Content Unavailable' : 'Content Locked'}
       </h2>
-      <p style={{ fontSize: 14, color: C.muted, margin: 0, textAlign: 'center', lineHeight: 1.5, maxWidth: 300 }}>
+      <p style={{ fontSize: 16, color: C.muted, margin: 0, textAlign: 'center', lineHeight: 1.5, maxWidth: 300 }}>
         {lockMessage}
       </p>
 
       <div style={{ marginTop: 24, width: '100%' }}>
         {isHidden ? (
           <div style={badgeStyle}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: C.muted }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: C.muted }}>
               Administrators have hidden this {entityType}.
             </span>
           </div>
         ) : submitted ? (
           <div style={successBadgeStyle}>
             <Clock size={16} color={C.gold} />
-            <span style={{ fontSize: 13, fontWeight: 700, color: C.gold }}>
+            <span style={{ fontSize: 15, fontWeight: 700, color: C.gold }}>
               Access request is pending review.
             </span>
           </div>
@@ -118,7 +118,7 @@ export const LockedContentCard: React.FC<LockedContentCardProps> = ({
 
 /* ─── Styles ─────────────────────────────────────────────────────────────────── */
 const cardStyle: React.CSSProperties = {
-  backgroundColor: C.surface, borderRadius: 24, padding: 32,
+  backgroundColor: C.surface, borderRadius: 24, padding: 34,
   border: `1px solid ${C.border}`, boxShadow: NM_RAISED,
   display: 'flex', flexDirection: 'column', alignItems: 'center',
   maxWidth: 400, margin: '40px auto'
@@ -145,7 +145,7 @@ const successBadgeStyle: React.CSSProperties = {
 const requestBtnStyle: React.CSSProperties = {
   width: '100%', padding: '14px', borderRadius: 12, border: 'none',
   background: `linear-gradient(135deg, ${C.gold}, #c9a732)`,
-  color: C.bg, fontSize: 14, fontWeight: 800, cursor: 'pointer',
+  color: C.bg, fontSize: 16, fontWeight: 800, cursor: 'pointer',
   boxShadow: `0 4px 16px rgba(212,175,55,0.3)`
 };
 
@@ -155,20 +155,20 @@ const formStyle: React.CSSProperties = {
 
 const textareaStyle: React.CSSProperties = {
   width: '100%', padding: '14px', borderRadius: 12, backgroundColor: C.bg,
-  border: `1px solid ${C.border}`, color: C.text, fontSize: 13,
+  border: `1px solid ${C.border}`, color: C.text, fontSize: 15,
   boxShadow: NM_INSET, outline: 'none', boxSizing: 'border-box', resize: 'none'
 };
 
 const cancelBtnStyle: React.CSSProperties = {
   flex: 1, padding: '12px', borderRadius: 10, border: `1px solid ${C.border}`,
-  backgroundColor: C.surfH, color: C.muted, fontSize: 13, fontWeight: 700,
+  backgroundColor: C.surfH, color: C.muted, fontSize: 15, fontWeight: 700,
   cursor: 'pointer', boxShadow: NM_FLAT
 };
 
 const submitBtnStyle = (disabled: boolean): React.CSSProperties => ({
   flex: 2, padding: '12px', borderRadius: 10, border: 'none',
   background: disabled ? C.surfH : `linear-gradient(135deg, ${C.gold}, #c9a732)`,
-  color: disabled ? C.muted : C.bg, fontSize: 13, fontWeight: 800,
+  color: disabled ? C.muted : C.bg, fontSize: 15, fontWeight: 800,
   cursor: disabled ? 'not-allowed' : 'pointer',
   boxShadow: disabled ? NM_FLAT : `0 4px 16px rgba(212,175,55,0.3)`,
   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8

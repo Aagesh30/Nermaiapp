@@ -1,8 +1,11 @@
 {
-  "name": "nermaiiasacademy-519c8",
+  "name": "nermaiias",
   "version": "1.0.0",
   "description": "Production Virtual Educational Platform Backend",
-  "main": "dist/index.js",
+  "main": "./dist/index.js",
+  "engines": {
+    "node": "20"
+  },
   "scripts": {
     "start": "node --max-old-space-size=4096 -r ts-node/register -r tsconfig-paths/register server.ts",
     "start:dist": "node dist/server.js",

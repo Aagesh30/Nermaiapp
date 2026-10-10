@@ -14,11 +14,27 @@
       },
       "oauth_client": [
         {
-          "client_id": "587850155187-4at9s3rprcuvshdfhdcjcsglaoc0hqpe.apps.googleusercontent.com",
+          "client_id": "587850155187-flb23368tlovn4nb82b6j8g2gm6ptl9t.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.nermai.iasacademy",
+            "certificate_hash": "cb46c7a068e981a03e4f93d1d60df5079c4edf41"
+          }
+        },
+        {
+          "client_id": "587850155187-o8bufqm2hoidjgj9q71lhuic7pu4sgk5.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.nermai.iasacademy",
             "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "587850155187-vabcn8h0sjpjkrngsgm0rk0gt39h0ogg.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.nermai.iasacademy",
+            "certificate_hash": "dc249ade3b25e4c47b991d578c45b71070dd958f"
           }
         },
         {

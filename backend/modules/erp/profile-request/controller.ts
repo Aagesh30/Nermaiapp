@@ -2,7 +2,6 @@ import { Request, Response } from "express";
 import admin from "firebase-admin";
 import { randomUUID } from "crypto";
 import { uploadFileToGoogleDrive, deleteFileFromGoogleDrive } from "../../../services/google_drive";
-import { uploadStudentImage, deleteStudentImage } from "../../../shared/utils/cloudinary"; // kept as fallback
 
 if (!admin.apps.length) {
     admin.initializeApp({
@@ -140,16 +139,11 @@ export class ProfileRequestController {
                         throw new Error("Drive returned null");
                     }
                 } catch (uploadErr: any) {
-                    // Fallback to Cloudinary
-                    try {
-                        console.warn("[Drive] Passport photo failed, falling back to Cloudinary:", uploadErr.message);
-                        const result = await uploadStudentImage(passportPhotoBase64, "passport_photo", studentId);
-                        passportPhotoUrl = result.url;
-                        passportPhotoPublicId = result.publicId;
-                        passportPhotoDisplayUrl = result.displayUrl;
-                    } catch (cldErr: any) {
-                        console.error("[Cloudinary] Passport photo fallback also failed:", cldErr.message);
-                    }
+                    // Fallback: store base64 directly in Firestore (no Cloudinary dependency)
+                    console.warn("[Drive] Passport photo failed, storing directly in Firestore as fallback:", uploadErr.message);
+                    passportPhotoUrl = "";
+                    passportPhotoPublicId = "";
+                    passportPhotoDisplayUrl = "";
                 }
             }
 
@@ -190,16 +184,11 @@ export class ProfileRequestController {
                         throw new Error("Drive returned null");
                     }
                 } catch (uploadErr: any) {
-                    // Fallback to Cloudinary
-                    try {
-                        console.warn("[Drive] Photo ID failed, falling back to Cloudinary:", uploadErr.message);
-                        const result = await uploadStudentImage(photoIdBase64, "photo_id", studentId);
-                        photoIdUrl = result.url;
-                        photoIdPublicId = result.publicId;
-                        photoIdDisplayUrl = result.displayUrl;
-                    } catch (cldErr: any) {
-                        console.error("[Cloudinary] Photo ID fallback also failed:", cldErr.message);
-                    }
+                    // Fallback: store base64 directly in Firestore (no Cloudinary dependency)
+                    console.warn("[Drive] Photo ID failed, storing directly in Firestore as fallback:", uploadErr.message);
+                    photoIdUrl = "";
+                    photoIdPublicId = "";
+                    photoIdDisplayUrl = "";
                 }
             }
 
@@ -534,6 +523,12 @@ export class ProfileRequestController {
                 console.error("Failed to delete profile alerts on approval:", err);
             }
 
+            // Remove the admin_alerts dashboard notification for this profile request
+            try {
+                const alertId = `profile_req_${id}`;
+                await db.collection("admin_alerts").doc(alertId).delete();
+            } catch (_) { /* non-critical: alert may not exist */ }
+
             return res.status(200).json({ success: true, message: "Profile request approved and student record updated." });
         } catch (error: any) {
             return res.status(500).json({ success: false, message: error.message || "Failed to approve profile request" });
@@ -578,6 +573,12 @@ export class ProfileRequestController {
                     await db.collection("students").doc(studentSnap.docs[0].id).update({ profileEditPermission: true, isProfileSubmitted: false });
                 }
             }
+
+            // Remove the admin_alerts dashboard notification for this profile request
+            try {
+                const alertId = `profile_req_${id}`;
+                await db.collection("admin_alerts").doc(alertId).delete();
+            } catch (_) { /* non-critical: alert may not exist */ }
 
             return res.status(200).json({ success: true, message: "Profile request rejected." });
         } catch (error: any) {

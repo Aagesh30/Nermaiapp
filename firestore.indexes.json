@@ -78,6 +78,14 @@
       ]
     },
     {
+      "collectionGroup": "custom_application_leads",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "isDeleted", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "access_requests",
       "queryScope": "COLLECTION",
       "fields": [

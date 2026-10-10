@@ -14,6 +14,7 @@ import { GoogleDriveProvider } from './providers/GoogleDriveProvider';
 import { IResourceProvider } from './providers/IResourceProvider';
 import { uploadFileToGoogleDrive, toDriveCdnUrl } from '../../services/google_drive';
 import { generalCache } from '../../shared/utils/cache';
+import { getAccessContext } from '../../core/security/AccessCache';
 
 export class ResourceService {
   private repo = new ResourceRepository();
@@ -167,12 +168,57 @@ export class ResourceService {
     return resource;
   }
 
-  async listResources(filters: any): Promise<any[]> {
+  async listResources(filters: any, userContext?: { userId: string; role: string; tenantId: string }): Promise<any[]> {
     const cacheKey = `resources_list_${JSON.stringify(filters)}`;
-    const cached = generalCache.get<any>(cacheKey);
-    if (cached) return cached;
+    let list = generalCache.get<any>(cacheKey);
+    if (!list) {
+      list = await this.repo.list(filters);
+      generalCache.set(cacheKey, list, 300);
+    }
 
-    const list = await this.repo.list(filters);
+    // Filter list for student accounts based on batch memberships
+    const userRole = (userContext?.role || '').toLowerCase();
+    const isAdminOrStaff = ['super_admin', 'admin', 'teacher', 'staff', 'creator', 'management', 'developer'].includes(userRole);
+
+    if (userContext && userContext.userId && !isAdminOrStaff) {
+      try {
+        const accessCtx = await getAccessContext(userContext.userId, userContext.tenantId || filters?.tenantId);
+        const studentBatchIds = (accessCtx?.batchIds || []).map(id => String(id).trim().toLowerCase());
+        const isEnrolledInAnyBatch = (accessCtx?.accessProfiles || []).includes('batch') || studentBatchIds.length > 0;
+
+        list = list.filter(res => {
+          const visibility = (res.visibility || 'public').toLowerCase();
+          if (visibility === 'public' || visibility === 'guest') return true;
+
+          if (visibility === 'premium') {
+            return isEnrolledInAnyBatch || (accessCtx?.role || '').toLowerCase() === 'student';
+          }
+
+          if (visibility === 'batch') {
+            const rawTargetBatchIds = res.targetBatchIds || [];
+            const targetBatchIds = (Array.isArray(rawTargetBatchIds)
+              ? rawTargetBatchIds.map(id => String(id).trim().toLowerCase())
+              : [String(rawTargetBatchIds).trim().toLowerCase()]).filter(Boolean);
+
+            if (targetBatchIds.length === 0) return false;
+            if (targetBatchIds.includes('all')) return true;
+            if (targetBatchIds.includes('all_paid') && isEnrolledInAnyBatch) return true;
+            if (targetBatchIds.includes('all_free') && !isEnrolledInAnyBatch) return true;
+
+            return studentBatchIds.some(id => targetBatchIds.includes(id));
+          }
+
+          if (visibility === 'selected') {
+            const rawTargets = res.targetStudentIds || [];
+            return Array.isArray(rawTargets) && rawTargets.includes(userContext.userId);
+          }
+
+          return false;
+        });
+      } catch (err) {
+        console.warn('[ResourceService] Batch filter fallback error:', err);
+      }
+    }
 
     // Lazy load repositories to avoid circular dependency
     const { CourseRepository, SubjectRepository, TopicRepository, ClassRepository } = require('../courses/repository');
@@ -336,8 +382,9 @@ export class ResourceService {
         viewerUrl = `https://lh3.googleusercontent.com/d/${fileId}`;
         viewerType = 'image';
       } else {
-        viewerUrl = `https://drive.google.com/file/d/${fileId}/preview`;
-        viewerType = 'webview';
+        const baseUrl = (protocol && host) ? `${protocol}://${host}` : '';
+        viewerUrl = `${baseUrl}/api/resources/${resource.id}/secure-stream?token=${access.token}`;
+        viewerType = 'pdf';
       }
     } else if (resource.provider === 'firebase_storage' || access.signedUrl) {
       // Use the absolute backend proxy secure-stream path to bypass CORS issues on the client browser.
@@ -404,13 +451,11 @@ export class ResourceService {
 
 
     // Validate access (this will throw if not allowed)
-    const decryptedPath = decrypt(resource.storagePath);
     await AccessEngine.evaluateAccess({
       userId: user.userId,
       tenantId: user.tenantId,
       resourceType: 'resource',
       resourceId,
-      storagePath: resource.provider === 'firebase_storage' ? decryptedPath : undefined,
       tokenPayload: {
         role: user.role
       },
@@ -469,17 +514,28 @@ export class ResourceService {
         'Content-Length': (end - start) + 1,
         'Content-Type': responseMimeType,
         'ETag': `"${resource.checksum}"`,
-        'Last-Modified': new Date(resource.updatedAt).toUTCString()
+        'Last-Modified': new Date(resource.updatedAt).toUTCString(),
+        'Access-Control-Allow-Origin': '*',
+        'Cross-Origin-Resource-Policy': 'cross-origin'
       });
     } else {
-      logger.setProviderInfo(resource.provider, fileSize, responseMimeType, resource.version, resource.checksum);
-      res.writeHead(200, {
-        'Content-Length': fileSize,
+      logger.setProviderInfo(resource.provider, fileSize || 0, responseMimeType, resource.version, resource.checksum);
+      const headers: any = {
         'Content-Type': responseMimeType,
         'Accept-Ranges': 'bytes',
-        'ETag': `"${resource.checksum}"`,
-        'Last-Modified': new Date(resource.updatedAt).toUTCString()
-      });
+        'Access-Control-Allow-Origin': '*',
+        'Cross-Origin-Resource-Policy': 'cross-origin'
+      };
+      if (fileSize && fileSize > 0) {
+        headers['Content-Length'] = fileSize;
+      }
+      if (resource.checksum) {
+        headers['ETag'] = `"${resource.checksum}"`;
+      }
+      if (resource.updatedAt) {
+        headers['Last-Modified'] = new Date(resource.updatedAt).toUTCString();
+      }
+      res.writeHead(200, headers);
     }
 
     const timeAfterStreamReq = Date.now();
@@ -516,6 +572,53 @@ YES
     stream.pipe(res);
     stream.on('error', (err) => {
       console.error('Stream error:', err);
+      if (!res.headersSent) {
+        res.status(500).end();
+      }
+    });
+  }
+
+  async streamDriveFile(driveId: string, req: any, res: any) {
+    if (!driveId || !/^[-\w]{20,}$/.test(driveId)) {
+      throw new AppError('Invalid Google Drive ID', 400);
+    }
+
+    const downloadUrl = `https://drive.google.com/uc?export=download&id=${driveId}&confirm=t`;
+    const upstreamHeaders: any = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+    };
+    if (req.headers.range) {
+      upstreamHeaders['Range'] = req.headers.range;
+    }
+
+    const response = await axios({
+      url: downloadUrl,
+      method: 'GET',
+      responseType: 'stream',
+      headers: upstreamHeaders,
+      maxRedirects: 5,
+      timeout: 30000
+    });
+
+    const responseHeaders: any = {
+      'Content-Type': 'application/pdf',
+      'Accept-Ranges': 'bytes',
+      'Access-Control-Allow-Origin': '*',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+      'Cache-Control': 'public, max-age=3600'
+    };
+
+    if (response.headers['content-range']) {
+      responseHeaders['Content-Range'] = response.headers['content-range'];
+    }
+    if (response.headers['content-length']) {
+      responseHeaders['Content-Length'] = response.headers['content-length'];
+    }
+
+    res.writeHead(response.status || 200, responseHeaders);
+    response.data.pipe(res);
+    response.data.on('error', (err: any) => {
+      console.error('[DriveStream] stream pipe error:', err);
       if (!res.headersSent) {
         res.status(500).end();
       }

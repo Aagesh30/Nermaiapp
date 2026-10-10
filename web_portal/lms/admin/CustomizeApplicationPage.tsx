@@ -254,13 +254,13 @@ export default function CustomizeApplicationPage() {
   }
 
   return (
-    <View style={[styles.container, isMobile && { padding: 12 }]}>
+    <View style={[styles.container, isMobile && { padding: 14 }]}>
       {/* Top Action Header */}
-      <View style={[styles.header, isMobile && { flexDirection: 'column', alignItems: 'stretch', gap: 12, padding: 14 }]}>
+      <View style={[styles.header, isMobile && { flexDirection: 'column', alignItems: 'stretch', gap: 12, padding: 16 }]}>
         <View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <MaterialCommunityIcons name="form-select" size={26} color="#b91c1c" />
-            <Text style={[styles.headerTitle, isMobile && { fontSize: 18 }]}>Customize Application Form</Text>
+            <Text style={[styles.headerTitle, isMobile && { fontSize: 20 }]}>Customize Application Form</Text>
           </View>
           <Text style={styles.headerSubtitle}>
             Fully customize the fields, questions, and options shown to applicants.
@@ -391,7 +391,7 @@ export default function CustomizeApplicationPage() {
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         <Text style={styles.fieldNameText}>{field.label}</Text>
                         {field.required && (
-                          <Text style={{ color: '#dc2626', fontSize: 13, fontWeight: '700' }}>*</Text>
+                          <Text style={{ color: '#dc2626', fontSize: 15, fontWeight: '700' }}>*</Text>
                         )}
                       </View>
                       <Text style={styles.fieldTypeText}>
@@ -447,7 +447,7 @@ export default function CustomizeApplicationPage() {
             {/* Modal Mock Header */}
             <View style={styles.modalMockHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={{ fontSize: 20 }}>📋</Text>
+                <Text style={{ fontSize: 22 }}>📋</Text>
                 <View>
                   <Text style={styles.mockModalTitle}>{config.title || 'Application Form'}</Text>
                   <Text style={styles.mockModalSubtitle}>{config.subtitle || 'Complete your registration details below.'}</Text>
@@ -552,7 +552,7 @@ export default function CustomizeApplicationPage() {
             {/* Dialog Scrollable Content */}
             <ScrollView
               style={styles.dialogBody}
-              contentContainerStyle={{ padding: 20, gap: 16 }}
+              contentContainerStyle={{ padding: 22, gap: 16 }}
               showsVerticalScrollIndicator={false}
             >
               <View style={styles.inputGroup}>
@@ -605,7 +605,7 @@ export default function CustomizeApplicationPage() {
                     onChangeText={setFieldOptionsRaw}
                     placeholder="e.g. Offline, Online or 2026, 2027, 2028"
                   />
-                  <Text style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>
+                  <Text style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>
                     Enter the selectable options separated by commas (e.g. Offline, Online).
                   </Text>
                 </View>
@@ -663,7 +663,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8fafc',
-    padding: 24
+    padding: 26
   },
   loadingContainer: {
     flex: 1,
@@ -677,7 +677,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
     backgroundColor: '#fff',
-    padding: 20,
+    padding: 22,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e2e8f0',
@@ -687,12 +687,12 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 }
   },
   headerTitle: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '700',
     color: '#0f172a'
   },
   headerSubtitle: {
-    fontSize: 13,
+    fontSize: 15,
     color: '#64748b',
     marginTop: 4
   },
@@ -701,8 +701,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     backgroundColor: '#b91c1c',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
+    paddingHorizontal: 22,
+    paddingVertical: 12,
     borderRadius: 8,
     shadowColor: '#b91c1c',
     shadowOpacity: 0.2,
@@ -711,7 +711,7 @@ const styles = StyleSheet.create({
   },
   saveButtonText: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600'
   },
   successBadge: {
@@ -719,15 +719,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     backgroundColor: '#dcfce7',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#bbf7d0'
   },
   successBadgeText: {
     color: '#15803d',
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '600'
   },
   workspace: {
@@ -744,7 +744,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    padding: 20,
+    padding: 22,
     display: 'flex',
     flexDirection: 'column',
     maxHeight: 780
@@ -758,7 +758,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f1f5f9'
   },
   previewTitle: {
-    fontSize: 15,
+    fontSize: 17,
     fontWeight: '700',
     color: '#0f172a'
   },
@@ -767,7 +767,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     backgroundColor: '#f0fdf4',
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     paddingVertical: 3,
     borderRadius: 12,
     borderWidth: 1,
@@ -780,7 +780,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#22c55e'
   },
   liveText: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '600',
     color: '#16a34a'
   },
@@ -798,12 +798,12 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f1f5f9'
   },
   mockModalTitle: {
-    fontSize: 15,
+    fontSize: 17,
     fontWeight: '800',
     color: '#b91c1c'
   },
   mockModalSubtitle: {
-    fontSize: 11,
+    fontSize: 13,
     color: '#64748b',
     marginTop: 2
   },
@@ -811,7 +811,7 @@ const styles = StyleSheet.create({
     gap: 2
   },
   mockLabel: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '800',
     color: '#334155',
     letterSpacing: 0.5,
@@ -822,13 +822,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e2e8f0',
     borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
     justifyContent: 'center',
     marginBottom: 4
   },
   mockPlaceholder: {
-    fontSize: 12,
+    fontSize: 14,
     color: '#94a3b8'
   },
   mockModesRow: {
@@ -840,7 +840,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#e2e8f0',
@@ -851,12 +851,12 @@ const styles = StyleSheet.create({
     borderColor: '#b91c1c'
   },
   mockModeBtnText: {
-    fontSize: 11,
+    fontSize: 13,
     color: '#64748b',
     fontWeight: '600'
   },
   mockModeBtnActiveText: {
-    fontSize: 11,
+    fontSize: 13,
     color: '#b91c1c',
     fontWeight: '700'
   },
@@ -872,13 +872,13 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#cbd5e1'
   },
   mockCancelBtnText: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '600',
     color: '#475569'
   },
@@ -886,12 +886,12 @@ const styles = StyleSheet.create({
     flex: 2,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderRadius: 6,
     backgroundColor: '#b91c1c'
   },
   mockSubmitBtnText: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '700',
     color: '#fff'
   },
@@ -900,7 +900,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    padding: 20,
+    padding: 22,
     marginBottom: 20,
     shadowColor: '#000',
     shadowOpacity: 0.02,
@@ -914,12 +914,12 @@ const styles = StyleSheet.create({
     marginBottom: 14
   },
   cardTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '700',
     color: '#0f172a'
   },
   cardDesc: {
-    fontSize: 12,
+    fontSize: 14,
     color: '#64748b',
     marginBottom: 10,
     lineHeight: 18
@@ -928,7 +928,7 @@ const styles = StyleSheet.create({
     marginBottom: 14
   },
   label: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '600',
     color: '#334155',
     marginBottom: 6
@@ -938,9 +938,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#cbd5e1',
     borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    fontSize: 13,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    fontSize: 15,
     color: '#0f172a'
   },
   switchRow: {
@@ -952,12 +952,12 @@ const styles = StyleSheet.create({
     borderTopColor: '#f1f5f9'
   },
   switchLabel: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '600',
     color: '#0f172a'
   },
   switchHelp: {
-    fontSize: 11,
+    fontSize: 13,
     color: '#64748b',
     marginTop: 2
   },
@@ -966,13 +966,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     backgroundColor: '#b91c1c',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
     borderRadius: 6
   },
   addFieldButtonText: {
     color: '#fff',
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '700'
   },
   customFieldRow: {
@@ -980,7 +980,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: '#fff',
-    padding: 12,
+    padding: 14,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#e2e8f0'
@@ -991,46 +991,46 @@ const styles = StyleSheet.create({
     justifyContent: 'center'
   },
   fieldNameText: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '600',
     color: '#0f172a'
   },
   fieldTypeText: {
-    fontSize: 11,
+    fontSize: 13,
     color: '#64748b',
     marginTop: 2
   },
   badgeRequired: {
     backgroundColor: '#fef2f2',
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     paddingVertical: 3,
     borderRadius: 4
   },
   badgeRequiredText: {
     color: '#dc2626',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700'
   },
   badgeOptional: {
     backgroundColor: '#f1f5f9',
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     paddingVertical: 3,
     borderRadius: 4
   },
   badgeOptionalText: {
     color: '#64748b',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '600'
   },
   editFieldBtn: {
-    padding: 6,
+    padding: 8,
     borderRadius: 6,
     backgroundColor: '#eff6ff',
     alignItems: 'center',
     justifyContent: 'center'
   },
   deleteFieldBtn: {
-    padding: 6,
+    padding: 8,
     borderRadius: 6,
     backgroundColor: '#fef2f2',
     alignItems: 'center',
@@ -1043,7 +1043,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.65)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 16
+    padding: 18
   },
   dialogCard: {
     width: '100%',
@@ -1064,13 +1064,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 22,
+    paddingVertical: 18,
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9'
   },
   dialogTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '700',
     color: '#0f172a'
   },
@@ -1084,8 +1084,8 @@ const styles = StyleSheet.create({
     marginTop: 4
   },
   typeOption: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#cbd5e1',
@@ -1096,7 +1096,7 @@ const styles = StyleSheet.create({
     borderColor: '#b91c1c'
   },
   typeOptionText: {
-    fontSize: 12,
+    fontSize: 14,
     color: '#475569',
     fontWeight: '500'
   },
@@ -1108,15 +1108,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-end',
     gap: 10,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
+    paddingHorizontal: 22,
+    paddingVertical: 16,
     borderTopWidth: 1,
     borderTopColor: '#f1f5f9',
     backgroundColor: '#f8fafc'
   },
   dialogCancelBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 9,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#cbd5e1',
@@ -1124,18 +1124,18 @@ const styles = StyleSheet.create({
   },
   dialogCancelText: {
     color: '#475569',
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '600'
   },
   dialogConfirmBtn: {
-    paddingHorizontal: 18,
-    paddingVertical: 9,
+    paddingHorizontal: 20,
+    paddingVertical: 11,
     borderRadius: 6,
     backgroundColor: '#b91c1c'
   },
   dialogConfirmText: {
     color: '#fff',
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '700'
   }
 });

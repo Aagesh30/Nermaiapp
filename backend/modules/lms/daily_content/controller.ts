@@ -2,11 +2,13 @@ import { Request, Response } from "express";
 import admin from "firebase-admin";
 import { randomUUID } from "crypto";
 import { env } from "../../../config/env";
+import { storage } from "../../../infrastructure/firebase";
 
 const db = admin.firestore();
 const CONTENT_COLLECTION = "dailyContent";
 
 import { uploadFileToGoogleDrive, deleteFileFromGoogleDrive } from "../../../services/google_drive";
+import { sendPushNotification } from "../../../services/pushService";
 
 export class DailyContentController {
     /**
@@ -73,7 +75,7 @@ export class DailyContentController {
             if (source === "url") {
                 payload.url = url;
             } else if (source === "file" && fileBase64) {
-                // Parse base64 and upload to Google Drive, Firebase Storage, or Cloudinary
+                // Parse base64 and upload to Google Drive or Firebase Storage
                 let pureBase64 = fileBase64;
                 let detectedMime = type === "image" ? "image/jpeg" : "application/pdf";
 
@@ -111,74 +113,45 @@ export class DailyContentController {
                     console.warn("Google Drive upload skipped/failed:", driveErr?.message);
                 }
 
-                // If Google Drive fails, fall back to Local Storage first for reliable local testing
-                if (!payload.url || payload.url.startsWith("http://localhost")) {
-                    try {
-                        const fs = require("fs");
-                        const path = require("path");
-                        const publicUploadsDir = path.resolve(process.cwd(), "public", "uploads", "daily_content");
-                        if (!fs.existsSync(publicUploadsDir)) {
-                            fs.mkdirSync(publicUploadsDir, { recursive: true });
-                        }
-                        const safeDiskName = `${contentId}_${targetFileName}`;
-                        const diskFilePath = path.join(publicUploadsDir, safeDiskName);
-                        fs.writeFileSync(diskFilePath, fileBuffer);
-                        payload.url = `/uploads/daily_content/${safeDiskName}`;
-                        payload.source = "local";
-                        console.log(`✅ Saved locally: ${payload.url}`);
-                    } catch (fsErr: any) {
-                        console.warn("Local storage fallback failed, trying other cloud fallbacks:", fsErr?.message);
-                    }
-                }
-
-                // If both Google Drive and Local Storage fail, fall back to Firebase Storage and Cloudinary
+                // Primary Cloud Storage: Firebase / Google Cloud Storage (nermaiiasacademy-519c8-resources)
                 if (!payload.url) {
-                    // Fallback 1: Firebase Storage (using appspot.com default bucket)
                     try {
-                        const bucketName = env.FIREBASE_STORAGE_BUCKET || `${env.FIREBASE_PROJECT_ID}.appspot.com`;
-                        const bucket = admin.storage().bucket(bucketName);
+                        const bucketName = process.env.STORAGE_BUCKET || env.GCP_STORAGE_BUCKET || "nermaiiasacademy-519c8-resources";
+                        const bucket = storage.bucket(bucketName);
                         const storagePath = `daily_content/${contentId}/${targetFileName}`;
                         const fileRef = bucket.file(storagePath);
                         await fileRef.save(fileBuffer, {
-                            metadata: { contentType: detectedMime }
+                            metadata: {
+                                contentType: detectedMime,
+                                cacheControl: "public, max-age=3600"
+                            }
                         });
-                        await fileRef.makePublic();
+                        await fileRef.makePublic().catch((e: any) => console.warn("makePublic note:", e?.message));
                         const publicUrl = `https://storage.googleapis.com/${bucketName}/${storagePath}`;
                         payload.url = publicUrl;
                         payload.source = "storage";
                         console.log(`✅ Daily content uploaded to Firebase Storage: ${payload.url}`);
                     } catch (storageErr: any) {
-                        console.warn("Firebase Storage failed, trying Cloudinary raw fallback:", storageErr?.message);
-
-                        // Fallback 2: Cloudinary Raw upload (no 401 delivery restrictions on raw files)
-                        try {
-                            const { v2: cloudinary } = require("cloudinary");
-                            cloudinary.config({
-                                cloud_name: process.env.CLOUDINARY_CLOUD_NAME || "a75kib8t",
-                                api_key: process.env.CLOUDINARY_API_KEY || "142513215157686",
-                                api_secret: process.env.CLOUDINARY_API_SECRET || "YuaiR_Syak23RHTGvMvK53KVU24",
-                                secure: true
-                            });
-
-                            const dataUri = `data:${detectedMime};base64,${pureBase64}`;
-                            const cldResult = await cloudinary.uploader.upload(dataUri, {
-                                folder: "nermai-ias/daily-content",
-                                public_id: `daily_${date}_${safeFileTitle}_${contentId.substring(0, 8)}.${ext}`,
-                                resource_type: type === "image" ? "image" : "raw",
-                                overwrite: true
-                            });
-
-                            payload.url = cldResult.secure_url || cldResult.url;
-                            payload.source = "cloudinary";
-                            console.log(`✅ Daily content saved via Cloudinary raw: ${payload.url}`);
-                        } catch (cldErr: any) {
-                            console.error("Cloudinary raw fallback failed:", cldErr?.message);
-                        }
+                        console.error("Firebase Storage upload failed:", storageErr?.message);
+                        throw new Error(`Failed to upload file to storage: ${storageErr?.message}`);
                     }
                 }
             }
 
             await db.collection(CONTENT_COLLECTION).doc(contentId).set(payload);
+
+            // Dispatch background push notification to target audience / batch
+            sendPushNotification({
+                title: "📰 Daily Study Content Released",
+                body: `${title} (${date}) is now available in your LMS daily content.`,
+                targetRole: "student",
+                targetBatch: payload.targetBatch,
+                data: {
+                    targetTab: "lms",
+                    targetSub: "daily-content",
+                    contentId
+                }
+            }).catch(err => console.log("[Push] Daily content creation push note:", err?.message));
 
             return res.status(200).json({
                 success: true,
@@ -214,17 +187,24 @@ export class DailyContentController {
                 const userDoc = await db.collection("users").doc(req.user.userId).get();
                 if (userDoc.exists) {
                     const userData = userDoc.data();
-                    if (userData?.studentId) {
-                        const studentDoc = await db.collection("students").doc(userData.studentId).get();
-                        if (studentDoc.exists) {
-                            const studentData = studentDoc.data();
-                            if (!finalBatch && studentData?.batch) {
-                                finalBatch = studentData.batch;
-                            }
-                            if (finalIsPaid === undefined) {
-                                finalIsPaid = studentData?.isPaid ? "true" : "false";
+                    const studentId = userData?.studentId || req.user.userId;
+                    const studentDoc = await db.collection("students").doc(studentId).get();
+                    if (studentDoc.exists) {
+                        const studentData = studentDoc.data();
+                        if (!finalBatch) {
+                            if (Array.isArray(studentData?.batches) && studentData.batches.length > 0) {
+                                finalBatch = studentData.batches.join(',');
+                            } else if (studentData?.batch || studentData?.batchName) {
+                                finalBatch = studentData?.batch || studentData?.batchName;
                             }
                         }
+                        if (finalIsPaid === undefined) {
+                            const isPaidStudent = studentData?.isPaid || (Number(studentData?.feesPaid) > 0) || studentData?.type === "paid" || userData?.type === "paid" || studentData?.status === "active" || studentData?.status === "enrolled" || userData?.status === "active" || userData?.status === "enrolled" || !!studentData?.batch;
+                            finalIsPaid = isPaidStudent ? "true" : "false";
+                        }
+                    } else if (finalIsPaid === undefined) {
+                        const isPaidUser = userData?.type === "paid" || userData?.isPaid || userData?.status === "active" || userData?.status === "enrolled" || !!userData?.batch;
+                        finalIsPaid = isPaidUser ? "true" : "false";
                     }
                 }
             }
@@ -267,35 +247,52 @@ export class DailyContentController {
                 contentList = contentList.filter(c => c.status !== "pending");
             }
 
-            // If batch/isPaid query params or resolved student attributes are supplied, filter accordingly
-            if (finalBatch || finalIsPaid !== undefined) {
-                const isPaidBool = String(finalIsPaid) === "true";
-                const batchStr = typeof finalBatch === "string" ? finalBatch.trim().toLowerCase() : "";
-                contentList = contentList.filter(c => {
-                    const aud = c.targetAudience || "all";
-                    if (aud === "all") return true;
-                    if (aud === "paid") return isPaidBool;
-                    if (aud === "batch") {
-                        if (!c.targetBatch) return true;
-                        const targetBatches = c.targetBatch.split(",").map((b: string) => b.trim().toLowerCase());
-                        return batchStr && targetBatches.includes(batchStr);
-                    }
-                    return true;
-                });
-            } else if (req.user && req.user.role === "guest") {
-                contentList = contentList.filter(c => {
-                    const aud = c.targetAudience || "all";
-                    return aud === "all" || aud === "guest" || aud === "free";
-                });
+            let studentBatches: string[] = [];
+            if (finalBatch) {
+                studentBatches = String(finalBatch).split(",").map((s: string) => s.trim().toLowerCase()).filter(Boolean);
+            }
+
+            // Staff and Admin roles always see all content
+            const isStaffOrAdmin = req.user && ['admin', 'super_admin', 'superadmin', 'management', 'staff', 'teacher', 'developer'].includes((req.user.role || '').toLowerCase());
+
+            if (!isStaffOrAdmin) {
+                if (finalBatch || finalIsPaid !== undefined) {
+                    const isPaidBool = String(finalIsPaid) === "true";
+                    const batchStr = typeof finalBatch === "string" ? finalBatch.trim().toLowerCase() : "";
+                    contentList = contentList.filter(c => {
+                        const aud = c.targetAudience || "all";
+                        if (aud === "all" || aud === "guest" || aud === "free") return true;
+                        // All enrolled students get full access to daily content
+                        if (isPaidBool) return true;
+                        if (aud === "batch") {
+                            if (!c.targetBatch || !c.targetBatch.trim()) return true;
+                            const targetBatches = c.targetBatch.split(",").map((b: string) => b.trim().toLowerCase()).filter(Boolean);
+                            if (targetBatches.length === 0) return true;
+                            if (studentBatches.length > 0 && studentBatches.some(sb => targetBatches.includes(sb))) return true;
+                            return batchStr ? targetBatches.includes(batchStr) : false;
+                        }
+                        return false;
+                    });
+                } else if (req.user && req.user.role === "guest") {
+                    contentList = contentList.filter(c => {
+                        const aud = c.targetAudience || "all";
+                        return aud === "all" || aud === "guest" || aud === "free";
+                    });
+                }
             }
 
             // Sort client-side by date desc, then createdAt desc to avoid requiring complex Firestore composite indexes
             contentList.sort((a, b) => {
-                const dateCompare = b.date.localeCompare(a.date);
-                if (dateCompare !== 0) return dateCompare;
+                const dateA = String(a.date || "").trim();
+                const dateB = String(b.date || "").trim();
+                if (dateA && dateB && dateA !== dateB) {
+                    const dateCompare = dateB.localeCompare(dateA);
+                    if (dateCompare !== 0) return dateCompare;
+                }
                 const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
                 const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-                return bTime - aTime;
+                if (bTime !== aTime) return bTime - aTime;
+                return String(b.id || "").localeCompare(String(a.id || ""));
             });
 
             return res.status(200).json({
@@ -362,4 +359,52 @@ export class DailyContentController {
             });
         }
     }
+
+    /**
+     * STREAM DAILY CONTENT (Direct proxy to completely bypass client CORS)
+     * GET /api/lms/daily-content/:id/stream
+     */
+    static async streamDailyContent(req: Request, res: Response) {
+        try {
+            const { id } = req.params;
+            if (!id) return res.status(400).send("ID is required");
+
+            const docRef = db.collection(CONTENT_COLLECTION).doc(id);
+            const doc = await docRef.get();
+            if (!doc.exists) return res.status(404).send("Content not found");
+
+            const data = doc.data();
+            const rawUrl = data?.url;
+
+            res.setHeader("Access-Control-Allow-Origin", "*");
+            res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+
+            // If stored in Firebase / Google Cloud Storage, pipe directly
+            if (rawUrl && rawUrl.includes("storage.googleapis.com")) {
+                const bucketName = process.env.STORAGE_BUCKET || env.GCP_STORAGE_BUCKET || "nermaiiasacademy-519c8-resources";
+                const match = rawUrl.match(new RegExp(`${bucketName}/(.+)`));
+                if (match && match[1]) {
+                    const storagePath = decodeURIComponent(match[1]);
+                    const bucket = storage.bucket(bucketName);
+                    const fileRef = bucket.file(storagePath);
+                    const [exists] = await fileRef.exists();
+                    if (exists) {
+                        const [metadata] = await fileRef.getMetadata();
+                        res.setHeader("Content-Type", metadata.contentType || (data?.type === "image" ? "image/jpeg" : "application/pdf"));
+                        if (metadata.size) res.setHeader("Content-Length", metadata.size);
+                        return fileRef.createReadStream().pipe(res);
+                    }
+                }
+            }
+
+            if (rawUrl) {
+                return res.redirect(rawUrl);
+            }
+            return res.status(404).send("File not available");
+        } catch (error: any) {
+            console.error("Stream daily content error:", error);
+            return res.status(500).send(error.message || "Failed to stream content");
+        }
+    }
 }
+

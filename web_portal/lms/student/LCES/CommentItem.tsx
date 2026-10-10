@@ -108,7 +108,7 @@ const styles = StyleSheet.create({
   container: {
     backgroundColor: '#1A1A1A',
     borderRadius: 12,
-    padding: 16,
+    padding: 18,
     borderWidth: 1,
     marginBottom: 12,
   },
@@ -128,7 +128,7 @@ const styles = StyleSheet.create({
   },
   userName: {
     color: colors.textSecondary,
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '600',
   },
   teacherName: {
@@ -138,14 +138,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 6,
+    paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 4,
     marginLeft: 8,
   },
   teacherBadgeText: {
     color: '#000',
-    fontSize: 9,
+    fontSize: 11,
     fontWeight: 'bold',
     marginLeft: 4,
   },
@@ -155,7 +155,7 @@ const styles = StyleSheet.create({
   },
   text: {
     color: colors.textPrimary,
-    fontSize: 15,
+    fontSize: 17,
     lineHeight: 22,
   },
   hiddenText: {
@@ -181,13 +181,13 @@ const styles = StyleSheet.create({
   },
   actionText: {
     color: colors.textSecondary,
-    fontSize: 13,
+    fontSize: 15,
     marginLeft: 6,
   },
   statusBadge: {
     backgroundColor: 'rgba(212,175,55,0.1)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 4,
   },
   answeredBadge: {
@@ -195,7 +195,7 @@ const styles = StyleSheet.create({
   },
   statusText: {
     color: colors.accent,
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: 'bold',
   },
   answeredText: {

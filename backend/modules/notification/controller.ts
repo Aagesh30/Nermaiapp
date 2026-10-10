@@ -431,7 +431,7 @@ export class NotificationController {
     static async unregisterToken(req: Request, res: Response) {
         try {
             const user = req.user;
-            const targetId = user?.userId || user?.studentId || user?.id;
+            const targetId = user?.userId || user?.studentId || (user as any)?.id;
             const { token } = req.body;
 
             if (!targetId && !token) {

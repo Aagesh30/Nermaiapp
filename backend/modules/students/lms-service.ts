@@ -186,11 +186,12 @@ function isVisibleToStudent(
 
   // Enroll Batch Wise (batch): Visible ONLY if user is enrolled and matches batch
   if (accessLevel === 'batch') {
+    const cleanTargets = (targetBatchIds || []).map(id => String(id).trim().toLowerCase()).filter(Boolean);
+    if (cleanTargets.length === 0) return false;
     return isEnrolled && (
-      targetBatchIds.length === 0 ||
-      targetBatchIds.includes('all') ||
-      targetBatchIds.includes('all_paid') ||
-      studentBatchIds.some((bId) => targetBatchIds.includes(bId))
+      cleanTargets.includes('all') ||
+      cleanTargets.includes('all_paid') ||
+      studentBatchIds.some((bId) => cleanTargets.includes(String(bId).trim().toLowerCase()))
     );
   }
 

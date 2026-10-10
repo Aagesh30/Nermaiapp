@@ -38,23 +38,36 @@ export class CampaignsController {
             }
 
             // Handle Poster Image Upload to Google Drive if base64 is provided
-            let finalPosterUrl = posterUrl || "";
+            let finalPosterUrl = (posterUrl && (posterUrl.startsWith("http://") || posterUrl.startsWith("https://") || posterUrl.startsWith("data:image"))) ? posterUrl : "";
+            let finalPosterBase64 = posterBase64 || "";
+
             if (posterBase64) {
-                let cleanBase64 = posterBase64;
-                if (posterBase64.includes("base64,")) {
-                    cleanBase64 = posterBase64.split("base64,")[1];
+                try {
+                    let cleanBase64 = posterBase64;
+                    if (posterBase64.includes("base64,")) {
+                        cleanBase64 = posterBase64.split("base64,")[1];
+                    }
+                    
+                    const buffer = Buffer.from(cleanBase64, "base64");
+                    const driveResult = await uploadFileToGoogleDrive({
+                        buffer,
+                        fileName: `CampaignPoster_${Date.now()}_${title.replace(/[^a-zA-Z0-9]/g, '_')}.jpg`,
+                        mimeType: "image/jpeg",
+                        subPath: "campaigns/posters"
+                    });
+                    
+                    if (driveResult && driveResult.previewUrl && (driveResult.previewUrl.startsWith("http://") || driveResult.previewUrl.startsWith("https://"))) {
+                        finalPosterUrl = driveResult.previewUrl;
+                    }
+                } catch (err) {
+                    console.error("Failed to upload campaign poster to Google Drive:", err);
                 }
-                
-                const buffer = Buffer.from(cleanBase64, "base64");
-                const driveResult = await uploadFileToGoogleDrive({
-                    buffer,
-                    fileName: `CampaignPoster_${Date.now()}_${title.replace(/[^a-zA-Z0-9]/g, '_')}.jpg`,
-                    mimeType: "image/jpeg",
-                    subPath: "campaigns/posters"
-                });
-                
-                if (driveResult && driveResult.previewUrl) {
-                    finalPosterUrl = driveResult.previewUrl;
+            }
+
+            // Fallback: If finalPosterUrl is not a valid HTTP URL or data URI, fallback to posterBase64
+            if (!finalPosterUrl || (!finalPosterUrl.startsWith("http://") && !finalPosterUrl.startsWith("https://") && !finalPosterUrl.startsWith("data:image"))) {
+                if (finalPosterBase64) {
+                    finalPosterUrl = finalPosterBase64.startsWith("data:image") ? finalPosterBase64 : `data:image/jpeg;base64,${finalPosterBase64}`;
                 }
             }
 
@@ -67,7 +80,7 @@ export class CampaignsController {
                 if (!doc.exists || doc.data()?.isDeleted) {
                     return res.status(404).json({ success: false, message: "Campaign not found" });
                 }
-                await docRef.update({
+                const updatePayload: any = {
                     title,
                     description: description || "",
                     posterUrl: finalPosterUrl,
@@ -82,7 +95,11 @@ export class CampaignsController {
                     courseName: courseName || null,
                     updatedAt: now,
                     updatedBy: createdBy || "admin"
-                });
+                };
+                if (finalPosterBase64) {
+                    updatePayload.posterBase64 = finalPosterBase64;
+                }
+                await docRef.update(updatePayload);
                 return res.status(200).json({ success: true, message: "Campaign updated", data: { campaignId } });
             }
 
@@ -92,6 +109,7 @@ export class CampaignsController {
                 title,
                 description: description || "",
                 posterUrl: finalPosterUrl,
+                posterBase64: finalPosterBase64 || null,
                 targetUsers: targetUsers || "all",
                 posterDisplay: posterDisplay || null,
                 isActive,

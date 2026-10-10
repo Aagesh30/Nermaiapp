@@ -89,12 +89,36 @@ export async function sendPushNotification(
 
     if (targetUserId) {
       const targetStr = String(targetUserId).trim();
-      // Query by userId field
-      const q1 = await db.collection("device_push_tokens").where("userId", "==", targetStr).get();
-      q1.forEach((d) => docsMap.set(d.id, d));
-      // Query by studentId field
-      const q2 = await db.collection("device_push_tokens").where("studentId", "==", targetStr).get();
-      q2.forEach((d) => docsMap.set(d.id, d));
+      const candidateIds = new Set<string>([targetStr]);
+
+      try {
+        // 1. Resolve via students collection (students doc ID -> userId field, or userId field -> doc ID)
+        const studentDocDirect = await db.collection("students").doc(targetStr).get();
+        if (studentDocDirect.exists) {
+          const uId = studentDocDirect.data()?.userId;
+          if (uId && typeof uId === "string" && uId.trim()) candidateIds.add(uId.trim());
+        }
+        const studentByUserIdSnap = await db.collection("students").where("userId", "==", targetStr).get();
+        studentByUserIdSnap.forEach((d) => candidateIds.add(d.id));
+
+        // 2. Resolve via users collection (users doc ID -> studentId field, or studentId field -> doc ID)
+        const userDocDirect = await db.collection("users").doc(targetStr).get();
+        if (userDocDirect.exists) {
+          const sId = userDocDirect.data()?.studentId;
+          if (sId && typeof sId === "string" && sId.trim()) candidateIds.add(sId.trim());
+        }
+        const userByStudentIdSnap = await db.collection("users").where("studentId", "==", targetStr).get();
+        userByStudentIdSnap.forEach((d) => candidateIds.add(d.id));
+      } catch (linkErr: any) {
+        console.warn("[PushService] Note while resolving candidate IDs:", linkErr?.message);
+      }
+
+      for (const id of candidateIds) {
+        const q1 = await db.collection("device_push_tokens").where("userId", "==", id).get();
+        q1.forEach((d) => docsMap.set(d.id, d));
+        const q2 = await db.collection("device_push_tokens").where("studentId", "==", id).get();
+        q2.forEach((d) => docsMap.set(d.id, d));
+      }
     } else {
       let q: admin.firestore.Query = db.collection("device_push_tokens");
       if (targetRole && targetRole !== "all") {
@@ -263,6 +287,31 @@ export async function sendPushNotification(
           result.webCount += response.successCount;
           result.ticketsOk += response.successCount;
           result.ticketsError += response.failureCount;
+
+          if (response.failureCount > 0 && Array.isArray(response.responses)) {
+            let staleWebCount = 0;
+            const batch = db.batch();
+            response.responses.forEach((resp, idx) => {
+              if (!resp.success && resp.error) {
+                const code = resp.error.code;
+                if (
+                  code === "messaging/registration-token-not-registered" ||
+                  code === "messaging/invalid-registration-token"
+                ) {
+                  const targetToken = chunk[idx];
+                  if (targetToken) {
+                    const cleanDocId = "web_" + targetToken.slice(-24).replace(/[^a-zA-Z0-9_-]/g, "_");
+                    batch.delete(db.collection("device_push_tokens").doc(cleanDocId));
+                    staleWebCount++;
+                  }
+                }
+              }
+            });
+            if (staleWebCount > 0) {
+              await batch.commit().catch(() => {});
+              console.log(`[PushService] Cleaned up ${staleWebCount} stale/invalid Web FCM token docs.`);
+            }
+          }
         } catch (e: any) {
           console.warn("[PushService] Web FCM delivery error:", e?.message);
         }

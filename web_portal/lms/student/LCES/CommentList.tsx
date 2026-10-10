@@ -163,19 +163,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   listContent: {
-    padding: 16,
+    padding: 18,
     paddingBottom: 24,
   },
   filterBar: {
     flexDirection: 'row',
-    padding: 8,
+    padding: 10,
     backgroundColor: '#111',
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.05)',
   },
   filterBtn: {
     flex: 1,
-    paddingVertical: 8,
+    paddingVertical: 10,
     alignItems: 'center',
     borderRadius: 8,
   },
@@ -184,27 +184,27 @@ const styles = StyleSheet.create({
   },
   filterText: {
     color: colors.textSecondary,
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '600',
   },
   filterTextActive: {
     color: colors.textPrimary,
   },
   pinnedSection: {
-    padding: 16,
+    padding: 18,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.05)',
     backgroundColor: 'rgba(212,175,55,0.05)'
   },
   pinnedTitle: {
     color: colors.primary,
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: 'bold',
     marginBottom: 12,
     letterSpacing: 1,
   },
   empty: {
-    padding: 40,
+    padding: 42,
     alignItems: 'center',
   },
   emptyText: {

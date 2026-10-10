@@ -500,7 +500,8 @@ export class StudentController {
                 page = 1,
                 startAfter,
                 sortBy = "createdAt",
-                sortOrder = "desc"
+                sortOrder = "desc",
+                since
             } = req.query;
 
             const parseTimestamp = (val: any) => {
@@ -508,6 +509,75 @@ export class StudentController {
                 if (typeof val.toDate === "function") return val.toDate().toISOString();
                 return new Date(val).toISOString();
             };
+
+            // ─── DELTA / INCREMENTAL SYNC OPTIMIZATION ────────────────────────────
+            // When `since` is supplied (timestamp in ms or ISO), fetch ONLY records
+            // modified or deleted after that timestamp to eliminate full collection reads.
+            if (since) {
+                const sinceNum = Number(since);
+                const sinceDate = !isNaN(sinceNum) && sinceNum > 0 ? new Date(sinceNum) : new Date(String(since));
+                if (!isNaN(sinceDate.getTime())) {
+                    const deltaSnapshot = await db.collection(COLLECTION)
+                        .where("updatedAt", ">", sinceDate)
+                        .get();
+
+                    let deletedIds: string[] = [];
+                    try {
+                        const delSnap = await db.collection("deleted_students")
+                            .where("deletedAt", ">", sinceDate)
+                            .get();
+                        deletedIds = delSnap.docs.map(doc => {
+                            const d = doc.data();
+                            return d.originalId || doc.id;
+                        });
+                    } catch (delErr) {
+                        console.warn("[StudentController.getAll] Could not fetch deleted_students delta:", delErr);
+                    }
+
+                    const usersMap: Record<string, string> = {};
+                    if (!deltaSnapshot.empty) {
+                        try {
+                            const usersSnap = await db.collection("users")
+                                .where("role", "in", ["admin", "super_admin", "staff", "teacher", "editor", "contributor", "developer"])
+                                .get();
+                            usersSnap.docs.forEach(doc => {
+                                const u = doc.data();
+                                const name = u.name || u.username || doc.id;
+                                usersMap[doc.id] = name;
+                                if (u.id) usersMap[u.id] = name;
+                            });
+                        } catch (err) {
+                            console.error("Failed to build usersMap for delta resolution:", err);
+                        }
+                    }
+
+                    const modifiedStudents = deltaSnapshot.docs.map(doc => {
+                        const data = doc.data();
+                        const creatorId = data.createdBy || "";
+                        const creatorName = usersMap[creatorId] || creatorId || "Super Admin";
+                        return {
+                            ...data,
+                            attendedDays: (data.attendedDays !== undefined && data.attendedDays !== null && Number(data.attendedDays) >= 0) ? Number(data.attendedDays) : 0,
+                            totalDays: calculateTotalDaysFromJoiningDate(data.joiningDate, data.totalDays),
+                            createdBy: creatorName,
+                            createdAt: parseTimestamp(data.createdAt),
+                            updatedAt: parseTimestamp(data.updatedAt),
+                            deletedAt: parseTimestamp(data.deletedAt),
+                            approvedAt: parseTimestamp(data.approvedAt)
+                        };
+                    });
+
+                    return res.status(200).json({
+                        success: true,
+                        data: {
+                            isDelta: true,
+                            serverTime: Date.now(),
+                            students: modifiedStudents.map(sanitizeStudent),
+                            deletedIds
+                        }
+                    });
+                }
+            }
 
             const snapshot = await db.collection(COLLECTION).get();
 
@@ -605,6 +675,8 @@ export class StudentController {
             return res.status(200).json({
                 success: true,
                 data: {
+                    isDelta: false,
+                    serverTime: Date.now(),
                     students: paginatedStudents.map(sanitizeStudent),
                     pagination: {
                         total: totalCount,
@@ -905,11 +977,24 @@ export class StudentController {
             if (hallTicketVenue !== undefined) updateData.hallTicketVenue = hallTicketVenue;
             if (hallTicketTime !== undefined) updateData.hallTicketTime = hallTicketTime;
             if (hallTicketInstructions !== undefined) updateData.hallTicketInstructions = hallTicketInstructions;
-            if (feeBlocked !== undefined) updateData.feeBlocked = Boolean(feeBlocked);
-            if (feeAlertActive !== undefined) updateData.feeAlertActive = Boolean(feeAlertActive);
+            if (feeBlocked !== undefined) {
+                updateData.feeBlocked = Boolean(feeBlocked);
+            } else if (feesPaid !== undefined) {
+                updateData.feeBlocked = false;
+            }
+            if (feeAlertActive !== undefined) {
+                updateData.feeAlertActive = Boolean(feeAlertActive);
+            } else if (feesPaid !== undefined) {
+                updateData.feeAlertActive = false;
+            }
             if (feeAlertDueDate !== undefined) updateData.feeAlertDueDate = feeAlertDueDate;
             if (feeAlertSentAt !== undefined) updateData.feeAlertSentAt = feeAlertSentAt;
             if (feeAlertNote !== undefined) updateData.feeAlertNote = feeAlertNote;
+            if (req.body.attendanceLog !== undefined) {
+                updateData.attendanceLog = (req.body.attendanceLog && typeof req.body.attendanceLog === "object") ? req.body.attendanceLog : {};
+            }
+            if (req.body.lastAttendanceDate !== undefined) updateData.lastAttendanceDate = req.body.lastAttendanceDate;
+            if (req.body.lastAttendanceStatus !== undefined) updateData.lastAttendanceStatus = req.body.lastAttendanceStatus;
 
             await docRef.update(updateData);
 
@@ -1124,7 +1209,43 @@ export class StudentController {
             let totalUpdated = 0;
 
             if (targetGroup) {
-                // targetGroup can be 'free' (leads), 'paid' (students), 'all' (both)
+                // targetGroup can be 'free' (leads), 'paid' (students), 'all' (both), or 'mock' (special mock)
+                if (targetGroup === "mock") {
+                    const { mockTestId } = req.body;
+                    let mockRollNumbers = req.body.mockRollNumbers;
+                    let targetStudentIds: string[] = [];
+
+                    if (mockTestId && (!mockRollNumbers || Object.keys(mockRollNumbers).length === 0)) {
+                        const testDoc = await db.collection("tests").doc(mockTestId).get();
+                        if (testDoc.exists) {
+                            const tData = testDoc.data();
+                            mockRollNumbers = tData?.mockConfig?.mockRollNumbers || {};
+                        }
+                    }
+
+                    if (mockRollNumbers && typeof mockRollNumbers === "object") {
+                        targetStudentIds = Object.keys(mockRollNumbers);
+                    }
+
+                    if (targetStudentIds.length > 0) {
+                        for (let i = 0; i < targetStudentIds.length; i += 400) {
+                            const chunk = targetStudentIds.slice(i, i + 400);
+                            const firestoreBatch = db.batch();
+                            for (const sId of chunk) {
+                                const assignedMockRoll = mockRollNumbers[sId];
+                                const studentRef = db.collection("students").doc(sId);
+                                const sUpdate: any = {
+                                    ...updateData,
+                                    mockRollNumber: assignedMockRoll,
+                                    lastMockTestId: mockTestId || null
+                                };
+                                firestoreBatch.set(studentRef, sUpdate, { merge: true });
+                            }
+                            await firestoreBatch.commit();
+                            totalUpdated += chunk.length;
+                        }
+                    }
+                }
                 if (targetGroup === "free" || targetGroup === "all") {
                     const leadsSnapshot = await db.collection("leads")
                         .where("isDeleted", "==", false)

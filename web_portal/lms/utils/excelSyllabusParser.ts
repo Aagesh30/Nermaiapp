@@ -44,10 +44,7 @@ export interface ParsedSyllabusResult {
  * Parses an Excel Workbook (.xlsx, .xls) containing course syllabus sheets
  * into a structured hierarchy of Subject -> Topic -> Subtopic.
  */
-export async function parseSyllabusFile(file: File): Promise<ParsedSyllabusResult> {
-  const buffer = await file.arrayBuffer();
-  const workbook = XLSX.read(buffer, { type: 'array' });
-
+export function parseSyllabusWorkbook(workbook: XLSX.WorkBook, fileName: string): ParsedSyllabusResult {
   const subjects: ParsedSubject[] = [];
   let subjectOrder = 1;
 
@@ -205,6 +202,12 @@ export async function parseSyllabusFile(file: File): Promise<ParsedSyllabusResul
       totalTopics,
       totalSubtopics
     },
-    fileName: file.name
+    fileName
   };
+}
+
+export async function parseSyllabusFile(file: File): Promise<ParsedSyllabusResult> {
+  const buffer = await file.arrayBuffer();
+  const workbook = XLSX.read(buffer, { type: 'array' });
+  return parseSyllabusWorkbook(workbook, file.name);
 }

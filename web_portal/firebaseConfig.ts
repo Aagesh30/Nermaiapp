@@ -8,6 +8,12 @@ import {
 } from "firebase/auth";
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as WebBrowser from "expo-web-browser";
+
+// Complete auth session if returning from web browser redirect
+try {
+  WebBrowser.maybeCompleteAuthSession();
+} catch (e) {}
 
 // Safely obtain React Native persistence function if running in native mobile bundle
 const getRNPersistence = (): any => {
@@ -44,7 +50,7 @@ import {
   persistentMultipleTabManager
 } from "firebase/firestore";
 
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+export const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
 export const db = (() => {
   if (Platform.OS === "web") {
@@ -120,51 +126,105 @@ export const handleFirebaseGoogleSignIn = async (fallbackName?: string, fallback
       throw error;
     }
   } else {
-    // Native APK — Authorization Code + PKCE via expo-auth-session (proper flow)
-    console.log("[DEBUG] Platform is native mobile. Initiating expo-auth-session Google OAuth (PKCE).");
+    // Native Mobile (Android APK & iOS) — Native Google Sign-In via @react-native-google-signin/google-signin
+    console.log("[DEBUG] Platform is native mobile. Initiating Google Sign-In.");
     try {
-      const AuthSession = require("expo-auth-session");
       const { GoogleAuthProvider, signInWithCredential } = require("firebase/auth");
+      const WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || "587850155187-bbs7vnuahanqilrq9tp397phvft5p0r8.apps.googleusercontent.com";
 
-      // Sign out Firebase first — ensures account picker always appears on every login
+      // Sign out Firebase first — ensures fresh session state
       try { await auth.signOut(); } catch (e) {}
 
-      // Android OAuth client (client_type: 1) — validated by SHA-1 fingerprint, not redirect URI.
-      // This is the correct client for installed Android APKs. No Google Cloud Console change needed.
-      const ANDROID_CLIENT_ID = "587850155187-4at9s3rprcuvshdfhdcjcsglaoc0hqpe.apps.googleusercontent.com";
+      // 1. Primary Native Path: @react-native-google-signin/google-signin (Works seamlessly in APK)
+      let googleSigninModule: any = null;
+      try {
+        googleSigninModule = require("@react-native-google-signin/google-signin");
+      } catch (requireErr) {
+        console.log("[DEBUG] Native google-signin module require error:", requireErr);
+      }
 
+      if (googleSigninModule?.GoogleSignin) {
+        const { GoogleSignin, statusCodes } = googleSigninModule;
+        try {
+          console.log("[DEBUG] Initializing GoogleSignin native configuration...");
+          GoogleSignin.configure({
+            webClientId: WEB_CLIENT_ID,
+            offlineAccess: false,
+          });
+
+          await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+
+          try {
+            await GoogleSignin.signOut();
+          } catch (e) {}
+
+          console.log("[DEBUG] Triggering GoogleSignin.signIn()");
+          const signInResponse = await GoogleSignin.signIn();
+          console.log("[DEBUG] GoogleSignin response received");
+
+          const idToken = signInResponse?.data?.idToken || (signInResponse as any)?.idToken;
+          const userObj = signInResponse?.data?.user || (signInResponse as any)?.user;
+
+          if (!idToken) {
+            throw new Error("Google Sign-In completed but no idToken was received.");
+          }
+
+          const credential = GoogleAuthProvider.credential(idToken);
+          const firebaseResult = await signInWithCredential(auth, credential);
+          const fbUser = firebaseResult.user;
+          console.log("[DEBUG] Firebase native signInWithCredential success:", fbUser?.email);
+
+          return {
+            email: (fbUser.email || userObj?.email || "").toLowerCase(),
+            name: fbUser.displayName || userObj?.name || fbUser.email?.split("@")[0] || fallbackName || "Guest",
+            photoURL: fbUser.photoURL || userObj?.photo || "",
+            uid: fbUser.uid
+          };
+        } catch (nativeErr: any) {
+          console.warn("[DEBUG] GoogleSignin native error:", nativeErr?.code, nativeErr?.message);
+          if (
+            nativeErr?.code === statusCodes?.SIGN_IN_CANCELLED ||
+            nativeErr?.message?.includes("cancelled") ||
+            nativeErr?.message?.includes("12501")
+          ) {
+            throw new Error("Google sign-in was cancelled.");
+          } else if (nativeErr?.code === statusCodes?.IN_PROGRESS) {
+            throw new Error("Google sign-in is already in progress.");
+          } else if (nativeErr?.code === statusCodes?.PLAY_SERVICES_NOT_AVAILABLE) {
+            throw new Error("Google Play Services is not available or needs to be updated.");
+          }
+          throw new Error(nativeErr?.message || "Google authentication failed. Please try again.");
+        }
+      }
+
+      // 2. Fallback Path (if native module not available in environment)
+      console.log("[DEBUG] Falling back to expo-auth-session OAuth flow");
+      const AuthSession = require("expo-auth-session");
+      const clientId = WEB_CLIENT_ID;
       const discovery = {
         authorizationEndpoint: "https://accounts.google.com/o/oauth2/v2/auth",
         tokenEndpoint: "https://oauth2.googleapis.com/token",
         revocationEndpoint: "https://oauth2.googleapis.com/revoke",
       };
 
-      // Standard redirect URI for Android installed apps — matches Google's expected format for Android OAuth clients.
-      // Android clients validate by SHA-1 cert hash, not redirect URI, so no Cloud Console registration needed.
-      const redirectUri = "com.nermai.iasacademy:/oauthredirect";
-      console.log("[DEBUG] Redirect URI:", redirectUri);
-
+      const redirectUri = AuthSession.makeRedirectUri({ scheme: "nermaiiasacademy" });
       const request = new AuthSession.AuthRequest({
-        clientId: ANDROID_CLIENT_ID,
+        clientId,
         scopes: ["openid", "profile", "email"],
         redirectUri,
         usePKCE: true,
-        extraParams: { prompt: "select_account", access_type: "offline" }
+        extraParams: { prompt: "select_account" }
       });
 
       const result = await request.promptAsync(discovery);
-      console.log("[DEBUG] AuthSession result type:", result?.type);
-
       if (result?.type === "cancel" || result?.type === "dismiss") {
         throw new Error("Google sign-in was cancelled.");
       }
 
       if (result?.type === "success" && result?.params?.code) {
-        // Exchange authorization code for tokens using PKCE code_verifier
-        // Android public clients (installed apps) use PKCE — no client_secret required.
         const tokenResult = await AuthSession.exchangeCodeAsync(
           {
-            clientId: ANDROID_CLIENT_ID,
+            clientId,
             code: result.params.code,
             redirectUri,
             extraParams: { code_verifier: request.codeVerifier ?? "" }
@@ -174,14 +234,11 @@ export const handleFirebaseGoogleSignIn = async (fallbackName?: string, fallback
 
         const idToken = tokenResult?.idToken;
         const accessToken = tokenResult?.accessToken;
-        console.log("[DEBUG] Token exchange complete. idToken present:", !!idToken);
 
         if (idToken) {
-          // Sign into Firebase with the Google credential — gets real Firebase uid
           const credential = GoogleAuthProvider.credential(idToken, accessToken);
           const firebaseResult = await signInWithCredential(auth, credential);
           const fbUser = firebaseResult.user;
-          console.log("[DEBUG] Firebase signInWithCredential success:", fbUser?.email);
           return {
             email: (fbUser.email || "").toLowerCase(),
             name: fbUser.displayName || fbUser.email?.split("@")[0] || fallbackName || "Guest",
@@ -189,28 +246,11 @@ export const handleFirebaseGoogleSignIn = async (fallbackName?: string, fallback
             uid: fbUser.uid
           };
         }
-
-        // Fallback: idToken absent — use userinfo endpoint with access token
-        if (accessToken) {
-          console.log("[DEBUG] idToken absent, fetching userinfo with access token.");
-          const infoRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-            headers: { Authorization: `Bearer ${accessToken}` }
-          });
-          const userInfo = await infoRes.json();
-          if (userInfo?.email) {
-            return {
-              email: userInfo.email.toLowerCase(),
-              name: userInfo.name || userInfo.email.split("@")[0],
-              photoURL: userInfo.picture || "",
-              uid: userInfo.sub || `google_${Date.now()}`
-            };
-          }
-        }
       }
 
       throw new Error("Google authentication did not return a valid token. Please try again.");
     } catch (authErr: any) {
-      console.warn("[DEBUG] expo-auth-session Google error:", authErr?.message || authErr);
+      console.warn("[DEBUG] Native Google error:", authErr?.message || authErr);
       throw new Error(authErr?.message || "Google authentication failed. Please try again.");
     }
   }

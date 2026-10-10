@@ -66,7 +66,7 @@ export const ParticipantList: React.FC = () => {
           data={participants}
           keyExtractor={item => item.id}
           renderItem={renderItem}
-          contentContainerStyle={{ padding: 16 }}
+          contentContainerStyle={{ padding: 18 }}
         />
       )}
     </View>
@@ -75,13 +75,13 @@ export const ParticipantList: React.FC = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#121212' },
-  header: { padding: 16, borderBottomWidth: 1, borderBottomColor: '#222' },
-  title: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
+  header: { padding: 18, borderBottomWidth: 1, borderBottomColor: '#222' },
+  title: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
   empty: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyText: { color: '#777', marginTop: 12 },
   row: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
   avatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#333', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
   info: { flex: 1 },
-  name: { color: '#FFF', fontSize: 14, fontWeight: '600' },
-  role: { color: '#777', fontSize: 12, textTransform: 'capitalize', marginTop: 2 }
+  name: { color: '#FFF', fontSize: 16, fontWeight: '600' },
+  role: { color: '#777', fontSize: 14, textTransform: 'capitalize', marginTop: 2 }
 });

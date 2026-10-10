@@ -3,6 +3,8 @@ import { getFirestore, Firestore } from 'firebase-admin/firestore';
 import { getAuth, Auth } from 'firebase-admin/auth';
 import { getMessaging, Messaging } from 'firebase-admin/messaging';
 import { getStorage, Storage } from 'firebase-admin/storage';
+import * as path from 'path';
+import * as fs from 'fs';
 import { env } from '../../config/env';
 import { logger } from '../../core/logger';
 
@@ -35,27 +37,38 @@ function getFirebaseApp(): App {
     return _app;
   }
 
-  // Use the newly created custom dotless bucket as primary.
-  const projectId = env.FIREBASE_PROJECT_ID || 'nermaiiasacademy-519c8';
-  let storageBucket = process.env.STORAGE_BUCKET || `${projectId}-resources`;
+  const projectId = env.GCP_PROJECT_ID || process.env.FIREBASE_PROJECT_ID || 'nermaiiasacademy-519c8';
+  let storageBucket = process.env.STORAGE_BUCKET || env.GCP_STORAGE_BUCKET || 'nermaiiasacademy-519c8-resources';
 
   try {
+    const sakPath = path.join(__dirname, 'serviceAccountKey.json');
+    let privateKey = (env.GCP_PRIVATE_KEY || process.env.FIREBASE_PRIVATE_KEY || '').trim();
+    if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
+      privateKey = privateKey.slice(1, -1);
+    }
+    privateKey = privateKey.replace(/\\n/g, '\n');
+
     if (env.NODE_ENV === 'test') {
       _app = initializeApp({ projectId });
-    } else if (!env.FIREBASE_PRIVATE_KEY || env.FIREBASE_PRIVATE_KEY === 'mock-key') {
-      // Cloud Functions: use Application Default Credentials with explicit bucket
-      _app = initializeApp({ storageBucket });
-    } else {
-      // .env stores the key with literal \n — convert them to real newlines
-      const privateKey = env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n');
+    } else if (privateKey && privateKey !== 'mock-key' && (env.GCP_CLIENT_EMAIL || process.env.FIREBASE_CLIENT_EMAIL)) {
       _app = initializeApp({
         storageBucket,
         credential: cert({
           projectId,
-          clientEmail: env.FIREBASE_CLIENT_EMAIL,
+          clientEmail: env.GCP_CLIENT_EMAIL || process.env.FIREBASE_CLIENT_EMAIL,
           privateKey,
         }),
       });
+    } else if (fs.existsSync(sakPath)) {
+      // Local dev fallback using serviceAccountKey.json
+      const sak = require(sakPath);
+      _app = initializeApp({
+        storageBucket,
+        credential: cert(sak),
+      });
+    } else {
+      // Cloud Functions / ADC: use Application Default Credentials
+      _app = initializeApp({ storageBucket });
     }
     logger.info(`Firebase Admin initialized successfully. Bucket: ${storageBucket}`);
   } catch (error: any) {

@@ -222,13 +222,13 @@ export default function CustomLeadsPage() {
   };
 
   return (
-    <View style={[styles.container, isMobile && { padding: 12 }]}>
+    <View style={[styles.container, isMobile && { padding: 14 }]}>
       {/* Top Header */}
-      <View style={[styles.header, isMobile && { flexDirection: 'column', alignItems: 'stretch', gap: 12, padding: 14 }]}>
+      <View style={[styles.header, isMobile && { flexDirection: 'column', alignItems: 'stretch', gap: 12, padding: 16 }]}>
         <View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <MaterialCommunityIcons name="clipboard-account-outline" size={26} color="#b91c1c" />
-            <Text style={[styles.headerTitle, isMobile && { fontSize: 18 }]}>Custom Application Leads</Text>
+            <Text style={[styles.headerTitle, isMobile && { fontSize: 20 }]}>Custom Application Leads</Text>
           </View>
           <Text style={styles.headerSubtitle}>
             Dedicated submissions from the Mock Test & Application Form.
@@ -257,26 +257,26 @@ export default function CustomLeadsPage() {
 
       {/* Metrics Banner */}
       <View style={[styles.metricsRow, isMobile && { flexWrap: 'wrap', gap: 8 }]}>
-        <View style={[styles.metricCard, isMobile && { minWidth: '47%', flex: undefined, padding: 12 }]}>
-          <Text style={[styles.metricLabel, isMobile && { fontSize: 9 }]} numberOfLines={1}>TOTAL SUBMISSIONS</Text>
-          <Text style={[styles.metricValue, { color: '#0f172a' }, isMobile && { fontSize: 20, marginTop: 2 }]}>{metrics.total}</Text>
+        <View style={[styles.metricCard, isMobile && { minWidth: '47%', flex: undefined, padding: 14 }]}>
+          <Text style={[styles.metricLabel, isMobile && { fontSize: 11 }]} numberOfLines={1}>TOTAL SUBMISSIONS</Text>
+          <Text style={[styles.metricValue, { color: '#0f172a' }, isMobile && { fontSize: 22, marginTop: 2 }]}>{metrics.total}</Text>
         </View>
-        <View style={[styles.metricCard, isMobile && { minWidth: '47%', flex: undefined, padding: 12 }]}>
-          <Text style={[styles.metricLabel, isMobile && { fontSize: 9 }]} numberOfLines={1}>NEW LEADS</Text>
-          <Text style={[styles.metricValue, { color: '#2563eb' }, isMobile && { fontSize: 20, marginTop: 2 }]}>{metrics.newCount}</Text>
+        <View style={[styles.metricCard, isMobile && { minWidth: '47%', flex: undefined, padding: 14 }]}>
+          <Text style={[styles.metricLabel, isMobile && { fontSize: 11 }]} numberOfLines={1}>NEW LEADS</Text>
+          <Text style={[styles.metricValue, { color: '#2563eb' }, isMobile && { fontSize: 22, marginTop: 2 }]}>{metrics.newCount}</Text>
         </View>
-        <View style={[styles.metricCard, isMobile && { minWidth: '47%', flex: undefined, padding: 12 }]}>
-          <Text style={[styles.metricLabel, isMobile && { fontSize: 9 }]} numberOfLines={1}>CONTACTED</Text>
-          <Text style={[styles.metricValue, { color: '#d97706' }, isMobile && { fontSize: 20, marginTop: 2 }]}>{metrics.contactedCount}</Text>
+        <View style={[styles.metricCard, isMobile && { minWidth: '47%', flex: undefined, padding: 14 }]}>
+          <Text style={[styles.metricLabel, isMobile && { fontSize: 11 }]} numberOfLines={1}>CONTACTED</Text>
+          <Text style={[styles.metricValue, { color: '#d97706' }, isMobile && { fontSize: 22, marginTop: 2 }]}>{metrics.contactedCount}</Text>
         </View>
-        <View style={[styles.metricCard, isMobile && { minWidth: '47%', flex: undefined, padding: 12 }]}>
-          <Text style={[styles.metricLabel, isMobile && { fontSize: 9 }]} numberOfLines={1}>CONVERTED</Text>
-          <Text style={[styles.metricValue, { color: '#16a34a' }, isMobile && { fontSize: 20, marginTop: 2 }]}>{metrics.convertedCount}</Text>
+        <View style={[styles.metricCard, isMobile && { minWidth: '47%', flex: undefined, padding: 14 }]}>
+          <Text style={[styles.metricLabel, isMobile && { fontSize: 11 }]} numberOfLines={1}>CONVERTED</Text>
+          <Text style={[styles.metricValue, { color: '#16a34a' }, isMobile && { fontSize: 22, marginTop: 2 }]}>{metrics.convertedCount}</Text>
         </View>
       </View>
 
       {/* Clean Toolbar with Search & 3 Status Filter Pills */}
-      <View style={[styles.toolbar, isMobile && { flexDirection: 'column', alignItems: 'stretch', gap: 10, padding: 10 }]}>
+      <View style={[styles.toolbar, isMobile && { flexDirection: 'column', alignItems: 'stretch', gap: 10, padding: 12 }]}>
         <View style={[styles.searchBox, isMobile && { width: '100%' }]}>
           <MaterialCommunityIcons name="magnify" size={18} color="#94a3b8" />
           <TextInput
@@ -339,26 +339,38 @@ export default function CustomLeadsPage() {
         <ScrollView style={{ gap: 10 }} showsVerticalScrollIndicator={false}>
           {filteredLeads.map((lead, idx) => {
             const badge = getStatusBadge(lead.status);
+            const dateStr = (lead as any).createdAt?._seconds
+              ? new Date((lead as any).createdAt._seconds * 1000).toLocaleDateString()
+              : ((lead as any).createdAt ? new Date((lead as any).createdAt).toLocaleDateString() : 'Recent');
+            const updaterName = (lead as any).updatedByAdminName || (lead as any).updatedBy || (lead as any).atten;
             return (
-              <View key={lead.id} style={{ backgroundColor: '#fff', borderRadius: 10, borderWidth: 1, borderColor: '#e2e8f0', padding: 14, marginBottom: 8 }}>
+              <View key={lead.id} style={{ backgroundColor: '#fff', borderRadius: 10, borderWidth: 1, borderColor: '#e2e8f0', padding: 16, marginBottom: 8 }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <View style={{ flex: 1, paddingRight: 8 }}>
-                    <Text style={{ fontSize: 14, fontWeight: '700', color: '#0f172a' }}>{lead.name}</Text>
-                    <Text style={{ fontSize: 12, color: '#475569', marginTop: 2 }}>📞 {lead.phone}</Text>
-                    {lead.email ? <Text style={{ fontSize: 11, color: '#64748b', marginTop: 1 }}>✉️ {lead.email}</Text> : null}
+                    <Text style={{ fontSize: 16, fontWeight: '700', color: '#0f172a' }}>{lead.name}</Text>
+                    <Text style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>📅 {dateStr}</Text>
+                    <Text style={{ fontSize: 14, color: '#475569', marginTop: 2 }}>📞 {lead.phone}</Text>
+                    {lead.email ? <Text style={{ fontSize: 13, color: '#64748b', marginTop: 1 }}>✉️ {lead.email}</Text> : null}
                   </View>
-                  <TouchableOpacity
-                    style={[styles.statusBadge, { backgroundColor: badge.bg }]}
-                    onPress={() => {
-                      setSelectedLead(lead);
-                      const currentNorm = (lead.status as any) === 'admitted' ? 'converted' : lead.status;
-                      setEditStatus(currentNorm || 'new');
-                      setEditNotes(lead.notes || '');
-                    }}
-                  >
-                    <Text style={[styles.statusBadgeText, { color: badge.color }]}>{badge.label}</Text>
-                    <MaterialCommunityIcons name="chevron-down" size={14} color={badge.color} />
-                  </TouchableOpacity>
+                  <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                    <TouchableOpacity
+                      style={[styles.statusBadge, { backgroundColor: badge.bg }]}
+                      onPress={() => {
+                        setSelectedLead(lead);
+                        const currentNorm = (lead.status as any) === 'admitted' ? 'converted' : lead.status;
+                        setEditStatus(currentNorm || 'new');
+                        setEditNotes(lead.notes || '');
+                      }}
+                    >
+                      <Text style={[styles.statusBadgeText, { color: badge.color }]}>{badge.label}</Text>
+                      <MaterialCommunityIcons name="chevron-down" size={14} color={badge.color} />
+                    </TouchableOpacity>
+                    {updaterName ? (
+                      <Text style={{ fontSize: 10, color: '#94a3b8', fontStyle: 'italic', marginTop: 2 }}>
+                        Updated by {updaterName}
+                      </Text>
+                    ) : null}
+                  </View>
                 </View>
 
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#f1f5f9' }}>
@@ -366,7 +378,7 @@ export default function CustomLeadsPage() {
                     <View style={styles.modeBadge}>
                       <Text style={styles.modeBadgeText}>{lead.mode || 'Offline'}</Text>
                     </View>
-                    {lead.city ? <Text style={{ fontSize: 11, color: '#64748b' }}>📍 {lead.city}</Text> : null}
+                    {lead.city ? <Text style={{ fontSize: 13, color: '#64748b' }}>📍 {lead.city}</Text> : null}
                   </View>
                   <View style={{ flexDirection: 'row', gap: 6 }}>
                     <TouchableOpacity
@@ -518,7 +530,7 @@ export default function CustomLeadsPage() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ maxHeight: 420 }} contentContainerStyle={{ padding: 20, gap: 16 }}>
+            <ScrollView style={{ maxHeight: 420 }} contentContainerStyle={{ padding: 22, gap: 16 }}>
               {/* 3 Status Buttons */}
               <View style={styles.dialogSection}>
                 <Text style={styles.sectionLabel}>UPDATE STATUS</Text>
@@ -612,7 +624,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8fafc',
-    padding: 24
+    padding: 26
   },
   header: {
     flexDirection: 'row',
@@ -620,7 +632,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
     backgroundColor: '#fff',
-    padding: 20,
+    padding: 22,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e2e8f0',
@@ -630,12 +642,12 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 }
   },
   headerTitle: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '700',
     color: '#0f172a'
   },
   headerSubtitle: {
-    fontSize: 13,
+    fontSize: 15,
     color: '#64748b',
     marginTop: 4
   },
@@ -646,12 +658,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fafc',
     borderWidth: 1,
     borderColor: '#cbd5e1',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
     borderRadius: 8
   },
   refreshBtnText: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '600',
     color: '#475569'
   },
@@ -662,12 +674,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#f0fdf4',
     borderWidth: 1,
     borderColor: '#bbf7d0',
-    paddingHorizontal: 16,
-    paddingVertical: 9,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
     borderRadius: 8
   },
   exportBtnText: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '700',
     color: '#15803d'
   },
@@ -682,20 +694,20 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    padding: 18,
+    padding: 20,
     shadowColor: '#000',
     shadowOpacity: 0.02,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 1 }
   },
   metricLabel: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '700',
     color: '#64748b',
     letterSpacing: 0.5
   },
   metricValue: {
-    fontSize: 26,
+    fontSize: 28,
     fontWeight: '800',
     marginTop: 6
   },
@@ -707,7 +719,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    padding: 12,
+    padding: 14,
     marginBottom: 16,
     gap: 14
   },
@@ -719,13 +731,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e2e8f0',
     borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     gap: 8
   },
   searchInput: {
     flex: 1,
-    fontSize: 13,
+    fontSize: 15,
     color: '#0f172a'
   },
   filterPillsRow: {
@@ -734,8 +746,8 @@ const styles = StyleSheet.create({
     gap: 8
   },
   filterPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#e2e8f0',
@@ -746,7 +758,7 @@ const styles = StyleSheet.create({
     borderColor: '#b91c1c'
   },
   filterPillText: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '600',
     color: '#64748b'
   },
@@ -755,7 +767,7 @@ const styles = StyleSheet.create({
     fontWeight: '800'
   },
   tableLoading: {
-    padding: 60,
+    padding: 62,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#fff',
@@ -764,7 +776,7 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0'
   },
   emptyTable: {
-    padding: 60,
+    padding: 62,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#fff',
@@ -773,13 +785,13 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0'
   },
   emptyTableTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '700',
     color: '#0f172a',
     marginTop: 12
   },
   emptyTableSubtitle: {
-    fontSize: 13,
+    fontSize: 15,
     color: '#64748b',
     marginTop: 4,
     textAlign: 'center',
@@ -798,11 +810,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fafc',
     borderBottomWidth: 1,
     borderBottomColor: '#e2e8f0',
-    paddingVertical: 12,
-    paddingHorizontal: 16
+    paddingVertical: 14,
+    paddingHorizontal: 18
   },
   thCell: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '700',
     color: '#475569',
     letterSpacing: 0.5,
@@ -813,32 +825,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
-    paddingVertical: 12,
-    paddingHorizontal: 16
+    paddingVertical: 14,
+    paddingHorizontal: 18
   },
   tdCell: {
-    fontSize: 13,
+    fontSize: 15,
     color: '#0f172a'
   },
   nameText: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '700',
     color: '#0f172a'
   },
   sourceText: {
-    fontSize: 11,
+    fontSize: 13,
     color: '#94a3b8',
     marginTop: 2
   },
   modeBadge: {
     backgroundColor: '#f1f5f9',
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     paddingVertical: 3,
     borderRadius: 6,
     alignSelf: 'flex-start'
   },
   modeBadgeText: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '600',
     color: '#475569'
   },
@@ -846,17 +858,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     borderRadius: 6,
     width: 105
   },
   statusBadgeText: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '700'
   },
   actionBtn: {
-    padding: 7,
+    padding: 9,
     borderRadius: 6,
     backgroundColor: '#f1f5f9',
     alignItems: 'center',
@@ -869,7 +881,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.65)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 16
+    padding: 18
   },
   dialogBox: {
     width: '100%',
@@ -890,18 +902,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 22,
+    paddingVertical: 18,
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9'
   },
   dialogTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '700',
     color: '#0f172a'
   },
   dialogSubtitle: {
-    fontSize: 12,
+    fontSize: 14,
     color: '#64748b',
     marginTop: 2
   },
@@ -909,7 +921,7 @@ const styles = StyleSheet.create({
     marginBottom: 4
   },
   sectionLabel: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '700',
     color: '#475569',
     letterSpacing: 0.5,
@@ -923,7 +935,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#e2e8f0',
@@ -934,7 +946,7 @@ const styles = StyleSheet.create({
     borderColor: '#b91c1c'
   },
   statusSelectBtnText: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '600',
     color: '#64748b'
   },
@@ -946,8 +958,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#cbd5e1',
     borderRadius: 8,
-    padding: 12,
-    fontSize: 13,
+    padding: 14,
+    fontSize: 15,
     color: '#0f172a',
     backgroundColor: '#fff',
     height: 90,
@@ -958,7 +970,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    padding: 12,
+    padding: 14,
     gap: 6
   },
   customDataRow: {
@@ -967,12 +979,12 @@ const styles = StyleSheet.create({
     alignItems: 'center'
   },
   customDataKey: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '600',
     color: '#475569'
   },
   customDataVal: {
-    fontSize: 12,
+    fontSize: 14,
     color: '#0f172a',
     fontWeight: '500'
   },
@@ -980,15 +992,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-end',
     gap: 10,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
+    paddingHorizontal: 22,
+    paddingVertical: 16,
     borderTopWidth: 1,
     borderTopColor: '#f1f5f9',
     backgroundColor: '#f8fafc'
   },
   dialogCancelBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 9,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#cbd5e1',
@@ -996,18 +1008,18 @@ const styles = StyleSheet.create({
   },
   dialogCancelText: {
     color: '#475569',
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '600'
   },
   dialogSaveBtn: {
-    paddingHorizontal: 18,
-    paddingVertical: 9,
+    paddingHorizontal: 20,
+    paddingVertical: 11,
     borderRadius: 6,
     backgroundColor: '#b91c1c'
   },
   dialogSaveText: {
     color: '#fff',
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '700'
   }
 });

@@ -53,7 +53,7 @@ const MobileTimerCountdown = ({
     return (
       <View style={[styles.statusBadge, { backgroundColor: '#fee2e2' }]}>
         <Ionicons name="time-outline" size={12} color="#dc2626" style={{ marginRight: 3 }} />
-        <Text style={{ fontSize: 11, fontWeight: '700', color: '#dc2626' }}>Expired</Text>
+        <Text style={{ fontSize: 13, fontWeight: '700', color: '#dc2626' }}>Expired</Text>
       </View>
     );
   }
@@ -66,7 +66,7 @@ const MobileTimerCountdown = ({
   return (
     <View style={[styles.statusBadge, { backgroundColor: '#dcfce7' }]}>
       <Ionicons name="timer-outline" size={12} color="#16a34a" style={{ marginRight: 3 }} />
-      <Text style={{ fontSize: 11, fontWeight: '700', color: '#16a34a' }}>
+      <Text style={{ fontSize: 13, fontWeight: '700', color: '#16a34a' }}>
         Enabled ({timeString})
       </Text>
     </View>
@@ -114,6 +114,13 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
   // Image Preview Modal
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [previewAckData, setPreviewAckData] = useState<any | null>(null);
+
+  // Fee Approval & Recording Modal State
+  const [feeModalAck, setFeeModalAck] = useState<any | null>(null);
+  const [feeAmountInput, setFeeAmountInput] = useState<string>('');
+  const [feeTypeInput, setFeeTypeInput] = useState<string>('Tuition Fee');
+  const [feeRemarksInput, setFeeRemarksInput] = useState<string>('QR Scan Payment');
+  const [feeSubmitting, setFeeSubmitting] = useState<boolean>(false);
 
   // Batch Picker Modal
   const [batchModalVisible, setBatchModalVisible] = useState(false);
@@ -297,7 +304,12 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
   // Bulk Access Operations
   const handleBulkEnable = async (type: 'batch' | 'paid' | 'free' | 'requested') => {
     if (type === 'batch' && !selectedBatchId) {
-      return Alert.alert('Notice', 'Please select a batch first.');
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.alert('Please select a batch first.');
+      } else {
+        Alert.alert('Notice', 'Please select a batch first.');
+      }
+      return;
     }
 
     const messages = {
@@ -307,60 +319,88 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
       requested: 'Enable QR access for all students with pending requests?',
     };
 
-    Alert.alert('Bulk Access Confirmation', messages[type], [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Proceed',
-        onPress: async () => {
-          setBulkActionLoading(true);
-          try {
-            const res = await StudentApi.enableQrBulk({
-              type,
-              batchId: type === 'batch' ? selectedBatchId : undefined,
-            });
-            Alert.alert(
-              'Success',
-              `Access enabled for ${res.data?.data?.count || 0} students!`
-            );
-            fetchData();
-          } catch (err) {
-            console.error('[MobileQRCodePermissions] Bulk action failed', err);
-            Alert.alert('Error', 'Bulk action failed.');
-          } finally {
-            setBulkActionLoading(false);
-          }
-        },
-      },
-    ]);
+    const doBulkAction = async () => {
+      setBulkActionLoading(true);
+      try {
+        const res = await StudentApi.enableQrBulk({
+          type,
+          batchId: type === 'batch' ? selectedBatchId : undefined,
+        });
+        const msg = `Access enabled for ${res.data?.data?.count || 0} students!`;
+        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+          window.alert(msg);
+        } else {
+          Alert.alert('Success', msg);
+        }
+        fetchData();
+      } catch (err) {
+        console.error('[MobileQRCodePermissions] Bulk action failed', err);
+        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+          window.alert('Bulk action failed.');
+        } else {
+          Alert.alert('Error', 'Bulk action failed.');
+        }
+      } finally {
+        setBulkActionLoading(false);
+      }
+    };
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      if (window.confirm(messages[type])) {
+        doBulkAction();
+      }
+    } else {
+      Alert.alert('Bulk Access Confirmation', messages[type], [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Proceed', onPress: doBulkAction },
+      ]);
+    }
   };
 
   // Update Acknowledgement Status
   const handleUpdateAckStatus = async (id: string, status: 'approved' | 'rejected') => {
-    Alert.alert(
-      'Confirm Status Update',
-      `Are you sure you want to mark this transaction as ${status.toUpperCase()}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: status === 'approved' ? 'Approve' : 'Reject',
-          style: status === 'rejected' ? 'destructive' : 'default',
-          onPress: async () => {
-            setActionLoading(id);
-            try {
-              await StudentApi.updatePaymentAcknowledgementStatus(id, status);
-              Alert.alert('Success', `Transaction marked as ${status}!`);
-              fetchAcknowledgements();
-              fetchData();
-            } catch (err) {
-              console.error('[MobileQRCodePermissions] Failed to update ack status', err);
-              Alert.alert('Error', 'Failed to update transaction status.');
-            } finally {
-              setActionLoading(null);
-            }
+    const doUpdate = async () => {
+      setActionLoading(id);
+      try {
+        await StudentApi.updatePaymentAcknowledgementStatus(id, status);
+        const msg = `Transaction marked as ${status}!`;
+        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+          window.alert(msg);
+        } else {
+          Alert.alert('Success', msg);
+        }
+        fetchAcknowledgements();
+        fetchData();
+      } catch (err) {
+        console.error('[MobileQRCodePermissions] Failed to update ack status', err);
+        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+          window.alert('Failed to update transaction status.');
+        } else {
+          Alert.alert('Error', 'Failed to update transaction status.');
+        }
+      } finally {
+        setActionLoading(null);
+      }
+    };
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      if (window.confirm(`Are you sure you want to mark this transaction as ${status.toUpperCase()}?`)) {
+        doUpdate();
+      }
+    } else {
+      Alert.alert(
+        'Confirm Status Update',
+        `Are you sure you want to mark this transaction as ${status.toUpperCase()}?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: status === 'approved' ? 'Approve' : 'Reject',
+            style: status === 'rejected' ? 'destructive' : 'default',
+            onPress: doUpdate,
           },
-        },
-      ]
-    );
+        ]
+      );
+    }
   };
 
   // Request Counts
@@ -439,7 +479,7 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
           {
             backgroundColor: bgCard,
             borderColor,
-            padding: 16,
+            padding: 18,
           },
         ]}
       >
@@ -449,11 +489,11 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
               <View style={[styles.iconCircle, { backgroundColor: 'rgba(139,0,0,0.1)' }]}>
                 <Ionicons name="qr-code-outline" size={20} color="#8B0000" />
               </View>
-              <Text style={{ fontSize: 18, fontWeight: '800', color: textPrimary, letterSpacing: -0.3 }}>
+              <Text style={{ fontSize: 20, fontWeight: '800', color: textPrimary, letterSpacing: -0.3 }}>
                 QR Permissions
               </Text>
             </View>
-            <Text style={{ fontSize: 12, color: textSecondary, marginTop: 4 }}>
+            <Text style={{ fontSize: 14, color: textSecondary, marginTop: 4 }}>
               Payment QR code & student scan access.
             </Text>
           </View>
@@ -465,17 +505,17 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
               borderWidth: 1,
               borderColor: requestCount > 0 ? 'rgba(239,68,68,0.3)' : borderColor,
               borderRadius: 12,
-              paddingHorizontal: 12,
-              paddingVertical: 8,
+              paddingHorizontal: 14,
+              paddingVertical: 10,
               alignItems: 'center',
             }}
           >
-            <Text style={{ fontSize: 9, fontWeight: '700', color: textSecondary, textTransform: 'uppercase' }}>
+            <Text style={{ fontSize: 11, fontWeight: '700', color: textSecondary, textTransform: 'uppercase' }}>
               Requests
             </Text>
             <Text
               style={{
-                fontSize: 18,
+                fontSize: 20,
                 fontWeight: '900',
                 color: requestCount > 0 ? '#dc2626' : '#8B0000',
               }}
@@ -531,16 +571,16 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
           ) : (
             <TouchableOpacity
               onPress={handlePickImage}
-              style={{ alignItems: 'center', padding: 20 }}
+              style={{ alignItems: 'center', padding: 22 }}
               activeOpacity={0.7}
             >
               <View style={[styles.iconCircle, { backgroundColor: 'rgba(139,0,0,0.1)', marginBottom: 8 }]}>
                 <Ionicons name="cloud-upload-outline" size={24} color="#8B0000" />
               </View>
-              <Text style={{ fontSize: 13, fontWeight: '700', color: textPrimary }}>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: textPrimary }}>
                 Tap to choose QR Code image
               </Text>
-              <Text style={{ fontSize: 11, color: textSecondary, marginTop: 2 }}>PNG, JPG or SVG</Text>
+              <Text style={{ fontSize: 13, color: textSecondary, marginTop: 2 }}>PNG, JPG or SVG</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -581,7 +621,7 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
                 >
                   <Text
                     style={{
-                      fontSize: 12,
+                      fontSize: 14,
                       fontWeight: '700',
                       color: timerUnit === 'minutes' ? '#fff' : textSecondary,
                     }}
@@ -600,7 +640,7 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
                 >
                   <Text
                     style={{
-                      fontSize: 12,
+                      fontSize: 14,
                       fontWeight: '700',
                       color: timerUnit === 'hours' ? '#fff' : textSecondary,
                     }}
@@ -642,7 +682,7 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
           <View style={[styles.subCard, { backgroundColor: inputBg, borderColor }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
               <Ionicons name="people-outline" size={15} color="#8B0000" />
-              <Text style={{ fontSize: 13, fontWeight: '700', color: textPrimary }}>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: textPrimary }}>
                 Enable by Batch
               </Text>
             </View>
@@ -664,7 +704,7 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
             >
               <Text
                 style={{
-                  fontSize: 12,
+                  fontSize: 14,
                   fontWeight: '600',
                   color: selectedBatchId ? textPrimary : textSecondary,
                 }}
@@ -704,7 +744,7 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
           <View style={[styles.subCard, { backgroundColor: inputBg, borderColor }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
               <Ionicons name="flash-outline" size={15} color="#8B0000" />
-              <Text style={{ fontSize: 13, fontWeight: '700', color: textPrimary }}>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: textPrimary }}>
                 General Bulk Actions
               </Text>
             </View>
@@ -776,7 +816,7 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
             <Text style={[styles.cardTitle, { color: textPrimary }]}>
               Student Directory ({filteredStudents.length})
             </Text>
-            <Text style={{ fontSize: 11, color: textSecondary, marginTop: 1 }}>
+            <Text style={{ fontSize: 13, color: textSecondary, marginTop: 1 }}>
               Pending requests automatically sorted to top.
             </Text>
           </View>
@@ -832,7 +872,7 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
                 },
               ]}
             >
-              <Text style={{ fontSize: 11, fontWeight: '700', color: filterCourse === 'all' ? '#fff' : textSecondary }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: filterCourse === 'all' ? '#fff' : textSecondary }}>
                 All Courses
               </Text>
             </TouchableOpacity>
@@ -851,7 +891,7 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
                   },
                 ]}
               >
-                <Text style={{ fontSize: 11, fontWeight: '700', color: filterCourse === cName ? '#fff' : textSecondary }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: filterCourse === cName ? '#fff' : textSecondary }}>
                   {cName}
                 </Text>
               </TouchableOpacity>
@@ -876,7 +916,7 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
                 },
               ]}
             >
-              <Text style={{ fontSize: 11, fontWeight: '700', color: filterBatch === 'all' ? '#fff' : textSecondary }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: filterBatch === 'all' ? '#fff' : textSecondary }}>
                 All Batches
               </Text>
             </TouchableOpacity>
@@ -895,7 +935,7 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
                   },
                 ]}
               >
-                <Text style={{ fontSize: 11, fontWeight: '700', color: filterBatch === bName ? '#fff' : textSecondary }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: filterBatch === bName ? '#fff' : textSecondary }}>
                   {bName}
                 </Text>
               </TouchableOpacity>
@@ -906,14 +946,14 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
         {/* Student Cards List */}
         <View style={{ marginTop: 14, gap: 10 }}>
           {loading ? (
-            <View style={{ padding: 30, alignItems: 'center' }}>
+            <View style={{ padding: 32, alignItems: 'center' }}>
               <ActivityIndicator color="#8B0000" size="large" />
-              <Text style={{ color: textSecondary, fontSize: 12, marginTop: 8 }}>Loading students...</Text>
+              <Text style={{ color: textSecondary, fontSize: 14, marginTop: 8 }}>Loading students...</Text>
             </View>
           ) : paginatedStudents.length === 0 ? (
-            <View style={{ padding: 25, alignItems: 'center', backgroundColor: inputBg, borderRadius: 12 }}>
+            <View style={{ padding: 27, alignItems: 'center', backgroundColor: inputBg, borderRadius: 12 }}>
               <Ionicons name="people-outline" size={28} color={textSecondary} />
-              <Text style={{ color: textSecondary, fontSize: 13, marginTop: 6, fontWeight: '600' }}>
+              <Text style={{ color: textSecondary, fontSize: 15, marginTop: 6, fontWeight: '600' }}>
                 No students match your criteria.
               </Text>
             </View>
@@ -947,18 +987,18 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <View style={{ flex: 1, paddingRight: 6 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        <Text style={{ fontSize: 14, fontWeight: '800', color: textPrimary }}>
+                        <Text style={{ fontSize: 16, fontWeight: '800', color: textPrimary }}>
                           {studentName}
                         </Text>
                         {s.qrCodeRequested === true && (
                           <View style={[styles.statusBadge, { backgroundColor: '#fee2e2' }]}>
-                            <Text style={{ fontSize: 10, fontWeight: '800', color: '#dc2626' }}>
+                            <Text style={{ fontSize: 12, fontWeight: '800', color: '#dc2626' }}>
                               REQUESTED
                             </Text>
                           </View>
                         )}
                       </View>
-                      <Text style={{ fontSize: 11, color: textSecondary, marginTop: 2 }}>
+                      <Text style={{ fontSize: 13, color: textSecondary, marginTop: 2 }}>
                         Roll: <Text style={{ fontWeight: '600', color: textPrimary }}>{rollNumber}</Text>
                         {s.batch ? ` • ${s.batch}` : ''}
                         {s.course ? ` • ${s.course}` : ''}
@@ -976,7 +1016,7 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
                     >
                       <Text
                         style={{
-                          fontSize: 10,
+                          fontSize: 12,
                           fontWeight: '800',
                           color: isPaid ? '#b45309' : textSecondary,
                         }}
@@ -1002,7 +1042,7 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
                         />
                       ) : (
                         <View style={[styles.statusBadge, { backgroundColor: 'rgba(156,163,175,0.12)' }]}>
-                          <Text style={{ fontSize: 11, fontWeight: '600', color: textSecondary }}>
+                          <Text style={{ fontSize: 13, fontWeight: '600', color: textSecondary }}>
                             Disabled
                           </Text>
                         </View>
@@ -1025,7 +1065,7 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
                       >
                         <Text
                           style={{
-                            fontSize: 11,
+                            fontSize: 13,
                             fontWeight: '700',
                             color: isCurrentlyEnabled ? '#16a34a' : '#fff',
                           }}
@@ -1048,7 +1088,7 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
                       >
                         <Text
                           style={{
-                            fontSize: 11,
+                            fontSize: 13,
                             fontWeight: '700',
                             color: !isCurrentlyEnabled ? textSecondary : '#dc2626',
                           }}
@@ -1082,7 +1122,7 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
               <Text style={[styles.pageBtnText, { color: textPrimary }]}>Prev</Text>
             </TouchableOpacity>
 
-            <Text style={{ fontSize: 12, fontWeight: '700', color: textSecondary }}>
+            <Text style={{ fontSize: 14, fontWeight: '700', color: textSecondary }}>
               Page {safeQrPage} of {totalQrPages}
             </Text>
 
@@ -1112,7 +1152,7 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
             <Text style={[styles.cardTitle, { color: textPrimary }]}>
               Transaction Acknowledgement Queue
             </Text>
-            <Text style={{ fontSize: 11, color: textSecondary, marginTop: 1 }}>
+            <Text style={{ fontSize: 13, color: textSecondary, marginTop: 1 }}>
               Verify payment receipts and UTR numbers.
             </Text>
           </View>
@@ -1132,7 +1172,7 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
           >
             <Text
               style={{
-                fontSize: 12,
+                fontSize: 14,
                 fontWeight: '700',
                 color: ackFilter === 'pending' ? '#d97706' : textSecondary,
               }}
@@ -1141,7 +1181,7 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
             </Text>
             {pendingAckCount > 0 && (
               <View style={[styles.statusBadge, { backgroundColor: '#d97706', paddingHorizontal: 5, paddingVertical: 1 }]}>
-                <Text style={{ fontSize: 9, fontWeight: '900', color: '#fff' }}>{pendingAckCount}</Text>
+                <Text style={{ fontSize: 11, fontWeight: '900', color: '#fff' }}>{pendingAckCount}</Text>
               </View>
             )}
           </TouchableOpacity>
@@ -1158,7 +1198,7 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
           >
             <Text
               style={{
-                fontSize: 12,
+                fontSize: 14,
                 fontWeight: '700',
                 color: ackFilter === 'approved' ? '#16a34a' : textSecondary,
               }}
@@ -1179,7 +1219,7 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
           >
             <Text
               style={{
-                fontSize: 12,
+                fontSize: 14,
                 fontWeight: '700',
                 color: ackFilter === 'rejected' ? '#dc2626' : textSecondary,
               }}
@@ -1192,14 +1232,14 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
         {/* Transactions List */}
         <View style={{ marginTop: 14, gap: 10 }}>
           {ackLoading ? (
-            <View style={{ padding: 25, alignItems: 'center' }}>
+            <View style={{ padding: 27, alignItems: 'center' }}>
               <ActivityIndicator color="#8B0000" size="small" />
-              <Text style={{ color: textSecondary, fontSize: 12, marginTop: 6 }}>Loading receipts...</Text>
+              <Text style={{ color: textSecondary, fontSize: 14, marginTop: 6 }}>Loading receipts...</Text>
             </View>
           ) : acknowledgements.length === 0 ? (
-            <View style={{ padding: 25, alignItems: 'center', backgroundColor: inputBg, borderRadius: 12 }}>
+            <View style={{ padding: 27, alignItems: 'center', backgroundColor: inputBg, borderRadius: 12 }}>
               <Ionicons name="document-text-outline" size={28} color={textSecondary} />
-              <Text style={{ color: textSecondary, fontSize: 13, marginTop: 6, fontWeight: '600' }}>
+              <Text style={{ color: textSecondary, fontSize: 15, marginTop: 6, fontWeight: '600' }}>
                 No {ackFilter} transaction proofs found.
               </Text>
             </View>
@@ -1227,10 +1267,10 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
                 >
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <View style={{ flex: 1, paddingRight: 6 }}>
-                      <Text style={{ fontSize: 14, fontWeight: '800', color: textPrimary }}>
+                      <Text style={{ fontSize: 16, fontWeight: '800', color: textPrimary }}>
                         {ack.studentName || 'Student'}
                       </Text>
-                      <Text style={{ fontSize: 11, color: textSecondary, marginTop: 1 }}>
+                      <Text style={{ fontSize: 13, color: textSecondary, marginTop: 1 }}>
                         Roll: <Text style={{ fontWeight: '600', color: textPrimary }}>{ack.rollNumber || 'Unassigned'}</Text>
                         {' • '}
                         {submittedDate}
@@ -1253,7 +1293,7 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
                     >
                       <Text
                         style={{
-                          fontSize: 10,
+                          fontSize: 12,
                           fontWeight: '800',
                           color:
                             ack.status === 'approved'
@@ -1275,15 +1315,15 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
                       alignItems: 'center',
                       justifyContent: 'space-between',
                       backgroundColor: bgCard,
-                      padding: 8,
+                      padding: 10,
                       borderRadius: 8,
                       marginTop: 8,
                     }}
                   >
-                    <Text style={{ fontSize: 11, color: textSecondary, fontWeight: '600' }}>UTR / TXN ID:</Text>
+                    <Text style={{ fontSize: 13, color: textSecondary, fontWeight: '600' }}>UTR / TXN ID:</Text>
                     <Text
                       style={{
-                        fontSize: 12,
+                        fontSize: 14,
                         fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
                         fontWeight: '800',
                         color: '#8B0000',
@@ -1316,35 +1356,62 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
                           source={{ uri: ack.screenshotUrl }}
                           style={{ width: 34, height: 34, borderRadius: 6, backgroundColor: '#fff' }}
                         />
-                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#8B0000' }}>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: '#8B0000' }}>
                           View Receipt
                         </Text>
                       </TouchableOpacity>
                     ) : (
-                      <Text style={{ fontSize: 11, color: textSecondary, fontStyle: 'italic' }}>
+                      <Text style={{ fontSize: 13, color: textSecondary, fontStyle: 'italic' }}>
                         No Image Attached
                       </Text>
                     )}
 
-                    {/* Approve / Reject Buttons (if pending) */}
+                    {/* Approve & Record Fee / Reject Buttons (if pending) */}
                     {ack.status === 'pending' && (
-                      <View style={{ flexDirection: 'row', gap: 6 }}>
+                      <View style={{ gap: 8, marginTop: 10, width: '100%' }}>
                         <TouchableOpacity
-                          onPress={() => handleUpdateAckStatus(ack.id, 'approved')}
+                          onPress={() => {
+                            setFeeModalAck(ack);
+                            setFeeAmountInput(String(ack.amount || ''));
+                            setFeeTypeInput('Tuition Fee');
+                            setFeeRemarksInput(`QR Scan Payment (${ack.transactionId || 'UTR'})`);
+                          }}
                           disabled={actionLoading === ack.id}
-                          style={[styles.smallBtn, { backgroundColor: '#16a34a' }]}
+                          style={{
+                            backgroundColor: '#16a34a',
+                            borderRadius: 8,
+                            paddingVertical: 10,
+                            paddingHorizontal: 12,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 6,
+                            width: '100%'
+                          }}
                         >
-                          <Ionicons name="checkmark" size={13} color="#fff" />
-                          <Text style={styles.smallBtnText}>Approve</Text>
+                          <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
+                          <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>Approve & Record Fee</Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity
                           onPress={() => handleUpdateAckStatus(ack.id, 'rejected')}
                           disabled={actionLoading === ack.id}
-                          style={[styles.smallBtn, { backgroundColor: '#fee2e2', borderColor: '#fca5a5', borderWidth: 1 }]}
+                          style={{
+                            backgroundColor: '#fee2e2',
+                            borderColor: '#fca5a5',
+                            borderWidth: 1,
+                            borderRadius: 8,
+                            paddingVertical: 8,
+                            paddingHorizontal: 12,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 6,
+                            width: '100%'
+                          }}
                         >
-                          <Ionicons name="close" size={13} color="#dc2626" />
-                          <Text style={[styles.smallBtnText, { color: '#dc2626' }]}>Reject</Text>
+                          <Ionicons name="close-circle-outline" size={15} color="#dc2626" />
+                          <Text style={{ color: '#dc2626', fontSize: 13, fontWeight: '700' }}>Reject Request</Text>
                         </TouchableOpacity>
                       </View>
                     )}
@@ -1366,7 +1433,7 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
         <View style={styles.modalOverlay}>
           <View style={[styles.modalBox, { backgroundColor: bgCard, borderColor }]}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <Text style={{ fontSize: 15, fontWeight: '800', color: textPrimary }}>
+              <Text style={{ fontSize: 17, fontWeight: '800', color: textPrimary }}>
                 Select Target Batch
               </Text>
               <TouchableOpacity onPress={() => setBatchModalVisible(false)}>
@@ -1388,8 +1455,8 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
                       setBatchModalVisible(false);
                     }}
                     style={{
-                      paddingVertical: 12,
-                      paddingHorizontal: 10,
+                      paddingVertical: 14,
+                      paddingHorizontal: 12,
                       borderBottomWidth: 1,
                       borderBottomColor: borderColor,
                       backgroundColor: isSelected ? 'rgba(139,0,0,0.08)' : 'transparent',
@@ -1398,7 +1465,7 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
                       alignItems: 'center',
                     }}
                   >
-                    <Text style={{ fontSize: 13, fontWeight: isSelected ? '800' : '600', color: textPrimary }}>
+                    <Text style={{ fontSize: 15, fontWeight: isSelected ? '800' : '600', color: textPrimary }}>
                       {name}
                     </Text>
                     {isSelected && <Ionicons name="checkmark-circle" size={17} color="#8B0000" />}
@@ -1424,11 +1491,11 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
           <View style={[styles.modalBox, { backgroundColor: bgCard, borderColor, maxHeight: '88%' }]}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <View>
-                <Text style={{ fontSize: 15, fontWeight: '800', color: textPrimary }}>
+                <Text style={{ fontSize: 17, fontWeight: '800', color: textPrimary }}>
                   Receipt Proof Preview
                 </Text>
                 {previewAckData && (
-                  <Text style={{ fontSize: 11, color: textSecondary }}>
+                  <Text style={{ fontSize: 13, color: textSecondary }}>
                     {previewAckData.studentName} ({previewAckData.rollNumber || 'Unassigned'})
                   </Text>
                 )}
@@ -1444,7 +1511,7 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
             </View>
 
             {previewImage && (
-              <ScrollView contentContainerStyle={{ alignItems: 'center', paddingVertical: 10 }}>
+              <ScrollView contentContainerStyle={{ alignItems: 'center', paddingVertical: 12 }}>
                 <Image
                   source={{ uri: previewImage }}
                   style={{
@@ -1459,11 +1526,11 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
             )}
 
             {previewAckData && previewAckData.transactionId && (
-              <View style={{ padding: 10, backgroundColor: inputBg, borderRadius: 8, marginTop: 8 }}>
-                <Text style={{ fontSize: 11, color: textSecondary }}>UTR / Transaction ID:</Text>
+              <View style={{ padding: 12, backgroundColor: inputBg, borderRadius: 8, marginTop: 8 }}>
+                <Text style={{ fontSize: 13, color: textSecondary }}>UTR / Transaction ID:</Text>
                 <Text
                   style={{
-                    fontSize: 13,
+                    fontSize: 15,
                     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
                     fontWeight: '800',
                     color: '#8B0000',
@@ -1478,6 +1545,145 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
           </View>
         </View>
       </Modal>
+
+      {/* ─── Fee Approval & Recording Modal ───────────────────────── */}
+      <Modal
+        visible={!!feeModalAck}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setFeeModalAck(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, { backgroundColor: bgCard, borderColor, maxWidth: 440, width: '92%' }]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="cash" size={22} color="#16a34a" />
+                <Text style={{ fontSize: 17, fontWeight: '800', color: textPrimary }}>
+                  Approve & Record Fee
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setFeeModalAck(null)}>
+                <Ionicons name="close" size={20} color={textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {feeModalAck && (
+              <ScrollView style={{ maxHeight: 420 }}>
+                <View style={{ backgroundColor: inputBg, padding: 12, borderRadius: 10, borderWidth: 1, borderColor, marginBottom: 14 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: textPrimary }}>
+                    {feeModalAck.studentName}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: textSecondary, marginTop: 2 }}>
+                    Roll: {feeModalAck.rollNumber || 'Unassigned'} • UTR: {feeModalAck.transactionId || 'Not Provided'}
+                  </Text>
+                </View>
+
+                {feeModalAck.screenshotUrl ? (
+                  <View style={{ alignItems: 'center', marginBottom: 14 }}>
+                    <Image
+                      source={{ uri: feeModalAck.screenshotUrl }}
+                      style={{ width: '100%', height: 160, borderRadius: 8, backgroundColor: '#fff' }}
+                      resizeMode="contain"
+                    />
+                  </View>
+                ) : null}
+
+                <View style={{ gap: 12, marginBottom: 16 }}>
+                  <View>
+                    <Text style={[styles.label, { color: textSecondary }]}>Fee Payment Amount (₹) *</Text>
+                    <TextInput
+                      keyboardType="numeric"
+                      placeholder="e.g. 5000"
+                      placeholderTextColor={textSecondary}
+                      value={feeAmountInput}
+                      onChangeText={setFeeAmountInput}
+                      style={[styles.input, { backgroundColor: inputBg, borderColor, color: textPrimary }]}
+                    />
+                  </View>
+
+                  <View>
+                    <Text style={[styles.label, { color: textSecondary }]}>Payment Category / Type</Text>
+                    <TextInput
+                      placeholder="e.g. Tuition Fee, Exam Fee"
+                      placeholderTextColor={textSecondary}
+                      value={feeTypeInput}
+                      onChangeText={setFeeTypeInput}
+                      style={[styles.input, { backgroundColor: inputBg, borderColor, color: textPrimary }]}
+                    />
+                  </View>
+
+                  <View>
+                    <Text style={[styles.label, { color: textSecondary }]}>Remarks / Reference</Text>
+                    <TextInput
+                      placeholder="Remarks"
+                      placeholderTextColor={textSecondary}
+                      value={feeRemarksInput}
+                      onChangeText={setFeeRemarksInput}
+                      style={[styles.input, { backgroundColor: inputBg, borderColor, color: textPrimary }]}
+                    />
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  disabled={feeSubmitting}
+                  onPress={async () => {
+                    setFeeSubmitting(true);
+                    try {
+                      // 1. Update QR Payment Acknowledgement status to approved
+                      await StudentApi.updatePaymentAcknowledgementStatus(feeModalAck.id, 'approved');
+                      
+                      // 2. Record Fee Entry in Student Fee Management
+                      if (feeAmountInput && parseFloat(feeAmountInput) > 0) {
+                        try {
+                          await LmsAttendanceApi.recordFeePayment({
+                            studentId: feeModalAck.studentId || feeModalAck.id,
+                            amount: parseFloat(feeAmountInput),
+                            feeType: feeTypeInput || 'Tuition Fee',
+                            paymentMode: 'UPI_QR',
+                            remarks: feeRemarksInput || 'Paid via QR Scan'
+                          });
+                        } catch (feeErr) {
+                          console.log('[FeeRecord] Direct fee post note:', feeErr);
+                        }
+                      }
+
+                      const msg = 'Payment Approved & Fee Recorded Successfully!';
+                      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                        window.alert(msg);
+                      } else {
+                        Alert.alert('Success', msg);
+                      }
+
+                      setFeeModalAck(null);
+                      fetchAcknowledgements();
+                      fetchData();
+                    } catch (err: any) {
+                      const errM = err?.response?.data?.message || err?.message || 'Failed to approve payment.';
+                      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                        window.alert(errM);
+                      } else {
+                        Alert.alert('Error', errM);
+                      }
+                    } finally {
+                      setFeeSubmitting(false);
+                    }
+                  }}
+                  style={[styles.primaryBtn, { backgroundColor: '#16a34a', opacity: feeSubmitting ? 0.6 : 1 }]}
+                >
+                  {feeSubmitting ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <>
+                      <Ionicons name="checkmark-circle" size={16} color="#fff" />
+                      <Text style={styles.primaryBtnText}>Approve & Save Fee Entry</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 };
@@ -1486,7 +1692,7 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: 16,
     borderWidth: 1,
-    padding: 16,
+    padding: 18,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
@@ -1500,12 +1706,12 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   cardTitle: {
-    fontSize: 15,
+    fontSize: 17,
     fontWeight: '800',
     letterSpacing: -0.2,
   },
   subCard: {
-    padding: 12,
+    padding: 14,
     borderRadius: 12,
     borderWidth: 1,
   },
@@ -1520,13 +1726,13 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderStyle: 'dashed',
     borderRadius: 14,
-    padding: 14,
+    padding: 16,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 180,
   },
   label: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
@@ -1536,8 +1742,8 @@ const styles = StyleSheet.create({
     height: 42,
     borderWidth: 1,
     borderRadius: 10,
-    paddingHorizontal: 12,
-    fontSize: 13,
+    paddingHorizontal: 14,
+    fontSize: 15,
     fontWeight: '600',
   },
   primaryBtn: {
@@ -1550,7 +1756,7 @@ const styles = StyleSheet.create({
   },
   primaryBtnText: {
     color: '#fff',
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '800',
   },
   outlineBtn: {
@@ -1559,28 +1765,28 @@ const styles = StyleSheet.create({
     borderWidth: 1.2,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
   },
   outlineBtnText: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '700',
   },
   smallBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 8,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
   smallBtnText: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '700',
     color: '#fff',
   },
   actionBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
@@ -1591,30 +1797,30 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     gap: 8,
   },
   searchInput: {
     flex: 1,
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '600',
     padding: 0,
   },
   filterPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 16,
     borderWidth: 1,
   },
   studentCard: {
     borderRadius: 12,
     borderWidth: 1,
-    padding: 12,
+    padding: 14,
   },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 7,
+    paddingHorizontal: 9,
     paddingVertical: 3,
     borderRadius: 12,
   },
@@ -1631,13 +1837,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 8,
     borderWidth: 1,
   },
   pageBtnText: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '700',
   },
   tabBtn: {
@@ -1646,7 +1852,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     gap: 4,
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderRadius: 8,
     borderWidth: 1,
   },
@@ -1655,13 +1861,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 16,
+    padding: 18,
   },
   modalBox: {
     width: '100%',
     maxWidth: 440,
     borderRadius: 16,
     borderWidth: 1,
-    padding: 16,
+    padding: 18,
   },
 });

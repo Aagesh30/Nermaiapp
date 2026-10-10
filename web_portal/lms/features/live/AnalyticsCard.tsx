@@ -63,10 +63,10 @@ export const AnalyticsCard: React.FC = () => {
 
 const styles = StyleSheet.create({
   container: { backgroundColor: '#1E1E1E', borderRadius: 12, margin: 16 },
-  header: { padding: 16, borderBottomWidth: 1, borderBottomColor: '#333' },
-  title: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', padding: 8 },
-  box: { width: '50%', padding: 16, alignItems: 'center', justifyContent: 'center' },
-  val: { fontSize: 28, fontWeight: 'bold', color: '#FFF', marginTop: 8 },
-  lbl: { fontSize: 12, color: '#777', marginTop: 4, textTransform: 'uppercase' }
+  header: { padding: 18, borderBottomWidth: 1, borderBottomColor: '#333' },
+  title: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', padding: 10 },
+  box: { width: '50%', padding: 18, alignItems: 'center', justifyContent: 'center' },
+  val: { fontSize: 30, fontWeight: 'bold', color: '#FFF', marginTop: 8 },
+  lbl: { fontSize: 14, color: '#777', marginTop: 4, textTransform: 'uppercase' }
 });

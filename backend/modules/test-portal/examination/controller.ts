@@ -1141,25 +1141,38 @@ export class ExaminationController {
                         }
                     }
 
-                    let studentBatch = "";
+                    const studentBatches: string[] = [];
+                    let sDocData: any = null;
                     if (resolvedStudentDbId) {
                         const studentDoc = await db.collection("students").doc(resolvedStudentDbId).get();
-                        if (studentDoc.exists) {
-                            studentBatch = String(studentDoc.data()?.batch || "").trim().toLowerCase();
-                        }
+                        if (studentDoc.exists) sDocData = studentDoc.data();
                     } else {
                         const studentDoc = await db.collection("students").doc(studentId).get();
-                        if (studentDoc.exists && !studentDoc.data()?.isDeleted) {
-                            studentBatch = String(studentDoc.data()?.batch || "").trim().toLowerCase();
+                        if (studentDoc.exists && !studentDoc.data()?.isDeleted) sDocData = studentDoc.data();
+                    }
+                    if (sDocData) {
+                        if (sDocData.batch) studentBatches.push(String(sDocData.batch).trim().toLowerCase());
+                        if (sDocData.batchName) studentBatches.push(String(sDocData.batchName).trim().toLowerCase());
+                        if (Array.isArray(sDocData.batches)) {
+                            sDocData.batches.forEach((b: any) => {
+                                if (b) studentBatches.push(String(b).trim().toLowerCase());
+                            });
                         }
                     }
 
-                    const testBatch = String(test.targetBatch || "").trim().toLowerCase();
-                    if (testBatch && studentBatch && studentBatch !== testBatch) {
-                        return res.status(403).json({
-                            success: false,
-                            message: "This test is not available for your batch."
-                        });
+                    const allowedBatches = String(test.targetBatch || "")
+                        .split(",")
+                        .map(b => b.trim().toLowerCase())
+                        .filter(Boolean);
+
+                    if (allowedBatches.length > 0 && studentBatches.length > 0) {
+                        const hasAccess = studentBatches.some(sb => allowedBatches.includes(sb));
+                        if (!hasAccess) {
+                            return res.status(403).json({
+                                success: false,
+                                message: "This test is not available for your batch."
+                            });
+                        }
                     }
                 } catch (batchErr) {
                     console.log("[STUDY MODE] Batch check failed, allowing access:", batchErr);

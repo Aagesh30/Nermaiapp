@@ -165,8 +165,8 @@ export const ZoomWebViewTestScreen = () => {
       : `https://zoom.us/wc/join/${TEST_MEETING_ID}?pwd=${TEST_PASSWORD}`;
     console.log('[ZoomTest] ZOOM LINKING URL =', joinUrl);
     return (
-      <View style={[styles.root, { justifyContent: 'center', alignItems: 'center', padding: 32 }]}>
-        <Text style={{ fontSize: 48, marginBottom: 16 }}>🔗</Text>
+      <View style={[styles.root, { justifyContent: 'center', alignItems: 'center', padding: 34 }]}>
+        <Text style={{ fontSize: 50, marginBottom: 16 }}>🔗</Text>
         <Text style={styles.title}>Linking Strategy</Text>
         <Text style={styles.subtitle}>
           Opens Zoom in Safari / Zoom App{'\n'}(guaranteed to work on iOS)
@@ -267,44 +267,44 @@ export const ZoomWebViewTestScreen = () => {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#0f0f0f' },
-  scroll: { padding: 24, paddingBottom: 60 },
-  title: { fontSize: 26, fontWeight: '800', color: '#fff', marginBottom: 4 },
-  subtitle: { fontSize: 13, color: 'rgba(255,255,255,0.5)', marginBottom: 16, lineHeight: 20 },
+  scroll: { padding: 26, paddingBottom: 60 },
+  title: { fontSize: 28, fontWeight: '800', color: '#fff', marginBottom: 4 },
+  subtitle: { fontSize: 15, color: 'rgba(255,255,255,0.5)', marginBottom: 16, lineHeight: 20 },
   badge: {
     backgroundColor: 'rgba(59,130,246,0.15)',
-    borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8,
     alignSelf: 'flex-start', marginBottom: 24,
     borderWidth: 1, borderColor: 'rgba(59,130,246,0.3)',
   },
-  badgeText: { color: '#93c5fd', fontSize: 13, fontWeight: '600' },
+  badgeText: { color: '#93c5fd', fontSize: 15, fontWeight: '600' },
 
   section: {
     backgroundColor: '#1a1a1a',
-    borderRadius: 12, padding: 16, marginBottom: 16,
+    borderRadius: 12, padding: 18, marginBottom: 16,
     borderWidth: 1, borderColor: '#2a2a2a',
   },
-  sectionTitle: { color: '#fff', fontSize: 15, fontWeight: '700', marginBottom: 6 },
-  sectionDesc: { color: 'rgba(255,255,255,0.5)', fontSize: 13, lineHeight: 18, marginBottom: 12 },
+  sectionTitle: { color: '#fff', fontSize: 17, fontWeight: '700', marginBottom: 6 },
+  sectionDesc: { color: 'rgba(255,255,255,0.5)', fontSize: 15, lineHeight: 18, marginBottom: 12 },
 
-  btn: { paddingVertical: 14, borderRadius: 10, alignItems: 'center', marginTop: 6 },
-  btnSmall: { paddingVertical: 7, paddingHorizontal: 14, borderRadius: 8 },
-  btnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  btnTextSmall: { fontSize: 13 },
+  btn: { paddingVertical: 16, borderRadius: 10, alignItems: 'center', marginTop: 6 },
+  btnSmall: { paddingVertical: 9, paddingHorizontal: 16, borderRadius: 8 },
+  btnText: { color: '#fff', fontSize: 17, fontWeight: '700' },
+  btnTextSmall: { fontSize: 15 },
 
-  urlText: { color: 'rgba(255,255,255,0.4)', fontSize: 11, padding: 8, fontFamily: 'monospace', backgroundColor: '#1a1a1a' },
+  urlText: { color: 'rgba(255,255,255,0.4)', fontSize: 13, padding: 10, fontFamily: 'monospace', backgroundColor: '#1a1a1a' },
 
   logBox: {
-    backgroundColor: '#111', borderRadius: 8, padding: 12,
+    backgroundColor: '#111', borderRadius: 8, padding: 14,
     borderWidth: 1, borderColor: '#333', marginTop: 8,
   },
-  logTitle: { color: '#4ade80', fontSize: 12, fontWeight: '700', marginBottom: 6 },
-  logLine: { color: '#e5e5e5', fontSize: 11, fontFamily: 'monospace', marginBottom: 2 },
+  logTitle: { color: '#4ade80', fontSize: 14, fontWeight: '700', marginBottom: 6 },
+  logLine: { color: '#e5e5e5', fontSize: 13, fontFamily: 'monospace', marginBottom: 2 },
 
   /* WebView full-screen bar */
   bar: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    backgroundColor: '#1a1a1a', paddingHorizontal: 16, paddingVertical: 12,
+    backgroundColor: '#1a1a1a', paddingHorizontal: 18, paddingVertical: 14,
     borderBottomWidth: 1, borderBottomColor: '#333',
   },
-  barTitle: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  barTitle: { color: '#fff', fontSize: 17, fontWeight: '700' },
 });

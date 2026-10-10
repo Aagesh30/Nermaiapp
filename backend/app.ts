@@ -36,8 +36,8 @@ import cookieParser from "cookie-parser";
 //  No service-account.json or admin credentials required!
 // ─────────────────────────────────────────────────────────────────────────────
 
-const _FS_PROJECT  = process.env.FIREBASE_PROJECT_ID || "nermaiiasacademy-519c8";
-const _FS_API_KEY  = process.env.FIREBASE_API_KEY    || "";
+const _FS_PROJECT  = process.env.GCP_PROJECT_ID  || "nermaiiasacademy-519c8";
+const _FS_API_KEY  = process.env.GCP_API_KEY     || "";
 const _FS_BASE     = `https://firestore.googleapis.com/v1/projects/${_FS_PROJECT}/databases/(default)/documents`;
 const _FS_ROOT     = `projects/${_FS_PROJECT}/databases/(default)/documents`;
 const _TS_SENTINEL = "__SERVER_TIMESTAMP__";
@@ -427,63 +427,65 @@ class _RestFirestore {
 }
 
 
-// Smart Firebase/Admin SDK detection and initialization
+// ─── Firebase Admin SDK Initialization ──────────────────────────────────────
+// Priority order:
+//   1. Cloud Functions / Cloud Run environment: ADC auto-credentials (no args needed)
+//   2. Local dev with service-account.json file
+//   3. Local dev with named env vars (GCP_PROJECT_ID, GCP_CLIENT_EMAIL, GCP_PRIVATE_KEY)
+//
+// NOTE: Firebase bans env vars prefixed FIREBASE_ in Cloud Functions .env files.
+//       Use GCP_ prefix for local credential overrides instead.
 
-const serviceAccountPath = path.join(__dirname, "service-account.json");
-const hasServiceAccount = fs.existsSync(serviceAccountPath);
-const hasGoogleEnv = !!process.env.GOOGLE_APPLICATION_CREDENTIALS || !!process.env.K_SERVICE || !!process.env.FUNCTIONS_EMULATOR;
-const hasEnvCredentials = !!(process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PROJECT_ID);
+if (!admin.apps.length) {
+    const serviceAccountPath = path.join(__dirname, "service-account.json");
+    const infraServiceAccount = path.join(__dirname, "infrastructure/firebase/serviceAccountKey.json");
+    const chosenServiceAccount = fs.existsSync(serviceAccountPath) ? serviceAccountPath : (fs.existsSync(infraServiceAccount) ? infraServiceAccount : null);
+    const isCloudFunctions = !!(process.env.K_SERVICE || process.env.FUNCTION_TARGET || process.env.FUNCTIONS_EMULATOR || process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.FIREBASE_CONFIG || process.env.GCLOUD_PROJECT);
+    const hasServiceAccount = !!chosenServiceAccount;
+    const hasEnvCredentials = !!((process.env.GCP_PRIVATE_KEY || process.env.FIREBASE_PRIVATE_KEY) && (process.env.GCP_CLIENT_EMAIL || process.env.FIREBASE_CLIENT_EMAIL) && (process.env.GCP_PROJECT_ID || process.env.FIREBASE_PROJECT_ID));
 
-if (hasServiceAccount || hasGoogleEnv || hasEnvCredentials) {
-    if (!admin.apps.length) {
-        if (hasServiceAccount) {
-            admin.initializeApp({
-                credential: admin.credential.cert(serviceAccountPath),
-                databaseURL: process.env.FIREBASE_DATABASE_URL || "https://nermaiiasacademy-519c8-default-rtdb.firebaseio.com"
-            });
-            console.log("Firebase Admin SDK initialized using local service-account.json key.");
-        } else if (hasEnvCredentials) {
-            const privateKey = (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, '\n');
-            admin.initializeApp({
-                credential: admin.credential.cert({
-                    projectId: process.env.FIREBASE_PROJECT_ID,
-                    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-                    privateKey: privateKey,
-                }),
-                databaseURL: process.env.FIREBASE_DATABASE_URL || `https://${process.env.FIREBASE_PROJECT_ID}-default-rtdb.firebaseio.com`
-            });
-            console.log("Firebase Admin SDK initialized using environment variable credentials.");
-        } else {
-            admin.initializeApp({
-                projectId: process.env.FIREBASE_PROJECT_ID || "nermaiiasacademy-519c8",
-                databaseURL: process.env.FIREBASE_DATABASE_URL || "https://nermaiiasacademy-519c8-default-rtdb.firebaseio.com"
-            });
-            console.log("Firebase Admin SDK initialized using default environment configurations.");
-        }
+    if (isCloudFunctions) {
+        // On Cloud Functions or during CLI analysis, ADC provides credentials automatically — no args needed (0ms init time).
+        admin.initializeApp();
+        console.log("Firebase Admin SDK initialized with Cloud Functions ADC credentials.");
+    } else if (hasServiceAccount) {
+        admin.initializeApp({
+            credential: admin.credential.cert(chosenServiceAccount!),
+            databaseURL: process.env.FIREBASE_DATABASE_URL || `https://${_FS_PROJECT}-default-rtdb.firebaseio.com`
+        });
+        console.log("Firebase Admin SDK initialized using service account JSON.");
+    } else if (hasEnvCredentials) {
+        let privateKey = (process.env.GCP_PRIVATE_KEY || process.env.FIREBASE_PRIVATE_KEY || "").trim();
+        if (privateKey.startsWith('"') && privateKey.endsWith('"')) privateKey = privateKey.slice(1, -1);
+        privateKey = privateKey.replace(/\\n/g, '\n');
+        admin.initializeApp({
+            credential: admin.credential.cert({
+                projectId: (process.env.GCP_PROJECT_ID || process.env.FIREBASE_PROJECT_ID || _FS_PROJECT)!,
+                clientEmail: (process.env.GCP_CLIENT_EMAIL || process.env.FIREBASE_CLIENT_EMAIL)!,
+                privateKey,
+            }),
+            databaseURL: `https://${process.env.GCP_PROJECT_ID || process.env.FIREBASE_PROJECT_ID || _FS_PROJECT}-default-rtdb.firebaseio.com`
+        });
+        console.log("Firebase Admin SDK initialized using GCP env var credentials.");
+    } else {
+        // Fallback: REST-based Firestore client (local prototype / offline dev)
+        console.log("No credentials found — using REST Firestore client (read-only prototype mode).");
+        const restFirestoreInstance = new _RestFirestore();
+        const firestoreFunc = () => restFirestoreInstance;
+        (firestoreFunc as any).FieldValue = {
+            serverTimestamp: () => _TS_SENTINEL,
+            arrayUnion: (...items: any[]) => ({ __arrayUnion: items }),
+            arrayRemove: (...items: any[]) => ({ __arrayRemove: items }),
+            increment: (n: number) => ({ __increment: n })
+        };
+        (firestoreFunc as any).Timestamp = {
+            fromDate: (date: Date) => ({ toDate: () => date, toMillis: () => date.getTime(), toJSON: () => date.toISOString() }),
+            now: () => { const d = new Date(); return { toDate: () => d, toMillis: () => d.getTime(), toJSON: () => d.toISOString() }; }
+        };
+        Object.defineProperty(admin, "firestore", { value: firestoreFunc, configurable: true, writable: true });
+        Object.defineProperty(admin, "initializeApp", { value: () => ({} as any), configurable: true, writable: true });
+        Object.defineProperty(admin, "apps", { value: [{ name: "[DEFAULT]" }], configurable: true, writable: true });
     }
-} else {
-    console.log("==================================================================================");
-    console.log("✅ Connecting to ONLINE Firebase Firestore via REST API");
-    console.log(`   Project: ${_FS_PROJECT}`);
-    console.log("   Mode: Public API key (security rules open for prototype)");
-    console.log("==================================================================================");
-
-    // Patch firebase-admin to use the online REST-based Firestore client
-    const restFirestoreInstance = new _RestFirestore();
-    const firestoreFunc = () => restFirestoreInstance;
-    (firestoreFunc as any).FieldValue = {
-        serverTimestamp: () => _TS_SENTINEL,
-        arrayUnion: (...items: any[]) => ({ __arrayUnion: items }),
-        arrayRemove: (...items: any[]) => ({ __arrayRemove: items }),
-        increment: (n: number) => ({ __increment: n })
-    };
-    (firestoreFunc as any).Timestamp = {
-        fromDate: (date: Date) => ({ toDate: () => date, toMillis: () => date.getTime(), toJSON: () => date.toISOString() }),
-        now: () => { const d = new Date(); return { toDate: () => d, toMillis: () => d.getTime(), toJSON: () => d.toISOString() }; }
-    };
-    Object.defineProperty(admin, "firestore", { value: firestoreFunc, configurable: true, writable: true });
-    Object.defineProperty(admin, "initializeApp",  { value: () => ({} as any), configurable: true, writable: true });
-    Object.defineProperty(admin, "apps", { value: [{ name: "[DEFAULT]" }], configurable: true, writable: true });
 }
 
 

@@ -139,24 +139,38 @@ export async function uploadFileToGoogleDrive(options: {
         resData = await fetchRes?.json().catch(() => null);
       }
 
-      if (resData && (resData.success || resData.status === 'success') && resData.fileId) {
-        const fileId = resData.fileId;
-        console.log(`✅ [Drive] Apps Script upload SUCCESS: ${options.fileName} → fileId=${fileId}`);
-        return {
-          fileId,
-          name: resData.name || options.fileName,
-          previewUrl: resData.previewUrl || `https://drive.google.com/file/d/${fileId}/preview`,
-          webViewLink: resData.webViewLink || `https://drive.google.com/file/d/${fileId}/view`
-        };
-      } else {
-        console.error('❌ [Drive] Apps Script upload failed:', resData?.error || resData || 'Non-JSON/Empty response');
-        // Fall through to service-account path
+      if (resData) {
+        if (typeof resData === 'string') {
+          try {
+            resData = JSON.parse(resData);
+          } catch (e) {
+            console.error('❌ [Drive] Failed to parse string response from Apps Script:', resData);
+          }
+        }
+
+        const fileId = resData.fileId || resData.id || resData.data?.fileId || resData.data?.id;
+        const isSuccess = resData.success || resData.status === 'success' || Boolean(fileId);
+
+        if (isSuccess && fileId) {
+          const previewUrl = resData.previewUrl || resData.url || `https://drive.google.com/file/d/${fileId}/preview`;
+          const webViewLink = resData.webViewLink || resData.viewUrl || `https://drive.google.com/file/d/${fileId}/view`;
+          console.log(`✅ [Drive] Apps Script upload SUCCESS: ${options.fileName} → fileId=${fileId}`);
+          return {
+            fileId,
+            name: resData.name || options.fileName,
+            previewUrl,
+            webViewLink
+          };
+        } else {
+          console.error('❌ [Drive] Apps Script upload failed:', resData?.error || resData || 'Non-JSON/Empty response');
+          // Fall through to service-account path
+        }
       }
     }
 
     // ── Path 2: Service account Drive API (fallback, no sub-folder support) ──
-    const clientEmail = env.DRIVE_CLIENT_EMAIL || env.FIREBASE_CLIENT_EMAIL;
-    const rawKey = env.DRIVE_PRIVATE_KEY || env.FIREBASE_PRIVATE_KEY;
+    const clientEmail = env.DRIVE_CLIENT_EMAIL || env.GCP_CLIENT_EMAIL;
+    const rawKey = env.DRIVE_PRIVATE_KEY || env.GCP_PRIVATE_KEY;
     if (!clientEmail || !rawKey) {
       logger.warn('[Drive] Service account credentials not found in env.');
       return null;

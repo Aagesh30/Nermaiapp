@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { ResourceService } from './service';
+import { sendPushNotification } from '../../services/pushService';
 
 const service = new ResourceService();
 
@@ -25,6 +26,24 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
     }
 
     const data = await service.createResource(normalizedBody, req.file, userId, tenantId);
+
+    const targetBatchVal = Array.isArray(normalizedBody.targetBatchIds)
+      ? normalizedBody.targetBatchIds[0]
+      : (normalizedBody.targetBatchIds || normalizedBody.batchId || null);
+
+    // Dispatch background push notification to target batch or all students
+    sendPushNotification({
+      title: "📚 New Study Material Added",
+      body: `${normalizedBody.title || (data as any)?.title || 'New study resource'} is now available in your LMS library.`,
+      targetRole: "student",
+      targetBatch: targetBatchVal,
+      data: {
+        targetTab: "lms",
+        targetSub: "resources",
+        resourceId: (data as any)?.id || ""
+      }
+    }).catch(err => console.log("[Push] Resource creation push note:", err?.message));
+
     res.status(201).json({ success: true, data });
   } catch (error) {
     next(error);
@@ -43,7 +62,8 @@ export const list = async (req: Request, res: Response, next: NextFunction) => {
       search: req.query.search as string,
       tenantId: req.user!.tenantId
     };
-    const data = await service.listResources(filters);
+    const userContext = req.user ? { userId: req.user.userId, role: req.user.role, tenantId: req.user.tenantId } : undefined;
+    const data = await service.listResources(filters, userContext);
     res.json({ success: true, data });
   } catch (error) {
     next(error);
@@ -82,6 +102,19 @@ export const getAccess = async (req: Request, res: Response, next: NextFunction)
 export const streamContent = async (req: Request, res: Response, next: NextFunction) => {
   try {
     await service.streamResource(req.params.id as string, req, res);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const streamDriveContent = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    let driveId = req.params.driveId || (req.query.id as string) || '';
+    if (driveId.includes('/')) {
+      const match = driveId.match(/[-\w]{25,}/);
+      if (match) driveId = match[0];
+    }
+    await service.streamDriveFile(driveId, req, res);
   } catch (error) {
     next(error);
   }

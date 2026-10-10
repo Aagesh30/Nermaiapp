@@ -53,6 +53,14 @@ function rewriteFontPathsInDir(dir) {
 
 if (fs.existsSync(distDir)) {
   rewriteFontPathsInDir(distDir);
+  
+  // Copy PDF.js worker locally to dist root to guarantee zero cross-origin worker errors
+  const workerSrc = path.resolve(__dirname, '../node_modules/pdfjs-dist/build/pdf.worker.min.mjs');
+  const workerDest = path.resolve(distDir, 'pdf.worker.min.mjs');
+  if (fs.existsSync(workerSrc)) {
+    fs.copyFileSync(workerSrc, workerDest);
+    console.log('Successfully copied pdf.worker.min.mjs to dist');
+  }
 }
 
 console.log('--- Font processing completed ---');

@@ -326,8 +326,8 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
       <View style={{ gap: 16, width: '100%' }}>
         {/* Section Header */}
         <View style={{ marginBottom: 4 }}>
-          <Text style={{ fontSize: 20, fontWeight: 'bold', color: darkMode ? '#ffffff' : '#111827' }}>Pay Fees</Text>
-          <Text style={{ fontSize: 13, color: darkMode ? '#9ca3af' : '#6b7280', marginTop: 2 }}>
+          <Text style={{ fontSize: 22, fontWeight: 'bold', color: darkMode ? '#ffffff' : '#111827' }}>Pay Fees</Text>
+          <Text style={{ fontSize: 15, color: darkMode ? '#9ca3af' : '#6b7280', marginTop: 2 }}>
             View payment terms, scan QR codes, and pay your fees.
           </Text>
         </View>
@@ -340,7 +340,7 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
             <View style={{
               backgroundColor: darkMode ? '#1e1e1e' : '#ffffff',
               borderRadius: 12,
-              padding: 24,
+              padding: 26,
               borderWidth: 1,
               borderColor: darkMode ? '#333333' : '#e0e0e0',
               shadowColor: '#000',
@@ -370,42 +370,42 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
                         alignItems: 'center',
                         gap: 6,
                         backgroundColor: darkMode ? '#3a2e1a' : '#fff8e1',
-                        paddingHorizontal: 12,
-                        paddingVertical: 6,
+                        paddingHorizontal: 14,
+                        paddingVertical: 8,
                         borderRadius: 20,
                         borderWidth: 1,
                         borderColor: darkMode ? '#5a461a' : '#ffe082',
                       }}>
                         <Ionicons name="time-outline" size={16} color="#f57c00" />
-                        <Text style={{ color: '#f57c00', fontSize: 12, fontWeight: 'bold' }}>Request Pending Approval</Text>
+                        <Text style={{ color: '#f57c00', fontSize: 14, fontWeight: 'bold' }}>Request Pending Approval</Text>
                       </View>
-                      <Text style={{ fontSize: 18, fontWeight: 'bold', color: darkMode ? '#ffffff' : '#111111' }}>
+                      <Text style={{ fontSize: 20, fontWeight: 'bold', color: darkMode ? '#ffffff' : '#111111' }}>
                         Your request is sent!
                       </Text>
-                      <Text style={{ fontSize: 13, color: darkMode ? '#9ca3af' : '#666666', textAlign: 'center', lineHeight: 18 }}>
+                      <Text style={{ fontSize: 15, color: darkMode ? '#9ca3af' : '#666666', textAlign: 'center', lineHeight: 18 }}>
                         The administrator has been notified. They will respond in a short time. Please refresh this page or check back later.
                       </Text>
                       <TouchableOpacity
                         onPress={fetchQrStatus}
                         style={{
                           marginTop: 8,
-                          paddingHorizontal: 16,
-                          paddingVertical: 8,
+                          paddingHorizontal: 18,
+                          paddingVertical: 10,
                           borderRadius: 8,
                           borderWidth: 1,
                           borderColor: darkMode ? '#444' : '#d0d0d0',
                           backgroundColor: darkMode ? '#2a2a2a' : '#f5f5f5',
                         }}
                       >
-                        <Text style={{ fontSize: 12, fontWeight: 'bold', color: darkMode ? '#fff' : '#333' }}>Refresh Status</Text>
+                        <Text style={{ fontSize: 14, fontWeight: 'bold', color: darkMode ? '#fff' : '#333' }}>Refresh Status</Text>
                       </TouchableOpacity>
                     </View>
                   ) : (
                     <View style={{ alignItems: 'center', gap: 10 }}>
-                      <Text style={{ fontSize: 18, fontWeight: 'bold', color: darkMode ? '#ffffff' : '#111111' }}>
+                      <Text style={{ fontSize: 20, fontWeight: 'bold', color: darkMode ? '#ffffff' : '#111111' }}>
                         Scan QR Code for Payments
                       </Text>
-                      <Text style={{ fontSize: 13, color: darkMode ? '#9ca3af' : '#666666', textAlign: 'center', lineHeight: 18 }}>
+                      <Text style={{ fontSize: 15, color: darkMode ? '#9ca3af' : '#666666', textAlign: 'center', lineHeight: 18 }}>
                         To view the administration's fee payment QR code, please request access. The code will be valid for a limited time.
                       </Text>
                       <TouchableOpacity
@@ -417,8 +417,8 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
                           alignItems: 'center',
                           gap: 8,
                           backgroundColor: submitting ? '#e57373' : '#c62828',
-                          paddingHorizontal: 20,
-                          paddingVertical: 10,
+                          paddingHorizontal: 22,
+                          paddingVertical: 12,
                           borderRadius: 8,
                           opacity: submitting ? 0.8 : 1,
                         }}
@@ -426,12 +426,12 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
                         {submitting ? (
                           <>
                             <ActivityIndicator size="small" color="#ffffff" />
-                            <Text style={{ color: '#ffffff', fontSize: 13, fontWeight: 'bold' }}>Sending Request...</Text>
+                            <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: 'bold' }}>Sending Request...</Text>
                           </>
                         ) : (
                           <>
                             <Ionicons name="qr-code" size={18} color="#ffffff" />
-                            <Text style={{ color: '#ffffff', fontSize: 13, fontWeight: 'bold' }}>Request QR Code</Text>
+                            <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: 'bold' }}>Request QR Code</Text>
                           </>
                         )}
                       </TouchableOpacity>
@@ -447,14 +447,14 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
                     alignSelf: 'center',
                     gap: 6,
                     backgroundColor: darkMode ? '#1a3a1a' : '#e8f5e9',
-                    paddingHorizontal: 14,
-                    paddingVertical: 6,
+                    paddingHorizontal: 16,
+                    paddingVertical: 8,
                     borderRadius: 20,
                     borderWidth: 1,
                     borderColor: darkMode ? '#2e5e2e' : '#c8e6c9',
                   }}>
                     <Ionicons name="checkmark-circle" size={16} color="#2e7d32" />
-                    <Text style={{ color: '#2e7d32', fontSize: 12, fontWeight: 'bold' }}>Payment QR Code Active</Text>
+                    <Text style={{ color: '#2e7d32', fontSize: 14, fontWeight: 'bold' }}>Payment QR Code Active</Text>
                   </View>
 
                   {/* QR Image & Form Grid */}
@@ -465,12 +465,12 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
                         alignItems: 'center',
                         gap: 6,
                         backgroundColor: darkMode ? '#2a2a2a' : '#f5f5f5',
-                        paddingHorizontal: 12,
-                        paddingVertical: 6,
+                        paddingHorizontal: 14,
+                        paddingVertical: 8,
                         borderRadius: 8,
                       }}>
                         <Ionicons name="time-outline" size={16} color="#c62828" />
-                        <Text style={{ fontSize: 12, color: darkMode ? '#aaa' : '#666' }}>
+                        <Text style={{ fontSize: 14, color: darkMode ? '#aaa' : '#666' }}>
                           Expires in: <Text style={{ fontWeight: 'bold', color: '#c62828' }}>{formatTime(timeLeft)}</Text>
                         </Text>
                       </View>
@@ -483,7 +483,7 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
                       ) : (
                         <View style={{ width: 220, height: 220, borderRadius: 8, borderWidth: 1, borderColor: '#e0e0e0', alignItems: 'center', justify: 'center' }}>
                           <Ionicons name="alert-circle-outline" size={32} color="#c62828" />
-                          <Text style={{ fontSize: 12, color: '#9e9e9e', marginTop: 4 }}>No QR image uploaded.</Text>
+                          <Text style={{ fontSize: 14, color: '#9e9e9e', marginTop: 4 }}>No QR image uploaded.</Text>
                         </View>
                       )}
                     </View>
@@ -493,18 +493,18 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
                       flex: 1,
                       minWidth: 280,
                       backgroundColor: darkMode ? '#141414' : '#fafafa',
-                      padding: 16,
+                      padding: 18,
                       borderRadius: 10,
                       borderWidth: 1,
                       borderColor: darkMode ? '#333' : '#eee',
                       gap: 12,
                     }}>
-                      <Text style={{ fontSize: 14, fontWeight: 'bold', color: darkMode ? '#fff' : '#111' }}>
+                      <Text style={{ fontSize: 16, fontWeight: 'bold', color: darkMode ? '#fff' : '#111' }}>
                         Submit Transaction Proof
                       </Text>
 
                       <View style={{ gap: 4 }}>
-                        <Text style={{ fontSize: 11, fontWeight: 'bold', color: darkMode ? '#aaa' : '#666' }}>Transaction ID / UTR</Text>
+                        <Text style={{ fontSize: 13, fontWeight: 'bold', color: darkMode ? '#aaa' : '#666' }}>Transaction ID / UTR</Text>
                         <TextInput
                           placeholder="Enter 12-digit transaction ID"
                           placeholderTextColor={darkMode ? '#666' : '#999'}
@@ -515,22 +515,22 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
                             borderWidth: 1,
                             borderColor: darkMode ? '#444' : '#ccc',
                             borderRadius: 6,
-                            paddingHorizontal: 10,
-                            paddingVertical: 8,
-                            fontSize: 13,
+                            paddingHorizontal: 12,
+                            paddingVertical: 10,
+                            fontSize: 15,
                             color: darkMode ? '#fff' : '#000',
                           }}
                         />
                       </View>
 
                       <View style={{ gap: 4 }}>
-                        <Text style={{ fontSize: 11, fontWeight: 'bold', color: darkMode ? '#aaa' : '#666' }}>Upload Receipt Screenshot</Text>
+                        <Text style={{ fontSize: 13, fontWeight: 'bold', color: darkMode ? '#aaa' : '#666' }}>Upload Receipt Screenshot</Text>
                         <input
                           id="screenshot-upload"
                           type="file"
                           accept="image/*"
                           onChange={handleScreenshotChange}
-                          style={{ fontSize: 12, color: darkMode ? '#aaa' : '#666' }}
+                          style={{ fontSize: 14, color: darkMode ? '#aaa' : '#666' }}
                         />
                       </View>
 
@@ -539,14 +539,14 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
                         disabled={submittingPayment}
                         style={{
                           backgroundColor: '#c62828',
-                          paddingVertical: 10,
+                          paddingVertical: 12,
                           borderRadius: 8,
                           alignItems: 'center',
                           marginTop: 8,
                           opacity: submittingPayment ? 0.7 : 1,
                         }}
                       >
-                        <Text style={{ color: '#fff', fontSize: 13, fontWeight: 'bold' }}>
+                        <Text style={{ color: '#fff', fontSize: 15, fontWeight: 'bold' }}>
                           {submittingPayment ? 'Submitting...' : 'Submit Acknowledgement'}
                         </Text>
                       </TouchableOpacity>
@@ -558,7 +558,7 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
 
             {/* Acknowledgement History Section */}
             <View style={{ gap: 10 }}>
-              <Text style={{ fontSize: 15, fontWeight: 'bold', color: darkMode ? '#ffffff' : '#111827' }}>
+              <Text style={{ fontSize: 17, fontWeight: 'bold', color: darkMode ? '#ffffff' : '#111827' }}>
                 • Transaction Acknowledgement History
               </Text>
 
@@ -566,12 +566,12 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
                 <View style={{
                   backgroundColor: darkMode ? '#1e1e1e' : '#ffffff',
                   borderRadius: 12,
-                  padding: 20,
+                  padding: 22,
                   borderWidth: 1,
                   borderColor: darkMode ? '#333' : '#e0e0e0',
                   alignItems: 'center',
                 }}>
-                  <Text style={{ fontSize: 12, color: darkMode ? '#9e9e9e' : '#757575', textAlign: 'center' }}>
+                  <Text style={{ fontSize: 14, color: darkMode ? '#9e9e9e' : '#757575', textAlign: 'center' }}>
                     No payment submissions found. Once you submit transaction receipts, they will list here.
                   </Text>
                 </View>
@@ -581,7 +581,7 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
                     <View key={item.id || idx} style={{
                       backgroundColor: darkMode ? '#1e1e1e' : '#ffffff',
                       borderRadius: 10,
-                      padding: 14,
+                      padding: 16,
                       borderWidth: 1,
                       borderColor: darkMode ? '#333' : '#e0e0e0',
                       flexDirection: 'row',
@@ -589,21 +589,21 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
                       alignItems: 'center',
                     }}>
                       <View style={{ gap: 4 }}>
-                        <Text style={{ fontSize: 13, fontWeight: 'bold', color: darkMode ? '#fff' : '#111' }}>
+                        <Text style={{ fontSize: 15, fontWeight: 'bold', color: darkMode ? '#fff' : '#111' }}>
                           Submission #{paymentHistory.length - idx}
                         </Text>
-                        <Text style={{ fontSize: 11, color: darkMode ? '#aaa' : '#666' }}>
+                        <Text style={{ fontSize: 13, color: darkMode ? '#aaa' : '#666' }}>
                           UTR: {item.transactionId || 'Not Entered'} | {formatDate(item.submittedAt)}
                         </Text>
                       </View>
                       <View style={{
-                        paddingHorizontal: 10,
-                        paddingVertical: 4,
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
                         borderRadius: 12,
                         backgroundColor: item.status === 'approved' ? '#e8f5e9' : item.status === 'rejected' ? '#ffebee' : '#fff8e1',
                       }}>
                         <Text style={{
-                          fontSize: 11,
+                          fontSize: 13,
                           fontWeight: 'bold',
                           color: item.status === 'approved' ? '#2e7d32' : item.status === 'rejected' ? '#c62828' : '#f57c00',
                         }}>
@@ -744,7 +744,7 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
                     {screenshotUrl !== "" && (
                       <View style={styles.previewBox}>
                         <Image source={{ uri: screenshotUrl }} style={styles.previewImage} />
-                        <Text style={{ fontSize: 10, color: '#2e7d32', marginTop: 4 }}>Screenshot Attached Successfully</Text>
+                        <Text style={{ fontSize: 12, color: '#2e7d32', marginTop: 4 }}>Screenshot Attached Successfully</Text>
                       </View>
                     )}
 
@@ -858,17 +858,17 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
+    padding: 18,
     backgroundColor: '#0B0B14'
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: 'bold',
     color: '#fff',
     marginBottom: 4
   },
   headerSub: {
-    fontSize: 12,
+    fontSize: 14,
     color: '#aaa',
     marginBottom: 20
   },
@@ -880,7 +880,7 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: '#1b1b2a',
     borderRadius: 12,
-    padding: 20,
+    padding: 22,
     borderWidth: 1,
     borderColor: '#333',
     elevation: 3,
@@ -903,13 +903,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff3e0',
     borderColor: '#ffe0b2',
     borderWidth: 1,
-    paddingVertical: 4,
-    paddingHorizontal: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
     borderRadius: 15
   },
   pendingBadgeText: {
     color: '#e65100',
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: 'bold'
   },
   activeBadge: {
@@ -919,23 +919,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#e8f5e9',
     borderColor: '#c8e6c9',
     borderWidth: 1,
-    paddingVertical: 4,
-    paddingHorizontal: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
     borderRadius: 15
   },
   activeBadgeText: {
     color: '#2e7d32',
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: 'bold'
   },
   titleText: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#fff',
     textAlign: 'center'
   },
   bodyText: {
-    fontSize: 12,
+    fontSize: 14,
     color: '#aaa',
     textAlign: 'center',
     lineHeight: 18,
@@ -946,13 +946,13 @@ const styles = StyleSheet.create({
     borderColor: '#555',
     borderWidth: 1,
     borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
     marginTop: 5
   },
   refreshBtnText: {
     color: '#ccc',
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: 'bold'
   },
   requestBtn: {
@@ -961,13 +961,13 @@ const styles = StyleSheet.create({
     gap: 6,
     backgroundColor: '#c62828',
     borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 22,
     marginTop: 5
   },
   requestBtnText: {
     color: '#fff',
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: 'bold'
   },
   timerBox: {
@@ -979,13 +979,13 @@ const styles = StyleSheet.create({
     borderColor: '#444',
     borderWidth: 1,
     borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
     maxWidth: 200,
     alignSelf: 'center'
   },
   timerText: {
-    fontSize: 12,
+    fontSize: 14,
     color: '#ccc'
   },
   timerValue: {
@@ -994,7 +994,7 @@ const styles = StyleSheet.create({
   },
   qrContainer: {
     alignItems: 'center',
-    padding: 10,
+    padding: 12,
     backgroundColor: '#fff',
     borderRadius: 12,
     alignSelf: 'center',
@@ -1019,24 +1019,24 @@ const styles = StyleSheet.create({
   },
   placeholderText: {
     color: '#888',
-    fontSize: 12
+    fontSize: 14
   },
   formContainer: {
     backgroundColor: '#222235',
     borderRadius: 10,
-    padding: 15,
+    padding: 17,
     borderWidth: 1,
     borderColor: '#3a3a52',
     marginTop: 10
   },
   formTitle: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#fff',
     marginBottom: 12
   },
   inputLabel: {
-    fontSize: 11,
+    fontSize: 13,
     color: '#aaa',
     marginBottom: 4,
     fontWeight: 'bold'
@@ -1046,10 +1046,10 @@ const styles = StyleSheet.create({
     borderColor: '#444',
     borderWidth: 1,
     borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     color: '#fff',
-    fontSize: 13
+    fontSize: 15
   },
   filePicker: {
     flexDirection: 'row',
@@ -1059,16 +1059,16 @@ const styles = StyleSheet.create({
     borderColor: '#444',
     borderWidth: 1,
     borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 10
+    paddingHorizontal: 12,
+    paddingVertical: 12
   },
   filePickerText: {
     color: '#aaa',
-    fontSize: 12
+    fontSize: 14
   },
   previewBox: {
     alignItems: 'center',
-    padding: 8,
+    padding: 10,
     backgroundColor: '#152b1b',
     borderColor: '#2e7d32',
     borderWidth: 1,
@@ -1083,14 +1083,14 @@ const styles = StyleSheet.create({
   submitBtn: {
     backgroundColor: '#c62828',
     borderRadius: 6,
-    paddingVertical: 12,
+    paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 5
   },
   submitBtnText: {
     color: '#fff',
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: 'bold'
   },
   smallCircle: {
@@ -1100,21 +1100,21 @@ const styles = StyleSheet.create({
     backgroundColor: '#c62828'
   },
   sectionHeader: {
-    fontSize: 15,
+    fontSize: 17,
     fontWeight: 'bold',
     color: '#fff'
   },
   emptyCard: {
     backgroundColor: '#1b1b2a',
     borderRadius: 10,
-    padding: 20,
+    padding: 22,
     borderWidth: 1,
     borderColor: '#333',
     alignItems: 'center'
   },
   emptyText: {
     color: '#888',
-    fontSize: 12,
+    fontSize: 14,
     textAlign: 'center',
     lineHeight: 18
   },
@@ -1123,12 +1123,12 @@ const styles = StyleSheet.create({
     borderColor: '#333',
     borderWidth: 1,
     borderRadius: 10,
-    padding: 15,
+    padding: 17,
     width: 260,
     gap: 6
   },
   historyCardTitle: {
-    fontSize: 11,
+    fontSize: 13,
     color: '#888',
     fontWeight: 'bold'
   },
@@ -1137,39 +1137,39 @@ const styles = StyleSheet.create({
     borderColor: '#ffe0b2',
     borderWidth: 1,
     borderRadius: 10,
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     paddingVertical: 2
   },
   statusBadgeText: {
     color: '#e65100',
-    fontSize: 9,
+    fontSize: 11,
     fontWeight: 'bold'
   },
   historyCardRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    fontSize: 12
+    fontSize: 14
   },
   historyLabel: {
     color: '#aaa',
-    fontSize: 12
+    fontSize: 14
   },
   historyValue: {
     color: '#fff',
     fontWeight: 'bold',
-    fontSize: 12
+    fontSize: 14
   },
   viewReceiptBtn: {
     backgroundColor: '#2a2a3e',
     borderColor: '#444',
     borderWidth: 1,
     borderRadius: 6,
-    paddingVertical: 6,
+    paddingVertical: 8,
     alignItems: 'center'
   },
   viewReceiptBtnText: {
     color: '#ccc',
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: 'bold'
   },
   expandedReceiptImage: {
@@ -1185,47 +1185,47 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20
+    padding: 22
   },
   modalBox: {
     width: '100%',
     backgroundColor: '#1e1e1e',
     borderRadius: 12,
-    padding: 20,
+    padding: 22,
     borderWidth: 1,
     borderColor: '#333'
   },
   modalTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#fff',
     marginBottom: 8
   },
   modalBody: {
-    fontSize: 12,
+    fontSize: 14,
     color: '#aaa',
     lineHeight: 18
   },
   modalCancelBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
     borderRadius: 6,
     backgroundColor: '#2a2a2a'
   },
   modalCancelBtnText: {
     color: '#ccc',
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: 'bold'
   },
   modalConfirmBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
     borderRadius: 6,
     backgroundColor: '#c62828'
   },
   modalConfirmBtnText: {
     color: '#fff',
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: 'bold'
   }
 });

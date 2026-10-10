@@ -36,13 +36,80 @@ import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as ScreenCapture from "expo-screen-capture";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Notifications from "expo-notifications";
+import * as Sharing from "expo-sharing";
+import * as Print from "expo-print";
+import * as XLSX from "xlsx";
 
 // Configure your Host IP address for local network connections
 const DEFAULT_HOST_IP = "192.168.0.120";
 // Timeout in ms for all API calls — 20s gives plenty of room on mobile Wi-Fi / LAN
 const API_TIMEOUT_MS = 20000;
+
+// Performance Status Helper for Results / Leaderboard
+const getDirectImageUrl = (url: string): string => {
+  if (!url || typeof url !== "string") return "";
+  const trimmed = url.trim();
+  if (trimmed.startsWith("data:image")) return trimmed;
+  const match = trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/) || trimmed.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (match && match[1]) {
+    return `https://lh3.googleusercontent.com/d/${match[1]}`;
+  }
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return trimmed;
+  }
+  return "";
+};
+
+const getCampaignPosterUri = (cp: any): string => {
+  if (!cp) return "";
+  const url = (typeof cp === "string" ? cp : cp.posterUrl) || "";
+  const base64 = (typeof cp === "object" ? cp.posterBase64 : "") || "";
+
+  if (url && (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:image"))) {
+    return getDirectImageUrl(url);
+  }
+  if (base64) {
+    if (base64.startsWith("data:image")) return base64;
+    if (base64.length > 50) return `data:image/jpeg;base64,${base64}`;
+  }
+  if (url) {
+    return getDirectImageUrl(url);
+  }
+  return "";
+};
+
+const getPerformanceStatus = (obtained: number, total: number, percentage: number) => {
+  const isPass = percentage >= 35 || (total > 0 && obtained >= total * 0.35);
+  return {
+    label: isPass ? "PASSED" : "FAILED",
+    color: isPass ? "#2e7d32" : "#c62828",
+    bgColor: isPass ? "#e8f5e9" : "#ffebee",
+    borderColor: isPass ? "#c8e6c9" : "#ffcdd2"
+  };
+};
+
+// Cross-platform PDF Export helper (Native expo-print on Android/iOS, print window on Web)
+const downloadPdfDocument = async (html: string, fileName: string = "document.pdf") => {
+  try {
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined" && window.document) {
+        const printWindow = window.open("", "_blank");
+        if (printWindow) {
+          printWindow.document.write(html);
+          printWindow.document.close();
+          printWindow.focus();
+          printWindow.print();
+        }
+      }
+    } else {
+      await Print.printAsync({ html });
+    }
+  } catch (e: any) {
+    console.log("PDF export failed:", e);
+    Alert.alert("Export Error", e?.message || "Could not generate PDF document.");
+  }
+};
 
 // Safe cross-platform local storage helper for Guest Demo sessions
 const guestStorage = {
@@ -284,7 +351,9 @@ export default function App() {
       }
     } catch (_) { }
     return () => {
-      try { ScreenCapture.allowScreenCaptureAsync().catch(() => { }); } catch (_) { }
+      if (isStaffOrAdmin) {
+        try { ScreenCapture.allowScreenCaptureAsync().catch(() => { }); } catch (_) { }
+      }
     };
   }, [user]);
 
@@ -316,6 +385,16 @@ export default function App() {
 
 
   const [erpSub, setErpSub] = useState("students");
+  // Offline Attendance state
+  const [offlineAttendanceBatch, setOfflineAttendanceBatch] = useState<string | null>(null);
+  const [offlineAttendanceDate, setOfflineAttendanceDate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [offlineAttendanceMarks, setOfflineAttendanceMarks] = useState<Record<string, "present" | "absent" | null>>({});
+  const [offlineAttendanceSaving, setOfflineAttendanceSaving] = useState<Record<string, boolean>>({});
+  const [offlineAttendanceViewMode, setOfflineAttendanceViewMode] = useState<"daily" | "monthly">("daily");
+  const [offlineAttendanceMonth, setOfflineAttendanceMonth] = useState<string>(() => new Date().toISOString().slice(0, 7)); // "YYYY-MM"
+  const [offlineAttendanceMonthlyBatch, setOfflineAttendanceMonthlyBatch] = useState<string>("");
+  const [selectedMonthlyCalendarStudent, setSelectedMonthlyCalendarStudent] = useState<any | null>(null);
+  const [offlineAttendanceCellSaving, setOfflineAttendanceCellSaving] = useState<Record<string, boolean>>({});
   const [lmsSub, setLmsSub] = useState("quiz");
   const [crmSub, setCrmSub] = useState("leads");
   const [darkMode, setDarkMode] = useState(false);
@@ -363,6 +442,26 @@ export default function App() {
       if (userObj.phone && String(userObj.phone).trim() !== "" && s.phone && String(s.phone).trim() === String(userObj.phone).trim()) return true;
       return false;
     }) || null;
+  };
+
+  // Evaluate whether student is restricted/blocked from academy portal services
+  const isStudentFeeBlocked = (s: any) => {
+    if (!s) return false;
+    const tot = Number(s.totalFees) || 0;
+    const paid = Number(s.feesPaid) || 0;
+    const isPending = (tot - paid) > 0;
+
+    // 1. Manual hold by Super Admin
+    if (s.feeBlocked === true) return true;
+
+    // 2. Automatic deadline overdue hold
+    if (s.feeAlertActive && s.feeAlertDueDate && isPending) {
+      const today = new Date().toISOString().slice(0, 10);
+      if (today > s.feeAlertDueDate) {
+        return true;
+      }
+    }
+    return false;
   };
   const cleanPhone = (val: string) => {
     let cleaned = String(val || "").replace(/\D/g, "");
@@ -478,7 +577,11 @@ export default function App() {
   const [crmSidebarCollapsed, setCrmSidebarCollapsed] = useState(true);
   const [testTabsCollapsed, setTestTabsCollapsed] = useState(true);
   const changeErpSub = (sub: string) => {
-    setErpSub(sub);
+    let targetSub = sub;
+    if (targetSub === "marks") {
+      targetSub = user?.role === "student" ? "my-profile" : "students";
+    }
+    setErpSub(targetSub);
     setErpSidebarCollapsed(true);
   };
   const changeLmsSub = (sub: string) => {
@@ -492,6 +595,9 @@ export default function App() {
   const [testSub, setTestSub] = useState("available");
   const [expandedTestId, setExpandedTestId] = useState<string | null>(null);
   const [selectedMonitorTestId, setSelectedMonitorTestId] = useState<string | null>(null);
+  const [monitorActiveTab, setMonitorActiveTab] = useState<"leaderboard" | "absent">("leaderboard");
+  const [monitorBatchFilter, setMonitorBatchFilter] = useState<string>("all");
+  const [monitorAbsentSearch, setMonitorAbsentSearch] = useState<string>("");
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const [reviewData, setReviewData] = useState<any | null>(null);
   const [reviewMode, setReviewMode] = useState(false);
@@ -507,8 +613,10 @@ export default function App() {
   const [admissionDateFilter, setAdmissionDateFilter] = useState("");
   const [resultsKeyword, setResultsKeyword] = useState("");
   const [resultsDateFilter, setResultsDateFilter] = useState("");
+  const [resultsCategoryFilter, setResultsCategoryFilter] = useState("");
   const [resultsLoading, setResultsLoading] = useState(false);
   const [allTestResults, setAllTestResults] = useState<any[]>([]);
+  const [downloadingTestId, setDownloadingTestId] = useState<string | null>(null);
   const [currentQIdx, setCurrentQIdx] = useState(0);
   const [liveCount, setLiveCount] = useState<any | null>(null);
   const [guestEmailGateVisible, setGuestEmailGateVisible] = useState(false);
@@ -748,6 +856,51 @@ export default function App() {
   const [newLead, setNewLead] = useState({ name: "", phone: "", source: "Website", notes: "" });
   const [newFeedback, setNewFeedback] = useState({ name: "", batch: "", rating: "5", comments: "" });
 
+  // Dashboard Quick Inquiry Form State & Options (APK)
+  const DASH_NATURE_OPTIONS = [
+    { val: 'phone', label: 'Phone', bg: '#dcfce7', color: '#15803d', activeBg: '#16a34a' },
+    { val: 'visit', label: 'Visit', bg: '#fee2e2', color: '#b91c1c', activeBg: '#dc2626' },
+    { val: 'whatsapp', label: 'WhatsApp', bg: '#d1fae5', color: '#047857', activeBg: '#25D366' },
+    { val: 'Telegram', label: 'Telegram', bg: '#bae6fd', color: '#0369a1', activeBg: '#0284c7' },
+    { val: 'W35', label: 'W35', bg: '#e0e7ff', color: '#1e3a8a', activeBg: '#1e3a8a' },
+    { val: 'FB', label: 'FB', bg: '#ede9fe', color: '#6d28d9', activeBg: '#1877f2' },
+    { val: 'Instagram', label: 'Instagram', bg: '#fef3c7', color: '#b45309', activeBg: '#e1306c' },
+    { val: 'portal', label: 'Portal', bg: '#f1f5f9', color: '#475569', activeBg: '#475569' }
+  ];
+  const DASH_COURSE_OPTIONS = [
+    'LDC', 'UDC', 'VAO', 'SSC', 'PC', 'SI', 'Banking', 'RRB',
+    'Puducherry Govt Exams', 'TNPSC 1 & 2', 'TNPSC 4', 'UPSC', 'Others'
+  ];
+  const DASH_MODE_OPTIONS = ['Offline', 'Online', 'Hybrid', 'Recorded'];
+
+  const [showDashboardInquiryModal, setShowDashboardInquiryModal] = useState(false);
+  const [dashInquiryName, setDashInquiryName] = useState("");
+  const [dashInquiryPhone, setDashInquiryPhone] = useState("");
+  const [dashInquiryEmail, setDashInquiryEmail] = useState("");
+  const [dashInquiryCourse, setDashInquiryCourse] = useState("");
+  const [dashInquiryIsCustomCourse, setDashInquiryIsCustomCourse] = useState(false);
+  const [dashInquiryNature, setDashInquiryNature] = useState("phone");
+  const [dashInquiryMode, setDashInquiryMode] = useState("Offline");
+  const [dashInquiryAtten, setDashInquiryAtten] = useState("Admin Staff");
+  const [dashInquiryIsCustomAtten, setDashInquiryIsCustomAtten] = useState(false);
+  const [dashInquiryStaffList, setDashInquiryStaffList] = useState<string[]>(() => {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const saved = localStorage.getItem('crm_atten_staff_list');
+        const removed = localStorage.getItem('crm_atten_removed_staff_list');
+        const parsedStaff = saved ? JSON.parse(saved) : null;
+        const parsedRemoved = removed ? JSON.parse(removed) : [];
+        if (Array.isArray(parsedStaff) && parsedStaff.length > 0) {
+          return parsedStaff.filter((s: string) => !parsedRemoved.includes(s));
+        }
+      }
+    } catch (e) {}
+    return ['Admin Staff', 'Reception', 'Counselor 1', 'Counselor 2', 'Faculty Team', 'Academic Coordinator'];
+  });
+  const [dashInquiryReference, setDashInquiryReference] = useState("");
+  const [dashInquiryRemarks, setDashInquiryRemarks] = useState("");
+  const [submittingDashInquiry, setSubmittingDashInquiry] = useState(false);
+
   // Campaign creation form state
   const [newCampaign, setNewCampaign] = useState({
     title: "",
@@ -935,7 +1088,7 @@ export default function App() {
                   <View style={{ flex: 1, gap: 4 }}>
                     <Text style={{ fontSize: 10, color: "#757575", fontWeight: "bold" }}>CANDIDATE DETAILS</Text>
                     <Text style={{ fontSize: 14, fontWeight: "bold", color: "#212121" }}>{getStudentName(student)}</Text>
-                    <Text style={{ fontSize: 11, color: "#424242" }}><Text style={{ fontWeight: "bold" }}>Roll No:</Text> {student.rollNumber}</Text>
+                    <Text style={{ fontSize: 11, color: "#424242" }}><Text style={{ fontWeight: "bold" }}>Roll No:</Text> {student.mockRollNumber || student.rollNumber || "—"}</Text>
                     <Text style={{ fontSize: 11, color: "#424242" }}><Text style={{ fontWeight: "bold" }}>Course:</Text> {student.course}</Text>
                     <Text style={{ fontSize: 11, color: "#424242" }}><Text style={{ fontWeight: "bold" }}>Batch:</Text> {student.batch || "General"}</Text>
                   </View>
@@ -1091,23 +1244,6 @@ export default function App() {
     );
   };
 
-  // ERP Marks & Analytics State
-  const [selectedErpTestId, setSelectedErpTestId] = useState<string>("");
-  const [erpTestResults, setErpTestResults] = useState<any[]>([]);
-
-  const loadErpTestResults = async (testId: string) => {
-    if (!testId) {
-      setErpTestResults([]);
-      return;
-    }
-    try {
-      const res = await api.get(`/test-portal/evaluation/test/${testId}`);
-      setErpTestResults(res || []);
-    } catch (e) {
-      console.log("Failed loading test results for ERP:", e);
-      setErpTestResults([]);
-    }
-  };
 
   // Guard ref — prevents duplicate loads when component re-renders
   // without user or hostIp actually changing
@@ -1577,9 +1713,39 @@ export default function App() {
           if (t.targetAudience === "all" || !t.targetAudience) return true;
           if (t.targetAudience === "paid") return true;
           if (t.targetAudience === "batch") {
-            const tBatch = String(t.targetBatch || "").trim().toLowerCase();
-            const sBatch = String(studentBatchName).trim().toLowerCase();
-            return tBatch !== "" && sBatch !== "" && tBatch === sBatch;
+            const allowedBatches = String(t.targetBatch || "")
+              .split(",")
+              .map((b: string) => b.trim().toLowerCase())
+              .filter(Boolean);
+            if (allowedBatches.length === 0) return false;
+
+            const studentBatches: string[] = [];
+            if (myStudent?.batch) studentBatches.push(String(myStudent.batch).trim().toLowerCase());
+            if (myStudent?.batchName) studentBatches.push(String(myStudent.batchName).trim().toLowerCase());
+            if (user?.batch) studentBatches.push(String(user.batch).trim().toLowerCase());
+            if (user?.batchName) studentBatches.push(String(user.batchName).trim().toLowerCase());
+            const arrBatches = myStudent?.batches || user?.batches;
+            if (Array.isArray(arrBatches)) {
+              arrBatches.forEach((b: any) => {
+                if (b) studentBatches.push(String(b).trim().toLowerCase());
+              });
+            }
+
+            return studentBatches.some((sB: string) => allowedBatches.includes(sB));
+          }
+          if (t.targetAudience === "special_mock" || t.isSpecialMock || t.testType === "special_mock") {
+            const smAllowed = String(t.targetBatch || "").split(",").map((b: string) => b.trim().toLowerCase()).filter(Boolean);
+            const smBatches: string[] = [];
+            if (myStudent?.batch) smBatches.push(String(myStudent.batch).trim().toLowerCase());
+            if (myStudent?.batchName) smBatches.push(String(myStudent.batchName).trim().toLowerCase());
+            if (user?.batch) smBatches.push(String(user.batch).trim().toLowerCase());
+            if (user?.batchName) smBatches.push(String(user.batchName).trim().toLowerCase());
+            const smArr = myStudent?.batches || user?.batches;
+            if (Array.isArray(smArr)) { smArr.forEach((b: any) => { if (b) smBatches.push(String(b).trim().toLowerCase()); }); }
+            if (smAllowed.length === 0 || smBatches.some((sB: string) => smAllowed.includes(sB))) return true;
+            const smId = String(myStudent?.id || user?.userId || user?.username || "").toLowerCase();
+            if (smId && t.mockConfig?.mockRollNumbers?.[smId]) return true;
+            return false;
           }
           return false;
         });
@@ -2667,6 +2833,57 @@ export default function App() {
     }
   };
 
+  const resetDashboardInquiryForm = () => {
+    setDashInquiryName("");
+    setDashInquiryPhone("");
+    setDashInquiryEmail("");
+    setDashInquiryCourse("");
+    setDashInquiryIsCustomCourse(false);
+    setDashInquiryNature("phone");
+    setDashInquiryMode("Offline");
+    setDashInquiryAtten("Admin Staff");
+    setDashInquiryIsCustomAtten(false);
+    setDashInquiryReference("");
+    setDashInquiryRemarks("");
+    setShowDashboardInquiryModal(false);
+  };
+
+  const submitDashboardInquiry = async () => {
+    if (!dashInquiryName.trim() || !dashInquiryPhone.trim()) {
+      Alert.alert("Required Fields", "Please enter candidate name and phone number.");
+      return;
+    }
+    setSubmittingDashInquiry(true);
+    try {
+      const payload = {
+        name: dashInquiryName.trim(),
+        phone: dashInquiryPhone.trim(),
+        email: dashInquiryEmail.trim(),
+        course: dashInquiryCourse.trim(),
+        preferredCourse: dashInquiryCourse.trim(),
+        natureOfEnquiry: dashInquiryNature || "phone",
+        mode: dashInquiryMode || "Offline",
+        preferredMode: dashInquiryMode || "Offline",
+        atten: dashInquiryAtten.trim() || user?.name || "Admin Staff",
+        reference: dashInquiryReference.trim(),
+        notes: dashInquiryRemarks.trim(),
+        remarks1: dashInquiryRemarks.trim(),
+        status: "pending",
+        joinStatus: "new",
+        createdBy: user?.name || "Admin"
+      };
+
+      await api.post("/crm/admission", payload);
+      Alert.alert("Success", "New candidate inquiry recorded successfully!");
+      resetDashboardInquiryForm();
+      loadAdmissions();
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "Failed to save inquiry.");
+    } finally {
+      setSubmittingDashInquiry(false);
+    }
+  };
+
   const saveLead = async () => {
     try {
       await api.post("/crm/leads", { ...newLead });
@@ -2838,7 +3055,8 @@ export default function App() {
       // Clear answers state for the next quiz
       setQuizAnswers({});
 
-      // Reload quizzes list in the background
+      // Reload today's quiz & all quizzes in the background
+      await loadTodayQuiz();
       await loadAllQuizzes();
     } catch (e: any) {
       Alert.alert("Submission Error", e.message || "Failed to submit answers.");
@@ -2913,6 +3131,15 @@ export default function App() {
 
   const monitorTest = async (testId: string) => {
     setSelectedMonitorTestId(testId);
+    setMonitorActiveTab("leaderboard");
+    setMonitorBatchFilter("all");
+    setMonitorAbsentSearch("");
+    if (students.length === 0) {
+      loadStudents();
+    }
+    if (batches.length === 0) {
+      loadBatches();
+    }
     try {
       const liveRes = await api.get(`/test-portal/examination/live-count/${testId}`);
       setLiveCount(liveRes?.data || liveRes);
@@ -2921,6 +3148,67 @@ export default function App() {
       setLeaderboard(leaderboardRes?.data || leaderboardRes || []);
     } catch (e) {
       console.log("Failed loading monitor data:", e);
+    }
+  };
+
+  const downloadSingleTestLeaderboard = async (t: any) => {
+    if (!t || !t.id) return;
+    setDownloadingTestId(t.id);
+    try {
+      const res = await api.get(`/test-portal/review/leaderboard/${t.id}`);
+      const rawList = res?.data || res || [];
+      const entries = Array.isArray(rawList) ? rawList : (Array.isArray(rawList?.data) ? rawList.data : []);
+
+      if (entries.length === 0) {
+        Alert.alert("Leaderboard Empty", "No completed student attempts found for this test yet.");
+        return;
+      }
+
+      const testTitle = t.title || t.testTitle || "Test";
+      const rows = entries.map((e: any, idx: number) => {
+        const rank = e.rank || idx + 1;
+        const displayRoll = (e.rollNumber && e.rollNumber !== "N/A" && e.rollNumber !== "Guest" && !String(e.rollNumber).startsWith("STU-")) ? e.rollNumber : (e.studentName || "Guest Student");
+        const sName = e.studentName || "Guest Student";
+        const correct = e.correct ?? 0;
+        const wrong = e.wrong ?? 0;
+        const skipped = e.skipped ?? 0;
+        const obtained = e.obtainedMarks ?? 0;
+        const total = e.totalMarks ?? (t.totalMarks || (t.questions?.length ? t.questions.length * (t.marksPerQuestion || 1) : 0));
+        const pct = typeof e.percentage === "number" ? Math.round(e.percentage) : (total > 0 ? Math.round((obtained / total) * 100) : 0);
+        const perf = getPerformanceStatus(obtained, total, pct);
+        const statusLabel = e.status ? String(e.status).toUpperCase() : perf.label;
+        const statusColor = (e.status === "pass" || perf.label === "PASSED" || perf.color === "#2e7d32") ? "#2e7d32" : "#c62828";
+
+        return `<tr style="border-bottom:1px solid #eee">
+          <td style="padding:6px 8px;text-align:center">${rank}</td>
+          <td style="padding:6px 8px">${displayRoll}</td>
+          <td style="padding:6px 8px">${sName}</td>
+          <td style="padding:6px 8px;text-align:center;color:#2e7d32;font-weight:bold">${correct}</td>
+          <td style="padding:6px 8px;text-align:center;color:#c62828;font-weight:bold">${wrong}</td>
+          <td style="padding:6px 8px;text-align:center">${skipped}</td>
+          <td style="padding:6px 8px;text-align:center;font-weight:bold">${obtained} / ${total}</td>
+          <td style="padding:6px 8px;text-align:center">${pct}%</td>
+          <td style="padding:6px 8px;text-align:center;color:${statusColor};font-weight:bold">${statusLabel}</td>
+        </tr>`;
+      }).join("");
+
+      const testDate = t.createdAt ? new Date(t.createdAt).toLocaleDateString() : (t.startTime ? new Date(t.startTime).toLocaleDateString() : "N/A");
+      const participants = entries.length;
+      const marksPerQ = t.marksPerQuestion ?? 1;
+      const negMarks = t.negativeMarks ?? 0;
+
+      const html = `<!DOCTYPE html><html><head><title>${testTitle} - Results</title>
+        <style>body{font-family:Arial,sans-serif;padding:20px}h2{color:#c62828}table{width:100%;border-collapse:collapse}th{background:#c62828;color:white;padding:8px;text-align:left}td{border-bottom:1px solid #eee;padding:6px 8px}</style></head>
+        <body><h2>${testTitle}</h2>
+        <p>Date: ${testDate} | Participants: ${participants} | Marks/Q: ${marksPerQ} | Negative: -${negMarks}</p>
+        <table><thead><tr><th>#</th><th>Roll No</th><th>Name</th><th>Correct</th><th>Wrong</th><th>Skipped</th><th>Marks</th><th>%</th><th>Result</th></tr></thead>
+        <tbody>${rows}</tbody></table></body></html>`;
+
+      await downloadPdfDocument(html, `${testTitle}_Leaderboard.pdf`);
+    } catch (err: any) {
+      Alert.alert("Export Error", err.message || "Failed to download test leaderboard.");
+    } finally {
+      setDownloadingTestId(null);
     }
   };
 
@@ -3237,7 +3525,7 @@ export default function App() {
         <View style={[styles.header, darkMode && styles.headerDark]}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
             <View style={[styles.headerLogo, { backgroundColor: "transparent", borderWidth: 0 }]}>
-              <Image source={require("./assets/logo.png")} style={{ width: 34, height: 34, borderRadius: 17 }} />
+              <Image source={APP_INSIDE_LOGO} style={{ width: 34, height: 34, borderRadius: 17 }} />
             </View>
             <View>
               <Text style={[styles.headerTitle, darkMode && { color: "#f5f5f5" }]}>Nermai IAS</Text>
@@ -3467,8 +3755,14 @@ export default function App() {
                           backgroundColor: darkMode ? "#222" : "#fff"
                         }}
                       >
-                        <Text style={{ color: darkMode ? "#fff" : "#212121", fontSize: 12 }}>
-                          {newTest.targetBatch || "Choose a Batch..."}
+                        <Text style={{ color: darkMode ? "#fff" : "#212121", fontSize: 12, fontWeight: "bold" }}>
+                          {(() => {
+                            const raw = newTest.targetBatch || "";
+                            const list = raw.split(",").map((s: string) => s.trim()).filter(Boolean);
+                            if (list.length === 0) return "Choose Target Batches...";
+                            if (list.length === 1) return list[0];
+                            return `${list.length} Batches Selected (${list.join(", ")})`;
+                          })()}
                         </Text>
                         <Ionicons name={showManualTestBatchDropdown ? "chevron-up" : "chevron-down"} size={14} color="#757575" />
                       </TouchableOpacity>
@@ -3479,26 +3773,46 @@ export default function App() {
                           borderRadius: 8,
                           marginTop: 4,
                           backgroundColor: darkMode ? "#222" : "#fff",
-                          maxHeight: 150,
+                          maxHeight: 180,
                           overflow: "hidden"
                         }}>
                           <ScrollView nestedScrollEnabled>
-                            {batches.map((b) => (
-                              <TouchableOpacity
-                                key={b.id}
-                                onPress={() => {
-                                  setNewTest({ ...newTest, targetBatch: b.batchName });
-                                  setShowManualTestBatchDropdown(false);
-                                }}
-                                style={{
-                                  padding: 10,
-                                  borderBottomWidth: 1,
-                                  borderBottomColor: darkMode ? "#333" : "#f0f0f0"
-                                }}
-                              >
-                                <Text style={{ color: darkMode ? "#fff" : "#212121", fontSize: 12 }}>{b.batchName} ({b.course})</Text>
-                              </TouchableOpacity>
-                            ))}
+                            {batches.map((b) => {
+                              const raw = newTest.targetBatch || "";
+                              const list = raw.split(",").map((s: string) => s.trim()).filter(Boolean);
+                              const isSelected = list.includes(b.batchName);
+                              const toggleBatch = () => {
+                                let newList: string[];
+                                if (isSelected) {
+                                  newList = list.filter((item: string) => item !== b.batchName);
+                                } else {
+                                  newList = [...list, b.batchName];
+                                }
+                                setNewTest({ ...newTest, targetBatch: newList.join(", ") });
+                              };
+                              return (
+                                <TouchableOpacity
+                                  key={b.id}
+                                  onPress={toggleBatch}
+                                  style={{
+                                    padding: 10,
+                                    flexDirection: "row",
+                                    alignItems: "center",
+                                    gap: 8,
+                                    borderBottomWidth: 1,
+                                    borderBottomColor: darkMode ? "#333" : "#f0f0f0",
+                                    backgroundColor: isSelected ? (darkMode ? "#3a1c1c" : "#ffebee") : "transparent"
+                                  }}
+                                >
+                                  <Ionicons
+                                    name={isSelected ? "checkbox" : "square-outline"}
+                                    size={16}
+                                    color={isSelected ? "#c62828" : (darkMode ? "#aaa" : "#757575")}
+                                  />
+                                  <Text style={{ color: darkMode ? "#fff" : "#212121", fontSize: 12 }}>{b.batchName} ({b.course})</Text>
+                                </TouchableOpacity>
+                              );
+                            })}
                             {batches.length === 0 && (
                               <Text style={{ padding: 10, color: "#888", fontSize: 12, textAlign: "center" }}>No batches found</Text>
                             )}
@@ -3611,7 +3925,7 @@ export default function App() {
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: 20 }}>
             <View style={styles.authCard}>
               <View style={{ alignItems: "center", marginBottom: 18 }}>
-                <Image source={require("./assets/logo.png")} style={{ width: 80, height: 80, borderRadius: 40, marginBottom: 12, borderWidth: 1, borderColor: "#eee" }} />
+                <Image source={APP_INSIDE_LOGO} style={{ width: 80, height: 80, borderRadius: 40, marginBottom: 12, borderWidth: 1, borderColor: "#eee" }} />
                 <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", width: "100%" }}>
                   <Text style={styles.authTitle}>NERMAI IAS ACADEMY</Text>
                 </View>
@@ -3732,22 +4046,7 @@ export default function App() {
               </View>
 
               <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
-                {/* Settings Section */}
-                <Text style={[styles.drawerSection, darkMode && { color: "#9e9e9e" }]}>APPEARANCE</Text>
-                <View style={[styles.drawerItem, darkMode && styles.drawerItemDark]}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}>
-                    <View style={[styles.drawerIconBox, { backgroundColor: darkMode ? "#7c4dff" : "#e3f2fd" }]}>
-                      <Ionicons name={darkMode ? "moon" : "sunny"} size={18} color={darkMode ? "#ffffff" : "#1565c0"} />
-                    </View>
-                    <Text style={[styles.drawerItemTxt, darkMode && { color: "#e0e0e0" }]}>{darkMode ? "Dark Mode" : "Light Mode"}</Text>
-                  </View>
-                  <TouchableOpacity
-                    onPress={() => setDarkMode(!darkMode)}
-                    style={[styles.toggleTrack, darkMode && styles.toggleTrackOn]}
-                  >
-                    <View style={[styles.toggleThumb, darkMode && styles.toggleThumbOn]} />
-                  </TouchableOpacity>
-                </View>
+
 
                 <Text style={[styles.drawerSection, darkMode && { color: "#9e9e9e" }]}>ACCOUNT</Text>
                 {user.hallTicketGenerated && (
@@ -3778,18 +4077,7 @@ export default function App() {
                   <Ionicons name="chevron-forward" size={16} color={darkMode ? "#9e9e9e" : "#bdbdbd"} />
                 </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={[styles.drawerItem, darkMode && styles.drawerItemDark]}
-                  onPress={() => { setShowHamburger(false); setShowIpConfig(!showIpConfig); }}
-                >
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}>
-                    <View style={[styles.drawerIconBox, { backgroundColor: "#fff3e0" }]}>
-                      <Ionicons name="settings-outline" size={18} color="#e65100" />
-                    </View>
-                    <Text style={[styles.drawerItemTxt, darkMode && { color: "#e0e0e0" }]}>Server Settings</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={16} color={darkMode ? "#9e9e9e" : "#bdbdbd"} />
-                </TouchableOpacity>
+
 
                 <View style={[styles.drawerDivider, darkMode && { borderColor: "#333" }]} />
 
@@ -3905,7 +4193,7 @@ export default function App() {
 
         <View style={styles.header}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-            <Image source={require("./assets/logo.png")} style={{ width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: "#fff" }} />
+            <Image source={APP_INSIDE_LOGO} style={{ width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: "#fff" }} />
             <View>
               <Text style={styles.headerTitle}>NERMAI IAS ACADEMY</Text>
               <Text style={{ color: "#fff", opacity: 0.8, fontSize: 11 }}>Welcome, {user.name} (Free Access)</Text>
@@ -4897,22 +5185,7 @@ export default function App() {
             </View>
 
             <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
-              {/* Settings Section */}
-              <Text style={[styles.drawerSection, darkMode && { color: "#9e9e9e" }]}>APPEARANCE</Text>
-              <View style={[styles.drawerItem, darkMode && styles.drawerItemDark]}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}>
-                  <View style={[styles.drawerIconBox, { backgroundColor: darkMode ? "#7c4dff" : "#e3f2fd" }]}>
-                    <Ionicons name={darkMode ? "moon" : "sunny"} size={18} color={darkMode ? "#ffffff" : "#1565c0"} />
-                  </View>
-                  <Text style={[styles.drawerItemTxt, darkMode && { color: "#e0e0e0" }]}>{darkMode ? "Dark Mode" : "Light Mode"}</Text>
-                </View>
-                <TouchableOpacity
-                  onPress={() => setDarkMode(!darkMode)}
-                  style={[styles.toggleTrack, darkMode && styles.toggleTrackOn]}
-                >
-                  <View style={[styles.toggleThumb, darkMode && styles.toggleThumbOn]} />
-                </TouchableOpacity>
-              </View>
+
 
               <Text style={[styles.drawerSection, darkMode && { color: "#9e9e9e" }]}>ACCOUNT</Text>
               {(user?.role === "student" || user?.role === "guest") && (
@@ -4930,18 +5203,7 @@ export default function App() {
                 </TouchableOpacity>
               )}
 
-              <TouchableOpacity
-                style={[styles.drawerItem, darkMode && styles.drawerItemDark]}
-                onPress={() => { setShowHamburger(false); setShowIpConfig(!showIpConfig); }}
-              >
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}>
-                  <View style={[styles.drawerIconBox, { backgroundColor: "#fff3e0" }]}>
-                    <Ionicons name="settings-outline" size={18} color="#e65100" />
-                  </View>
-                  <Text style={[styles.drawerItemTxt, darkMode && { color: "#e0e0e0" }]}>Server Settings</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={16} color={darkMode ? "#9e9e9e" : "#bdbdbd"} />
-              </TouchableOpacity>
+
 
               <View style={[styles.drawerDivider, darkMode && { borderColor: "#333" }]} />
 
@@ -5022,11 +5284,421 @@ export default function App() {
         </Modal>
       )}
 
+      {/* ─── Admin Dashboard Quick Inquiry Modal (Mobile APK & Web) ─── */}
+      {showDashboardInquiryModal && (
+        <Modal
+          visible={true}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={resetDashboardInquiryForm}
+        >
+          <View style={{
+            flex: 1,
+            backgroundColor: "rgba(0, 0, 0, 0.65)",
+            justifyContent: "center",
+            alignItems: "center",
+            padding: 16,
+            zIndex: 99999
+          }}>
+            <View style={{
+              width: "100%",
+              maxWidth: 520,
+              maxHeight: "90%",
+              backgroundColor: darkMode ? "#1e1e1e" : "#ffffff",
+              borderRadius: 16,
+              overflow: "hidden",
+              borderWidth: 1,
+              borderColor: darkMode ? "#333333" : "#e2e8f0",
+              elevation: 10
+            }}>
+              {/* Header */}
+              <View style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+                paddingHorizontal: 18,
+                paddingVertical: 14,
+                borderBottomWidth: 1,
+                borderBottomColor: darkMode ? "#2a2a2a" : "#f1f5f9",
+                backgroundColor: darkMode ? "#181818" : "#f8fafc"
+              }}>
+                <View style={{ flex: 1, marginRight: 10 }}>
+                  <Text style={{ fontSize: 16, fontWeight: "bold", color: darkMode ? "#ffffff" : "#0f172a" }}>
+                    Record New Candidate Enquiry
+                  </Text>
+                  <Text style={{ fontSize: 11, color: darkMode ? "#94a3b8" : "#64748b", marginTop: 2 }}>
+                    Walk-in, phone call, or social inquiry
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={resetDashboardInquiryForm}
+                  style={{ padding: 6, borderRadius: 20, backgroundColor: darkMode ? "#2a2a2a" : "#e2e8f0" }}
+                >
+                  <Ionicons name="close" size={20} color={darkMode ? "#ffffff" : "#475569"} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Form ScrollView */}
+              <ScrollView style={{ flexGrow: 0 }} contentContainerStyle={{ padding: 18, gap: 12 }}>
+                {/* Candidate Name */}
+                <View>
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: darkMode ? "#cbd5e1" : "#475569", marginBottom: 5 }}>
+                    CANDIDATE NAME *
+                  </Text>
+                  <TextInput
+                    style={{
+                      height: 42,
+                      borderWidth: 1,
+                      borderColor: darkMode ? "#404040" : "#cbd5e1",
+                      borderRadius: 8,
+                      paddingHorizontal: 12,
+                      fontSize: 14,
+                      color: darkMode ? "#ffffff" : "#0f172a",
+                      backgroundColor: darkMode ? "#262626" : "#ffffff"
+                    }}
+                    placeholder="Candidate full name..."
+                    placeholderTextColor="#94a3b8"
+                    value={dashInquiryName}
+                    onChangeText={setDashInquiryName}
+                  />
+                </View>
+
+                {/* Contact Phone */}
+                <View>
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: darkMode ? "#cbd5e1" : "#475569", marginBottom: 5 }}>
+                    CONTACT PHONE *
+                  </Text>
+                  <TextInput
+                    style={{
+                      height: 42,
+                      borderWidth: 1,
+                      borderColor: darkMode ? "#404040" : "#cbd5e1",
+                      borderRadius: 8,
+                      paddingHorizontal: 12,
+                      fontSize: 14,
+                      color: darkMode ? "#ffffff" : "#0f172a",
+                      backgroundColor: darkMode ? "#262626" : "#ffffff"
+                    }}
+                    placeholder="Phone number..."
+                    placeholderTextColor="#94a3b8"
+                    keyboardType="phone-pad"
+                    value={dashInquiryPhone}
+                    onChangeText={setDashInquiryPhone}
+                  />
+                </View>
+
+                {/* Email */}
+                <View>
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: darkMode ? "#cbd5e1" : "#475569", marginBottom: 5 }}>
+                    EMAIL (OPTIONAL)
+                  </Text>
+                  <TextInput
+                    style={{
+                      height: 42,
+                      borderWidth: 1,
+                      borderColor: darkMode ? "#404040" : "#cbd5e1",
+                      borderRadius: 8,
+                      paddingHorizontal: 12,
+                      fontSize: 14,
+                      color: darkMode ? "#ffffff" : "#0f172a",
+                      backgroundColor: darkMode ? "#262626" : "#ffffff"
+                    }}
+                    placeholder="Email address..."
+                    placeholderTextColor="#94a3b8"
+                    keyboardType="email-address"
+                    value={dashInquiryEmail}
+                    onChangeText={setDashInquiryEmail}
+                  />
+                </View>
+
+                {/* Target Exam / Course */}
+                <View>
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: darkMode ? "#cbd5e1" : "#475569", marginBottom: 5 }}>
+                    TARGET EXAM / COURSE
+                  </Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: "row", marginVertical: 4 }}>
+                    {DASH_COURSE_OPTIONS.map(c => {
+                      const isSel = (c === 'Others' ? dashInquiryIsCustomCourse : dashInquiryCourse === c && !dashInquiryIsCustomCourse);
+                      return (
+                        <TouchableOpacity
+                          key={c}
+                          onPress={() => {
+                            if (c === 'Others') {
+                              setDashInquiryIsCustomCourse(true);
+                              setDashInquiryCourse('');
+                            } else {
+                              setDashInquiryIsCustomCourse(false);
+                              setDashInquiryCourse(c);
+                            }
+                          }}
+                          style={{
+                            paddingVertical: 6,
+                            paddingHorizontal: 12,
+                            borderRadius: 16,
+                            borderWidth: 1,
+                            marginRight: 6,
+                            backgroundColor: isSel ? "#c62828" : (darkMode ? "#262626" : "#ffffff"),
+                            borderColor: isSel ? "#c62828" : (darkMode ? "#404040" : "#cbd5e1")
+                          }}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: "600", color: isSel ? "#ffffff" : (darkMode ? "#cbd5e1" : "#334155") }}>
+                            {c}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                  {dashInquiryIsCustomCourse && (
+                    <TextInput
+                      style={{
+                        height: 40,
+                        marginTop: 6,
+                        borderWidth: 1,
+                        borderColor: darkMode ? "#404040" : "#cbd5e1",
+                        borderRadius: 8,
+                        paddingHorizontal: 12,
+                        fontSize: 13,
+                        color: darkMode ? "#ffffff" : "#0f172a",
+                        backgroundColor: darkMode ? "#262626" : "#ffffff"
+                      }}
+                      placeholder="Type custom course / exam..."
+                      placeholderTextColor="#94a3b8"
+                      value={dashInquiryCourse}
+                      onChangeText={setDashInquiryCourse}
+                      autoFocus
+                    />
+                  )}
+                </View>
+
+                {/* Nature of Enquiry */}
+                <View>
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: darkMode ? "#cbd5e1" : "#475569", marginBottom: 5 }}>
+                    NATURE OF ENQUIRY
+                  </Text>
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                    {DASH_NATURE_OPTIONS.map(opt => {
+                      const isSelected = dashInquiryNature === opt.val;
+                      return (
+                        <TouchableOpacity
+                          key={opt.val}
+                          style={{
+                            paddingVertical: 5,
+                            paddingHorizontal: 12,
+                            borderRadius: 16,
+                            borderWidth: 1,
+                            backgroundColor: isSelected ? opt.activeBg : (darkMode ? "#262626" : "#ffffff"),
+                            borderColor: isSelected ? opt.activeBg : (darkMode ? "#404040" : "#cbd5e1")
+                          }}
+                          onPress={() => setDashInquiryNature(opt.val)}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: "600", color: isSelected ? "#ffffff" : (darkMode ? "#cbd5e1" : "#334155") }}>
+                            {opt.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* Class Mode */}
+                <View>
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: darkMode ? "#cbd5e1" : "#475569", marginBottom: 5 }}>
+                    CLASS MODE
+                  </Text>
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                    {DASH_MODE_OPTIONS.map(m => {
+                      const isSel = dashInquiryMode === m;
+                      return (
+                        <TouchableOpacity
+                          key={m}
+                          style={{
+                            paddingVertical: 5,
+                            paddingHorizontal: 14,
+                            borderRadius: 16,
+                            borderWidth: 1,
+                            backgroundColor: isSel ? "#15803d" : (darkMode ? "#262626" : "#ffffff"),
+                            borderColor: isSel ? "#15803d" : (darkMode ? "#404040" : "#cbd5e1")
+                          }}
+                          onPress={() => setDashInquiryMode(m)}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: "600", color: isSel ? "#ffffff" : (darkMode ? "#cbd5e1" : "#334155") }}>
+                            {m}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* Attended By */}
+                <View>
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: darkMode ? "#cbd5e1" : "#475569", marginBottom: 5 }}>
+                    ATTENDED BY
+                  </Text>
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                    {Array.from(new Set([...dashInquiryStaffList, 'Others'])).map(st => {
+                      const isSel = (st === 'Others' ? dashInquiryIsCustomAtten : dashInquiryAtten === st && !dashInquiryIsCustomAtten);
+                      return (
+                        <TouchableOpacity
+                          key={st}
+                          style={{
+                            paddingVertical: 5,
+                            paddingHorizontal: 12,
+                            borderRadius: 16,
+                            borderWidth: 1,
+                            backgroundColor: isSel ? "#1e3a8a" : (darkMode ? "#262626" : "#ffffff"),
+                            borderColor: isSel ? "#1e3a8a" : (darkMode ? "#404040" : "#cbd5e1")
+                          }}
+                          onPress={() => {
+                            if (st === 'Others') {
+                              setDashInquiryIsCustomAtten(true);
+                              setDashInquiryAtten('');
+                            } else {
+                              setDashInquiryIsCustomAtten(false);
+                              setDashInquiryAtten(st);
+                            }
+                          }}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: "600", color: isSel ? "#ffffff" : (darkMode ? "#cbd5e1" : "#334155") }}>
+                            {st === 'Others' ? 'Others / Custom...' : st}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                  {dashInquiryIsCustomAtten && (
+                    <TextInput
+                      style={{
+                        height: 40,
+                        marginTop: 6,
+                        borderWidth: 1,
+                        borderColor: darkMode ? "#404040" : "#cbd5e1",
+                        borderRadius: 8,
+                        paddingHorizontal: 12,
+                        fontSize: 13,
+                        color: darkMode ? "#ffffff" : "#0f172a",
+                        backgroundColor: darkMode ? "#262626" : "#ffffff"
+                      }}
+                      placeholder="Type staff name..."
+                      placeholderTextColor="#94a3b8"
+                      value={dashInquiryAtten}
+                      onChangeText={setDashInquiryAtten}
+                      autoFocus
+                    />
+                  )}
+                </View>
+
+                {/* Reference */}
+                <View>
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: darkMode ? "#cbd5e1" : "#475569", marginBottom: 5 }}>
+                    REFERENCE / LEAD SOURCE
+                  </Text>
+                  <TextInput
+                    style={{
+                      height: 42,
+                      borderWidth: 1,
+                      borderColor: darkMode ? "#404040" : "#cbd5e1",
+                      borderRadius: 8,
+                      paddingHorizontal: 12,
+                      fontSize: 14,
+                      color: darkMode ? "#ffffff" : "#0f172a",
+                      backgroundColor: darkMode ? "#262626" : "#ffffff"
+                    }}
+                    placeholder="e.g. Walk-in, Alumni, Newspaper, Banner, Friend..."
+                    placeholderTextColor="#94a3b8"
+                    value={dashInquiryReference}
+                    onChangeText={setDashInquiryReference}
+                  />
+                </View>
+
+                {/* Remarks */}
+                <View>
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: darkMode ? "#cbd5e1" : "#475569", marginBottom: 5 }}>
+                    REMARKS / COUNSELOR NOTES
+                  </Text>
+                  <TextInput
+                    style={{
+                      height: 65,
+                      borderWidth: 1,
+                      borderColor: darkMode ? "#404040" : "#cbd5e1",
+                      borderRadius: 8,
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      fontSize: 14,
+                      textAlignVertical: "top",
+                      color: darkMode ? "#ffffff" : "#0f172a",
+                      backgroundColor: darkMode ? "#262626" : "#ffffff"
+                    }}
+                    multiline
+                    placeholder="Candidate background, follow-up notes, discussion..."
+                    placeholderTextColor="#94a3b8"
+                    value={dashInquiryRemarks}
+                    onChangeText={setDashInquiryRemarks}
+                  />
+                </View>
+              </ScrollView>
+
+              {/* Footer */}
+              <View style={{
+                flexDirection: "row",
+                justifyContent: "flex-end",
+                alignItems: "center",
+                gap: 12,
+                paddingHorizontal: 18,
+                paddingVertical: 14,
+                borderTopWidth: 1,
+                borderTopColor: darkMode ? "#2a2a2a" : "#f1f5f9",
+                backgroundColor: darkMode ? "#181818" : "#f8fafc"
+              }}>
+                <TouchableOpacity
+                  onPress={resetDashboardInquiryForm}
+                  style={{
+                    paddingVertical: 9,
+                    paddingHorizontal: 16,
+                    borderRadius: 8,
+                    backgroundColor: darkMode ? "#2a2a2a" : "#e2e8f0"
+                  }}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: "600", color: darkMode ? "#e2e8f0" : "#475569" }}>
+                    Cancel
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={submitDashboardInquiry}
+                  disabled={submittingDashInquiry}
+                  style={{
+                    paddingVertical: 9,
+                    paddingHorizontal: 20,
+                    borderRadius: 8,
+                    backgroundColor: "#b91c1c",
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 6
+                  }}
+                >
+                  {submittingDashInquiry ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <>
+                      <Ionicons name="checkmark-circle-outline" size={17} color="#ffffff" />
+                      <Text style={{ fontSize: 13, fontWeight: "bold", color: "#ffffff" }}>
+                        Save Inquiry
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+
       {/* Header */}
       <View style={[styles.header, darkMode && styles.headerDark]}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
           <View style={[styles.headerLogo, { backgroundColor: "transparent", borderWidth: 0 }]}>
-            <Image source={require("./assets/logo.png")} style={{ width: 34, height: 34, borderRadius: 17 }} />
+            <Image source={APP_INSIDE_LOGO} style={{ width: 34, height: 34, borderRadius: 17 }} />
           </View>
           <View>
             <Text style={[styles.headerTitle, darkMode && { color: "#f5f5f5" }]}>Nermai IAS</Text>
@@ -5046,13 +5718,19 @@ export default function App() {
           <ScrollView style={[styles.body, darkMode && { backgroundColor: "#121212" }]} contentContainerStyle={{ paddingBottom: 80 }}>
             <View style={{ gap: 15 }}>
               {/* Active Campaign banners (Ad Containers) */}
-              {user.role === "student" && campaigns.filter((c: any) => c.showInDashboard && c.posterUrl).length > 0 && (
+              {user.role === "student" && campaigns.filter((c: any) => c.showInDashboard && (c.posterUrl || c.posterBase64)).length > 0 && (
                 <View style={{ marginBottom: 5 }}>
                   <Text style={[styles.sectionTitle, darkMode && styles.sectionTitleDark]}>Special Highlights & Programs</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: "row", marginVertical: 8 }}>
-                    {campaigns.filter((c: any) => c.showInDashboard && c.posterUrl).map((cp: any) => (
+                    {campaigns.filter((c: any) => c.showInDashboard && (c.posterUrl || c.posterBase64)).map((cp: any) => (
                       <View key={cp.id} style={[styles.card, darkMode && styles.cardDark, { width: 280, marginRight: 12, padding: 0, overflow: "hidden" }]}>
-                        <Image source={{ uri: cp.posterUrl }} style={{ width: "100%", height: 110, resizeMode: "cover" }} />
+                        {getCampaignPosterUri(cp) ? (
+                          Platform.OS === "web" ? (
+                            <img src={getCampaignPosterUri(cp)} alt={cp.title || "Campaign"} style={{ width: "100%", height: "110px", objectFit: "cover", display: "block" }} />
+                          ) : (
+                            <Image source={{ uri: getCampaignPosterUri(cp) }} style={{ width: "100%", height: 110, resizeMode: "cover" }} />
+                          )
+                        ) : null}
                         <View style={{ padding: 10 }}>
                           <Text style={{ fontWeight: "bold", color: darkMode ? "#e0e0e0" : "#212121", fontSize: 13 }}>{cp.title}</Text>
                           {cp.description ? <Text style={{ color: darkMode ? "#9e9e9e" : "#757575", fontSize: 11, marginTop: 2 }} numberOfLines={2}>{cp.description}</Text> : null}
@@ -5109,6 +5787,30 @@ export default function App() {
                       <Text style={styles.cardLbl}>Logged Inquiries</Text>
                     </View>
                   </View>
+
+                  {/* Add New Inquiry Quick Action Button */}
+                  <TouchableOpacity
+                    onPress={() => setShowDashboardInquiryModal(true)}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      backgroundColor: "#c62828",
+                      paddingVertical: 12,
+                      paddingHorizontal: 16,
+                      borderRadius: 10,
+                      marginVertical: 4,
+                      gap: 8,
+                      shadowColor: "#c62828",
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.25,
+                      shadowRadius: 4,
+                      elevation: 3
+                    }}
+                  >
+                    <Ionicons name="add-circle-outline" size={20} color="#ffffff" />
+                    <Text style={{ color: "#ffffff", fontWeight: "bold", fontSize: 14 }}>+ Add New Inquiry</Text>
+                  </TouchableOpacity>
                 </>
               ) : (
                 <>
@@ -5621,8 +6323,14 @@ export default function App() {
                             backgroundColor: darkMode ? "#222" : "#fff"
                           }}
                         >
-                          <Text style={{ color: darkMode ? "#fff" : "#212121", fontSize: 12 }}>
-                            {newPdfTest.targetBatch || "Choose a Batch..."}
+                          <Text style={{ color: darkMode ? "#fff" : "#212121", fontSize: 12, fontWeight: "bold" }}>
+                            {(() => {
+                              const raw = newPdfTest.targetBatch || "";
+                              const list = raw.split(",").map((s: string) => s.trim()).filter(Boolean);
+                              if (list.length === 0) return "Choose Target Batches...";
+                              if (list.length === 1) return list[0];
+                              return `${list.length} Batches Selected (${list.join(", ")})`;
+                            })()}
                           </Text>
                           <Ionicons name={showTestBatchDropdown ? "chevron-up" : "chevron-down"} size={14} color="#757575" />
                         </TouchableOpacity>
@@ -5633,26 +6341,46 @@ export default function App() {
                             borderRadius: 8,
                             marginTop: 4,
                             backgroundColor: darkMode ? "#222" : "#fff",
-                            maxHeight: 150,
+                            maxHeight: 180,
                             overflow: "hidden"
                           }}>
                             <ScrollView nestedScrollEnabled>
-                              {batches.map((b) => (
-                                <TouchableOpacity
-                                  key={b.id}
-                                  onPress={() => {
-                                    setNewPdfTest({ ...newPdfTest, targetBatch: b.batchName });
-                                    setShowTestBatchDropdown(false);
-                                  }}
-                                  style={{
-                                    padding: 10,
-                                    borderBottomWidth: 1,
-                                    borderBottomColor: darkMode ? "#333" : "#f0f0f0"
-                                  }}
-                                >
-                                  <Text style={{ color: darkMode ? "#fff" : "#212121", fontSize: 12 }}>{b.batchName} ({b.course})</Text>
-                                </TouchableOpacity>
-                              ))}
+                              {batches.map((b) => {
+                                const raw = newPdfTest.targetBatch || "";
+                                const list = raw.split(",").map((s: string) => s.trim()).filter(Boolean);
+                                const isSelected = list.includes(b.batchName);
+                                const toggleBatch = () => {
+                                  let newList: string[];
+                                  if (isSelected) {
+                                    newList = list.filter((item: string) => item !== b.batchName);
+                                  } else {
+                                    newList = [...list, b.batchName];
+                                  }
+                                  setNewPdfTest({ ...newPdfTest, targetBatch: newList.join(", ") });
+                                };
+                                return (
+                                  <TouchableOpacity
+                                    key={b.id}
+                                    onPress={toggleBatch}
+                                    style={{
+                                      padding: 10,
+                                      flexDirection: "row",
+                                      alignItems: "center",
+                                      gap: 8,
+                                      borderBottomWidth: 1,
+                                      borderBottomColor: darkMode ? "#333" : "#f0f0f0",
+                                      backgroundColor: isSelected ? (darkMode ? "#1b3a1b" : "#e8f5e9") : "transparent"
+                                    }}
+                                  >
+                                    <Ionicons
+                                      name={isSelected ? "checkbox" : "square-outline"}
+                                      size={16}
+                                      color={isSelected ? "#2e7d32" : (darkMode ? "#aaa" : "#757575")}
+                                    />
+                                    <Text style={{ color: darkMode ? "#fff" : "#212121", fontSize: 12 }}>{b.batchName} ({b.course})</Text>
+                                  </TouchableOpacity>
+                                );
+                              })}
                               {batches.length === 0 && (
                                 <Text style={{ padding: 10, color: "#888", fontSize: 12, textAlign: "center" }}>No batches found</Text>
                               )}
@@ -6003,172 +6731,296 @@ export default function App() {
             )}
 
 
-            {testSub === "results" && (
-              <View style={{ gap: 12 }}>
-                {/* Filter Bar */}
-                <View style={[styles.card, { padding: 12, marginBottom: 0 }]}>
-                  <Text style={styles.sectionTitle}>Results Log</Text>
-                  <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
-                    <TextInput
-                      style={[styles.input, { flex: 1, marginBottom: 0, fontSize: 13 }]}
-                      placeholder="Search by test title..."
-                      placeholderTextColor="#999"
-                      value={resultsKeyword}
-                      onChangeText={setResultsKeyword}
-                    />
-                    <TextInput
-                      style={[styles.input, { width: 130, marginBottom: 0, fontSize: 13 }]}
-                      placeholder="YYYY-MM-DD"
-                      placeholderTextColor="#999"
-                      value={resultsDateFilter}
-                      onChangeText={setResultsDateFilter}
-                    />
-                  </View>
-                  <View style={{ flexDirection: "row", gap: 8 }}>
-                    <TouchableOpacity
-                      onPress={async () => {
-                        setResultsLoading(true);
-                        try {
-                          const params = new URLSearchParams();
-                          if (resultsKeyword.trim()) params.append("keyword", resultsKeyword.trim());
-                          if (resultsDateFilter.trim()) params.append("date", resultsDateFilter.trim());
-                          const res = await api.get(`/test-portal/review/results/all-tests?${params.toString()}`);
-                          setAllTestResults(res || []);
-                        } catch (e: any) {
-                          Alert.alert("Error", e.message || "Could not load results.");
-                        } finally {
-                          setResultsLoading(false);
-                        }
-                      }}
-                      style={[styles.primaryBtn, { flex: 1, marginTop: 0, paddingVertical: 10 }]}
-                    >
-                      <Text style={styles.primaryBtnTxt}>{resultsLoading ? "Loading..." : "Load Results"}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => { setResultsKeyword(""); setResultsDateFilter(""); setAllTestResults([]); }}
-                      style={[styles.outlineBtn, { flex: 0.5, marginTop: 0, paddingVertical: 10 }]}
-                    >
-                      <Text style={styles.outlineBtnTxt}>Clear</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
+            {testSub === "results" && (() => {
+              const now = Date.now();
+              // Tests whose endTime has passed — automatically show in results
+              const closedTests = tests.filter((t: any) => {
+                const endMs = t.endTime ? new Date(t.endTime).getTime() : null;
+                const isClosed = endMs && now > endMs;
+                if (!isClosed) return false;
 
-                {/* Results List */}
-                {allTestResults.length === 0 && !resultsLoading && (
-                  <View style={styles.emptyContainer}>
-                    <Ionicons name="trophy-outline" size={40} color="#757575" />
-                    <Text style={styles.emptyText}>No results found. Use the filter above to load test results.</Text>
-                  </View>
-                )}
+                // Filter by keyword if provided
+                if (resultsKeyword && resultsKeyword.trim()) {
+                  const kw = resultsKeyword.trim().toLowerCase();
+                  const titleMatch = String(t.title || "").toLowerCase().includes(kw);
+                  const subjMatch = String(t.subject || t.subjectName || t.subject_name || t.courseName || "").toLowerCase().includes(kw);
+                  if (!titleMatch && !subjMatch) return false;
+                }
 
-                {allTestResults.map((testLog: any) => (
-                  <View key={testLog.testId} style={[styles.card, { padding: 0, overflow: "hidden" }]}>
-                    {/* Test Header */}
-                    <TouchableOpacity
-                      onPress={() => setExpandedTestId(expandedTestId === testLog.testId ? null : testLog.testId)}
-                      style={{ backgroundColor: "#c62828", padding: 14, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 14 }}>{testLog.testTitle}</Text>
-                        <Text style={{ color: "rgba(255,255,255,0.8)", fontSize: 11, marginTop: 2 }}>
-                          {testLog.createdAt ? new Date(testLog.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : ""}  ·  {testLog.totalParticipants} participants
-                        </Text>
-                      </View>
-                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                        {/* PDF Export Button */}
-                        <TouchableOpacity
-                          onPress={() => {
-                            // Build printable HTML table
-                            const rows = (testLog.entries || []).map((e: any) =>
-                              `<tr style="border-bottom:1px solid #eee">
-                                <td style="padding:6px 8px;text-align:center">${e.serialNo}</td>
-                                <td style="padding:6px 8px">${e.rollNumber}</td>
-                                <td style="padding:6px 8px">${e.studentName}</td>
-                                <td style="padding:6px 8px;text-align:center;color:#2e7d32;font-weight:bold">${e.correct}</td>
-                                <td style="padding:6px 8px;text-align:center;color:#c62828;font-weight:bold">${e.wrong}</td>
-                                <td style="padding:6px 8px;text-align:center">${e.skipped}</td>
-                                <td style="padding:6px 8px;text-align:center;font-weight:bold">${e.obtainedMarks} / ${e.totalMarks}</td>
-                                <td style="padding:6px 8px;text-align:center">${Math.round(e.percentage)}%</td>
-                                <td style="padding:6px 8px;text-align:center;color:${e.status === 'pass' ? '#2e7d32' : '#c62828'};font-weight:bold">${String(e.status).toUpperCase()}</td>
-                              </tr>`
-                            ).join("");
-                            const html = `<!DOCTYPE html><html><head><title>${testLog.testTitle} - Results</title>
-                              <style>body{font-family:Arial,sans-serif;padding:20px}h2{color:#c62828}table{width:100%;border-collapse:collapse}th{background:#c62828;color:white;padding:8px;text-align:left}td{border-bottom:1px solid #eee;padding:6px 8px}</style></head>
-                              <body><h2>${testLog.testTitle}</h2>
-                              <p>Date: ${testLog.createdAt ? new Date(testLog.createdAt).toLocaleDateString() : "N/A"} | Participants: ${testLog.totalParticipants} | Marks/Q: ${testLog.marksPerQuestion} | Negative: -${testLog.negativeMarks}</p>
-                              <table><thead><tr><th>#</th><th>Roll No</th><th>Name</th><th>Correct</th><th>Wrong</th><th>Skipped</th><th>Marks</th><th>%</th><th>Result</th></tr></thead>
-                              <tbody>${rows}</tbody></table></body></html>`;
-                            if (typeof window !== "undefined" && window.document) {
-                              const w = window.open("", "_blank");
-                              if (w) { w.document.write(html); w.document.close(); w.print(); }
-                            } else {
-                              Alert.alert("PDF Export", "PDF export is available on the web version of this portal. Open the app in a browser to download.");
-                            }
-                          }}
-                          style={{ backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 6, padding: 6 }}
-                        >
-                          <Ionicons name="download-outline" size={18} color="#fff" />
-                        </TouchableOpacity>
-                        {isAdmin && (
+                // Filter by date if provided (YYYY-MM-DD format)
+                if (resultsDateFilter && resultsDateFilter.trim()) {
+                  const dFilter = resultsDateFilter.trim();
+                  const getFormattedDate = (val: any) => {
+                    if (!val) return "";
+                    try {
+                      const d = val.toDate ? val.toDate() : new Date(val);
+                      return isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
+                    } catch {
+                      return "";
+                    }
+                  };
+                  const cDate = getFormattedDate(t.createdAt);
+                  const sDate = getFormattedDate(t.startTime);
+                  const eDate = getFormattedDate(t.endTime);
+                  if (cDate !== dFilter && sDate !== dFilter && eDate !== dFilter) return false;
+                }
+
+                if (resultsCategoryFilter) {
+                  let tType = t.testType || t.category || "";
+                  if (!tType && t.title) {
+                    const titleLower = t.title.toLowerCase();
+                    if (titleLower.includes("daily")) tType = "daily";
+                    else if (titleLower.includes("weekly")) tType = "weekly";
+                    else tType = "mock";
+                  }
+                  if (!tType) tType = "mock";
+
+                  const tVal = tType.toLowerCase();
+                  const fVal = resultsCategoryFilter.toLowerCase();
+                  if (!tVal.includes(fVal) && !fVal.includes(tVal)) return false;
+                }
+
+                return true;
+              });
+
+              return (
+                <View style={{ gap: 12 }}>
+                  {/* Filter Bar */}
+                  <View style={[styles.card, { padding: 12, marginBottom: 0 }]}>
+                    <Text style={styles.sectionTitle}>Results Log</Text>
+                    <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
+                      <TextInput
+                        style={[styles.input, { flex: 1, marginBottom: 0, fontSize: 13 }]}
+                        placeholder="Search by test title..."
+                        placeholderTextColor="#999"
+                        value={resultsKeyword}
+                        onChangeText={setResultsKeyword}
+                      />
+                      <TextInput
+                        style={[styles.input, { width: 130, marginBottom: 0, fontSize: 13 }]}
+                        placeholder="YYYY-MM-DD"
+                        placeholderTextColor="#999"
+                        value={resultsDateFilter}
+                        onChangeText={setResultsDateFilter}
+                      />
+                    </View>
+
+                    {/* Test Category Filter Pills */}
+                    <Text style={{ color: "#757575", fontSize: 11, marginBottom: 6, marginTop: 4, fontWeight: "bold" }}>FILTER BY TEST CATEGORY</Text>
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+                      {[
+                        { label: "All", value: "" },
+                        { label: "Daily Test", value: "daily" },
+                        { label: "Weekly Test", value: "weekly" },
+                        { label: "Mock Test", value: "mock" }
+                      ].map(cat => {
+                        const isSelected = resultsCategoryFilter === cat.value;
+                        return (
+                          <TouchableOpacity
+                            key={cat.value}
+                            onPress={() => setResultsCategoryFilter(cat.value)}
+                            style={{
+                              paddingHorizontal: 12,
+                              paddingVertical: 6,
+                              borderRadius: 20,
+                              borderWidth: 1.5,
+                              borderColor: isSelected ? "#c62828" : "#e0e0e0",
+                              backgroundColor: isSelected ? "#ffebee" : "#f5f5f5"
+                            }}
+                          >
+                            <Text style={{ fontSize: 11, fontWeight: isSelected ? "bold" : "normal", color: isSelected ? "#c62828" : "#555" }}>
+                              {cat.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+
+                    <View style={{ flexDirection: "row", gap: 8 }}>
+                      <TouchableOpacity
+                        onPress={async () => {
+                          setResultsLoading(true);
+                          try {
+                            await loadTests();
+                          } catch (e: any) {
+                            Alert.alert("Error", e.message || "Could not load results.");
+                          } finally {
+                            setResultsLoading(false);
+                          }
+                        }}
+                        style={[styles.primaryBtn, { flex: 1, marginTop: 0, paddingVertical: 10 }]}
+                      >
+                        <Text style={styles.primaryBtnTxt}>{resultsLoading ? "Loading..." : "Search / Refresh"}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => { setResultsKeyword(""); setResultsDateFilter(""); setResultsCategoryFilter(""); }}
+                        style={[styles.outlineBtn, { flex: 0.5, marginTop: 0, paddingVertical: 10 }]}
+                      >
+                        <Text style={styles.outlineBtnTxt}>Clear</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {/* Closed Tests Section */}
+                  {closedTests.length === 0 ? (
+                    <View style={styles.emptyContainer}>
+                      <Ionicons name="trophy-outline" size={40} color="#757575" />
+                      <Text style={styles.emptyText}>No closed tests found matching your search filter.</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.card}>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                          <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: "#c62828" }} />
+                          <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Closed Tests ({closedTests.length})</Text>
+                        </View>
+                        {isAdmin && closedTests.length > 0 && (
                           <TouchableOpacity
                             onPress={() => {
-                              const targetId = testLog.testId || testLog.id;
-                              executeDelete("tests", targetId, async () => {
-                                try {
-                                  await api.delete(`/test-portal/test-creation/${targetId}`);
-                                  Alert.alert("Success", "Test deleted successfully.");
-                                  setAllTestResults(prev => prev.filter((r: any) => r.testId !== targetId && r.id !== targetId));
-                                  loadTests();
-                                } catch (e: any) {
-                                  Alert.alert("Error", e.message || "Failed to delete test.");
-                                }
-                              });
+                              Alert.alert(
+                                `Delete All ${closedTests.length} Closed Tests`,
+                                `Are you sure you want to permanently delete all ${closedTests.length} closed tests?`,
+                                [
+                                  { text: "Cancel", style: "cancel" },
+                                  {
+                                    text: "Delete All",
+                                    style: "destructive",
+                                    onPress: async () => {
+                                      try {
+                                        for (const t of closedTests) {
+                                          try { await api.delete(`/test-portal/test-creation/${t.id}`); } catch (_) { }
+                                        }
+                                        loadTests();
+                                        Alert.alert("Success", "All closed tests deleted successfully.");
+                                      } catch (e: any) {
+                                        Alert.alert("Error", e.message || "Failed to delete closed tests.");
+                                      }
+                                    }
+                                  }
+                                ]
+                              );
                             }}
-                            style={{ backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 6, padding: 6 }}
+                            style={{
+                              backgroundColor: "#ffebee",
+                              paddingHorizontal: 10,
+                              paddingVertical: 5,
+                              borderRadius: 6,
+                              borderWidth: 1,
+                              borderColor: "#ef9a9a",
+                              flexDirection: "row",
+                              alignItems: "center",
+                              gap: 4
+                            }}
                           >
-                            <Ionicons name="trash-outline" size={18} color="#fff" />
+                            <Ionicons name="trash-outline" size={14} color="#c62828" />
+                            <Text style={{ color: "#c62828", fontSize: 11, fontWeight: "bold" }}>Clear All Closed Tests</Text>
                           </TouchableOpacity>
                         )}
-                        <Ionicons name={expandedTestId === testLog.testId ? "chevron-up" : "chevron-down"} size={18} color="#fff" />
                       </View>
-                    </TouchableOpacity>
 
-                    {/* Expandable Leaderboard Table */}
-                    {expandedTestId === testLog.testId && (
-                      <ScrollView horizontal showsHorizontalScrollIndicator={true}>
-                        <View style={{ minWidth: 720 }}>
-                          {/* Table Header */}
-                          <View style={{ flexDirection: "row", backgroundColor: "#f5f5f5", paddingVertical: 8, paddingHorizontal: 10, borderBottomWidth: 1, borderColor: "#e0e0e0" }}>
-                            {["#", "Roll No", "Name", "Correct", "Wrong", "Skipped", "Marks", "%", "Result"].map((h, i) => (
-                              <Text key={i} style={{
-                                fontWeight: "bold", fontSize: 11, color: "#555",
-                                width: i === 0 ? 36 : i === 1 ? 90 : i === 2 ? 130 : i === 3 ? 64 : i === 4 ? 64 : i === 5 ? 64 : i === 6 ? 90 : i === 7 ? 50 : 70
-                              }}>{h}</Text>
-                            ))}
-                          </View>
-                          {/* Table Rows */}
-                          {(testLog.entries || []).map((entry: any, idx: number) => (
-                            <View key={entry.attemptId || idx} style={{ flexDirection: "row", paddingVertical: 10, paddingHorizontal: 10, borderBottomWidth: 1, borderColor: "#f0f0f0", backgroundColor: idx % 2 === 0 ? "#ffffff" : "#fafafa" }}>
-                              <Text style={{ width: 36, fontSize: 12, color: idx === 0 ? "#fbc02d" : "#757575", fontWeight: "bold" }}>#{entry.serialNo}</Text>
-                              <Text style={{ width: 90, fontSize: 12, color: "#212121" }}>{entry.rollNumber}</Text>
-                              <Text style={{ width: 130, fontSize: 12, color: "#212121" }} numberOfLines={1}>{entry.studentName}</Text>
-                              <Text style={{ width: 64, fontSize: 12, color: "#2e7d32", fontWeight: "bold", textAlign: "center" }}>{entry.correct}</Text>
-                              <Text style={{ width: 64, fontSize: 12, color: "#c62828", fontWeight: "bold", textAlign: "center" }}>{entry.wrong}</Text>
-                              <Text style={{ width: 64, fontSize: 12, color: "#757575", textAlign: "center" }}>{entry.skipped}</Text>
-                              <Text style={{ width: 90, fontSize: 12, fontWeight: "bold", color: "#1a237e" }}>{entry.obtainedMarks} / {entry.totalMarks}</Text>
-                              <Text style={{ width: 50, fontSize: 12, color: "#555" }}>{Math.round(entry.percentage)}%</Text>
-                              <View style={{ width: 70, backgroundColor: entry.status === "pass" ? "#e8f5e9" : "#ffebee", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, alignSelf: "center" }}>
-                                <Text style={{ fontSize: 10, fontWeight: "bold", color: entry.status === "pass" ? "#2e7d32" : "#c62828", textAlign: "center" }}>{String(entry.status).toUpperCase()}</Text>
+                      {closedTests.map((t: any) => {
+                        const hasAttempt = studentAttempts.find((a: any) => a.testId === t.id);
+                        const hasSubjects = Array.isArray(t.subjectSections) && t.subjectSections.length > 0;
+
+                        return (
+                          <View key={t.id} style={{ backgroundColor: darkMode ? "#18181b" : "#fafafa", borderRadius: 10, padding: 12, marginBottom: 8, borderLeftWidth: 3, borderLeftColor: "#c62828", borderWidth: 1, borderColor: darkMode ? "#27272a" : "#e2e8f0" }}>
+                            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+                              <Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#212121", fontSize: 13, flex: 1 }}>{t.title}</Text>
+                              <View style={{ backgroundColor: "#ffebee", borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 }}>
+                                <Text style={{ fontSize: 10, color: "#c62828", fontWeight: "800" }}>ENDED</Text>
                               </View>
                             </View>
-                          ))}
-                        </View>
-                      </ScrollView>
-                    )}
-                  </View>
-                ))}
-              </View>
-            )}
+                            <Text style={{ fontSize: 11, color: darkMode ? "#a1a1aa" : "#757575", marginTop: 3 }}>
+                              Closed: {new Date(t.endTime).toLocaleString()}
+                            </Text>
+
+                            {/* Subject Section Pills */}
+                            {hasSubjects && (
+                              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+                                {t.subjectSections.map((sec: any, secIdx: number) => (
+                                  <View key={secIdx} style={{ backgroundColor: darkMode ? "#27272a" : "#eff6ff", borderColor: darkMode ? "#3f3f46" : "#bfdbfe", borderWidth: 1, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                                    <Text style={{ fontSize: 10, fontWeight: "600", color: darkMode ? "#93c5fd" : "#1e40af" }}>
+                                      📚 {sec.subject} ({sec.fromQ}–{sec.toQ})
+                                    </Text>
+                                  </View>
+                                ))}
+                              </View>
+                            )}
+
+                            {/* Action Buttons */}
+                            {isAdmin ? (
+                              <View style={{ flexDirection: "row", gap: 8, marginTop: 10, alignItems: "center" }}>
+                                <TouchableOpacity
+                                  onPress={() => monitorTest(t.id)}
+                                  style={{ flex: 1, backgroundColor: "#2e7d32", borderRadius: 8, paddingVertical: 9, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 6 }}
+                                >
+                                  <Ionicons name="trophy-outline" size={15} color="#fff" />
+                                  <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>View Leaderboard</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  onPress={() => downloadSingleTestLeaderboard(t)}
+                                  disabled={downloadingTestId === t.id}
+                                  style={{ width: 40, height: 40, borderRadius: 8, backgroundColor: "#c62828", justifyContent: "center", alignItems: "center" }}
+                                >
+                                  {downloadingTestId === t.id ? (
+                                    <ActivityIndicator size="small" color="#fff" />
+                                  ) : (
+                                    <Ionicons name="download-outline" size={18} color="#fff" />
+                                  )}
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  onPress={() => {
+                                    executeDelete("tests", t.id, async () => {
+                                      try {
+                                        await api.delete(`/test-portal/test-creation/${t.id}`);
+                                        Alert.alert("Success", "Test deleted successfully.");
+                                        loadTests();
+                                      } catch (e: any) {
+                                        Alert.alert("Error", e.message || "Failed to delete test.");
+                                      }
+                                    });
+                                  }}
+                                  style={{ width: 40, height: 40, borderRadius: 8, backgroundColor: "#ffebee", justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: "#ffcdd2" }}
+                                >
+                                  <Ionicons name="trash-outline" size={18} color="#c62828" />
+                                </TouchableOpacity>
+                              </View>
+                            ) : (
+                              <View style={{ flexDirection: "row", gap: 8, marginTop: 10, alignItems: "center" }}>
+                                {hasAttempt ? (
+                                  <TouchableOpacity
+                                    onPress={() => launchReview(hasAttempt.id || hasAttempt.attemptId)}
+                                    style={{ flex: 1, backgroundColor: "#1565c0", borderRadius: 8, paddingVertical: 9, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 6 }}
+                                  >
+                                    <Ionicons name="analytics-outline" size={15} color="#fff" />
+                                    <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>View Results</Text>
+                                  </TouchableOpacity>
+                                ) : (
+                                  <TouchableOpacity
+                                    onPress={() => startExam(t)}
+                                    style={{ flex: 1, backgroundColor: "#5c6bc0", borderRadius: 8, paddingVertical: 9, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 6 }}
+                                  >
+                                    <Ionicons name="book-outline" size={15} color="#fff" />
+                                    <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>View Answer</Text>
+                                  </TouchableOpacity>
+                                )}
+                                <TouchableOpacity
+                                  onPress={() => monitorTest(t.id)}
+                                  style={{ flex: 1, backgroundColor: "#2e7d32", borderRadius: 8, paddingVertical: 9, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 6 }}
+                                >
+                                  <Ionicons name="trophy-outline" size={15} color="#fff" />
+                                  <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>View Leaderboard</Text>
+                                </TouchableOpacity>
+                              </View>
+                            )}
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )}
+                </View>
+              );
+            })()}
           </ScrollView>
         )}
 
@@ -6259,9 +7111,9 @@ export default function App() {
                         <Ionicons name="cash-outline" size={20} color={erpSub === "fees" ? "#c62828" : "#757575"} />
                         <Text style={[styles.sidebarTabTxt, erpSub === "fees" && styles.sidebarTabTxtActive]}>Fees</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity onPress={() => { changeErpSub("marks"); if (tests.length > 0) { setSelectedErpTestId(tests[0].id); loadErpTestResults(tests[0].id); } }} style={[styles.sidebarTab, erpSub === "marks" && styles.sidebarTabActive]}>
-                        <Ionicons name="checkbox-outline" size={20} color={erpSub === "marks" ? "#c62828" : "#757575"} />
-                        <Text style={[styles.sidebarTabTxt, erpSub === "marks" && styles.sidebarTabTxtActive]}>Marks</Text>
+                      <TouchableOpacity onPress={() => changeErpSub("offline-attendance")} style={[styles.sidebarTab, erpSub === "offline-attendance" && styles.sidebarTabActive]}>
+                        <Ionicons name="clipboard-outline" size={20} color={erpSub === "offline-attendance" ? "#c62828" : "#757575"} />
+                        <Text style={[styles.sidebarTabTxt, erpSub === "offline-attendance" && styles.sidebarTabTxtActive]}>Attendance</Text>
                       </TouchableOpacity>
                     </>
                   )}
@@ -6276,10 +7128,6 @@ export default function App() {
                       <TouchableOpacity onPress={() => changeErpSub("analytics")} style={[styles.sidebarTab, erpSub === "analytics" && styles.sidebarTabActive]}>
                         <Ionicons name="analytics-outline" size={20} color={erpSub === "analytics" ? "#c62828" : "#757575"} />
                         <Text style={[styles.sidebarTabTxt, erpSub === "analytics" && styles.sidebarTabTxtActive]}>My Analytics</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => { changeErpSub("marks"); if (tests.length > 0) { setSelectedErpTestId(tests[0].id); loadErpTestResults(tests[0].id); } }} style={[styles.sidebarTab, erpSub === "marks" && styles.sidebarTabActive]}>
-                        <Ionicons name="checkbox-outline" size={20} color={erpSub === "marks" ? "#c62828" : "#757575"} />
-                        <Text style={[styles.sidebarTabTxt, erpSub === "marks" && styles.sidebarTabTxtActive]}>My Marks</Text>
                       </TouchableOpacity>
                       <TouchableOpacity onPress={() => changeErpSub("fees")} style={[styles.sidebarTab, erpSub === "fees" && styles.sidebarTabActive]}>
                         <Ionicons name="cash-outline" size={20} color={erpSub === "fees" ? "#c62828" : "#757575"} />
@@ -9216,81 +10064,883 @@ export default function App() {
                   );
                 })()}
 
-                {erpSub === "marks" && (
-                  <View style={{ gap: 15 }}>
-                    <View style={styles.card}>
-                      <Text style={styles.sectionTitle}>Select Mock Exam Registry</Text>
-                      {tests.length === 0 ? (
-                        <Text style={styles.emptyText}>No mock tests available.</Text>
-                      ) : (
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: "row", gap: 8, paddingVertical: 10 }}>
-                          {tests.map(t => {
-                            const selected = selectedErpTestId === t.id;
-                            return (
-                              <TouchableOpacity
-                                key={t.id}
-                                onPress={() => {
-                                  setSelectedErpTestId(t.id);
-                                  loadErpTestResults(t.id);
-                                }}
-                                style={[
-                                  styles.rectTab,
-                                  selected && styles.rectTabActive,
-                                  { marginRight: 8 }
-                                ]}
-                              >
-                                <Text style={[styles.rectTabTxt, selected && styles.rectTabTxtActive]}>{t.title}</Text>
-                              </TouchableOpacity>
-                            );
-                          })}
-                        </ScrollView>
-                      )}
-                    </View>
+                {/* ================== OFFLINE ATTENDANCE (DAILY + MONTHLY REGISTER) ================== */}
+                {erpSub === "offline-attendance" && (() => {
+                  const allBatches = Array.from(new Set(students.map((s: any) => s.batch).filter(Boolean)));
+                  const activeBatch = offlineAttendanceBatch || (allBatches.length > 0 ? allBatches[0] : null);
+                  const activeMonthlyBatch = offlineAttendanceMonthlyBatch || (allBatches.length > 0 ? allBatches[0] : "");
+                  const batchStudents = students.filter((s: any) => !activeBatch || s.batch === activeBatch);
+                  const monthlyStudents = students.filter((s: any) => !activeMonthlyBatch || s.batch === activeMonthlyBatch);
 
-                    <View style={styles.card}>
-                      <Text style={styles.sectionTitle}>Student Performance Marks Registry</Text>
-                      {(() => {
-                        const myStudent = getLoggedInStudent(user, students);
-                        const displayResults = user.role === "student"
-                          ? erpTestResults.filter((r: any) => r.studentId === user.userId || r.studentName === user.name || (myStudent && r.studentId === myStudent.id))
-                          : erpTestResults;
+                  // Month calculation
+                  const [mYearStr, mMonthStr] = (offlineAttendanceMonth || new Date().toISOString().slice(0, 7)).split("-");
+                  const mYear = parseInt(mYearStr, 10);
+                  const mMonth = parseInt(mMonthStr, 10);
+                  const daysInSelectedMonth = new Date(mYear, mMonth, 0).getDate();
+                  const monthDateObj = new Date(mYear, mMonth - 1, 1);
+                  const monthName = monthDateObj.toLocaleString("default", { month: "long" });
 
-                        if (displayResults.length === 0) {
-                          return <Text style={styles.emptyText}>No evaluation submissions recorded for this mock test yet.</Text>;
+                  const goToPrevMonth = () => {
+                    const prev = new Date(mYear, mMonth - 2, 1);
+                    setOfflineAttendanceMonth(`${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}`);
+                  };
+                  const goToNextMonth = () => {
+                    const next = new Date(mYear, mMonth, 1);
+                    setOfflineAttendanceMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`);
+                  };
+
+                  // Stats for monthly register
+                  let totalStudentPresentSum = 0;
+                  let totalStudentMarkedSum = 0;
+                  let highAttCount = 0;
+                  let lowAttCount = 0;
+                  const markedDatesSet = new Set<string>();
+
+                  monthlyStudents.forEach((st: any) => {
+                    const log = st.attendanceLog || {};
+                    let stP = 0;
+                    let stA = 0;
+                    for (let d = 1; d <= daysInSelectedMonth; d++) {
+                      const dk = `${offlineAttendanceMonth}-${String(d).padStart(2, "0")}`;
+                      if (log[dk] === "present") {
+                        stP++;
+                        markedDatesSet.add(dk);
+                      } else if (log[dk] === "absent") {
+                        stA++;
+                        markedDatesSet.add(dk);
+                      }
+                    }
+                    totalStudentPresentSum += stP;
+                    const stTotal = stP + stA;
+                    totalStudentMarkedSum += stTotal;
+                    const pct = stTotal > 0 ? (stP / stTotal) * 100 : 0;
+                    if (pct >= 85) highAttCount++;
+                    if (stTotal > 0 && pct < 75) lowAttCount++;
+                  });
+
+                  const batchAvgPct = totalStudentMarkedSum > 0 ? Math.round((totalStudentPresentSum / totalStudentMarkedSum) * 100) : 0;
+                  const workingDaysCount = markedDatesSet.size;
+
+                  // Daily Mark Handlers
+                  const markAttendance = async (studentId: string, status: "present" | "absent") => {
+                    setOfflineAttendanceMarks(prev => ({ ...prev, [studentId]: status }));
+                    const targetStudent = students.find((s: any) => s.id === studentId);
+                    if (!targetStudent) return;
+
+                    const currentAttended = targetStudent.attendedDays || 0;
+                    const currentTotal = targetStudent.totalDays || 0;
+                    const currentLog = targetStudent.attendanceLog || {};
+                    const prevStatusOnDate = currentLog[offlineAttendanceDate];
+
+                    let newAttended = currentAttended;
+                    let newTotal = currentTotal;
+
+                    if (!prevStatusOnDate) {
+                      newTotal = currentTotal + 1;
+                      if (status === "present") newAttended = currentAttended + 1;
+                    } else if (prevStatusOnDate !== status) {
+                      if (status === "present") newAttended = currentAttended + 1;
+                      else newAttended = Math.max(0, currentAttended - 1);
+                    }
+
+                    const updatedLog = { ...currentLog, [offlineAttendanceDate]: status };
+                    setOfflineAttendanceSaving(prev => ({ ...prev, [studentId]: true }));
+                    try {
+                      const res = await api.put(`/erp/student/${studentId}`, {
+                        attendedDays: newAttended,
+                        totalDays: newTotal,
+                        lastAttendanceDate: offlineAttendanceDate,
+                        lastAttendanceStatus: status,
+                        attendanceLog: updatedLog,
+                      });
+                      const updatedObj = res?.data || res?.student || {};
+                      setStudents(prev => prev.map(s => s.id === studentId ? { ...s, attendedDays: newAttended, totalDays: newTotal, lastAttendanceDate: offlineAttendanceDate, lastAttendanceStatus: status, attendanceLog: updatedLog, ...updatedObj } : s));
+                    } catch (err: any) {
+                      Alert.alert("Error", err?.response?.data?.message || err?.message || "Failed to save attendance");
+                    } finally {
+                      setOfflineAttendanceSaving(prev => ({ ...prev, [studentId]: false }));
+                    }
+                  };
+
+                  const saveBatchAttendance = async () => {
+                    const toSave = batchStudents.filter((s: any) => offlineAttendanceMarks[s.id] !== undefined);
+                    if (toSave.length === 0) {
+                      Alert.alert("Notice", "No attendance changes marked yet for this batch.");
+                      return;
+                    }
+                    let savedCount = 0;
+                    for (const s of toSave) {
+                      const status = offlineAttendanceMarks[s.id];
+                      if (!status) continue;
+                      setOfflineAttendanceSaving(prev => ({ ...prev, [s.id]: true }));
+                      try {
+                        const curAttended = s.attendedDays || 0;
+                        const curTotal = s.totalDays || 0;
+                        const curLog = s.attendanceLog || {};
+                        const prevStatus = curLog[offlineAttendanceDate];
+
+                        let nAttended = curAttended;
+                        let nTotal = curTotal;
+                        if (!prevStatus) {
+                          nTotal = curTotal + 1;
+                          if (status === "present") nAttended = curAttended + 1;
+                        } else if (prevStatus !== status) {
+                          if (status === "present") nAttended = curAttended + 1;
+                          else nAttended = Math.max(0, curAttended - 1);
                         }
 
-                        return (
-                          <View style={{ gap: 10 }}>
-                            <View style={styles.tableRow}>
-                              <Text style={[styles.th, { flex: 2 }]}>Student Name</Text>
-                              <Text style={styles.th}>Score</Text>
-                              <Text style={styles.th}>Rank</Text>
-                              <Text style={styles.th}>Status</Text>
+                        const uLog = { ...curLog, [offlineAttendanceDate]: status };
+                        const res = await api.put(`/erp/student/${s.id}`, {
+                          attendedDays: nAttended,
+                          totalDays: nTotal,
+                          lastAttendanceDate: offlineAttendanceDate,
+                          lastAttendanceStatus: status,
+                          attendanceLog: uLog,
+                        });
+                        const updatedObj = res?.data || res?.student || {};
+                        setStudents(prev => prev.map(item => item.id === s.id ? { ...item, attendedDays: nAttended, totalDays: nTotal, lastAttendanceDate: offlineAttendanceDate, lastAttendanceStatus: status, attendanceLog: uLog, ...updatedObj } : item));
+                        savedCount++;
+                      } catch (err) {
+                        console.error("Batch save error for student", s.id, err);
+                      } finally {
+                        setOfflineAttendanceSaving(prev => ({ ...prev, [s.id]: false }));
+                      }
+                    }
+                    Alert.alert("Saved", `Attendance saved for ${savedCount} student(s) on ${offlineAttendanceDate}`);
+                  };
+
+                  // Interactive Cell Click Handler for Monthly Register
+                  const handleToggleCellAttendance = async (student: any, dateKey: string) => {
+                    const cellKey = `${student.id}_${dateKey}`;
+                    if (offlineAttendanceCellSaving[cellKey]) return;
+
+                    const curLog = student.attendanceLog || {};
+                    const curStatus = curLog[dateKey];
+                    // Cycle: unassigned/absent -> present -> absent -> unassigned
+                    let nextStatus: "present" | "absent" | null = null;
+                    if (!curStatus) nextStatus = "present";
+                    else if (curStatus === "present") nextStatus = "absent";
+                    else nextStatus = null;
+
+                    const curAtt = student.attendedDays || 0;
+                    const curTot = student.totalDays || 0;
+                    let nAtt = curAtt;
+                    let nTot = curTot;
+
+                    if (!curStatus && nextStatus === "present") {
+                      nTot = curTot + 1;
+                      nAtt = curAtt + 1;
+                    } else if (curStatus === "present" && nextStatus === "absent") {
+                      nAtt = Math.max(0, curAtt - 1);
+                    } else if (curStatus === "absent" && nextStatus === null) {
+                      nTot = Math.max(0, curTot - 1);
+                    }
+
+                    const nextLog = { ...curLog };
+                    if (nextStatus) {
+                      nextLog[dateKey] = nextStatus;
+                    } else {
+                      delete nextLog[dateKey];
+                    }
+
+                    // Optimistic update
+                    setOfflineAttendanceCellSaving(prev => ({ ...prev, [cellKey]: true }));
+                    setStudents(prev => prev.map(s => s.id === student.id ? { ...s, attendedDays: nAtt, totalDays: nTot, attendanceLog: nextLog } : s));
+
+                    try {
+                      await api.put(`/erp/student/${student.id}`, {
+                        attendedDays: nAtt,
+                        totalDays: nTot,
+                        lastAttendanceDate: dateKey,
+                        lastAttendanceStatus: nextStatus || "present",
+                        attendanceLog: nextLog,
+                      });
+                    } catch (err) {
+                      console.error("Cell update error:", err);
+                      // Revert
+                      setStudents(prev => prev.map(s => s.id === student.id ? { ...s, attendedDays: curAtt, totalDays: curTot, attendanceLog: curLog } : s));
+                      Alert.alert("Error", "Could not update attendance for this day.");
+                    } finally {
+                      setOfflineAttendanceCellSaving(prev => ({ ...prev, [cellKey]: false }));
+                    }
+                  };
+
+                  // Excel Export Handler
+                  const handleExportMonthlyExcel = async () => {
+                    try {
+                      const headers = ["Roll / Reg No", "Student Name", "Batch"];
+                      for (let d = 1; d <= daysInSelectedMonth; d++) {
+                        headers.push(String(d));
+                      }
+                      headers.push("Total Present (P)", "Total Absent (A)", "Attendance %");
+
+                      const dataRows = monthlyStudents.map((st: any, idx: number) => {
+                        const roll = st.rollNumber || st.admissionNumber || `S${idx + 1}`;
+                        const name = getStudentName(st);
+                        const log = st.attendanceLog || {};
+                        let p = 0;
+                        let a = 0;
+                        const dayCols: string[] = [];
+
+                        for (let d = 1; d <= daysInSelectedMonth; d++) {
+                          const dk = `${offlineAttendanceMonth}-${String(d).padStart(2, "0")}`;
+                          const dayOfWeek = new Date(mYear, mMonth - 1, d).getDay();
+                          const status = log[dk];
+                          if (status === "present") {
+                            p++;
+                            dayCols.push("P");
+                          } else if (status === "absent") {
+                            a++;
+                            dayCols.push("A");
+                          } else if (dayOfWeek === 0) {
+                            dayCols.push("Sun");
+                          } else {
+                            dayCols.push("-");
+                          }
+                        }
+                        const t = p + a;
+                        const pct = t > 0 ? `${Math.round((p / t) * 100)}%` : "0%";
+                        return [roll, name, st.batch || activeMonthlyBatch, ...dayCols, p, a, pct];
+                      });
+
+                      const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+                      const wb = XLSX.utils.book_new();
+                      XLSX.utils.book_append_sheet(wb, ws, "Monthly Register");
+
+                      const filename = `Attendance_${activeMonthlyBatch || "Batch"}_${offlineAttendanceMonth}.xlsx`;
+
+                      if (Platform.OS === "web") {
+                        XLSX.writeFile(wb, filename);
+                      } else {
+                        const wbout = XLSX.write(wb, { type: "base64", bookType: "xlsx" });
+                        const uri = (FileSystem.cacheDirectory || "") + filename;
+                        await FileSystem.writeAsStringAsync(uri, wbout, { encoding: FileSystem.EncodingType.Base64 });
+                        if (await Sharing.isAvailableAsync()) {
+                          await Sharing.shareAsync(uri, { mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", dialogTitle: "Export Attendance Register" });
+                        } else {
+                          Alert.alert("Success", `File saved to ${uri}`);
+                        }
+                      }
+                    } catch (err) {
+                      console.error("Export error:", err);
+                      Alert.alert("Export Error", "Failed to export Excel spreadsheet.");
+                    }
+                  };
+
+                  return (
+                    <View style={{ gap: 20 }}>
+                      {/* HEADER CARD */}
+                      <View style={{ backgroundColor: "#ffffff", borderRadius: 16, padding: 22, borderWidth: 1, borderColor: "#e0e0e0", shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                            <View style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: "#e3f2fd", alignItems: "center", justifyContent: "center" }}>
+                              <Ionicons name="calendar-outline" size={26} color="#0288d1" />
                             </View>
-                            {displayResults.map(r => {
-                              const stud = students.find((s) => s.id === r.studentId || s.userId === r.studentId);
-                              const lead = leads.find((ld) => ld.id === r.studentId || ld.userId === r.studentId);
-                              const resolvedName = r.studentName || (stud ? getStudentName(stud) : (lead ? lead.name : `Guest: ${r.studentId.substring(0, 8)}`));
-                              const resolvedRoll = r.rollNumber || (stud ? stud.rollNumber : "Guest");
-                              const name = user.role === "student" ? `My Score (${resolvedRoll})` : `${resolvedName} (${resolvedRoll})`;
-                              const isPass = r.status === "pass" && (r.obtainedMarks || 0) > 0;
-                              return (
-                                <View key={r.id} style={styles.tableRow}>
-                                  <Text style={{ flex: 2, color: "#212121", fontSize: 13 }}>{name}</Text>
-                                  <Text style={{ color: "#212121", fontSize: 13 }}>{r.obtainedMarks} / {r.totalMarks}</Text>
-                                  <Text style={{ color: "#212121", fontSize: 13 }}>#{r.rank || 1}</Text>
-                                  <Text style={{ color: isPass ? "#2e7d32" : "#c62828", fontWeight: "bold", fontSize: 12 }}>
-                                    {isPass ? "PASS" : "FAIL"}
-                                  </Text>
-                                </View>
-                              );
-                            })}
+                            <View>
+                              <Text style={{ fontSize: 20, fontWeight: "bold", color: "#1e293b" }}>Offline Attendance Register</Text>
+                              <Text style={{ fontSize: 13, color: "#64748b" }}>Track daily markings, monthly histories, and aggregate attendance rates</Text>
+                            </View>
                           </View>
+
+                          {/* SEGMENTED TAB SWITCHER */}
+                          <View style={{ flexDirection: "row", backgroundColor: "#f1f5f9", borderRadius: 10, padding: 4, gap: 4 }}>
+                            <TouchableOpacity
+                              onPress={() => setOfflineAttendanceViewMode("daily")}
+                              style={{
+                                paddingHorizontal: 16,
+                                paddingVertical: 8,
+                                borderRadius: 8,
+                                flexDirection: "row",
+                                alignItems: "center",
+                                gap: 6,
+                                backgroundColor: offlineAttendanceViewMode === "daily" ? "#ffffff" : "transparent",
+                                shadowColor: offlineAttendanceViewMode === "daily" ? "#000" : "transparent",
+                                shadowOpacity: offlineAttendanceViewMode === "daily" ? 0.08 : 0,
+                                shadowRadius: 4,
+                                elevation: offlineAttendanceViewMode === "daily" ? 2 : 0,
+                              }}
+                            >
+                              <Ionicons name="create-outline" size={17} color={offlineAttendanceViewMode === "daily" ? "#0288d1" : "#64748b"} />
+                              <Text style={{ fontSize: 13, fontWeight: offlineAttendanceViewMode === "daily" ? "700" : "500", color: offlineAttendanceViewMode === "daily" ? "#0288d1" : "#64748b" }}>Daily Marking</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                              onPress={() => setOfflineAttendanceViewMode("monthly")}
+                              style={{
+                                paddingHorizontal: 16,
+                                paddingVertical: 8,
+                                borderRadius: 8,
+                                flexDirection: "row",
+                                alignItems: "center",
+                                gap: 6,
+                                backgroundColor: offlineAttendanceViewMode === "monthly" ? "#ffffff" : "transparent",
+                                shadowColor: offlineAttendanceViewMode === "monthly" ? "#000" : "transparent",
+                                shadowOpacity: offlineAttendanceViewMode === "monthly" ? 0.08 : 0,
+                                shadowRadius: 4,
+                                elevation: offlineAttendanceViewMode === "monthly" ? 2 : 0,
+                              }}
+                            >
+                              <Ionicons name="grid-outline" size={17} color={offlineAttendanceViewMode === "monthly" ? "#0288d1" : "#64748b"} />
+                              <Text style={{ fontSize: 13, fontWeight: offlineAttendanceViewMode === "monthly" ? "700" : "500", color: offlineAttendanceViewMode === "monthly" ? "#0288d1" : "#64748b" }}>Monthly Register</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      </View>
+
+                      {/* ===================== VIEW MODE 1: DAILY MARKING ===================== */}
+                      {offlineAttendanceViewMode === "daily" && (
+                        <View style={{ gap: 20 }}>
+                          {/* Daily Controls */}
+                          <View style={{ backgroundColor: "#ffffff", borderRadius: 16, padding: 20, borderWidth: 1, borderColor: "#e0e0e0", gap: 16 }}>
+                            <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "flex-end", gap: 16 }}>
+                              {/* Date Picker */}
+                              <View style={{ flex: 1, minWidth: 200 }}>
+                                <Text style={{ fontSize: 13, fontWeight: "600", color: "#374151", marginBottom: 6 }}>Attendance Date</Text>
+                                <TextInput
+                                  value={offlineAttendanceDate}
+                                  onChangeText={setOfflineAttendanceDate}
+                                  placeholder="YYYY-MM-DD"
+                                  style={{ borderWidth: 1, borderColor: "#cbd5e1", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, fontSize: 14, backgroundColor: "#f8fafc", color: "#1e293b" }}
+                                />
+                              </View>
+
+                              {/* Batch Filter Buttons */}
+                              <View style={{ flex: 2, minWidth: 260 }}>
+                                <Text style={{ fontSize: 13, fontWeight: "600", color: "#374151", marginBottom: 6 }}>Select Batch</Text>
+                                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                                  <View style={{ flexDirection: "row", gap: 8 }}>
+                                    {allBatches.map(b => (
+                                      <TouchableOpacity
+                                        key={b}
+                                        onPress={() => setOfflineAttendanceBatch(b)}
+                                        style={{
+                                          paddingHorizontal: 14,
+                                          paddingVertical: 8,
+                                          borderRadius: 20,
+                                          borderWidth: 1,
+                                          borderColor: activeBatch === b ? "#0288d1" : "#e2e8f0",
+                                          backgroundColor: activeBatch === b ? "#0288d1" : "#f8fafc",
+                                        }}
+                                      >
+                                        <Text style={{ fontSize: 13, fontWeight: "600", color: activeBatch === b ? "#ffffff" : "#475569" }}>{b}</Text>
+                                      </TouchableOpacity>
+                                    ))}
+                                  </View>
+                                </ScrollView>
+                              </View>
+                            </View>
+
+                            {/* Quick Action Buttons */}
+                            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: "#f1f5f9" }}>
+                              <TouchableOpacity
+                                onPress={() => {
+                                  const marks: Record<string, "present"> = {};
+                                  batchStudents.forEach((s: any) => { marks[s.id] = "present"; });
+                                  setOfflineAttendanceMarks(prev => ({ ...prev, ...marks }));
+                                }}
+                                style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8, backgroundColor: "#dcfce7", borderWidth: 1, borderColor: "#86efac" }}
+                              >
+                                <Ionicons name="checkmark-circle-outline" size={16} color="#16a34a" />
+                                <Text style={{ fontSize: 13, fontWeight: "600", color: "#15803d" }}>Mark All Present</Text>
+                              </TouchableOpacity>
+
+                              <TouchableOpacity
+                                onPress={() => {
+                                  const marks: Record<string, "absent"> = {};
+                                  batchStudents.forEach((s: any) => { marks[s.id] = "absent"; });
+                                  setOfflineAttendanceMarks(prev => ({ ...prev, ...marks }));
+                                }}
+                                style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8, backgroundColor: "#fee2e2", borderWidth: 1, borderColor: "#fca5a5" }}
+                              >
+                                <Ionicons name="close-circle-outline" size={16} color="#dc2626" />
+                                <Text style={{ fontSize: 13, fontWeight: "600", color: "#b91c1c" }}>Mark All Absent</Text>
+                              </TouchableOpacity>
+
+                              <TouchableOpacity
+                                onPress={saveBatchAttendance}
+                                style={{ marginLeft: "auto", flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 18, paddingVertical: 8, borderRadius: 8, backgroundColor: "#0288d1" }}
+                              >
+                                <Ionicons name="save-outline" size={16} color="#ffffff" />
+                                <Text style={{ fontSize: 13, fontWeight: "bold", color: "#ffffff" }}>Save All Attendance</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+
+                          {/* Student Attendance List */}
+                          <View style={{ backgroundColor: "#ffffff", borderRadius: 16, overflow: "hidden", borderWidth: 1, borderColor: "#e0e0e0" }}>
+                            <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: "#f1f5f9", flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                              <Text style={{ fontSize: 15, fontWeight: "bold", color: "#1e293b" }}>{activeBatch ? `Batch: ${activeBatch}` : "All Students"} ({batchStudents.length} Students)</Text>
+                              <Text style={{ fontSize: 13, color: "#64748b" }}>Date: {offlineAttendanceDate}</Text>
+                            </View>
+
+                            {batchStudents.length === 0 ? (
+                              <View style={{ padding: 40, alignItems: "center" }}>
+                                <Ionicons name="people-outline" size={48} color="#cbd5e1" />
+                                <Text style={{ marginTop: 12, color: "#64748b", fontSize: 14 }}>No students found in this batch</Text>
+                              </View>
+                            ) : (
+                              batchStudents.map((s: any, idx: number) => {
+                                const currentStatus = offlineAttendanceMarks[s.id] !== undefined
+                                  ? offlineAttendanceMarks[s.id]
+                                  : (s.attendanceLog?.[offlineAttendanceDate] || null);
+                                const isSaving = offlineAttendanceSaving[s.id];
+                                const attendedDays = s.attendedDays || 0;
+                                const totalDays = s.totalDays || 0;
+                                const pct = totalDays > 0 ? Math.round((attendedDays / totalDays) * 100) : 0;
+
+                                return (
+                                  <View
+                                    key={s.id}
+                                    style={{
+                                      flexDirection: "row",
+                                      alignItems: "center",
+                                      justifyContent: "space-between",
+                                      padding: 16,
+                                      borderBottomWidth: idx < batchStudents.length - 1 ? 1 : 0,
+                                      borderBottomColor: "#f1f5f9",
+                                      backgroundColor: currentStatus === "present" ? "#f0fdf4" : currentStatus === "absent" ? "#fef2f2" : "#ffffff",
+                                    }}
+                                  >
+                                    <View style={{ flex: 1, minWidth: 150 }}>
+                                      <Text style={{ fontSize: 14, fontWeight: "700", color: "#1e293b" }}>{getStudentName(s)}</Text>
+                                      <Text style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
+                                        Roll: {s.rollNumber || s.admissionNumber || "N/A"} • Overall: {attendedDays}/{totalDays} ({pct}%)
+                                      </Text>
+                                    </View>
+
+                                    <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
+                                      <TouchableOpacity
+                                        onPress={() => markAttendance(s.id, "present")}
+                                        disabled={isSaving}
+                                        style={{
+                                          paddingHorizontal: 16,
+                                          paddingVertical: 8,
+                                          borderRadius: 8,
+                                          borderWidth: 1,
+                                          borderColor: currentStatus === "present" ? "#16a34a" : "#d1d5db",
+                                          backgroundColor: currentStatus === "present" ? "#16a34a" : "#ffffff",
+                                          flexDirection: "row",
+                                          alignItems: "center",
+                                          gap: 6,
+                                        }}
+                                      >
+                                        <Ionicons name="checkmark-sharp" size={16} color={currentStatus === "present" ? "#ffffff" : "#475569"} />
+                                        <Text style={{ fontSize: 13, fontWeight: "600", color: currentStatus === "present" ? "#ffffff" : "#475569" }}>Present</Text>
+                                      </TouchableOpacity>
+
+                                      <TouchableOpacity
+                                        onPress={() => markAttendance(s.id, "absent")}
+                                        disabled={isSaving}
+                                        style={{
+                                          paddingHorizontal: 16,
+                                          paddingVertical: 8,
+                                          borderRadius: 8,
+                                          borderWidth: 1,
+                                          borderColor: currentStatus === "absent" ? "#dc2626" : "#d1d5db",
+                                          backgroundColor: currentStatus === "absent" ? "#dc2626" : "#ffffff",
+                                          flexDirection: "row",
+                                          alignItems: "center",
+                                          gap: 6,
+                                        }}
+                                      >
+                                        <Ionicons name="close-sharp" size={16} color={currentStatus === "absent" ? "#ffffff" : "#475569"} />
+                                        <Text style={{ fontSize: 13, fontWeight: "600", color: currentStatus === "absent" ? "#ffffff" : "#475569" }}>Absent</Text>
+                                      </TouchableOpacity>
+
+                                      {isSaving && <ActivityIndicator size="small" color="#0288d1" />}
+                                    </View>
+                                  </View>
+                                );
+                              })
+                            )}
+                          </View>
+                        </View>
+                      )}
+
+                      {/* ===================== VIEW MODE 2: MONTHLY REGISTER ===================== */}
+                      {offlineAttendanceViewMode === "monthly" && (
+                        <View style={{ gap: 20 }}>
+                          {/* Controls bar: Month Selector + Batch Selector + Export */}
+                          <View style={{ backgroundColor: "#ffffff", borderRadius: 16, padding: 18, borderWidth: 1, borderColor: "#e0e0e0", gap: 14 }}>
+                            <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                              {/* Month Navigator */}
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#f8fafc", borderRadius: 10, padding: 4, borderWidth: 1, borderColor: "#e2e8f0" }}>
+                                <TouchableOpacity onPress={goToPrevMonth} style={{ padding: 6, borderRadius: 6 }}>
+                                  <Ionicons name="chevron-back" size={20} color="#475569" />
+                                </TouchableOpacity>
+                                <Text style={{ fontSize: 15, fontWeight: "bold", color: "#1e293b", minWidth: 140, textAlign: "center" }}>
+                                  {monthName} {mYear}
+                                </Text>
+                                <TouchableOpacity onPress={goToNextMonth} style={{ padding: 6, borderRadius: 6 }}>
+                                  <Ionicons name="chevron-forward" size={20} color="#475569" />
+                                </TouchableOpacity>
+                              </View>
+
+                              {/* Batch Filter Buttons */}
+                              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }}>
+                                <View style={{ flexDirection: "row", gap: 6 }}>
+                                  {allBatches.map(b => (
+                                    <TouchableOpacity
+                                      key={b}
+                                      onPress={() => setOfflineAttendanceMonthlyBatch(b)}
+                                      style={{
+                                        paddingHorizontal: 12,
+                                        paddingVertical: 7,
+                                        borderRadius: 20,
+                                        borderWidth: 1,
+                                        borderColor: activeMonthlyBatch === b ? "#0288d1" : "#e2e8f0",
+                                        backgroundColor: activeMonthlyBatch === b ? "#0288d1" : "#ffffff",
+                                      }}
+                                    >
+                                      <Text style={{ fontSize: 12, fontWeight: "600", color: activeMonthlyBatch === b ? "#ffffff" : "#475569" }}>{b}</Text>
+                                    </TouchableOpacity>
+                                  ))}
+                                </View>
+                              </ScrollView>
+
+                              {/* Excel Export Button */}
+                              <TouchableOpacity
+                                onPress={handleExportMonthlyExcel}
+                                style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#10b981", paddingHorizontal: 16, paddingVertical: 9, borderRadius: 10 }}
+                              >
+                                <Ionicons name="download-outline" size={17} color="#ffffff" />
+                                <Text style={{ fontSize: 13, fontWeight: "bold", color: "#ffffff" }}>Export Excel (.xlsx)</Text>
+                              </TouchableOpacity>
+                            </View>
+
+                            {/* Summary KPI Cards */}
+                            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: "#f1f5f9" }}>
+                              <View style={{ flex: 1, minWidth: 140, backgroundColor: "#f8fafc", padding: 12, borderRadius: 10, borderWidth: 1, borderColor: "#e2e8f0" }}>
+                                <Text style={{ fontSize: 11, fontWeight: "600", color: "#64748b", textTransform: "uppercase" }}>Working Days Marked</Text>
+                                <Text style={{ fontSize: 18, fontWeight: "bold", color: "#1e293b", marginTop: 4 }}>{workingDaysCount} / {daysInSelectedMonth}</Text>
+                              </View>
+
+                              <View style={{ flex: 1, minWidth: 140, backgroundColor: "#f0fdf4", padding: 12, borderRadius: 10, borderWidth: 1, borderColor: "#bbf7d0" }}>
+                                <Text style={{ fontSize: 11, fontWeight: "600", color: "#166534", textTransform: "uppercase" }}>Batch Avg Attendance</Text>
+                                <Text style={{ fontSize: 18, fontWeight: "bold", color: "#15803d", marginTop: 4 }}>{batchAvgPct}%</Text>
+                              </View>
+
+                              <View style={{ flex: 1, minWidth: 140, backgroundColor: "#eff6ff", padding: 12, borderRadius: 10, borderWidth: 1, borderColor: "#bfdbfe" }}>
+                                <Text style={{ fontSize: 11, fontWeight: "600", color: "#1e40af", textTransform: "uppercase" }}>Top Attendance (≥85%)</Text>
+                                <Text style={{ fontSize: 18, fontWeight: "bold", color: "#1d4ed8", marginTop: 4 }}>{highAttCount} Students</Text>
+                              </View>
+
+                              <View style={{ flex: 1, minWidth: 140, backgroundColor: "#fef2f2", padding: 12, borderRadius: 10, borderWidth: 1, borderColor: "#fecaca" }}>
+                                <Text style={{ fontSize: 11, fontWeight: "600", color: "#991b1b", textTransform: "uppercase" }}>Low Attendance (&lt;75%)</Text>
+                                <Text style={{ fontSize: 18, fontWeight: "bold", color: "#dc2626", marginTop: 4 }}>{lowAttCount} Students</Text>
+                              </View>
+                            </View>
+                          </View>
+
+                          {/* Legend & Instructions */}
+                          <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 4 }}>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                                <View style={{ width: 18, height: 18, borderRadius: 4, backgroundColor: "#dcfce7", borderWidth: 1, borderColor: "#86efac", alignItems: "center", justifyContent: "center" }}>
+                                  <Text style={{ fontSize: 10, fontWeight: "bold", color: "#15803d" }}>P</Text>
+                                </View>
+                                <Text style={{ fontSize: 12, color: "#475569" }}>Present</Text>
+                              </View>
+
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                                <View style={{ width: 18, height: 18, borderRadius: 4, backgroundColor: "#fee2e2", borderWidth: 1, borderColor: "#fca5a5", alignItems: "center", justifyContent: "center" }}>
+                                  <Text style={{ fontSize: 10, fontWeight: "bold", color: "#b91c1c" }}>A</Text>
+                                </View>
+                                <Text style={{ fontSize: 12, color: "#475569" }}>Absent</Text>
+                              </View>
+
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                                <View style={{ width: 18, height: 18, borderRadius: 4, backgroundColor: "#f1f5f9", borderWidth: 1, borderColor: "#cbd5e1", alignItems: "center", justifyContent: "center" }}>
+                                  <Text style={{ fontSize: 10, fontWeight: "bold", color: "#94a3b8" }}>S</Text>
+                                </View>
+                                <Text style={{ fontSize: 12, color: "#475569" }}>Sunday</Text>
+                              </View>
+
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                                <View style={{ width: 18, height: 18, borderRadius: 4, backgroundColor: "#f8fafc", borderWidth: 1, borderColor: "#e2e8f0" }} />
+                                <Text style={{ fontSize: 12, color: "#475569" }}>Not Marked (-)</Text>
+                              </View>
+                            </View>
+                            <Text style={{ fontSize: 11, color: "#64748b", fontStyle: "italic" }}>💡 Tap any cell to toggle P ➔ A ➔ Blank</Text>
+                          </View>
+
+                          {/* MONTHLY MATRIX TABLE */}
+                          <View style={{ backgroundColor: "#ffffff", borderRadius: 16, borderWidth: 1, borderColor: "#e0e0e0", overflow: "hidden" }}>
+                            <ScrollView horizontal showsHorizontalScrollIndicator={true}>
+                              <View>
+                                {/* Header Row */}
+                                <View style={{ flexDirection: "row", backgroundColor: "#f8fafc", borderBottomWidth: 1, borderBottomColor: "#cbd5e1" }}>
+                                  <View style={{ width: 190, padding: 12, justifyContent: "center", borderRightWidth: 1, borderRightColor: "#e2e8f0" }}>
+                                    <Text style={{ fontSize: 12, fontWeight: "bold", color: "#334155" }}>Student</Text>
+                                  </View>
+
+                                  {Array.from({ length: daysInSelectedMonth }, (_, i) => i + 1).map(day => {
+                                    const dow = new Date(mYear, mMonth - 1, day).getDay();
+                                    const isSun = dow === 0;
+                                    const dayNames = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+                                    return (
+                                      <View
+                                        key={day}
+                                        style={{
+                                          width: 38,
+                                          paddingVertical: 8,
+                                          alignItems: "center",
+                                          justifyContent: "center",
+                                          borderRightWidth: 1,
+                                          borderRightColor: "#e2e8f0",
+                                          backgroundColor: isSun ? "#f1f5f9" : "#f8fafc",
+                                        }}
+                                      >
+                                        <Text style={{ fontSize: 9, color: isSun ? "#ef4444" : "#64748b", fontWeight: "600" }}>{dayNames[dow]}</Text>
+                                        <Text style={{ fontSize: 12, fontWeight: "bold", color: isSun ? "#ef4444" : "#1e293b", marginTop: 2 }}>{day}</Text>
+                                      </View>
+                                    );
+                                  })}
+
+                                  {/* Summary Columns Header */}
+                                  <View style={{ width: 50, paddingVertical: 8, alignItems: "center", justifyContent: "center", borderRightWidth: 1, borderRightColor: "#e2e8f0", backgroundColor: "#f0fdf4" }}>
+                                    <Text style={{ fontSize: 10, fontWeight: "bold", color: "#166534" }}>P</Text>
+                                    <Text style={{ fontSize: 8, color: "#166534" }}>Days</Text>
+                                  </View>
+                                  <View style={{ width: 50, paddingVertical: 8, alignItems: "center", justifyContent: "center", borderRightWidth: 1, borderRightColor: "#e2e8f0", backgroundColor: "#fef2f2" }}>
+                                    <Text style={{ fontSize: 10, fontWeight: "bold", color: "#991b1b" }}>A</Text>
+                                    <Text style={{ fontSize: 8, color: "#991b1b" }}>Days</Text>
+                                  </View>
+                                  <View style={{ width: 65, paddingVertical: 8, alignItems: "center", justifyContent: "center", backgroundColor: "#eff6ff" }}>
+                                    <Text style={{ fontSize: 10, fontWeight: "bold", color: "#1e40af" }}>%</Text>
+                                    <Text style={{ fontSize: 8, color: "#1e40af" }}>Rate</Text>
+                                  </View>
+                                </View>
+
+                                {/* Student Rows */}
+                                {monthlyStudents.length === 0 ? (
+                                  <View style={{ padding: 40, alignItems: "center" }}>
+                                    <Text style={{ color: "#64748b", fontSize: 14 }}>No students found in this batch</Text>
+                                  </View>
+                                ) : (
+                                  monthlyStudents.map((st: any, idx: number) => {
+                                    const log = st.attendanceLog || {};
+                                    let studentPresentCount = 0;
+                                    let studentAbsentCount = 0;
+
+                                    for (let d = 1; d <= daysInSelectedMonth; d++) {
+                                      const dk = `${offlineAttendanceMonth}-${String(d).padStart(2, "0")}`;
+                                      if (log[dk] === "present") studentPresentCount++;
+                                      else if (log[dk] === "absent") studentAbsentCount++;
+                                    }
+
+                                    const totalMarkedDays = studentPresentCount + studentAbsentCount;
+                                    const studentPct = totalMarkedDays > 0 ? Math.round((studentPresentCount / totalMarkedDays) * 100) : 0;
+
+                                    return (
+                                      <View
+                                        key={st.id}
+                                        style={{
+                                          flexDirection: "row",
+                                          borderBottomWidth: idx < monthlyStudents.length - 1 ? 1 : 0,
+                                          borderBottomColor: "#f1f5f9",
+                                          backgroundColor: idx % 2 === 0 ? "#ffffff" : "#fafafa",
+                                        }}
+                                      >
+                                        {/* Student Info with clickable Calendar modal opener */}
+                                        <TouchableOpacity
+                                          onPress={() => setSelectedMonthlyCalendarStudent(st)}
+                                          style={{ width: 190, padding: 10, justifyContent: "center", borderRightWidth: 1, borderRightColor: "#e2e8f0" }}
+                                        >
+                                          <Text numberOfLines={1} style={{ fontSize: 13, fontWeight: "700", color: "#1e293b" }}>{getStudentName(st)}</Text>
+                                          <Text numberOfLines={1} style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
+                                            Roll: {st.rollNumber || st.admissionNumber || "N/A"} 📅
+                                          </Text>
+                                        </TouchableOpacity>
+
+                                        {/* Days Cells */}
+                                        {Array.from({ length: daysInSelectedMonth }, (_, i) => i + 1).map(day => {
+                                          const dk = `${offlineAttendanceMonth}-${String(day).padStart(2, "0")}`;
+                                          const dow = new Date(mYear, mMonth - 1, day).getDay();
+                                          const isSun = dow === 0;
+                                          const status = log[dk];
+                                          const cellKey = `${st.id}_${dk}`;
+                                          const isCellSaving = offlineAttendanceCellSaving[cellKey];
+
+                                          let bgColor = isSun ? "#f8fafc" : "transparent";
+                                          let textColor = "#94a3b8";
+                                          let label = "-";
+
+                                          if (status === "present") {
+                                            bgColor = "#dcfce7";
+                                            textColor = "#15803d";
+                                            label = "P";
+                                          } else if (status === "absent") {
+                                            bgColor = "#fee2e2";
+                                            textColor = "#b91c1c";
+                                            label = "A";
+                                          } else if (isSun) {
+                                            label = "S";
+                                            textColor = "#cbd5e1";
+                                          }
+
+                                          return (
+                                            <TouchableOpacity
+                                              key={day}
+                                              onPress={() => handleToggleCellAttendance(st, dk)}
+                                              disabled={isCellSaving}
+                                              style={{
+                                                width: 38,
+                                                alignItems: "center",
+                                                justifyContent: "center",
+                                                borderRightWidth: 1,
+                                                borderRightColor: "#e2e8f0",
+                                                backgroundColor: bgColor,
+                                              }}
+                                            >
+                                              {isCellSaving ? (
+                                                <ActivityIndicator size="small" color="#0288d1" />
+                                              ) : (
+                                                <Text style={{ fontSize: 11, fontWeight: status ? "bold" : "500", color: textColor }}>
+                                                  {label}
+                                                </Text>
+                                              )}
+                                            </TouchableOpacity>
+                                          );
+                                        })}
+
+                                        {/* Summary Columns */}
+                                        <View style={{ width: 50, alignItems: "center", justifyContent: "center", borderRightWidth: 1, borderRightColor: "#e2e8f0", backgroundColor: "#f0fdf4" }}>
+                                          <Text style={{ fontSize: 12, fontWeight: "bold", color: "#166534" }}>{studentPresentCount}</Text>
+                                        </View>
+                                        <View style={{ width: 50, alignItems: "center", justifyContent: "center", borderRightWidth: 1, borderRightColor: "#e2e8f0", backgroundColor: "#fef2f2" }}>
+                                          <Text style={{ fontSize: 12, fontWeight: "bold", color: "#991b1b" }}>{studentAbsentCount}</Text>
+                                        </View>
+                                        <View style={{ width: 65, alignItems: "center", justifyContent: "center", backgroundColor: studentPct >= 75 ? "#eff6ff" : "#fff1f2" }}>
+                                          <Text style={{ fontSize: 12, fontWeight: "bold", color: studentPct >= 75 ? "#1d4ed8" : "#be123c" }}>
+                                            {studentPct}%
+                                          </Text>
+                                        </View>
+                                      </View>
+                                    );
+                                  })
+                                )}
+                              </View>
+                            </ScrollView>
+                          </View>
+                        </View>
+                      )}
+
+                      {/* ===================== STUDENT MONTHLY CALENDAR MODAL ===================== */}
+                      {selectedMonthlyCalendarStudent && (() => {
+                        const st = selectedMonthlyCalendarStudent;
+                        const log = st.attendanceLog || {};
+                        let p = 0;
+                        let a = 0;
+                        for (let d = 1; d <= daysInSelectedMonth; d++) {
+                          const dk = `${offlineAttendanceMonth}-${String(d).padStart(2, "0")}`;
+                          if (log[dk] === "present") p++;
+                          else if (log[dk] === "absent") a++;
+                        }
+                        const tot = p + a;
+                        const pct = tot > 0 ? Math.round((p / tot) * 100) : 0;
+
+                        return (
+                          <Modal visible={true} transparent={true} animationType="fade" onRequestClose={() => setSelectedMonthlyCalendarStudent(null)}>
+                            <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", alignItems: "center", justifyContent: "center", padding: 16 }}>
+                              <View style={{ width: "100%", maxWidth: 460, backgroundColor: "#ffffff", borderRadius: 16, padding: 20, shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 16, elevation: 5 }}>
+                                {/* Header */}
+                                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#f1f5f9", paddingBottom: 12 }}>
+                                  <View>
+                                    <Text style={{ fontSize: 17, fontWeight: "bold", color: "#1e293b" }}>{getStudentName(st)}</Text>
+                                    <Text style={{ fontSize: 12, color: "#64748b" }}>{monthName} {mYear} • Batch: {st.batch || "General"}</Text>
+                                  </View>
+                                  <TouchableOpacity onPress={() => setSelectedMonthlyCalendarStudent(null)} style={{ padding: 6, borderRadius: 20, backgroundColor: "#f1f5f9" }}>
+                                    <Ionicons name="close" size={20} color="#475569" />
+                                  </TouchableOpacity>
+                                </View>
+
+                                {/* Mini Stats */}
+                                <View style={{ flexDirection: "row", gap: 10, marginVertical: 14 }}>
+                                  <View style={{ flex: 1, backgroundColor: "#f0fdf4", padding: 10, borderRadius: 8, alignItems: "center" }}>
+                                    <Text style={{ fontSize: 11, color: "#166534", fontWeight: "600" }}>Present</Text>
+                                    <Text style={{ fontSize: 18, fontWeight: "bold", color: "#15803d" }}>{p} days</Text>
+                                  </View>
+                                  <View style={{ flex: 1, backgroundColor: "#fef2f2", padding: 10, borderRadius: 8, alignItems: "center" }}>
+                                    <Text style={{ fontSize: 11, color: "#991b1b", fontWeight: "600" }}>Absent</Text>
+                                    <Text style={{ fontSize: 18, fontWeight: "bold", color: "#b91c1c" }}>{a} days</Text>
+                                  </View>
+                                  <View style={{ flex: 1, backgroundColor: "#eff6ff", padding: 10, borderRadius: 8, alignItems: "center" }}>
+                                    <Text style={{ fontSize: 11, color: "#1e40af", fontWeight: "600" }}>Attendance Rate</Text>
+                                    <Text style={{ fontSize: 18, fontWeight: "bold", color: "#1d4ed8" }}>{pct}%</Text>
+                                  </View>
+                                </View>
+
+                                {/* 7-column Calendar Grid */}
+                                <View style={{ gap: 6 }}>
+                                  {/* Day of week headers */}
+                                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                                    {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map(d => (
+                                      <Text key={d} style={{ width: "13%", textAlign: "center", fontSize: 11, fontWeight: "bold", color: d === "Su" ? "#ef4444" : "#64748b" }}>{d}</Text>
+                                    ))}
+                                  </View>
+
+                                  {/* Calendar Day Tiles */}
+                                  <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-start" }}>
+                                    {/* Offset for 1st day of month */}
+                                    {Array.from({ length: new Date(mYear, mMonth - 1, 1).getDay() }).map((_, i) => (
+                                      <View key={`empty-${i}`} style={{ width: "14.28%", height: 42, padding: 2 }} />
+                                    ))}
+
+                                    {Array.from({ length: daysInSelectedMonth }, (_, i) => i + 1).map(day => {
+                                      const dk = `${offlineAttendanceMonth}-${String(day).padStart(2, "0")}`;
+                                      const dow = new Date(mYear, mMonth - 1, day).getDay();
+                                      const isSun = dow === 0;
+                                      const status = log[dk];
+
+                                      let bg = "#f8fafc";
+                                      let border = "#e2e8f0";
+                                      let txt = isSun ? "#ef4444" : "#334155";
+                                      let badge = "";
+
+                                      if (status === "present") {
+                                        bg = "#dcfce7";
+                                        border = "#86efac";
+                                        txt = "#15803d";
+                                        badge = "P";
+                                      } else if (status === "absent") {
+                                        bg = "#fee2e2";
+                                        border = "#fca5a5";
+                                        txt = "#b91c1c";
+                                        badge = "A";
+                                      }
+
+                                      return (
+                                        <View key={day} style={{ width: "14.28%", height: 42, padding: 2 }}>
+                                          <TouchableOpacity
+                                            onPress={() => handleToggleCellAttendance(st, dk)}
+                                            style={{ flex: 1, backgroundColor: bg, borderWidth: 1, borderColor: border, borderRadius: 6, alignItems: "center", justifyContent: "center" }}
+                                          >
+                                            <Text style={{ fontSize: 11, fontWeight: "bold", color: txt }}>{day}</Text>
+                                            {badge !== "" && (
+                                              <Text style={{ fontSize: 9, fontWeight: "900", color: txt }}>{badge}</Text>
+                                            )}
+                                          </TouchableOpacity>
+                                        </View>
+                                      );
+                                    })}
+                                  </View>
+                                </View>
+
+                                <TouchableOpacity
+                                  onPress={() => setSelectedMonthlyCalendarStudent(null)}
+                                  style={{ marginTop: 16, backgroundColor: "#f1f5f9", paddingVertical: 10, borderRadius: 8, alignItems: "center" }}
+                                >
+                                  <Text style={{ fontSize: 13, fontWeight: "600", color: "#475569" }}>Close Calendar</Text>
+                                </TouchableOpacity>
+                              </View>
+                            </View>
+                          </Modal>
                         );
                       })()}
                     </View>
-                  </View>
-                )}
+                  );
+                })()}
               </ScrollView>
             </View>
           </View>
@@ -9901,42 +11551,6 @@ export default function App() {
                         ))}
                       </View>
 
-                      {/* Delivery Channels */}
-                      <Text style={[styles.label, { marginTop: 4, fontWeight: "bold" }]}>Delivery Settings</Text>
-
-                      {/* Show in Dashboard toggle */}
-                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 10, borderBottomWidth: 1, borderColor: "#eeeeee" }}>
-                        <Text style={{ color: "#212121", fontSize: 13 }}>Show Ad Container in Dashboard</Text>
-                        <TouchableOpacity
-                          onPress={() => setNewCampaign({ ...newCampaign, showInDashboard: !newCampaign.showInDashboard })}
-                          style={[styles.toggleTrack, newCampaign.showInDashboard && styles.toggleTrackOn]}
-                        >
-                          <View style={[styles.toggleThumb, newCampaign.showInDashboard && styles.toggleThumbOn]} />
-                        </TouchableOpacity>
-                      </View>
-
-                      {newCampaign.showInDashboard && (
-                        <View style={{ marginTop: 10, paddingLeft: 10, borderLeftWidth: 2, borderLeftColor: "#c62828" }}>
-                          <Text style={styles.label}>Ad Container Placement Location:</Text>
-                          <View style={{ flexDirection: "row", gap: 8, marginVertical: 6 }}>
-                            {[
-                              { label: "Guest Home", value: "free_home" },
-                              { label: "Student Dash", value: "paid_dashboard" },
-                              { label: "Both Placement", value: "both" }
-                            ].map(loc => (
-                              <TouchableOpacity
-                                key={loc.value}
-                                onPress={() => setNewCampaign({ ...newCampaign, posterDisplay: loc.value })}
-                                style={[styles.roleBtn, newCampaign.posterDisplay === loc.value && styles.roleBtnActive, { flex: 1 }]}
-                              >
-                                <Text style={[styles.roleBtnTxt, newCampaign.posterDisplay === loc.value && styles.roleBtnTxtActive, { fontSize: 10 }]}>
-                                  {loc.label}
-                                </Text>
-                              </TouchableOpacity>
-                            ))}
-                          </View>
-                        </View>
-                      )}
 
                       {/* Send Notification toggle */}
                       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 10, marginTop: 4 }}>
@@ -10142,80 +11756,449 @@ export default function App() {
       {/* Modal containers removed and handled via top-level returns */}
 
       {/* ────────────────── Admin Live Test Monitor & Leaderboard Modal ────────────────── */}
-      {selectedMonitorTestId && (
-        <Modal visible={true} animationType="slide">
-          <SafeAreaView style={styles.modalContainer}>
-            <View style={[styles.header, { backgroundColor: "#c62828" }]}>
-              <Text style={styles.headerTitle}>Live Proctoring & Leaderboard</Text>
-              <TouchableOpacity onPress={() => { setSelectedMonitorTestId(""); setLiveCount(null); setLeaderboard([]); }} style={{ padding: 8 }}>
-                <Ionicons name="close-circle-outline" size={26} color="#ffffff" />
-              </TouchableOpacity>
-            </View>
+      {selectedMonitorTestId && (() => {
+        const tObj = tests.find((t: any) => t.id === selectedMonitorTestId);
 
-            <View style={{ padding: 15, backgroundColor: "#ffebee", borderBottomWidth: 1, borderColor: "#ffcdd2" }}>
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                <View>
-                  <Text style={{ fontSize: 16, fontWeight: "bold", color: "#c62828" }}>
-                    Live Attending: {liveCount?.liveCount ?? 0} Students
-                  </Text>
-                  <Text style={{ fontSize: 12, color: "#555", marginTop: 2 }}>
-                    Completed: {liveCount?.submittedCount ?? 0} | Total: {liveCount?.totalAttempts ?? 0}
-                  </Text>
-                </View>
-                <TouchableOpacity onPress={() => monitorTest(selectedMonitorTestId)} style={{ backgroundColor: "#c62828", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }}>
-                  <Text style={{ color: "#ffffff", fontWeight: "bold", fontSize: 11 }}>Refresh</Text>
+        // Helper to extract all batch names a student belongs to
+        const getStudentBatches = (s: any): string[] => {
+          const list: string[] = [];
+          if (s?.batch && typeof s.batch === "string" && s.batch.trim()) list.push(s.batch.trim());
+          if (s?.batchName && typeof s.batchName === "string" && s.batchName.trim()) list.push(s.batchName.trim());
+          if (Array.isArray(s?.batches)) {
+            s.batches.forEach((b: any) => {
+              if (typeof b === "string" && b.trim()) list.push(b.trim());
+              else if (b && typeof b === "object" && b.batchName) list.push(String(b.batchName).trim());
+            });
+          }
+          return Array.from(new Set(list));
+        };
+
+        const normalizeBatch = (str: string) => String(str || "").trim().toLowerCase();
+
+        // Target batches assigned to this test
+        const rawTargetBatch = String(tObj?.targetBatch || "");
+        const targetBatchList = rawTargetBatch
+          .split(",")
+          .map((b: string) => b.trim())
+          .filter(Boolean);
+
+        const isBatchSpecific = (tObj?.targetAudience === "batch") || (targetBatchList.length > 0 && tObj?.targetAudience !== "all");
+
+        // Compute eligible students for this test
+        const eligibleStudents = (students || []).filter((s: any) => {
+          if (s.isDeleted === true) return false;
+          if (!isBatchSpecific) return true; // All enrolled students
+          const sBatches = getStudentBatches(s).map(normalizeBatch);
+          return targetBatchList.some(tb => {
+            const normTb = normalizeBatch(tb);
+            return sBatches.some(sb => sb === normTb || sb.startsWith(normTb + " ") || sb.startsWith(normTb + "("));
+          });
+        });
+
+        // Attended identifiers from leaderboard and active proctoring
+        const attendedStudentIds = new Set<string>();
+        const attendedRollNumbers = new Set<string>();
+        const attendedEmails = new Set<string>();
+
+        (leaderboard || []).forEach((e: any) => {
+          if (e.studentId) attendedStudentIds.add(String(e.studentId).trim().toLowerCase());
+          if (e.userId) attendedStudentIds.add(String(e.userId).trim().toLowerCase());
+          if (e.rollNumber) attendedRollNumbers.add(String(e.rollNumber).trim().toLowerCase());
+          if (e.loginUsername) attendedRollNumbers.add(String(e.loginUsername).trim().toLowerCase());
+          if (e.email) attendedEmails.add(String(e.email).trim().toLowerCase());
+        });
+
+        if (liveCount?.activeStudents && Array.isArray(liveCount.activeStudents)) {
+          liveCount.activeStudents.forEach((as: any) => {
+            if (as.studentId) attendedStudentIds.add(String(as.studentId).trim().toLowerCase());
+            if (as.userId) attendedStudentIds.add(String(as.userId).trim().toLowerCase());
+            if (as.rollNumber) attendedRollNumbers.add(String(as.rollNumber).trim().toLowerCase());
+            if (as.loginUsername) attendedRollNumbers.add(String(as.loginUsername).trim().toLowerCase());
+            if (as.email) attendedEmails.add(String(as.email).trim().toLowerCase());
+          });
+        }
+
+        const isAttended = (s: any) => {
+          const sId = String(s.id || s._id || "").trim().toLowerCase();
+          const sUserId = String(s.userId || "").trim().toLowerCase();
+          const sRoll = String(s.rollNumber || s.rollNo || "").trim().toLowerCase();
+          const sLogin = String(s.loginUsername || "").trim().toLowerCase();
+          const sEmail = String(s.email || "").trim().toLowerCase();
+          return (
+            (sId && attendedStudentIds.has(sId)) ||
+            (sUserId && attendedStudentIds.has(sUserId)) ||
+            (sRoll && attendedRollNumbers.has(sRoll)) ||
+            (sLogin && attendedRollNumbers.has(sLogin)) ||
+            (sEmail && attendedEmails.has(sEmail))
+          );
+        };
+
+        const absentStudents = eligibleStudents.filter(s => !isAttended(s));
+
+        // Distinct batches for filter chips
+        const distinctBatches: string[] = targetBatchList.length > 0
+          ? targetBatchList
+          : Array.from(new Set(absentStudents.flatMap(s => getStudentBatches(s)).filter(Boolean)));
+
+        const filteredAbsentStudents = absentStudents.filter((s: any) => {
+          if (monitorBatchFilter !== "all") {
+            const sBatches = getStudentBatches(s).map(normalizeBatch);
+            const normFilter = normalizeBatch(monitorBatchFilter);
+            const matchesBatch = sBatches.some(sb => sb === normFilter || sb.startsWith(normFilter + " ") || sb.startsWith(normFilter + "("));
+            if (!matchesBatch) return false;
+          }
+          if (monitorAbsentSearch.trim()) {
+            const q = monitorAbsentSearch.trim().toLowerCase();
+            const sName = String(s.name || `${s.firstName || ""} ${s.lastName || ""}` || s.loginUsername || "").toLowerCase();
+            const sRoll = String(s.rollNumber || s.rollNo || s.loginUsername || "").toLowerCase();
+            const sPhone = String(s.phone || s.mobile || "").toLowerCase();
+            return sName.includes(q) || sRoll.includes(q) || sPhone.includes(q);
+          }
+          return true;
+        });
+
+        const isTestEnded = tObj?.endTime ? (Date.now() > new Date(tObj.endTime).getTime()) : false;
+
+        return (
+          <Modal visible={true} animationType="slide">
+            <SafeAreaView style={styles.modalContainer}>
+              <View style={[styles.header, { backgroundColor: "#c62828" }]}>
+                <Text style={styles.headerTitle}>Live Proctoring & Leaderboard</Text>
+                <TouchableOpacity onPress={() => { setSelectedMonitorTestId(""); setLiveCount(null); setLeaderboard([]); setMonitorActiveTab("leaderboard"); setMonitorBatchFilter("all"); setMonitorAbsentSearch(""); }} style={{ padding: 8 }}>
+                  <Ionicons name="close-circle-outline" size={26} color="#ffffff" />
                 </TouchableOpacity>
               </View>
-            </View>
 
-            <ScrollView style={{ flex: 1, backgroundColor: "#ffffff" }} contentContainerStyle={{ padding: 15 }}>
-              <Text style={{ fontSize: 15, fontWeight: "bold", color: "#212121", marginBottom: 10 }}>
-                Test Leaderboard (Highest to Lowest)
-              </Text>
-
-              {leaderboard.length === 0 ? (
-                <View style={{ padding: 40, alignItems: "center" }}>
-                  <Ionicons name="trophy-outline" size={36} color="#757575" />
-                  <Text style={{ color: "#757575", marginTop: 10 }}>No completed attempts yet.</Text>
+              <View style={{ padding: 15, backgroundColor: "#ffebee", borderBottomWidth: 1, borderColor: "#ffcdd2" }}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 16, fontWeight: "bold", color: "#c62828" }}>
+                      Live Attending: {liveCount?.liveCount ?? 0} Students
+                    </Text>
+                    <Text style={{ fontSize: 12, color: "#555", marginTop: 2 }}>
+                      Completed: {liveCount?.submittedCount ?? 0} | Absent: <Text style={{ fontWeight: "700", color: "#c62828" }}>{absentStudents.length}</Text> | Eligible: {eligibleStudents.length}
+                    </Text>
+                  </View>
+                  <TouchableOpacity onPress={() => monitorTest(selectedMonitorTestId)} style={{ backgroundColor: "#c62828", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }}>
+                    <Text style={{ color: "#ffffff", fontWeight: "bold", fontSize: 11 }}>Refresh</Text>
+                  </TouchableOpacity>
                 </View>
-              ) : (
-                <View style={{ borderTopWidth: 1, borderColor: "#eee" }}>
-                  {leaderboard.map((entry: any, index: number) => {
-                    const studentObj = students.find((s: any) => s.id === entry.studentId || s.userId === entry.studentId);
-                    const studentName = studentObj ? `${studentObj.firstName} ${studentObj.lastName}` : `Student (${entry.studentId})`;
 
-                    return (
-                      <View key={entry.id || index} style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        paddingVertical: 12,
-                        borderBottomWidth: 1,
-                        borderColor: "#eee"
-                      }}>
-                        <Text style={{ width: 30, fontWeight: "bold", color: index === 0 ? "#fbc02d" : "#757575", fontSize: 14 }}>
-                          #{index + 1}
-                        </Text>
-                        <View style={{ flex: 1 }}>
-                          <Text style={{ fontWeight: "bold", color: "#212121" }}>{studentName}</Text>
-                          <Text style={{ fontSize: 11, color: "#757575" }}>Status: {entry.status}</Text>
+                {/* Active Students Currently Writing Exam */}
+                {liveCount?.activeStudents?.length > 0 && (
+                  <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderColor: "#ffcdd2" }}>
+                    <Text style={{ fontSize: 11, fontWeight: "800", color: "#c62828", marginBottom: 6 }}>CURRENTLY WRITING (LIVE):</Text>
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                      {liveCount.activeStudents.map((as: any, idx: number) => (
+                        <View key={as.attemptId || idx} style={{ backgroundColor: "#fff", borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: "#ef9a9a", flexDirection: "row", alignItems: "center", gap: 4 }}>
+                          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#2e7d32" }} />
+                          <Text style={{ fontSize: 11, fontWeight: "bold", color: "#212121" }}>{as.studentName}</Text>
+                          <Text style={{ fontSize: 10, color: "#757575" }}>({as.rollNumber})</Text>
                         </View>
-                        <View style={{ alignItems: "flex-end" }}>
-                          <Text style={{ fontWeight: "bold", color: "#2e7d32", fontSize: 14 }}>
-                            {entry.obtainedMarks} / {entry.totalMarks}
-                          </Text>
-                          <Text style={{ fontSize: 11, color: "#757575" }}>
-                            {Math.round(entry.percentage)}%
-                          </Text>
-                        </View>
+                      ))}
+                    </View>
+                  </View>
+                )}
+              </View>
+
+              {/* Segmented Tab Switcher */}
+              <View style={{
+                flexDirection: "row",
+                backgroundColor: "#ffffff",
+                borderBottomWidth: 1,
+                borderColor: "#e2e8f0"
+              }}>
+                <TouchableOpacity
+                  onPress={() => setMonitorActiveTab("leaderboard")}
+                  style={{
+                    flex: 1,
+                    paddingVertical: 12,
+                    alignItems: "center",
+                    borderBottomWidth: 3,
+                    borderBottomColor: monitorActiveTab === "leaderboard" ? "#c62828" : "transparent"
+                  }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Ionicons
+                      name="trophy-outline"
+                      size={16}
+                      color={monitorActiveTab === "leaderboard" ? "#c62828" : "#757575"}
+                    />
+                    <Text style={{
+                      fontSize: 13,
+                      fontWeight: "bold",
+                      color: monitorActiveTab === "leaderboard" ? "#c62828" : "#757575"
+                    }}>
+                      Leaderboard ({leaderboard.length})
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => setMonitorActiveTab("absent")}
+                  style={{
+                    flex: 1,
+                    paddingVertical: 12,
+                    alignItems: "center",
+                    borderBottomWidth: 3,
+                    borderBottomColor: monitorActiveTab === "absent" ? "#c62828" : "transparent"
+                  }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Ionicons
+                      name="person-remove-outline"
+                      size={16}
+                      color={monitorActiveTab === "absent" ? "#c62828" : "#757575"}
+                    />
+                    <Text style={{
+                      fontSize: 13,
+                      fontWeight: "bold",
+                      color: monitorActiveTab === "absent" ? "#c62828" : "#757575"
+                    }}>
+                      Absent / Not Attended ({absentStudents.length})
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView style={{ flex: 1, backgroundColor: "#ffffff" }} contentContainerStyle={{ padding: 15 }}>
+                {monitorActiveTab === "leaderboard" ? (
+                  <>
+                    <Text style={{ fontSize: 15, fontWeight: "bold", color: "#212121", marginBottom: 10 }}>
+                      Test Leaderboard (Highest to Lowest)
+                    </Text>
+
+                    {leaderboard.length === 0 ? (
+                      <View style={{ padding: 40, alignItems: "center" }}>
+                        <Ionicons name="trophy-outline" size={36} color="#757575" />
+                        <Text style={{ color: "#757575", marginTop: 10 }}>No completed attempts yet.</Text>
                       </View>
-                    );
-                  })}
-                </View>
-              )}
-            </ScrollView>
-          </SafeAreaView>
-        </Modal>
-      )}
+                    ) : (
+                      <View style={{ borderTopWidth: 1, borderColor: "#eee" }}>
+                        {leaderboard.map((entry: any, index: number) => {
+                          const studentObj = students.find((s: any) => s.id === entry.studentId || s.userId === entry.studentId);
+                          const studentName = studentObj ? `${studentObj.firstName || ""} ${studentObj.lastName || ""}`.trim() || studentObj.loginUsername || `Student (${entry.studentId})` : (entry.studentName || `Student (${entry.studentId})`);
+                          const rollNo = entry.rollNumber || (studentObj ? (studentObj.rollNumber || studentObj.rollNo || studentObj.loginUsername) : "");
+
+                          return (
+                            <View key={entry.id || index} style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                              paddingVertical: 12,
+                              borderBottomWidth: 1,
+                              borderColor: "#eee"
+                            }}>
+                              <Text style={{ width: 30, fontWeight: "bold", color: index === 0 ? "#fbc02d" : "#757575", fontSize: 14 }}>
+                                #{index + 1}
+                              </Text>
+                              <View style={{ flex: 1 }}>
+                                <Text style={{ fontWeight: "bold", color: "#212121" }}>{studentName}</Text>
+                                <Text style={{ fontSize: 11, color: "#1565c0", marginTop: 1 }}>{rollNo ? `Roll No: ${rollNo} · ` : ""}Status: {entry.status || "Completed"}</Text>
+                              </View>
+                              <View style={{ alignItems: "flex-end" }}>
+                                <Text style={{ fontWeight: "bold", color: "#2e7d32", fontSize: 14 }}>
+                                  {entry.obtainedMarks} / {entry.totalMarks}
+                                </Text>
+                                <Text style={{ fontSize: 11, color: "#757575" }}>
+                                  {Math.round(entry.percentage)}%
+                                </Text>
+                              </View>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {/* Absent Students Section */}
+                    {/* Multiple Batches Filter Chips */}
+                    {distinctBatches.length > 1 && (
+                      <View style={{ marginBottom: 12 }}>
+                        <Text style={{ fontSize: 11, fontWeight: "700", color: "#64748b", marginBottom: 6, textTransform: "uppercase" }}>
+                          Filter by Assigned Batch ({distinctBatches.length} Batches):
+                        </Text>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexDirection: "row", gap: 8, paddingBottom: 4 }}>
+                          <TouchableOpacity
+                            onPress={() => setMonitorBatchFilter("all")}
+                            style={{
+                              paddingHorizontal: 12,
+                              paddingVertical: 6,
+                              borderRadius: 20,
+                              backgroundColor: monitorBatchFilter === "all" ? "#c62828" : "#f1f5f9",
+                              borderWidth: 1,
+                              borderColor: monitorBatchFilter === "all" ? "#c62828" : "#cbd5e1"
+                            }}
+                          >
+                            <Text style={{
+                              fontSize: 12,
+                              fontWeight: "700",
+                              color: monitorBatchFilter === "all" ? "#ffffff" : "#475569"
+                            }}>
+                              All Batches ({absentStudents.length})
+                            </Text>
+                          </TouchableOpacity>
+                          {distinctBatches.map(bName => {
+                            const count = absentStudents.filter(s => {
+                              const sB = getStudentBatches(s).map(normalizeBatch);
+                              const normB = normalizeBatch(bName);
+                              return sB.some(sb => sb === normB || sb.startsWith(normB + " ") || sb.startsWith(normB + "("));
+                            }).length;
+                            const isSelected = monitorBatchFilter.toLowerCase() === bName.toLowerCase();
+                            return (
+                              <TouchableOpacity
+                                key={bName}
+                                onPress={() => setMonitorBatchFilter(isSelected ? "all" : bName)}
+                                style={{
+                                  paddingHorizontal: 12,
+                                  paddingVertical: 6,
+                                  borderRadius: 20,
+                                  backgroundColor: isSelected ? "#c62828" : "#f1f5f9",
+                                  borderWidth: 1,
+                                  borderColor: isSelected ? "#c62828" : "#cbd5e1"
+                                }}
+                              >
+                                <Text style={{
+                                  fontSize: 12,
+                                  fontWeight: "700",
+                                  color: isSelected ? "#ffffff" : "#475569"
+                                }}>
+                                  {bName} ({count})
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </ScrollView>
+                      </View>
+                    )}
+
+                    {/* Search Absent Students Input */}
+                    <View style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      backgroundColor: "#f8fafc",
+                      borderRadius: 8,
+                      paddingHorizontal: 10,
+                      borderWidth: 1,
+                      borderColor: "#e2e8f0",
+                      marginBottom: 12
+                    }}>
+                      <Ionicons name="search" size={16} color="#94a3b8" />
+                      <TextInput
+                        placeholder="Search absent student by name, roll, phone..."
+                        placeholderTextColor="#94a3b8"
+                        value={monitorAbsentSearch}
+                        onChangeText={setMonitorAbsentSearch}
+                        style={{ flex: 1, paddingVertical: 8, paddingHorizontal: 8, fontSize: 13, color: "#1e293b" }}
+                      />
+                      {monitorAbsentSearch.length > 0 && (
+                        <TouchableOpacity onPress={() => setMonitorAbsentSearch("")}>
+                          <Ionicons name="close-circle" size={16} color="#94a3b8" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+
+                    {/* Absent Students List */}
+                    {filteredAbsentStudents.length === 0 ? (
+                      <View style={{ padding: 40, alignItems: "center" }}>
+                        <Ionicons
+                          name={absentStudents.length === 0 ? "checkmark-circle-outline" : "search-outline"}
+                          size={36}
+                          color={absentStudents.length === 0 ? "#2e7d32" : "#757575"}
+                        />
+                        <Text style={{ color: "#757575", marginTop: 10, fontSize: 13, textAlign: "center" }}>
+                          {absentStudents.length === 0
+                            ? "All eligible students have attended this test!"
+                            : "No absent students match your filter or search."}
+                        </Text>
+                      </View>
+                    ) : (
+                      <View style={{ gap: 8 }}>
+                        {filteredAbsentStudents.map((s: any, idx: number) => {
+                          const sName = s.name || `${s.firstName || ""} ${s.lastName || ""}`.trim() || s.loginUsername || "Student";
+                          const sRoll = s.rollNumber || s.rollNo || s.loginUsername || "—";
+                          const sBatches = getStudentBatches(s);
+                          const matchingBatch = sBatches.find(sb => targetBatchList.some(tb => normalizeBatch(tb) === normalizeBatch(sb))) || s.batch || s.batchName || sBatches[0] || "General";
+                          const sPhone = s.phone || s.mobile || s.whatsappNumber || "";
+
+                          return (
+                            <View key={s.id || s.userId || idx} style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              paddingVertical: 10,
+                              paddingHorizontal: 12,
+                              backgroundColor: "#ffffff",
+                              borderRadius: 8,
+                              borderWidth: 1,
+                              borderColor: "#e2e8f0",
+                              gap: 10
+                            }}>
+                              <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: "#f1f5f9", justifyContent: "center", alignItems: "center" }}>
+                                <Text style={{ fontSize: 11, fontWeight: "bold", color: "#64748b" }}>
+                                  #{idx + 1}
+                                </Text>
+                              </View>
+
+                              <View style={{ flex: 1 }}>
+                                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                  <Text style={{ fontWeight: "bold", color: "#1e293b", fontSize: 13 }}>
+                                    {sName}
+                                  </Text>
+                                  <View style={{
+                                    backgroundColor: "#eff6ff",
+                                    borderColor: "#bfdbfe",
+                                    borderWidth: 1,
+                                    paddingHorizontal: 6,
+                                    paddingVertical: 1,
+                                    borderRadius: 4
+                                  }}>
+                                    <Text style={{ fontSize: 10, fontWeight: "700", color: "#1d4ed8" }}>
+                                      📚 {matchingBatch}
+                                    </Text>
+                                  </View>
+                                </View>
+
+                                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 3, flexWrap: "wrap" }}>
+                                  <Text style={{ fontSize: 11, color: "#64748b" }}>
+                                    Roll: <Text style={{ fontWeight: "600", color: "#334155" }}>{sRoll}</Text>
+                                  </Text>
+                                  {sPhone ? (
+                                    <Text style={{ fontSize: 11, color: "#64748b" }}>
+                                      📞 {sPhone}
+                                    </Text>
+                                  ) : null}
+                                </View>
+                              </View>
+
+                              <View style={{
+                                backgroundColor: isTestEnded ? "#fee2e2" : "#fef3c7",
+                                borderColor: isTestEnded ? "#fca5a5" : "#fcd34d",
+                                borderWidth: 1,
+                                paddingHorizontal: 8,
+                                paddingVertical: 3,
+                                borderRadius: 6
+                              }}>
+                                <Text style={{
+                                  fontSize: 10,
+                                  fontWeight: "700",
+                                  color: isTestEnded ? "#b91c1c" : "#b45309"
+                                }}>
+                                  {isTestEnded ? "Absent" : "Not Started"}
+                                </Text>
+                              </View>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
+                  </>
+                )}
+              </ScrollView>
+            </SafeAreaView>
+          </Modal>
+        );
+      })()}
       {/* Custom Calendar Picker Modal */}
       {showCalendar && (
         <Modal visible={true} transparent animationType="fade">
@@ -10565,6 +12548,233 @@ export default function App() {
           </View>
         </Modal>
       )}
+
+      {/* ── STUDENT FEE BLOCKED / SUSPENDED ACCESS MODAL ── */}
+      {(() => {
+        if (user?.role !== "student") return null;
+        const loggedStudent = getLoggedInStudent(user, students);
+        if (!loggedStudent) return null;
+        const isBlocked = isStudentFeeBlocked(loggedStudent);
+        if (!isBlocked) return null;
+
+        // Allow fee-pending / restricted students to access Fee Payment, Daily Content, and Resources
+        const isAllowedFeePage = activeTab === "erp" && (erpSub === "pay-fees" || erpSub === "fees");
+        const isAllowedDailyContent = activeTab === "lms" && lmsSub === "daily-content";
+        const isAllowedResources = activeTab === "lms" && lmsSub === "resources";
+
+        if (isAllowedFeePage || isAllowedDailyContent || isAllowedResources) return null;
+
+        const tot = Number(loggedStudent.totalFees) || 0;
+        const paid = Number(loggedStudent.feesPaid) || 0;
+        const pending = tot - paid;
+        const isOverdue = loggedStudent.feeAlertActive && loggedStudent.feeAlertDueDate && pending > 0 && (new Date().toISOString().slice(0, 10) > loggedStudent.feeAlertDueDate);
+
+        return (
+          <Modal visible={true} transparent={true} animationType="fade">
+            <View style={{
+              flex: 1,
+              width: "100%",
+              backgroundColor: "rgba(0,0,0,0.85)",
+              justifyContent: "center",
+              alignItems: "center",
+              padding: 16,
+              ...(Platform.OS === 'web' ? { minHeight: "100vh" as any } : { height: "100%" }),
+              zIndex: 999999
+            }}>
+              <View style={{
+                width: "100%",
+                maxWidth: 480,
+                backgroundColor: darkMode ? "#1e1e1e" : "#ffffff",
+                borderRadius: 16,
+                padding: 24,
+                alignItems: "center",
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 6 },
+                shadowOpacity: 0.35,
+                shadowRadius: 10,
+                elevation: 10,
+                borderWidth: 1.5,
+                borderColor: "#ef5350"
+              }}>
+                <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: "#ffebee", justifyContent: "center", alignItems: "center", marginBottom: 16 }}>
+                  <Ionicons name="lock-closed" size={34} color="#c62828" />
+                </View>
+
+                <Text style={{ fontSize: 18, fontWeight: "900", color: "#c62828", textAlign: "center", marginBottom: 6 }}>
+                  Access Restricted
+                </Text>
+
+                <Text style={{ fontSize: 13, color: darkMode ? "#ccc" : "#424242", textAlign: "center", lineHeight: 18, marginBottom: 16 }}>
+                  {isOverdue
+                    ? `Your premium academy services (Exams, Live Classes & Recorded Lectures) are on hold because your fee payment due date (${loggedStudent.feeAlertDueDate}) has passed. You can still access Daily Content and Study Resources below, or pay your pending fees to restore full access.`
+                    : "Your premium academy services (Exams, Live Classes & Recorded Lectures) have been temporarily restricted due to pending tuition dues. You can still access Daily Content and Study Resources below, or complete your fee payment to restore full access."}
+                </Text>
+
+                {/* Outstanding Fee Summary Card */}
+                <View style={{
+                  width: "100%",
+                  backgroundColor: darkMode ? "#2a2a2a" : "#fef2f2",
+                  borderRadius: 12,
+                  padding: 14,
+                  borderWidth: 1,
+                  borderColor: "#fecaca",
+                  marginBottom: 16,
+                  gap: 6
+                }}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={{ fontSize: 12, color: "#757575" }}>Student Name:</Text>
+                    <Text style={{ fontSize: 12, fontWeight: "bold", color: darkMode ? "#fff" : "#212121" }}>{getStudentName(loggedStudent)}</Text>
+                  </View>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={{ fontSize: 12, color: "#757575" }}>Roll / Batch:</Text>
+                    <Text style={{ fontSize: 12, color: darkMode ? "#ddd" : "#424242" }}>{loggedStudent.rollNumber || loggedStudent.loginUsername || "N/A"} • {loggedStudent.batch || "General"}</Text>
+                  </View>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={{ fontSize: 12, color: "#757575" }}>Total Fees:</Text>
+                    <Text style={{ fontSize: 12, color: darkMode ? "#ddd" : "#424242" }}>₹{tot.toLocaleString()}</Text>
+                  </View>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={{ fontSize: 12, color: "#757575" }}>Paid Amount:</Text>
+                    <Text style={{ fontSize: 12, color: "#2e7d32", fontWeight: "600" }}>₹{paid.toLocaleString()}</Text>
+                  </View>
+                  <View style={{ height: 1, backgroundColor: "#fca5a5", marginVertical: 4 }} />
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                    <Text style={{ fontSize: 13, fontWeight: "bold", color: "#c62828" }}>Pending Balance:</Text>
+                    <Text style={{ fontSize: 16, fontWeight: "900", color: "#b91c1c" }}>₹{pending > 0 ? pending.toLocaleString() : "0"}</Text>
+                  </View>
+                  {loggedStudent.feeAlertDueDate && (
+                    <Text style={{ fontSize: 11, color: "#d97706", fontWeight: "600", marginTop: 2, textAlign: "right" }}>
+                      Deadline: {loggedStudent.feeAlertDueDate}
+                    </Text>
+                  )}
+                </View>
+
+                {/* Primary Action Button: Pay Fees */}
+                <TouchableOpacity
+                  onPress={() => {
+                    setActiveTab("erp");
+                    changeErpSub("fees");
+                  }}
+                  style={{
+                    width: "100%",
+                    backgroundColor: "#c62828",
+                    paddingVertical: 12,
+                    borderRadius: 10,
+                    alignItems: "center",
+                    flexDirection: "row",
+                    justifyContent: "center",
+                    gap: 8,
+                    marginBottom: 12,
+                    shadowColor: "#c62828",
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.3,
+                    shadowRadius: 4,
+                    elevation: 4
+                  }}
+                >
+                  <Ionicons name="card-outline" size={18} color="#ffffff" />
+                  <Text style={{ color: "#ffffff", fontWeight: "bold", fontSize: 14 }}>Pay Fees Online via QR Code / UPI</Text>
+                </TouchableOpacity>
+
+                {/* Accessible Learning Sections During Hold */}
+                <View style={{ width: "100%", marginBottom: 14, backgroundColor: darkMode ? "#262626" : "#f8fafc", borderRadius: 10, padding: 10, borderWidth: 1, borderColor: darkMode ? "#383838" : "#e2e8f0" }}>
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: darkMode ? "#94a3b8" : "#64748b", marginBottom: 8, textAlign: "center", letterSpacing: 0.5, textTransform: "uppercase" }}>
+                    Available Free Study Sections
+                  </Text>
+                  <View style={{ flexDirection: "row", gap: 8, width: "100%" }}>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setActiveTab("lms");
+                        changeLmsSub("daily-content");
+                      }}
+                      style={{
+                        flex: 1,
+                        backgroundColor: darkMode ? "#1e293b" : "#f0f9ff",
+                        borderColor: darkMode ? "#38bdf8" : "#bae6fd",
+                        borderWidth: 1,
+                        paddingVertical: 9,
+                        paddingHorizontal: 8,
+                        borderRadius: 8,
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 6
+                      }}
+                    >
+                      <Ionicons name="calendar-outline" size={15} color="#0284c7" />
+                      <Text style={{ color: darkMode ? "#38bdf8" : "#0284c7", fontWeight: "bold", fontSize: 12 }}>Daily Content</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={() => {
+                        setActiveTab("lms");
+                        changeLmsSub("resources");
+                      }}
+                      style={{
+                        flex: 1,
+                        backgroundColor: darkMode ? "#143026" : "#ecfdf5",
+                        borderColor: darkMode ? "#34d399" : "#a7f3d0",
+                        borderWidth: 1,
+                        paddingVertical: 9,
+                        paddingHorizontal: 8,
+                        borderRadius: 8,
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 6
+                      }}
+                    >
+                      <Ionicons name="folder-open-outline" size={15} color="#059669" />
+                      <Text style={{ color: darkMode ? "#34d399" : "#059669", fontWeight: "bold", fontSize: 12 }}>Resources</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* Support Contact / Log Out */}
+                <View style={{ flexDirection: "row", justifyContent: "space-between", width: "100%", marginTop: 6, gap: 10 }}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      Alert.alert(
+                        "Nermai IAS Academy Office",
+                        "For fee inquiries or assistance, please contact the academy office or your course coordinator directly."
+                      );
+                    }}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 10,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: "#e0e0e0",
+                      alignItems: "center",
+                      backgroundColor: darkMode ? "#2a2a2a" : "#f9f9f9"
+                    }}
+                  >
+                    <Text style={{ fontSize: 12, color: "#616161", fontWeight: "600" }}>📞 Office Help</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => {
+                      AsyncStorage.removeItem("nermai_user_creds").catch(() => {});
+                      setUser(null);
+                    }}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 10,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: "#ffcdd2",
+                      alignItems: "center",
+                      backgroundColor: "#fff5f5"
+                    }}
+                  >
+                    <Text style={{ fontSize: 12, color: "#c62828", fontWeight: "700" }}>🚪 Sign Out</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+        );
+      })()}
     </SafeAreaView>
   );
 }

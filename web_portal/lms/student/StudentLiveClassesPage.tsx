@@ -1,6 +1,7 @@
 import React, { useState, useEffect, Suspense } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
+import { getUserFromAuth } from '../core/api';
 import { useNavigate } from 'react-router-dom';
 import { DashboardApi } from '../core/services';
 import { LiveClassesApi, LiveSessionApi, LmsAttendanceApi } from '../core/services';
@@ -627,12 +628,6 @@ const SessionCard = ({
               </button>
             )}
 
-            {/* Joined indicator */}
-            {(hasJoined || attRecord?.joinedAt) && !attRecord?.attendanceSubmittedAt && (
-              <div className="w-full py-2 px-4 text-center text-xs font-semibold rounded-lg bg-green-50 border border-green-300 text-green-700 dark:bg-green-900/20 dark:border-green-700 dark:text-green-400 flex items-center justify-center gap-2">
-                <CheckCircle size={13} /> Attendance marked — your presence is recorded
-              </div>
-            )}
 
             {/* Already closed (attendance finalized by admin) */}
             {attRecord?.attendanceSubmittedAt && (
@@ -792,6 +787,14 @@ export const StudentLiveClassesPage = () => {
       }
     };
 
+    let unsubLive: any;
+    try {
+      unsubLive = onSnapshot(collection(db, 'live_sessions'), () => {
+        stopFallbackPolling();
+        queryClient.invalidateQueries({ queryKey: ['studentDashboard'] });
+      });
+    } catch {}
+
     const unsub = onSnapshot(
       doc(db, 'live_class_index', 'current'),
       (_snap) => {
@@ -808,19 +811,44 @@ export const StudentLiveClassesPage = () => {
 
     return () => {
       unsub();
+      if (unsubLive) unsubLive();
       stopFallbackPolling();
     };
   }, [queryClient]);
 
-  // Load my access requests once
+  // Load my access requests in real-time
   useEffect(() => {
+    let unsubReq: any;
+    try {
+      const authUser = getUserFromAuth();
+      if (authUser?.userId) {
+        const qReq = query(
+          collection(db, 'access_requests'),
+          where('studentId', '==', authUser.userId)
+        );
+        unsubReq = onSnapshot(qReq, () => {
+          LiveClassesApi.getMyAccessRequests()
+            .then((res: any) => {
+              const data = res?.data?.data || res?.data || [];
+              setMyRequests(Array.isArray(data) ? data : []);
+            })
+            .catch(() => {});
+          queryClient.invalidateQueries({ queryKey: ['studentDashboard'] });
+        });
+      }
+    } catch {}
+
     LiveClassesApi.getMyAccessRequests()
       .then((res: any) => {
         const data = res?.data?.data || res?.data || [];
         setMyRequests(Array.isArray(data) ? data : []);
       })
       .catch(() => {});
-  }, []);
+
+    return () => {
+      if (unsubReq) unsubReq();
+    };
+  }, [queryClient]);
 
   const classes = dashboardData?.liveClasses || [];
 

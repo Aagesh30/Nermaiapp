@@ -15,6 +15,7 @@ router.post('/:id/request-correction', requireAuth, ctrl.requestCorrection);
 
 // ── Admin routes ──────────────────────────────────────────────────────────────
 router.get('/admin/records', requireAuth, requireRole(adminRoles), ctrl.adminListRecords);
+router.post('/admin/manual-create', requireAuth, requireRole(adminRoles), ctrl.adminCreateManualRecord);
 router.patch('/admin/:id/mark', requireAuth, requireRole(adminRoles), ctrl.adminManualMark);
 router.get('/admin/corrections', requireAuth, requireRole(adminRoles), ctrl.adminListCorrections);
 router.patch('/admin/corrections/:id', requireAuth, requireRole(adminRoles), ctrl.adminReviewCorrection);

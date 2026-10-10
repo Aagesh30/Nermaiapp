@@ -31,8 +31,8 @@ export const JoinButton: React.FC<JoinButtonProps> = ({ onPress, loading, disabl
 const styles = StyleSheet.create({
   button: {
     backgroundColor: '#3b82f6', // blue-500
-    paddingVertical: 14,
-    paddingHorizontal: 24,
+    paddingVertical: 16,
+    paddingHorizontal: 26,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
@@ -50,7 +50,7 @@ const styles = StyleSheet.create({
   },
   text: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '700',
     letterSpacing: 0.5,
   },

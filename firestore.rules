@@ -367,6 +367,11 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // device_push_tokens - Remote push notification tokens for Android / iOS APK
+    match /device_push_tokens/{tokenId} {
+      allow read, write: if true;
+    }
+
     // ─── CATCH-ALL: Deny everything else ────────────────────
     match /{document=**} {
       allow read: if false;

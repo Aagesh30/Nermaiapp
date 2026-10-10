@@ -152,22 +152,22 @@ export const AdminLiveSessions = ({ navigation }: { navigation: any }) => {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
-  container: { flex: 1, paddingHorizontal: 20 },
+  container: { flex: 1, paddingHorizontal: 22 },
   header: { flexDirection: 'row', alignItems: 'center', marginBottom: 20, paddingTop: 10 },
   backButton: { marginRight: 12, padding: 4 },
-  pageTitle: { fontSize: 24, fontWeight: 'bold', color: colors.textPrimary },
+  pageTitle: { fontSize: 26, fontWeight: 'bold', color: colors.textPrimary },
   listContent: { paddingBottom: 100 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  emptyText: { color: colors.textSecondary, fontSize: 16, marginTop: 12 },
-  card: { backgroundColor: colors.surface, borderColor: 'rgba(255,255,255,0.05)', borderWidth: 1, padding: 20, borderRadius: 16 },
+  emptyText: { color: colors.textSecondary, fontSize: 18, marginTop: 12 },
+  card: { backgroundColor: colors.surface, borderColor: 'rgba(255,255,255,0.05)', borderWidth: 1, padding: 22, borderRadius: 16 },
   liveCard: { backgroundColor: 'rgba(139, 0, 0, 0.1)', borderColor: 'rgba(178, 34, 34, 0.4)' },
   headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, justifyContent: 'space-between' },
-  badge: { color: colors.accent, fontSize: 12, fontWeight: 'bold', letterSpacing: 1 },
+  badge: { color: colors.accent, fontSize: 14, fontWeight: 'bold', letterSpacing: 1 },
   pulseDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.accent },
-  title: { color: colors.textPrimary, fontSize: 18, fontWeight: '600', marginBottom: 8 },
-  time: { color: '#E5E5E5', fontSize: 14, opacity: 0.8 },
+  title: { color: colors.textPrimary, fontSize: 20, fontWeight: '600', marginBottom: 8 },
+  time: { color: '#E5E5E5', fontSize: 16, opacity: 0.8 },
   footer: { marginTop: 16, flexDirection: 'row', justifyContent: 'flex-end' },
-  manageBtn: { backgroundColor: 'rgba(212, 175, 55, 0.15)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(212, 175, 55, 0.3)' },
-  manageBtnText: { color: colors.primary, fontWeight: 'bold', fontSize: 13 }
+  manageBtn: { backgroundColor: 'rgba(212, 175, 55, 0.15)', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(212, 175, 55, 0.3)' },
+  manageBtnText: { color: colors.primary, fontWeight: 'bold', fontSize: 15 }
 });
 

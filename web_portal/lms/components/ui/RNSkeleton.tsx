@@ -62,7 +62,7 @@ export const RNEducationalLoader: React.FC<{ message?: string; darkMode?: boolea
     <View style={{
       width: '100%',
       minHeight: 280,
-      paddingVertical: 50,
+      paddingVertical: 52,
       alignItems: 'center',
       justifyContent: 'center',
     }}>
@@ -79,7 +79,7 @@ export const RNEducationalLoader: React.FC<{ message?: string; darkMode?: boolea
           <div style={{ textAlign: 'center' }}>
             <p style={{
               margin: 0,
-              fontSize: '16px',
+              fontSize: '18px',
               fontWeight: 600,
               color: darkMode ? '#f3f4f6' : '#1f2937',
               letterSpacing: '0.025em'
@@ -88,7 +88,7 @@ export const RNEducationalLoader: React.FC<{ message?: string; darkMode?: boolea
             </p>
             <p style={{
               margin: '4px 0 0 0',
-              fontSize: '13px',
+              fontSize: '15px',
               color: darkMode ? '#9ca3af' : '#6b7280'
             }}>
               {message}

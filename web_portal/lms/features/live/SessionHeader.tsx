@@ -67,13 +67,13 @@ export const SessionHeader: React.FC<Props> = ({ title }) => {
 
 const styles = StyleSheet.create({
   container: { backgroundColor: '#121212', width: '100%', zIndex: 10 },
-  reconnectBanner: { backgroundColor: '#F39C12', padding: 8, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 },
-  reconnectText: { color: '#000', fontSize: 12, fontWeight: 'bold' },
-  headerRow: { flexDirection: 'row', alignItems: 'center', padding: 16, paddingTop: 40 },
+  reconnectBanner: { backgroundColor: '#F39C12', padding: 10, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 },
+  reconnectText: { color: '#000', fontSize: 14, fontWeight: 'bold' },
+  headerRow: { flexDirection: 'row', alignItems: 'center', padding: 18, paddingTop: 40 },
   backBtn: { marginRight: 12 },
   titleContainer: { flex: 1 },
-  title: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
+  title: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
   statusBadge: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
   dot: { width: 6, height: 6, borderRadius: 3, marginRight: 6 },
-  statusText: { color: '#AAA', fontSize: 10, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1 }
+  statusText: { color: '#AAA', fontSize: 12, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1 }
 });

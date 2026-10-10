@@ -9,27 +9,6 @@ interface WatermarkOverlayProps {
   isDarkBackground?: boolean;
 }
 
-// 8 balanced, deterministic coordinate pairs across pages
-// Positioned inside the content body (between 16% and 80%), avoiding outer edge clipping
-const POSITION_PAIRS: Array<[ { top: string; left: string }, { top: string; left: string } ]> = [
-  // Page 1: Upper-Left & Bottom-Right
-  [ { top: '22%', left: '16%' }, { top: '72%', left: '56%' } ],
-  // Page 2: Upper-Right & Bottom-Left
-  [ { top: '20%', left: '58%' }, { top: '74%', left: '16%' } ],
-  // Page 3: Mid-Left & Mid-Right
-  [ { top: '44%', left: '14%' }, { top: '46%', left: '54%' } ],
-  // Page 4: Upper-Center & Lower-Center
-  [ { top: '24%', left: '36%' }, { top: '78%', left: '34%' } ],
-  // Page 5: Center-Left & Lower-Right
-  [ { top: '36%', left: '18%' }, { top: '68%', left: '54%' } ],
-  // Page 6: Upper-Right & Center-Bottom
-  [ { top: '18%', left: '54%' }, { top: '80%', left: '24%' } ],
-  // Page 7: Center-Top & Lower-Left
-  [ { top: '28%', left: '46%' }, { top: '64%', left: '20%' } ],
-  // Page 8: Upper-Left & Bottom-Center
-  [ { top: '22%', left: '24%' }, { top: '76%', left: '50%' } ]
-];
-
 export const WatermarkOverlay: React.FC<WatermarkOverlayProps> = ({
   pageNumber = 1,
   customText,
@@ -57,7 +36,33 @@ export const WatermarkOverlay: React.FC<WatermarkOverlayProps> = ({
           const parsed = JSON.parse(raw);
           if (parsed && isMounted) {
             const name = parsed.name || parsed.fullName || parsed.displayName || currentUser?.displayName || 'Student';
-            const phone = parsed.phone || parsed.phoneNumber || parsed.mobile || parsed.email || currentUser?.email || '';
+            let phone = parsed.phone || parsed.phoneNumber || parsed.mobile || '';
+
+            // If phone is missing from login session, fetch directly from Firestore student/user record
+            const targetId = parsed.studentId || parsed.userId || parsed.uid || parsed.id || currentUser?.uid;
+            if (!phone && targetId) {
+              try {
+                const { doc, getDoc } = require('firebase/firestore');
+                const { db } = require('../../../firebaseConfig');
+                const sSnap = await getDoc(doc(db, 'students', targetId));
+                if (sSnap.exists()) {
+                  const sData = sSnap.data();
+                  phone = sData?.phone || sData?.mobile || sData?.phoneNumber || '';
+                }
+                if (!phone) {
+                  const uSnap = await getDoc(doc(db, 'users', targetId));
+                  if (uSnap.exists()) {
+                    const uData = uSnap.data();
+                    phone = uData?.phone || uData?.mobile || uData?.phoneNumber || '';
+                  }
+                }
+              } catch (_) {}
+            }
+
+            if (!phone) {
+              phone = parsed.email || currentUser?.email || '';
+            }
+
             setUserInfo({ name, phone });
             return;
           }
@@ -96,68 +101,64 @@ export const WatermarkOverlay: React.FC<WatermarkOverlayProps> = ({
     };
   }, [currentUser]);
 
-  // Construct watermark text: NERMAI • [Name] • [Phone]
+  // Construct single clean watermark text: [Name] • [Phone]
   const watermarkText = useMemo(() => {
     if (customText) return customText;
-    const parts = ['NERMAI'];
-    if (userInfo.name) parts.push(userInfo.name);
+    const parts: string[] = [];
+    if (userInfo.name && userInfo.name !== 'Student') {
+      parts.push(userInfo.name);
+    } else {
+      parts.push('NERMAI Student');
+    }
     if (userInfo.phone) parts.push(userInfo.phone);
     return parts.join(' • ');
   }, [customText, userInfo]);
 
-  // Determine the 2 positions for the current page
-  // Safe modulo to handle negative or 0 page numbers
-  const safePage = Math.max(1, pageNumber);
-  const pairIndex = (safePage - 1) % POSITION_PAIRS.length;
-  const currentPair = POSITION_PAIRS[pairIndex];
+  // Generate a seamless SVG data URI pattern for the repeating diagonal watermark
+  const svgPatternUri = useMemo(() => {
+    const textColor = isDarkBackground ? 'rgba(255, 255, 255, 0.28)' : 'rgba(15, 23, 42, 0.16)';
+    const escapedText = encodeURIComponent(watermarkText);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="280" height="180" viewBox="0 0 280 180"><text x="140" y="90" fill="${textColor}" font-size="12" font-weight="700" font-family="system-ui, -apple-system, sans-serif" text-anchor="middle" transform="rotate(-22 140 90)">${escapedText}</text></svg>`;
+    return `url("data:image/svg+xml,${svg}")`;
+  }, [watermarkText, isDarkBackground]);
+
+  // Common watermark styling for static rendering in 2 positions
+  const commonWatermarkStyle: React.CSSProperties = {
+    position: 'absolute',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    fontSize: 'clamp(11px, 2.5vw, 13px)',
+    fontWeight: 700,
+    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    letterSpacing: '0.04em',
+    color: isDarkBackground ? 'rgba(255, 255, 255, 0.35)' : 'rgba(15, 23, 42, 0.22)',
+    whiteSpace: 'nowrap',
+    maxWidth: '90%',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    userSelect: 'none',
+    pointerEvents: 'none',
+    zIndex: 25,
+    textAlign: 'center',
+    textShadow: isDarkBackground ? '0 1px 3px rgba(0,0,0,0.6)' : 'none',
+  };
 
   return (
     <div
       className="absolute inset-0 w-full h-full pointer-events-none select-none overflow-hidden z-20"
       aria-hidden="true"
-      style={{ pointerEvents: 'none' }}
+      style={{
+        pointerEvents: 'none',
+        backgroundImage: svgPatternUri,
+        backgroundRepeat: 'repeat',
+        backgroundPosition: 'center'
+      }}
     >
-      {/* Watermark 1 — Static on this page, shifts when pageNumber changes */}
-      <div
-        style={{
-          position: 'absolute',
-          top: currentPair[0].top,
-          left: currentPair[0].left,
-          fontSize: '11px',
-          fontWeight: 600,
-          fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-          letterSpacing: '0.04em',
-          color: isDarkBackground ? 'rgba(255, 255, 255, 0.13)' : 'rgba(15, 23, 42, 0.11)',
-          whiteSpace: 'nowrap',
-          userSelect: 'none',
-          pointerEvents: 'none',
-          zIndex: 25,
-          textShadow: isDarkBackground ? '0 1px 2px rgba(0,0,0,0.4)' : 'none',
-          transition: 'all 0.25s ease-out',
-        }}
-      >
+      {/* 2-Location Static Central Watermark (Upper 25% & Lower 72%) */}
+      <div style={{ ...commonWatermarkStyle, top: '25%' }}>
         {watermarkText}
       </div>
-
-      {/* Watermark 2 — Static on this page, shifts when pageNumber changes */}
-      <div
-        style={{
-          position: 'absolute',
-          top: currentPair[1].top,
-          left: currentPair[1].left,
-          fontSize: '11px',
-          fontWeight: 600,
-          fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-          letterSpacing: '0.04em',
-          color: isDarkBackground ? 'rgba(255, 255, 255, 0.13)' : 'rgba(15, 23, 42, 0.11)',
-          whiteSpace: 'nowrap',
-          userSelect: 'none',
-          pointerEvents: 'none',
-          zIndex: 25,
-          textShadow: isDarkBackground ? '0 1px 2px rgba(0,0,0,0.4)' : 'none',
-          transition: 'all 0.25s ease-out',
-        }}
-      >
+      <div style={{ ...commonWatermarkStyle, top: '72%' }}>
         {watermarkText}
       </div>
     </div>

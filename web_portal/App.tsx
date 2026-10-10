@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, Suspense } from "react";
+import React, { useState, useEffect, useRef, Suspense, useMemo } from "react";
 import {
   StyleSheet,
   Text,
@@ -22,6 +22,7 @@ import {
 import { SafeAreaProvider, initialWindowMetrics, useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ScreenCapture from 'expo-screen-capture';
+import * as XLSX from 'xlsx';
 
 const safeInitialMetrics = initialWindowMetrics || {
   frame: { x: 0, y: 0, width: 360, height: 800 },
@@ -64,16 +65,38 @@ const CustomLeadsPage = React.lazy(() => import('./lms/admin/CustomLeadsPage'));
 const MergedLeadsAdmissionsPage = React.lazy(() => import('./lms/admin/MergedLeadsAdmissionsPage'));
 const DynamicApplicationModal = React.lazy(() => import('./lms/components/DynamicApplicationModal'));
 import { RNSkeleton, RNDashboardSkeleton, RNTableSkeleton, RNCardGridSkeleton, RNProfileSkeleton, RNFormSkeleton, RNContainerSkeleton, RNNoticeCardSkeleton, RNNoticeSectionSkeleton, RNSystemAlertCardSkeleton, RNClosedTestCardSkeleton, RNClosedTestsSectionSkeleton } from './lms/components/ui/RNSkeleton';
+import { UniversalTime12Picker } from './lms/components/UniversalTime12Picker';
 
 const getDirectImageUrl = (url: string): string => {
-  if (!url) return "";
-  if (typeof url !== "string") return "";
-  if (url.startsWith("data:image")) return url;
-  const match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || url.match(/[?&]id=([a-zA-Z0-9_-]+)/) || url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (!url || typeof url !== "string") return "";
+  const trimmed = url.trim();
+  if (trimmed.startsWith("data:image")) return trimmed;
+  const match = trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/) || trimmed.match(/\/d\/([a-zA-Z0-9_-]+)/);
   if (match && match[1]) {
     return `https://lh3.googleusercontent.com/d/${match[1]}`;
   }
-  return url;
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return trimmed;
+  }
+  return "";
+};
+
+const getCampaignPosterUri = (cp: any): string => {
+  if (!cp) return "";
+  const url = (typeof cp === "string" ? cp : cp.posterUrl) || "";
+  const base64 = (typeof cp === "object" ? cp.posterBase64 : "") || "";
+
+  if (url && (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:image"))) {
+    return getDirectImageUrl(url);
+  }
+  if (base64) {
+    if (base64.startsWith("data:image")) return base64;
+    if (base64.length > 50) return `data:image/jpeg;base64,${base64}`;
+  }
+  if (url) {
+    return getDirectImageUrl(url);
+  }
+  return "";
 };
 
 const TestWatermarkOverlay: React.FC<{ studentText?: string }> = ({ studentText }) => {
@@ -140,6 +163,112 @@ const TestWatermarkOverlay: React.FC<{ studentText?: string }> = ({ studentText 
           ))}
         </View>
       ) : null}
+    </View>
+  );
+};
+
+const NativeDocumentWatermark: React.FC<{ user?: any; isDarkBackground?: boolean }> = ({ user, isDarkBackground = false }) => {
+  const [phone, setPhone] = useState<string>("");
+  const name = user?.name || user?.username || user?.displayName || "Student";
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchPhone = async () => {
+      let p = user?.phone || user?.mobile || user?.phoneNumber || "";
+      if (!p) {
+        try {
+          if (Platform.OS === "web" && typeof localStorage !== "undefined") {
+            const raw = localStorage.getItem("nermai_auth_user");
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              p = parsed?.phone || parsed?.mobile || parsed?.phoneNumber || "";
+            }
+          } else {
+            const raw = await AsyncStorage.getItem("nermai_auth_user");
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              p = parsed?.phone || parsed?.mobile || parsed?.phoneNumber || "";
+            }
+          }
+        } catch (_) { }
+      }
+      const targetId = user?.studentId || user?.userId || user?.uid || user?.id;
+      if (!p && targetId) {
+        try {
+          const { doc, getDoc } = require("firebase/firestore");
+          const { db } = require("./firebaseConfig");
+          const sSnap = await getDoc(doc(db, "students", targetId));
+          if (sSnap.exists()) {
+            const sData = sSnap.data();
+            p = sData?.phone || sData?.mobile || sData?.phoneNumber || "";
+          }
+          if (!p) {
+            const uSnap = await getDoc(doc(db, "users", targetId));
+            if (uSnap.exists()) {
+              const uData = uSnap.data();
+              p = uData?.phone || uData?.mobile || uData?.phoneNumber || "";
+            }
+          }
+        } catch (_) { }
+      }
+      if (!p) {
+        p = user?.email || "";
+      }
+      if (isMounted && p) {
+        setPhone(p);
+      }
+    };
+    fetchPhone();
+    return () => { isMounted = false; };
+  }, [user]);
+
+  const text = phone ? `${name} • ${phone}` : (user?.email ? `${name} • ${user.email}` : name);
+
+  const watermarkStyle: any = {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16
+  };
+
+  const textStyle: any = {
+    fontSize: 12.5,
+    fontWeight: "700",
+    color: isDarkBackground ? "rgba(255, 255, 255, 0.35)" : "rgba(15, 23, 42, 0.22)",
+    letterSpacing: 0.5,
+    backgroundColor: "transparent",
+    textAlign: "center"
+  };
+
+  return (
+    <View
+      pointerEvents="none"
+      style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 99999,
+        elevation: 99999,
+        overflow: "hidden"
+      }}
+    >
+      {/* Upper Static Watermark (25%) */}
+      <View style={{ ...watermarkStyle, top: "25%" }}>
+        <Text style={textStyle} numberOfLines={1}>
+          {text}
+        </Text>
+      </View>
+
+      {/* Lower Static Watermark (72%) */}
+      <View style={{ ...watermarkStyle, top: "72%" }}>
+        <Text style={textStyle} numberOfLines={1}>
+          {text}
+        </Text>
+      </View>
     </View>
   );
 };
@@ -263,7 +392,7 @@ import * as ImageManipulator from "expo-image-manipulator";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { handleFirebaseGoogleSignIn, db } from "./firebaseConfig";
-import { initNotifications, requestNotificationPermission, showPhoneNotification } from "./notifications";
+import { initNotifications, requestNotificationPermission, showPhoneNotification, setupNotificationClickListener, registerForPushNotificationsAsync, sendRemotePushNotification, unregisterPushTokenAsync } from "./notifications";
 import { doc, setDoc, onSnapshot, collection, deleteDoc, query, where, addDoc, getDocs, orderBy, serverTimestamp } from "firebase/firestore";
 
 const USE_NATIVE_DRIVER = Platform.OS !== "web";
@@ -1266,15 +1395,61 @@ function DateTimePickerSelect({
     year: "numeric"
   }) + " at " + String(displayHour).padStart(2, "0") + ":" + String(date.getMinutes()).padStart(2, "0") + " " + displayAmPm;
 
+  // Extract YYYY-MM-DD and HH:mm
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  const datePart = `${y}-${m}-${d}`;
+
+  const hr = String(date.getHours()).padStart(2, "0");
+  const min = String(date.getMinutes()).padStart(2, "0");
+  const timePart = `${hr}:${min}`;
+
+  const handleDatePartChange = (newDateStr: string) => {
+    if (!newDateStr) return;
+    const parts = newDateStr.split("-");
+    if (parts.length >= 3) {
+      const yNum = Number(parts[0]);
+      const mNum = Number(parts[1]);
+      const dNum = Number(parts[2]);
+      if (!isNaN(yNum) && !isNaN(mNum) && !isNaN(dNum)) {
+        const newDate = new Date(date);
+        newDate.setFullYear(yNum);
+        newDate.setMonth(mNum - 1);
+        newDate.setDate(dNum);
+        setViewYear(newDate.getFullYear());
+        setViewMonth(newDate.getMonth());
+        onChange(formatDateTimeLocal(newDate));
+      }
+    }
+  };
+
+  const handleTimePart24Change = (newTime24: string) => {
+    if (!newTime24) return;
+    const parts = newTime24.split(":");
+    if (parts.length >= 2) {
+      const h = Number(parts[0]);
+      const mi = Number(parts[1]);
+      if (!isNaN(h) && !isNaN(mi)) {
+        const newDate = new Date(date);
+        newDate.setHours(h);
+        newDate.setMinutes(mi);
+        onChange(formatDateTimeLocal(newDate));
+      }
+    }
+  };
+
+  const isDesktopWeb = Platform.OS === "web" && typeof window !== "undefined" && window.innerWidth >= 768;
+
   return (
     <View style={{ marginBottom: 14 }}>
       <Text style={{ fontSize: 12, fontWeight: "bold", color: darkMode ? "#ccc" : "#444", marginBottom: 6 }}>
         {label}
       </Text>
 
-      {Platform.OS === "web" ? (
-        <View style={{ flexDirection: ((typeof window !== "undefined" && window.innerWidth < 768) ? "column" : "row"), alignItems: ((typeof window !== "undefined" && window.innerWidth < 768) ? "stretch" : "center"), gap: 8 }}>
-          {/* HTML5 Native Calendar Input for Web */}
+      {isDesktopWeb ? (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          {/* HTML5 Native Calendar Input for Desktop Web */}
           <View style={{ flex: 1 }}>
             <input
               type="datetime-local"
@@ -1331,31 +1506,89 @@ function DateTimePickerSelect({
           </TouchableOpacity>
         </View>
       ) : (
-        <TouchableOpacity
-          onPress={() => {
-            setViewYear(date.getFullYear());
-            setViewMonth(date.getMonth());
-            setShowCalendarModal(true);
-          }}
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: 12,
-            borderWidth: 1,
-            borderColor: darkMode ? "#444" : "#ccc",
-            borderRadius: 8,
-            backgroundColor: darkMode ? "#222" : "#fff"
-          }}
-        >
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <Ionicons name="calendar-outline" size={20} color="#c62828" />
-            <Text style={{ color: darkMode ? "#fff" : "#212121", fontSize: 13, fontWeight: "bold" }}>
-              {displayFormatted}
-            </Text>
+        <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-end" }}>
+          {/* Date Picker (Phone Web or APK) */}
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={{ fontSize: 11, fontWeight: "600", color: darkMode ? "#aaa" : "#666", marginBottom: 4 }}>Date</Text>
+            {Platform.OS === "web" ? (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                <input
+                  type="date"
+                  value={datePart}
+                  onChange={(e: any) => handleDatePartChange(e.target.value)}
+                  style={{
+                    width: "100%",
+                    minWidth: 0,
+                    height: 38,
+                    borderRadius: 8,
+                    padding: "0 6px",
+                    border: darkMode ? "1px solid #444" : "1px solid #ccc",
+                    backgroundColor: darkMode ? "#2a2a2a" : "#fff",
+                    color: darkMode ? "#e0e0e0" : "#212121",
+                    fontSize: 13,
+                    fontWeight: "600",
+                    outline: "none",
+                    boxSizing: "border-box"
+                  }}
+                />
+                <TouchableOpacity
+                  onPress={() => {
+                    setViewYear(date.getFullYear());
+                    setViewMonth(date.getMonth());
+                    setShowCalendarModal(true);
+                  }}
+                  style={{
+                    height: 38,
+                    width: 34,
+                    borderRadius: 8,
+                    backgroundColor: darkMode ? "#333" : "#f0f0f0",
+                    borderWidth: 1,
+                    borderColor: darkMode ? "#444" : "#ccc",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0
+                  }}
+                >
+                  <Ionicons name="calendar-outline" size={16} color={darkMode ? "#ef5350" : "#c62828"} />
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity
+                onPress={() => {
+                  setViewYear(date.getFullYear());
+                  setViewMonth(date.getMonth());
+                  setShowCalendarModal(true);
+                }}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  height: 38,
+                  paddingHorizontal: 8,
+                  borderWidth: 1,
+                  borderColor: darkMode ? "#444" : "#ccc",
+                  borderRadius: 8,
+                  backgroundColor: darkMode ? "#2a2a2a" : "#fff"
+                }}
+              >
+                <Text style={{ color: darkMode ? "#fff" : "#212121", fontSize: 12, fontWeight: "bold" }} numberOfLines={1}>
+                  {datePart}
+                </Text>
+                <Ionicons name="calendar-outline" size={16} color="#c62828" />
+              </TouchableOpacity>
+            )}
           </View>
-          <Ionicons name="chevron-down" size={16} color="#888" />
-        </TouchableOpacity>
+
+          {/* Time Picker with 12h Typing + AM/PM Toggle */}
+          <View style={{ flex: 1.25, minWidth: 0 }}>
+            <Text style={{ fontSize: 11, fontWeight: "600", color: darkMode ? "#aaa" : "#666", marginBottom: 4 }}>Time (12h)</Text>
+            <UniversalTime12Picker
+              value={timePart}
+              onChange={handleTimePart24Change}
+              darkMode={darkMode}
+            />
+          </View>
+        </View>
       )}
 
       {/* GRAPHICAL CALENDAR MODAL */}
@@ -1485,89 +1718,15 @@ function DateTimePickerSelect({
                 }}>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                     <Ionicons name="time-outline" size={18} color={darkMode ? "#ccc" : "#444"} />
-                    <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#212121" }}>Time:</Text>
+                    <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#212121" }}>Time (12h):</Text>
                   </View>
 
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                    {/* Hour (1 - 12) */}
-                    <View style={{ flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: darkMode ? "#444" : "#ccc", borderRadius: 6, backgroundColor: darkMode ? "#222" : "#f9f9f9", paddingHorizontal: 4, paddingVertical: 2 }}>
-                      <TouchableOpacity
-                        onPress={() => {
-                          const cur12 = get12Hour(date.getHours());
-                          const nextH = cur12 === 1 ? 12 : cur12 - 1;
-                          handleTimeChange("hour", nextH);
-                        }}
-                        style={{ padding: 4 }}
-                      >
-                        <Ionicons name="chevron-down" size={14} color={darkMode ? "#aaa" : "#555"} />
-                      </TouchableOpacity>
-                      <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#111", minWidth: 24, textAlign: "center", marginHorizontal: 2 }}>
-                        {String(get12Hour(date.getHours())).padStart(2, "0")}
-                      </Text>
-                      <TouchableOpacity
-                        onPress={() => {
-                          const cur12 = get12Hour(date.getHours());
-                          const nextH = cur12 === 12 ? 1 : cur12 + 1;
-                          handleTimeChange("hour", nextH);
-                        }}
-                        style={{ padding: 4 }}
-                      >
-                        <Ionicons name="chevron-up" size={14} color={darkMode ? "#aaa" : "#555"} />
-                      </TouchableOpacity>
-                    </View>
-
-                    <Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#111" }}>:</Text>
-
-                    {/* Minute (00 - 55 in 5m steps) */}
-                    <View style={{ flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: darkMode ? "#444" : "#ccc", borderRadius: 6, backgroundColor: darkMode ? "#222" : "#f9f9f9", paddingHorizontal: 4, paddingVertical: 2 }}>
-                      <TouchableOpacity
-                        onPress={() => {
-                          const curM = date.getMinutes();
-                          const nextM = curM <= 0 ? 55 : (Math.floor(curM / 5) * 5) - 5;
-                          handleTimeChange("minute", nextM);
-                        }}
-                        style={{ padding: 4 }}
-                      >
-                        <Ionicons name="chevron-down" size={14} color={darkMode ? "#aaa" : "#555"} />
-                      </TouchableOpacity>
-                      <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#111", minWidth: 24, textAlign: "center", marginHorizontal: 2 }}>
-                        {String(Math.floor(date.getMinutes() / 5) * 5).padStart(2, "0")}
-                      </Text>
-                      <TouchableOpacity
-                        onPress={() => {
-                          const curM = date.getMinutes();
-                          const nextM = curM >= 55 ? 0 : (Math.floor(curM / 5) * 5) + 5;
-                          handleTimeChange("minute", nextM);
-                        }}
-                        style={{ padding: 4 }}
-                      >
-                        <Ionicons name="chevron-up" size={14} color={darkMode ? "#aaa" : "#555"} />
-                      </TouchableOpacity>
-                    </View>
-
-                    {/* AM / PM Toggle */}
-                    <View style={{ flexDirection: "row", borderRadius: 6, overflow: "hidden", borderWidth: 1, borderColor: darkMode ? "#444" : "#ccc", marginLeft: 4 }}>
-                      <TouchableOpacity
-                        onPress={() => handleTimeChange("ampm", "AM")}
-                        style={{
-                          paddingHorizontal: 8,
-                          paddingVertical: 5,
-                          backgroundColor: getAmPm(date.getHours()) === "AM" ? "#c62828" : (darkMode ? "#222" : "#f9f9f9")
-                        }}
-                      >
-                        <Text style={{ fontSize: 11, fontWeight: "bold", color: getAmPm(date.getHours()) === "AM" ? "#fff" : (darkMode ? "#aaa" : "#555") }}>AM</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={() => handleTimeChange("ampm", "PM")}
-                        style={{
-                          paddingHorizontal: 8,
-                          paddingVertical: 5,
-                          backgroundColor: getAmPm(date.getHours()) === "PM" ? "#c62828" : (darkMode ? "#222" : "#f9f9f9")
-                        }}
-                      >
-                        <Text style={{ fontSize: 11, fontWeight: "bold", color: getAmPm(date.getHours()) === "PM" ? "#fff" : (darkMode ? "#aaa" : "#555") }}>PM</Text>
-                      </TouchableOpacity>
-                    </View>
+                  <View style={{ width: 145 }}>
+                    <UniversalTime12Picker
+                      value={timePart}
+                      onChange={handleTimePart24Change}
+                      darkMode={darkMode}
+                    />
                   </View>
                 </View>
 
@@ -1670,7 +1829,7 @@ const getSavedNav = () => {
             hasExplicitSub = true;
             let normSub = sub;
             if (main === "lms" && (normSub === "daily_content" || normSub === "dailycontent")) normSub = "daily-content";
-            if (main === "erp") erpSubVal = normSub;
+            if (main === "erp") erpSubVal = normSub === "marks" ? "students" : normSub;
             if (main === "lms") lmsSubVal = normSub;
             if (main === "crm") crmSubVal = normSub;
             if (main === "test") testSubVal = normSub;
@@ -2468,21 +2627,1101 @@ function OnboardingScreens({ onDone }: { onDone: () => void }) {
   );
 }
 
+const imageExtRegex = /\.(png|jpe?g|webp|gif|svg|bmp|tiff|heic|ico)(\?.*)?$/i;
+const imageTypeRegex = /^(image|png|jpe?g|webp|gif|svg|bmp)$/i;
 
+const NativeDailyImageZoomView = ({ imgSrc, darkMode }: { imgSrc: string; darkMode: boolean }) => {
+  const { WebView } = require("react-native-webview");
 
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body, html { width: 100%; height: 100%; overflow: hidden; background-color: ${darkMode ? '#111' : '#f5f5f5'}; display: flex; justify-content: center; align-items: center; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+      #container { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; position: relative; overflow: hidden; touch-action: none; }
+      #img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; transform-origin: center center; transition: transform 0.05s ease-out; pointer-events: none; }
+      #resetBtn { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); background: #c62828; color: #fff; border: none; padding: 8px 16px; border-radius: 20px; font-weight: bold; font-size: 13px; display: none; box-shadow: 0 4px 10px rgba(0,0,0,0.3); z-index: 100; }
+    </style>
+    </head>
+    <body>
+    <div id="container">
+      <img id="img" src="${imgSrc}" onerror="handleImgErr(this)" oncontextmenu="return false;" ondragstart="return false;" />
+      <button id="resetBtn" onclick="resetZoom()">Reset Zoom</button>
+    </div>
+    <script>
+      function handleImgErr(el) {
+        var url = el.src || '';
+        var m = url.match(/([-\\w]{25,})/);
+        if (m && m[1]) {
+          var id = m[1];
+          if (!el.dataset.attempt) {
+            el.dataset.attempt = '1';
+            el.src = 'https://drive.google.com/thumbnail?id=' + id + '&sz=w2000';
+          } else if (el.dataset.attempt === '1') {
+            el.dataset.attempt = '2';
+            el.src = 'https://drive.google.com/uc?export=view&id=' + id;
+          }
+        }
+      }
+    </script>
+    <script>
+      var img = document.getElementById('img');
+      var resetBtn = document.getElementById('resetBtn');
+      var container = document.getElementById('container');
+      
+      var scale = 1;
+      var translateX = 0;
+      var translateY = 0;
+      
+      var isDragging = false;
+      var startX = 0, startY = 0;
+      var initialTx = 0, initialTy = 0;
+      var initialPinchDist = 0, initialScale = 1;
+      var lastTapTime = 0;
 
+      function updateTransform() {
+        img.style.transform = 'translate(' + translateX + 'px, ' + translateY + 'px) scale(' + scale + ')';
+        if (scale > 1) {
+          resetBtn.style.display = 'block';
+          resetBtn.innerText = 'Reset Zoom (' + Math.round(scale * 100) + '%)';
+        } else {
+          resetBtn.style.display = 'none';
+        }
+      }
+
+      function resetZoom() {
+        scale = 1; translateX = 0; translateY = 0;
+        updateTransform();
+      }
+
+      container.addEventListener('touchstart', function(e) {
+        if (e.touches.length === 2) {
+          isDragging = false;
+          lastTapTime = 0;
+          var t1 = e.touches[0];
+          var t2 = e.touches[1];
+          initialPinchDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+          initialScale = scale;
+        } else if (e.touches.length === 1) {
+          var now = Date.now();
+          if (lastTapTime > 0 && now - lastTapTime < 300) {
+            if (scale > 1) resetZoom();
+            else { scale = 2.5; translateX = 0; translateY = 0; updateTransform(); }
+            lastTapTime = 0;
+            return;
+          }
+          lastTapTime = now;
+          if (scale > 1) {
+            isDragging = true;
+            startX = e.touches[0].clientX;
+            startY = e.touches[0].clientY;
+            initialTx = translateX;
+            initialTy = translateY;
+          }
+        }
+      }, { passive: false });
+
+      container.addEventListener('touchmove', function(e) {
+        if (e.touches.length === 2 && initialPinchDist > 0) {
+          e.preventDefault();
+          var t1 = e.touches[0];
+          var t2 = e.touches[1];
+          var currentDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+          var factor = currentDist / initialPinchDist;
+          scale = Math.min(Math.max(initialScale * factor, 1), 5);
+          if (scale === 1) { translateX = 0; translateY = 0; }
+          updateTransform();
+        } else if (e.touches.length === 1 && isDragging && scale > 1) {
+          e.preventDefault();
+          var deltaX = e.touches[0].clientX - startX;
+          var deltaY = e.touches[0].clientY - startY;
+          translateX = initialTx + deltaX;
+          translateY = initialTy + deltaY;
+          updateTransform();
+        }
+      }, { passive: false });
+
+      container.addEventListener('touchend', function(e) {
+        if (e.touches.length === 1) {
+          isDragging = true;
+          startX = e.touches[0].clientX;
+          startY = e.touches[0].clientY;
+          initialTx = translateX;
+          initialTy = translateY;
+        }
+        if (e.touches.length < 2) initialPinchDist = 0;
+        if (e.touches.length === 0) isDragging = false;
+      });
+    </script>
+    </body>
+    </html>
+  `;
+
+  return (
+    <View style={{ flex: 1, width: "100%", height: "100%" }}>
+      <WebView
+        originWhitelist={["*"]}
+        source={{ html: htmlContent }}
+        style={{ flex: 1, width: "100%", backgroundColor: darkMode ? "#111" : "#f5f5f5" }}
+        javaScriptEnabled={true}
+        domStorageEnabled={true}
+        scrollEnabled={false}
+        bounces={false}
+        showsHorizontalScrollIndicator={false}
+        showsVerticalScrollIndicator={false}
+      />
+    </View>
+  );
+};
+
+const buildNativePdfViewerHtml = (sourceUrlOrBase64: string, docTitle: string = "Document Viewer", watermarkStr: string = "") => {
+  const isDataUri = sourceUrlOrBase64.startsWith("data:") || !sourceUrlOrBase64.startsWith("http");
+  let base64Clean = "";
+  if (isDataUri) {
+    base64Clean = sourceUrlOrBase64.replace(/^data:[^;]+;base64,/, "").replace(/\s+/g, "");
+  }
+  const safeTitle = (docTitle || "Document").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const safeWatermark = (watermarkStr || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=4.0, user-scalable=yes">
+<title>${safeTitle}</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background-color: #0b0e17;
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #top-bar {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(15, 18, 25, 0.95);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 16px;
+  }
+  .badge {
+    font-size: 10px;
+    font-weight: 800;
+    color: #34d399;
+    background: rgba(16,185,129,0.15);
+    padding: 4px 8px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+  }
+  .page-counter {
+    font-size: 12px;
+    font-weight: 600;
+    color: #9ca3af;
+  }
+  #pdf-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px 8px 80px 8px;
+    gap: 16px;
+    width: 100%;
+  }
+  .pdf-page-wrapper {
+    position: relative;
+    width: 100%;
+    max-width: 850px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  canvas {
+    width: 100% !important;
+    height: auto !important;
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+    background-color: #fff;
+  }
+  #status-msg {
+    padding: 50px 20px;
+    text-align: center;
+    color: #9ca3af;
+    font-size: 13px;
+  }
+  .spinner {
+    border: 3px solid rgba(255,255,255,0.1);
+    border-top: 3px solid #c62828;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 16px auto;
+  }
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  /* Static Viewport Watermark: Sits permanently over screen in 2 fixed positions */
+  .viewport-watermark-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    z-index: 9999;
+    overflow: hidden;
+  }
+  .viewport-watermark-item {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 12px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.35);
+    white-space: nowrap;
+    text-align: center;
+    max-width: 90%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+    pointer-events: none;
+  }
+  .watermark-upper { top: 25%; }
+  .watermark-lower { top: 72%; }
+</style>
+</head>
+<body>
+  <div id="top-bar">
+    <span class="badge">SECURE PDF VIEWER</span>
+    <span id="page-counter" class="page-counter">Initializing...</span>
+  </div>
+  <div id="pdf-container">
+    <div id="status-msg">
+      <div class="spinner"></div>
+      Loading document pages...
+    </div>
+  </div>
+  ${safeWatermark ? `
+  <div class="viewport-watermark-overlay">
+    <div class="viewport-watermark-item watermark-upper">${safeWatermark}</div>
+    <div class="viewport-watermark-item watermark-lower">${safeWatermark}</div>
+  </div>
+  ` : ''}
+  <script>
+    var pdfDoc = null;
+    var container = document.getElementById('pdf-container');
+    var statusMsg = document.getElementById('status-msg');
+    var pageCounter = document.getElementById('page-counter');
+
+    function renderPdf() {
+      try {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        var loadingTask = ${isDataUri ? `pdfjsLib.getDocument({ data: atob("${base64Clean}") })` : `pdfjsLib.getDocument("${sourceUrlOrBase64}")`};
+        loadingTask.promise.then(function(pdf) {
+          pdfDoc = pdf;
+          statusMsg.style.display = 'none';
+          pageCounter.innerText = pdf.numPages + ' Page' + (pdf.numPages === 1 ? '' : 's');
+          var renderPage = function(num) {
+            if (num > pdf.numPages) return;
+            pdf.getPage(num).then(function(page) {
+              var viewport = page.getViewport({ scale: 2.0 });
+              var wrapper = document.createElement('div');
+              wrapper.className = 'pdf-page-wrapper';
+              var canvas = document.createElement('canvas');
+              var ctx = canvas.getContext('2d');
+              canvas.height = viewport.height;
+              canvas.width = viewport.width;
+              wrapper.appendChild(canvas);
+              container.appendChild(wrapper);
+              page.render({ canvasContext: ctx, viewport: viewport }).promise.then(function() {
+                renderPage(num + 1);
+              });
+            });
+          };
+          renderPage(1);
+        }).catch(function(err) {
+          statusMsg.innerHTML = '<div style="color: #ef4444; font-weight: bold; margin-bottom: 8px;">Failed to load PDF</div><div style="font-size: 11px;">' + (err.message || 'The PDF document could not be rendered.') + '</div>';
+        });
+      } catch (e) {
+        statusMsg.innerHTML = '<div style="color: #ef4444; font-weight: bold;">Error opening document</div><div style="font-size: 11px;">' + (e.message || '') + '</div>';
+      }
+    }
+
+    if (typeof pdfjsLib !== 'undefined') {
+      renderPdf();
+    } else {
+      window.addEventListener('load', renderPdf);
+    }
+  </script>
+</body>
+</html>`;
+};
+
+const hidePopOutJs = `
+  (function() {
+    function hideElements() {
+      var selectors = [
+        '[aria-label*="Pop-out" i]',
+        '[aria-label*="pop out" i]',
+        '[aria-label*="popout" i]',
+        '[title*="Pop-out" i]',
+        '[title*="pop out" i]',
+        '[title*="popout" i]',
+        '[data-tooltip*="Pop-out" i]',
+        '[data-tooltip*="pop out" i]',
+        '[data-tooltip*="popout" i]',
+        '[aria-label*="Open in new window" i]',
+        '[title*="Open in new window" i]',
+        '.ndfHFb-c4YZDc-Wrql6b',
+        '.ndfHFb-c4YZDc-s3Eaab',
+        '.ndfHFb-c4YZDc-GSxda-haAclf',
+        '.drive-viewer-toolstrip',
+        '.drive-viewer-popout-button',
+        '.drive-viewer-toolstrip-popout',
+        'a.drive-viewer-popout-button',
+        '.ndfHFb-c4YZDc-b0t70b-aTv5jf',
+        'a[target="_blank"]'
+      ];
+      selectors.forEach(function(s) {
+        try {
+          var els = document.querySelectorAll(s);
+          els.forEach(function(el) {
+            el.style.display = 'none';
+            el.style.visibility = 'hidden';
+            el.style.pointerEvents = 'none';
+            el.style.opacity = '0';
+          });
+        } catch(e) {}
+      });
+      if (!document.getElementById('antiPopoutStyle')) {
+        var style = document.createElement('style');
+        style.id = 'antiPopoutStyle';
+        style.innerHTML = selectors.join(', ') + ' { display: none !important; visibility: hidden !important; pointer-events: none !important; opacity: 0 !important; width: 0 !important; height: 0 !important; }';
+        document.head.appendChild(style);
+      }
+    }
+    hideElements();
+    setInterval(hideElements, 400);
+  })();
+  true;
+`;
+
+const NativeResourceModal = React.memo(({
+  resourceId,
+  onClose,
+  darkMode,
+  user,
+  api,
+  getBaseUrl
+}: {
+  resourceId: string;
+  onClose: () => void;
+  darkMode: boolean;
+  user: any;
+  api: any;
+  getBaseUrl?: () => string;
+}) => {
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<{ url: string; title: string; type: string; isDrive: boolean; drivePreviewUrl: string } | null>(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const res = await api.get(`/resources/${resourceId}`);
+        const resource = res?.data !== undefined ? (res?.data?.data || res?.data) : (res || {});
+        const acc = await api.get(`/resources/${resourceId}/access`);
+        const access = acc?.data !== undefined ? (acc?.data?.data || acc?.data) : (acc || {});
+        const fallbackBase = getBaseUrl ? getBaseUrl() : 'https://nermaiiasacademy-519c8.web.app/api';
+        let targetUrl = access?.viewerUrl || access?.signedUrl || resource?.sourceUrl || `${fallbackBase}/resources/${resourceId}/content?token=${user?.token || ""}`;
+
+        const rawType = (resource?.type || '').toLowerCase();
+        const mimeType = (resource?.mimeType || access?.contentType || '').toLowerCase();
+
+        const candidateStrings = [
+          resource?.title,
+          resource?.originalName,
+          resource?.fileName,
+          resource?.filename,
+          resource?.name,
+          resource?.sourceUrl,
+          resource?.url,
+          resource?.storagePath,
+          resource?.fileUrl,
+          access?.fileName,
+          access?.originalName,
+          access?.contentType,
+          access?.mimeType,
+          targetUrl
+        ].filter(Boolean).map(s => String(s));
+
+        const isPdf = rawType === 'pdf' || mimeType === 'application/pdf' || candidateStrings.some(s => /\.pdf(\?.*)?$/i.test(s));
+
+        let isImg = !isPdf && (
+          access?.viewerType === 'image' ||
+          imageTypeRegex.test(rawType) ||
+          mimeType.startsWith('image/') ||
+          candidateStrings.some(s => imageExtRegex.test(s)) ||
+          targetUrl.includes('lh3.googleusercontent.com') ||
+          targetUrl.startsWith('data:image/')
+        );
+
+        // Extract drive ID ONLY if this resource is actually hosted on Google Drive
+        const isGoogleDriveProvider = resource?.provider === 'google_drive' || String(resource?.sourceUrl || '').includes('drive.google.com') || String(access?.viewerUrl || '').includes('drive.google.com');
+        let driveId: string | null = null;
+        if (isGoogleDriveProvider) {
+          const driveCandidates = [resource?.sourceUrl, resource?.url, access?.viewerUrl, targetUrl].filter(Boolean);
+          for (const cand of driveCandidates) {
+            const str = String(cand);
+            const m1 = str.match(/\/file\/d\/([-\w]{25,})/);
+            if (m1 && m1[1]) { driveId = m1[1]; break; }
+            const m2 = str.match(/[?&]id=([-\w]{25,})/);
+            if (m2 && m2[1]) { driveId = m2[1]; break; }
+            if (str.includes('drive.google.com') || str.includes('docs.google.com')) {
+              const m3 = str.match(/([-\w]{25,})/);
+              if (m3 && m3[1]) { driveId = m3[1]; break; }
+            }
+          }
+        }
+
+        // If driveId exists and it wasn't flagged as an image yet, probe if it's an image (skip for PDFs)
+        if (!isImg && !isPdf && driveId) {
+          try {
+            const isDriveImg = await new Promise<boolean>((resolve) => {
+              let settled = false;
+              const timer = setTimeout(() => {
+                if (!settled) {
+                  settled = true;
+                  resolve(false);
+                }
+              }, 1200);
+
+              Image.getSize(
+                `https://lh3.googleusercontent.com/d/${driveId}`,
+                (w, h) => {
+                  if (!settled) {
+                    settled = true;
+                    clearTimeout(timer);
+                    resolve(w > 0 && h > 0);
+                  }
+                },
+                () => {
+                  if (!settled) {
+                    settled = true;
+                    clearTimeout(timer);
+                    resolve(false);
+                  }
+                }
+              );
+            });
+
+            if (isDriveImg) {
+              isImg = true;
+            }
+          } catch (e) {
+            // fallback
+          }
+        }
+
+        if (isImg) {
+          if (driveId) {
+            targetUrl = `https://lh3.googleusercontent.com/d/${driveId}`;
+          } else if (access?.viewerUrl && (access.viewerUrl.startsWith('http://') || access.viewerUrl.startsWith('https://'))) {
+            targetUrl = access.viewerUrl;
+          } else if (access?.cdnUrl && (access.cdnUrl.startsWith('http://') || access.cdnUrl.startsWith('https://'))) {
+            targetUrl = access.cdnUrl;
+          } else if (access?.signedUrl && (access.signedUrl.startsWith('http://') || access.signedUrl.startsWith('https://'))) {
+            targetUrl = access.signedUrl;
+          } else if (resource?.sourceUrl && (resource.sourceUrl.startsWith('http://') || resource.sourceUrl.startsWith('https://'))) {
+            targetUrl = resource.sourceUrl;
+          }
+        }
+
+        const drivePreviewUrl = driveId ? `https://drive.google.com/file/d/${driveId}/preview` : '';
+        const isDrive = Boolean(driveId && !isImg);
+
+        if (isMounted) {
+          setData({
+            url: targetUrl,
+            title: resource?.title || 'Resource Document',
+            type: isImg ? 'image' : 'pdf',
+            isDrive,
+            drivePreviewUrl
+          });
+        }
+      } catch (err: any) {
+        if (isMounted) setError(err.message || 'Failed to load resource');
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    })();
+    return () => { isMounted = false; };
+  }, [resourceId]);
+
+  const isImg = data?.type === 'image';
+  const uName = user?.name || user?.username || user?.displayName || "Student";
+  const uPhone = user?.phone || user?.mobile || user?.phoneNumber || user?.email || "";
+  const nativeWatermarkText = uPhone ? `${uName} • ${uPhone}` : uName;
+
+  return (
+    <Modal visible={true} transparent={false} animationType="fade" onRequestClose={onClose}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: "#0f1219" }}>
+        {/* Header */}
+        <View style={{
+          height: 54,
+          borderBottomWidth: 1,
+          borderBottomColor: "rgba(255,255,255,0.08)",
+          backgroundColor: "#151923",
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingHorizontal: 12
+        }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1, marginRight: 8 }}>
+            <TouchableOpacity onPress={onClose} style={{ padding: 6, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.06)" }}>
+              <Ionicons name="close" size={18} color="#fff" />
+            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 13, flexShrink: 1 }} numberOfLines={1}>
+                  {data?.title || "Resource"}
+                </Text>
+                <View style={{ backgroundColor: "rgba(16,185,129,0.2)", paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 4, flexDirection: "row", alignItems: "center", gap: 2 }}>
+                  <Ionicons name="shield-checkmark" size={9} color="#34d399" />
+                  <Text style={{ color: "#34d399", fontSize: 8.5, fontWeight: "bold" }}>SECURE</Text>
+                </View>
+              </View>
+              <Text style={{ color: "#9ca3af", fontSize: 10 }}>{isImg ? "IMAGE" : "PDF"} • v1</Text>
+            </View>
+          </View>
+
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <View style={{ backgroundColor: "rgba(239,68,68,0.15)", borderWidth: 1, borderColor: "rgba(239,68,68,0.3)", paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 3 }}>
+              <Ionicons name="eye-off-outline" size={11} color="#f87171" />
+              <Text style={{ color: "#f87171", fontSize: 9.5, fontWeight: "bold" }}>No Download</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Content */}
+        <View style={{ flex: 1, backgroundColor: "#000", width: "100%", position: "relative" }}>
+          {loading ? (
+            <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+              <ActivityIndicator size="large" color="#c62828" />
+              <Text style={{ color: "#fff", marginTop: 12, fontSize: 12 }}>Loading secure viewer...</Text>
+            </View>
+          ) : error ? (
+            <View style={{ flex: 1, padding: 24, justifyContent: "center", alignItems: "center" }}>
+              <Ionicons name="alert-circle-outline" size={48} color="#ef4444" />
+              <Text style={{ color: "#fff", fontSize: 15, fontWeight: "bold", marginTop: 8 }}>Access Denied</Text>
+              <Text style={{ color: "#9ca3af", fontSize: 12, textAlign: "center", marginTop: 4 }}>{error}</Text>
+              <TouchableOpacity onPress={onClose} style={{ marginTop: 16, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 8 }}>
+                <Text style={{ color: "#fff", fontSize: 12, fontWeight: "bold" }}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          ) : isImg ? (
+            <NativeDailyImageZoomView imgSrc={data?.url || ""} darkMode={true} />
+          ) : data?.isDrive && data?.drivePreviewUrl ? (
+            (() => {
+              const { WebView } = require("react-native-webview");
+              return (
+                <View style={{ flex: 1, width: "100%", height: "100%", position: "relative" }}>
+                  <WebView
+                    source={{ uri: data.drivePreviewUrl }}
+                    style={{ flex: 1, width: "100%", height: "100%", backgroundColor: "#0b0e17" }}
+                    javaScriptEnabled={true}
+                    domStorageEnabled={true}
+                    thirdPartyCookiesEnabled={true}
+                    sharedCookiesEnabled={true}
+                    scalesPageToFit={true}
+                    injectedJavaScript={hidePopOutJs}
+                    onShouldStartLoadWithRequest={(req) => {
+                      if (
+                        req.url === data.drivePreviewUrl ||
+                        req.url.startsWith("https://drive.google.com/file/d/") ||
+                        req.url.startsWith("https://docs.google.com") ||
+                        req.url.startsWith("https://accounts.google.com") ||
+                        req.url.startsWith("about:blank")
+                      ) {
+                        return true;
+                      }
+                      return false;
+                    }}
+                    startInLoadingState={true}
+                    renderLoading={() => (
+                      <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "center", alignItems: "center", backgroundColor: "#0f1219" }}>
+                        <ActivityIndicator size="large" color="#c62828" />
+                        <Text style={{ color: "#ccc", marginTop: 10, fontSize: 12 }}>Loading document…</Text>
+                      </View>
+                    )}
+                  />
+                  {/* Security overlay blocking Google Drive pop-out button */}
+                  <View
+                    pointerEvents="auto"
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      right: 0,
+                      width: 76,
+                      height: 58,
+                      backgroundColor: "#151923",
+                      zIndex: 9999,
+                      justifyContent: "center",
+                      alignItems: "center",
+                      borderBottomLeftRadius: 10,
+                      borderLeftWidth: 1,
+                      borderBottomWidth: 1,
+                      borderColor: "rgba(255,255,255,0.08)"
+                    }}
+                  >
+                    <Ionicons name="shield-checkmark" size={16} color="#34d399" />
+                    <Text style={{ color: "#9ca3af", fontSize: 9, fontWeight: "bold", marginTop: 2 }}>PROTECTED</Text>
+                  </View>
+                </View>
+              );
+            })()
+          ) : (
+            (() => {
+              const { WebView } = require("react-native-webview");
+              const docUrl = data?.url || "";
+              const isExternalHttp = docUrl.startsWith("http://") || docUrl.startsWith("https://");
+              const webViewSource = isExternalHttp
+                ? { uri: docUrl.includes('drive.google.com') ? docUrl : `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(docUrl)}` }
+                : { html: buildNativePdfViewerHtml(docUrl, data?.title, nativeWatermarkText) };
+              return (
+                <View style={{ flex: 1, width: "100%", height: "100%", position: "relative" }}>
+                  <WebView
+                    source={webViewSource}
+                    style={{ flex: 1, width: "100%", height: "100%", backgroundColor: "#0b0e17" }}
+                    javaScriptEnabled={true}
+                    domStorageEnabled={true}
+                    thirdPartyCookiesEnabled={true}
+                    sharedCookiesEnabled={true}
+                    scalesPageToFit={true}
+                    injectedJavaScript={hidePopOutJs}
+                    onShouldStartLoadWithRequest={(req) => {
+                      if (
+                        req.url.startsWith("https://docs.google.com/gview") ||
+                        req.url.startsWith("https://drive.google.com") ||
+                        req.url === docUrl ||
+                        req.url.startsWith("about:blank")
+                      ) {
+                        return true;
+                      }
+                      return false;
+                    }}
+                    startInLoadingState={true}
+                    renderLoading={() => (
+                      <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "center", alignItems: "center", backgroundColor: "#0f1219" }}>
+                        <ActivityIndicator size="large" color="#c62828" />
+                        <Text style={{ color: "#ccc", marginTop: 10, fontSize: 12 }}>Loading document…</Text>
+                      </View>
+                    )}
+                  />
+                  {/* Security overlay blocking Google Docs pop-out button */}
+                  <View
+                    pointerEvents="auto"
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      right: 0,
+                      width: 76,
+                      height: 58,
+                      backgroundColor: "#151923",
+                      zIndex: 9999,
+                      justifyContent: "center",
+                      alignItems: "center",
+                      borderBottomLeftRadius: 10,
+                      borderLeftWidth: 1,
+                      borderBottomWidth: 1,
+                      borderColor: "rgba(255,255,255,0.08)"
+                    }}
+                  >
+                    <Ionicons name="shield-checkmark" size={16} color="#34d399" />
+                    <Text style={{ color: "#9ca3af", fontSize: 9, fontWeight: "bold", marginTop: 2 }}>PROTECTED</Text>
+                  </View>
+                </View>
+              );
+            })()
+          )}
+          {/* Native Static 2-Location Watermark overlaying document/image */}
+          <NativeDocumentWatermark user={user} isDarkBackground={isImg} />
+        </View>
+      </SafeAreaView>
+    </Modal>
+  );
+});
+
+const NativeDailyContentModal = React.memo(({
+  content,
+  displaySrc,
+  onClose,
+  darkMode,
+  user
+}: {
+  content: any;
+  displaySrc: string;
+  onClose: () => void;
+  darkMode: boolean;
+  user: any;
+}) => {
+  const rawType = (content?.type || '').toLowerCase();
+  const rawUrl = content?.url || displaySrc || '';
+
+  const candidateStrings = [
+    content?.title,
+    content?.fileName,
+    content?.originalName,
+    content?.name,
+    content?.sourceUrl,
+    content?.url,
+    displaySrc,
+    rawUrl
+  ].filter(Boolean).map(s => String(s));
+
+  const isImg =
+    rawType === 'image' ||
+    ['image', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'svg', 'bmp'].includes(rawType) ||
+    candidateStrings.some(s => imageExtRegex.test(s)) ||
+    displaySrc.startsWith('data:image/') ||
+    displaySrc.includes('lh3.googleusercontent.com');
+
+  const getGoogleDriveId = (urlStr: string) => {
+    if (!urlStr) return null;
+    const m1 = urlStr.match(/\/file\/d\/([-\w]{25,})/);
+    if (m1 && m1[1]) return m1[1];
+    const m2 = urlStr.match(/[?&]id=([-\w]{25,})/);
+    if (m2 && m2[1]) return m2[1];
+    if (urlStr.includes('drive.google.com') || urlStr.includes('docs.google.com')) {
+      const m3 = urlStr.match(/([-\w]{25,})/);
+      if (m3 && m3[1]) return m3[1];
+    }
+    return null;
+  };
+
+  const driveId = getGoogleDriveId(rawUrl) || getGoogleDriveId(displaySrc);
+  let targetSrc = displaySrc;
+  if (isImg && driveId) {
+    targetSrc = `https://lh3.googleusercontent.com/d/${driveId}`;
+  }
+
+  const contentTypeLabel = isImg ? 'IMAGE' : (content?.type ? content.type.toUpperCase() : 'PDF');
+  const uName = user?.name || user?.username || user?.displayName || "Student";
+  const uPhone = user?.phone || user?.mobile || user?.phoneNumber || user?.email || "";
+  const nativeWatermarkText = uPhone ? `${uName} • ${uPhone}` : uName;
+
+  return (
+    <Modal visible={true} transparent={false} animationType="fade" onRequestClose={onClose}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: "#0f1219" }}>
+        {/* Header */}
+        <View style={{
+          height: 54,
+          borderBottomWidth: 1,
+          borderBottomColor: "rgba(255,255,255,0.08)",
+          backgroundColor: "#151923",
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingHorizontal: 12
+        }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1, marginRight: 8 }}>
+            <TouchableOpacity onPress={onClose} style={{ padding: 6, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.06)" }}>
+              <Ionicons name="close" size={18} color="#fff" />
+            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 13, flexShrink: 1 }} numberOfLines={1}>
+                  {content?.title || (isImg ? "Daily Study Image" : "Daily Study Material")}
+                </Text>
+                <View style={{ backgroundColor: "rgba(16,185,129,0.2)", paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 4, flexDirection: "row", alignItems: "center", gap: 2 }}>
+                  <Ionicons name="shield-checkmark" size={9} color="#34d399" />
+                  <Text style={{ color: "#34d399", fontSize: 8.5, fontWeight: "bold" }}>SECURE</Text>
+                </View>
+              </View>
+              <Text style={{ color: "#9ca3af", fontSize: 10 }}>{contentTypeLabel} • {content?.date || 'v1'}</Text>
+            </View>
+          </View>
+
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <View style={{ backgroundColor: "rgba(239,68,68,0.15)", borderWidth: 1, borderColor: "rgba(239,68,68,0.3)", paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 3 }}>
+              <Ionicons name="eye-off-outline" size={11} color="#f87171" />
+              <Text style={{ color: "#f87171", fontSize: 9.5, fontWeight: "bold" }}>No Download</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Content */}
+        <View style={{ flex: 1, backgroundColor: "#000", width: "100%", position: "relative" }}>
+          {!targetSrc ? (
+            <View style={{ flex: 1, padding: 24, justifyContent: "center", alignItems: "center" }}>
+              <Ionicons name="alert-circle-outline" size={48} color="#ef4444" />
+              <Text style={{ color: "#fff", fontSize: 15, fontWeight: "bold", marginTop: 8 }}>Content Not Available</Text>
+              <Text style={{ color: "#9ca3af", fontSize: 12, textAlign: "center", marginTop: 4 }}>Preview is not available for this item.</Text>
+              <TouchableOpacity onPress={onClose} style={{ marginTop: 16, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 8 }}>
+                <Text style={{ color: "#fff", fontSize: 12, fontWeight: "bold" }}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          ) : isImg ? (
+            <NativeDailyImageZoomView imgSrc={targetSrc} darkMode={true} />
+          ) : driveId ? (
+            (() => {
+              const { WebView } = require("react-native-webview");
+              const drivePreview = `https://drive.google.com/file/d/${driveId}/preview`;
+              return (
+                <View style={{ flex: 1, width: "100%", height: "100%", position: "relative" }}>
+                  <WebView
+                    source={{ uri: drivePreview }}
+                    style={{ flex: 1, width: "100%", height: "100%", backgroundColor: "#0b0e17" }}
+                    javaScriptEnabled={true}
+                    domStorageEnabled={true}
+                    thirdPartyCookiesEnabled={true}
+                    sharedCookiesEnabled={true}
+                    scalesPageToFit={true}
+                    injectedJavaScript={hidePopOutJs}
+                    onShouldStartLoadWithRequest={(req) => {
+                      if (
+                        req.url === drivePreview ||
+                        req.url.startsWith("https://drive.google.com/file/d/") ||
+                        req.url.startsWith("https://docs.google.com") ||
+                        req.url.startsWith("https://accounts.google.com") ||
+                        req.url.startsWith("about:blank")
+                      ) {
+                        return true;
+                      }
+                      return false;
+                    }}
+                    startInLoadingState={true}
+                    renderLoading={() => (
+                      <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "center", alignItems: "center", backgroundColor: "#0f1219" }}>
+                        <ActivityIndicator size="large" color="#c62828" />
+                        <Text style={{ color: "#ccc", marginTop: 10, fontSize: 12 }}>Loading document…</Text>
+                      </View>
+                    )}
+                  />
+                  {/* Security overlay blocking Google Drive pop-out button */}
+                  <View
+                    pointerEvents="auto"
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      right: 0,
+                      width: 76,
+                      height: 58,
+                      backgroundColor: "#151923",
+                      zIndex: 9999,
+                      justifyContent: "center",
+                      alignItems: "center",
+                      borderBottomLeftRadius: 10,
+                      borderLeftWidth: 1,
+                      borderBottomWidth: 1,
+                      borderColor: "rgba(255,255,255,0.08)"
+                    }}
+                  >
+                    <Ionicons name="shield-checkmark" size={16} color="#34d399" />
+                    <Text style={{ color: "#9ca3af", fontSize: 9, fontWeight: "bold", marginTop: 2 }}>PROTECTED</Text>
+                  </View>
+                </View>
+              );
+            })()
+          ) : (
+            (() => {
+              const { WebView } = require("react-native-webview");
+              return (
+                <View style={{ flex: 1, width: "100%", height: "100%", position: "relative" }}>
+                  <WebView
+                    source={{ html: buildNativePdfViewerHtml(targetSrc, content?.title, nativeWatermarkText) }}
+                    style={{ flex: 1, width: "100%", height: "100%", backgroundColor: "#0b0e17" }}
+                    javaScriptEnabled={true}
+                    domStorageEnabled={true}
+                    startInLoadingState={true}
+                    renderLoading={() => (
+                      <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "center", alignItems: "center", backgroundColor: "#0f1219" }}>
+                        <ActivityIndicator size="large" color="#c62828" />
+                        <Text style={{ color: "#ccc", marginTop: 10, fontSize: 12 }}>Loading document…</Text>
+                      </View>
+                    )}
+                  />
+                </View>
+              );
+            })()
+          )}
+          {/* Native Static 2-Location Watermark overlaying document/image */}
+          <NativeDocumentWatermark user={user} isDarkBackground={isImg} />
+        </View>
+      </SafeAreaView>
+    </Modal>
+  );
+});
+
+const ResponsivePosterItem: React.FC<{
+  poster: any;
+  darkMode: boolean;
+  isMobile: boolean;
+  onSelect: () => void;
+}> = ({ poster, darkMode, isMobile, onSelect }) => {
+  const directUrl = getDirectImageUrl(poster.posterUrl || poster.posterBase64);
+  const [aspectRatio, setAspectRatio] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!directUrl) return;
+    if (Platform.OS !== "web") {
+      Image.getSize(
+        directUrl,
+        (w, h) => {
+          if (w && h) setAspectRatio(w / h);
+        },
+        () => { }
+      );
+    }
+  }, [directUrl]);
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.95}
+      onPress={onSelect}
+      style={{
+        width: "100%",
+        maxWidth: 960,
+        alignSelf: "center",
+        backgroundColor: darkMode ? "#1a1a1a" : "#ffffff",
+        borderRadius: isMobile ? 14 : 18,
+        overflow: "hidden",
+        borderWidth: 1,
+        borderColor: darkMode ? "#333333" : "#e5e7eb",
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: darkMode ? 0.3 : 0.08,
+        shadowRadius: 10,
+        elevation: 4,
+        marginBottom: 20,
+      }}
+    >
+      {Platform.OS === "web" ? (
+        <View style={{ width: "100%", alignItems: "center", backgroundColor: darkMode ? "#141414" : "#f9fafb" }}>
+          <img
+            src={directUrl}
+            alt={poster.title || "Poster"}
+            style={{
+              width: "100%",
+              height: "auto",
+              maxHeight: "85vh",
+              objectFit: "contain",
+              display: "block",
+            }}
+          />
+        </View>
+      ) : (
+        <View style={{ width: "100%", alignItems: "center", backgroundColor: darkMode ? "#141414" : "#f9fafb" }}>
+          <Image
+            source={{ uri: directUrl }}
+            style={{
+              width: "100%",
+              aspectRatio: aspectRatio || 16 / 9,
+              resizeMode: "contain",
+            }}
+          />
+        </View>
+      )}
+
+      {poster.title ? (
+        <View
+          style={{
+            paddingHorizontal: 16,
+            paddingVertical: 12,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            borderTopWidth: 1,
+            borderColor: darkMode ? "#262626" : "#f0f0f0",
+          }}
+        >
+          <Text style={{ fontSize: 15, fontWeight: "800", color: darkMode ? "#f0f0f0" : "#1f2937", flex: 1, paddingRight: 10 }}>
+            {poster.title}
+          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+            <Ionicons name="expand-outline" size={16} color={darkMode ? "#aaa" : "#666"} />
+            <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#666", fontWeight: "600" }}>View Full</Text>
+          </View>
+        </View>
+      ) : null}
+    </TouchableOpacity>
+  );
+};
 
 function MainApp() {
   const initialNavRef = useRef(getSavedNav());
   const initialNav = initialNavRef.current;
   const { width: screenWidth } = useWindowDimensions();
   const isMobile = screenWidth < 768;
+  const insets = useSafeAreaInsets();
   const [user, setUser] = useState<any>(null);
   const isAdmin = user && ["admin", "staff", "super_admin", "editor", "contributor", "developer"].includes(user.role);
   const isTeacher = user && user.role === "teacher";
   const isProtectedRole = !isAdmin && !isTeacher;
   const [activeTab, setActiveTab] = useState(initialNav.activeTabVal);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
+
+  // Root Session Gatekeeper & Splash Orchestrator
+  const [authGate, setAuthGate] = useState<"checking" | "authenticated" | "unauthenticated">("checking");
+  const [splashDone, setSplashDone] = useState(false);
+  const [onboardDone, setOnboardDone] = useState<boolean>(() => Platform.OS === "web");
+  const appStartTimeRef = useRef(Date.now());
+
+  useEffect(() => {
+    // Branded splash screen display duration (1.6s)
+    const timer = setTimeout(() => {
+      setSplashDone(true);
+    }, 1600);
+
+    // Hard fallback safety: Never let the app hang in "checking" state longer than 2.8 seconds
+    const safetyTimer = setTimeout(() => {
+      setSplashDone(true);
+      setAuthGate(prev => {
+        if (prev === "checking") {
+          console.warn("[AuthGate] Session check timed out after 2.8s; releasing to login.");
+          return "unauthenticated";
+        }
+        return prev;
+      });
+      setIsInitialLoading(false);
+    }, 2800);
+
+    return () => {
+      clearTimeout(timer);
+      clearTimeout(safetyTimer);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== "web") {
+      AsyncStorage.getItem(ONBOARDING_KEY).then(val => {
+        if (val === "true") {
+          setOnboardDone(true);
+        }
+      }).catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user) {
+      setAuthGate("authenticated");
+    }
+  }, [user]);
 
   const [customAlert, setCustomAlert] = useState<{
     isOpen: boolean;
@@ -2891,6 +4130,7 @@ function MainApp() {
   const [questions, setQuestions] = useState<any[]>([]);
   const [admissions, setAdmissions] = useState<any[]>([]);
   const [leads, setLeads] = useState<any[]>([]);
+  const [customLeads, setCustomLeads] = useState<any[]>([]);
   const [leadsTab, setLeadsTab] = useState<"pending" | "converted">("pending");
   const [inquiriesTab, setInquiriesTab] = useState<"pending" | "converted">("pending");
   const [enquiries, setEnquiries] = useState<any[]>([]);
@@ -3246,967 +4486,7 @@ function MainApp() {
     );
   };
 
-  const NativeDailyImageZoomView = ({ imgSrc, darkMode }: { imgSrc: string; darkMode: boolean }) => {
-    const { WebView } = require("react-native-webview");
-
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-      <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body, html { width: 100%; height: 100%; overflow: hidden; background-color: ${darkMode ? '#111' : '#f5f5f5'}; display: flex; justify-content: center; align-items: center; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
-        #container { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; position: relative; overflow: hidden; touch-action: none; }
-        #img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; transform-origin: center center; transition: transform 0.05s ease-out; pointer-events: none; }
-        #resetBtn { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); background: #c62828; color: #fff; border: none; padding: 8px 16px; border-radius: 20px; font-weight: bold; font-size: 13px; display: none; box-shadow: 0 4px 10px rgba(0,0,0,0.3); z-index: 100; }
-      </style>
-      </head>
-      <body>
-      <div id="container">
-        <img id="img" src="${imgSrc}" onerror="handleImgErr(this)" oncontextmenu="return false;" ondragstart="return false;" />
-        <button id="resetBtn" onclick="resetZoom()">Reset Zoom</button>
-      </div>
-      <script>
-        function handleImgErr(el) {
-          var url = el.src || '';
-          var m = url.match(/([-\w]{25,})/);
-          if (m && m[1]) {
-            var id = m[1];
-            if (!el.dataset.attempt) {
-              el.dataset.attempt = '1';
-              el.src = 'https://drive.google.com/thumbnail?id=' + id + '&sz=w2000';
-            } else if (el.dataset.attempt === '1') {
-              el.dataset.attempt = '2';
-              el.src = 'https://drive.google.com/uc?export=view&id=' + id;
-            }
-          }
-        }
-      </script>
-      <script>
-        var img = document.getElementById('img');
-        var resetBtn = document.getElementById('resetBtn');
-        var container = document.getElementById('container');
-        
-        var scale = 1;
-        var translateX = 0;
-        var translateY = 0;
-        
-        var isDragging = false;
-        var startX = 0, startY = 0;
-        var initialTx = 0, initialTy = 0;
-        var initialPinchDist = 0, initialScale = 1;
-        var lastTapTime = 0;
-
-        function updateTransform() {
-          img.style.transform = 'translate(' + translateX + 'px, ' + translateY + 'px) scale(' + scale + ')';
-          if (scale > 1) {
-            resetBtn.style.display = 'block';
-            resetBtn.innerText = 'Reset Zoom (' + Math.round(scale * 100) + '%)';
-          } else {
-            resetBtn.style.display = 'none';
-          }
-        }
-
-        function resetZoom() {
-          scale = 1; translateX = 0; translateY = 0;
-          updateTransform();
-        }
-
-        container.addEventListener('touchstart', function(e) {
-          if (e.touches.length === 2) {
-            isDragging = false;
-            lastTapTime = 0; // Prevent pinch gestures from triggering double-tap zoom
-            var t1 = e.touches[0], t2 = e.touches[1];
-            initialPinchDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-            initialScale = scale;
-          } else if (e.touches.length === 1) {
-            var now = Date.now();
-            if (lastTapTime > 0 && now - lastTapTime < 300) {
-              if (scale > 1) { resetZoom(); } else { scale = 2.5; updateTransform(); }
-              lastTapTime = 0;
-              return;
-            }
-            lastTapTime = now;
-            isDragging = true;
-            startX = e.touches[0].clientX;
-            startY = e.touches[0].clientY;
-            initialTx = translateX;
-            initialTy = translateY;
-          }
-        }, { passive: false });
-
-        container.addEventListener('touchmove', function(e) {
-          if (e.touches.length === 2 && initialPinchDist > 0) {
-            e.preventDefault();
-            var t1 = e.touches[0], t2 = e.touches[1];
-            var dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-            var factor = dist / initialPinchDist;
-            scale = Math.min(Math.max(initialScale * factor, 1), 4.5);
-            if (scale === 1) { translateX = 0; translateY = 0; }
-            updateTransform();
-          } else if (e.touches.length === 1 && isDragging && scale > 1) {
-            e.preventDefault();
-            var dx = e.touches[0].clientX - startX;
-            var dy = e.touches[0].clientY - startY;
-            if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
-              lastTapTime = 0; // Panning/dragging is not a tap, prevent accidental double-tap on release
-            }
-            translateX = initialTx + dx;
-            translateY = initialTy + dy;
-            updateTransform();
-          }
-        }, { passive: false });
-
-        container.addEventListener('touchend', function(e) {
-          if (e.touches.length === 1) {
-            isDragging = true;
-            startX = e.touches[0].clientX;
-            startY = e.touches[0].clientY;
-            initialTx = translateX;
-            initialTy = translateY;
-          }
-          if (e.touches.length < 2) initialPinchDist = 0;
-          if (e.touches.length === 0) isDragging = false;
-        });
-      </script>
-      </body>
-      </html>
-    `;
-
-    return (
-      <View style={{ flex: 1, width: "100%", height: "100%" }}>
-        <WebView
-          originWhitelist={["*"]}
-          source={{ html: htmlContent }}
-          style={{ flex: 1, width: "100%", backgroundColor: darkMode ? "#111" : "#f5f5f5" }}
-          javaScriptEnabled={true}
-          domStorageEnabled={true}
-          scrollEnabled={false}
-          bounces={false}
-          showsHorizontalScrollIndicator={false}
-          showsVerticalScrollIndicator={false}
-        />
-      </View>
-    );
-  };
-
-  const buildNativePdfViewerHtml = (sourceUrlOrBase64: string, docTitle: string = "Document Viewer") => {
-    const isDataUri = sourceUrlOrBase64.startsWith("data:") || !sourceUrlOrBase64.startsWith("http");
-    let base64Clean = "";
-    if (isDataUri) {
-      base64Clean = sourceUrlOrBase64.replace(/^data:[^;]+;base64,/, "").replace(/\s+/g, "");
-    }
-    const safeTitle = (docTitle || "Document").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=4.0, user-scalable=yes">
-  <title>${safeTitle}</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body {
-      background-color: #0b0e17;
-      color: #fff;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      min-height: 100%;
-      overflow-x: hidden;
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-      user-select: none;
-      -webkit-user-select: none;
-    }
-    #top-bar {
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      background: rgba(15, 18, 25, 0.95);
-      border-bottom: 1px solid rgba(255,255,255,0.08);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 10px 16px;
-    }
-    .badge {
-      font-size: 10px;
-      font-weight: 800;
-      color: #34d399;
-      background: rgba(16,185,129,0.15);
-      padding: 4px 8px;
-      border-radius: 4px;
-      letter-spacing: 0.5px;
-    }
-    .page-counter {
-      font-size: 12px;
-      font-weight: 600;
-      color: #9ca3af;
-    }
-    #pdf-container {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 12px 8px 80px 8px;
-      gap: 16px;
-      width: 100%;
-    }
-    .pdf-page-wrapper {
-      position: relative;
-      width: 100%;
-      max-width: 850px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-    canvas {
-      width: 100% !important;
-      height: auto !important;
-      border-radius: 6px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.6);
-      background-color: #fff;
-    }
-    #status-msg {
-      padding: 50px 20px;
-      text-align: center;
-      color: #9ca3af;
-      font-size: 13px;
-    }
-    .spinner {
-      border: 3px solid rgba(255,255,255,0.1);
-      border-top: 3px solid #c62828;
-      border-radius: 50%;
-      width: 32px;
-      height: 32px;
-      animation: spin 0.8s linear infinite;
-      margin: 0 auto 16px auto;
-    }
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-  </style>
-</head>
-<body>
-  <div id="top-bar">
-    <span class="badge">SECURE PDF VIEWER</span>
-    <span id="page-counter" class="page-counter">Initializing...</span>
-  </div>
-  <div id="status-msg">
-    <div class="spinner"></div>
-    <div>Rendering secure document...</div>
-  </div>
-  <div id="pdf-container"></div>
-  <div id="raw-pdf-data" style="display:none;">${base64Clean}</div>
-
-  <script>
-    var container = document.getElementById('pdf-container');
-    var statusMsg = document.getElementById('status-msg');
-    var pageCounter = document.getElementById('page-counter');
-    var attempts = 0;
-
-    function renderPdf() {
-      if (typeof pdfjsLib === 'undefined') {
-        attempts++;
-        if (attempts > 30) {
-          statusMsg.innerHTML = '<div style="color: #ef4444; font-weight: bold; margin-bottom: 8px;">PDF Engine Unavailable</div><div style="font-size: 11px;">Please check internet connection or reload.</div>';
-          return;
-        }
-        setTimeout(renderPdf, 200);
-        return;
-      }
-
-      try {
-        // Disable external worker on Android WebView to prevent origin null security error
-        try {
-          pdfjsLib.GlobalWorkerOptions.workerSrc = '';
-        } catch(wErr) {}
-
-        var loadParam;
-        ${isDataUri ? `
-          var rawEl = document.getElementById('raw-pdf-data');
-          var b64 = rawEl ? (rawEl.textContent || "").trim() : "";
-          if (!b64) {
-            statusMsg.innerHTML = '<div style="color: #ef4444; font-weight: bold;">Document data is empty</div>';
-            return;
-          }
-          var binStr = atob(b64);
-          var len = binStr.length;
-          var bytes = new Uint8Array(len);
-          for (var i = 0; i < len; i++) {
-            bytes[i] = binStr.charCodeAt(i);
-          }
-          loadParam = { data: bytes };
-        ` : `
-          loadParam = { url: "${sourceUrlOrBase64}" };
-        `}
-
-        pdfjsLib.getDocument(loadParam).promise.then(function(pdf) {
-          statusMsg.style.display = 'none';
-          pageCounter.innerText = pdf.numPages + " Pages";
-
-          var renderPage = function(pageNum) {
-            if (pageNum > pdf.numPages) return;
-            pdf.getPage(pageNum).then(function(page) {
-              var desiredWidth = Math.min(window.innerWidth - 16, 760);
-              var unscaledViewport = page.getViewport({ scale: 1 });
-              var scale = desiredWidth / unscaledViewport.width;
-              var viewport = page.getViewport({ scale: Math.max(scale, 1.25) });
-
-              var wrapper = document.createElement('div');
-              wrapper.className = 'pdf-page-wrapper';
-
-              var canvas = document.createElement('canvas');
-              var context = canvas.getContext('2d');
-              canvas.height = viewport.height;
-              canvas.width = viewport.width;
-
-              wrapper.appendChild(canvas);
-              container.appendChild(wrapper);
-
-              page.render({
-                canvasContext: context,
-                viewport: viewport
-              }).promise.then(function() {
-                renderPage(pageNum + 1);
-              });
-            }).catch(function(pErr) {
-              console.error('Page render error:', pErr);
-            });
-          };
-          renderPage(1);
-        }).catch(function(err) {
-          statusMsg.innerHTML = '<div style="color: #ef4444; font-weight: bold; margin-bottom: 8px;">Failed to load PDF</div><div style="font-size: 11px;">' + (err.message || 'The PDF document could not be rendered.') + '</div>';
-        });
-      } catch (e) {
-        statusMsg.innerHTML = '<div style="color: #ef4444; font-weight: bold;">Error opening document</div><div style="font-size: 11px;">' + (e.message || '') + '</div>';
-      }
-    }
-
-    if (typeof pdfjsLib !== 'undefined') {
-      renderPdf();
-    } else {
-      window.addEventListener('load', renderPdf);
-    }
-  </script>
-</body>
-</html>`;
-  };
-
-  const hidePopOutJs = `
-    (function() {
-      function hideElements() {
-        var selectors = [
-          '[aria-label*="Pop-out" i]',
-          '[aria-label*="pop out" i]',
-          '[aria-label*="popout" i]',
-          '[title*="Pop-out" i]',
-          '[title*="pop out" i]',
-          '[title*="popout" i]',
-          '[data-tooltip*="Pop-out" i]',
-          '[data-tooltip*="pop out" i]',
-          '[data-tooltip*="popout" i]',
-          '[aria-label*="Open in new window" i]',
-          '[title*="Open in new window" i]',
-          '.ndfHFb-c4YZDc-Wrql6b',
-          '.ndfHFb-c4YZDc-s3Eaab',
-          '.ndfHFb-c4YZDc-GSxda-haAclf',
-          '.drive-viewer-toolstrip',
-          '.drive-viewer-popout-button',
-          '.drive-viewer-toolstrip-popout',
-          'a.drive-viewer-popout-button',
-          '.ndfHFb-c4YZDc-b0t70b-aTv5jf',
-          'a[target="_blank"]'
-        ];
-        selectors.forEach(function(s) {
-          try {
-            var els = document.querySelectorAll(s);
-            els.forEach(function(el) {
-              el.style.display = 'none';
-              el.style.visibility = 'hidden';
-              el.style.pointerEvents = 'none';
-              el.style.opacity = '0';
-            });
-          } catch(e) {}
-        });
-        if (!document.getElementById('antiPopoutStyle')) {
-          var style = document.createElement('style');
-          style.id = 'antiPopoutStyle';
-          style.innerHTML = selectors.join(', ') + ' { display: none !important; visibility: hidden !important; pointer-events: none !important; opacity: 0 !important; width: 0 !important; height: 0 !important; }';
-          document.head.appendChild(style);
-        }
-      }
-      hideElements();
-      setInterval(hideElements, 400);
-    })();
-    true;
-  `;
-
-  const NativeResourceModal = ({ resourceId, onClose, darkMode }: { resourceId: string; onClose: () => void; darkMode: boolean }) => {
-    const [loading, setLoading] = useState(true);
-    const [data, setData] = useState<{ url: string; title: string; type: string; isDrive: boolean; drivePreviewUrl: string } | null>(null);
-    const [error, setError] = useState('');
-
-    useEffect(() => {
-      let isMounted = true;
-      (async () => {
-        try {
-          const res = await api.get(`/resources/${resourceId}`);
-          const resource = res?.data !== undefined ? (res?.data?.data || res?.data) : (res || {});
-          const acc = await api.get(`/resources/${resourceId}/access`);
-          const access = acc?.data !== undefined ? (acc?.data?.data || acc?.data) : (acc || {});
-          let targetUrl = access?.viewerUrl || access?.signedUrl || resource?.sourceUrl || `${getBaseUrl()}/resources/${resourceId}/content?token=${user?.token || ""}`;
-
-          const rawType = (resource?.type || '').toLowerCase();
-          const mimeType = (resource?.mimeType || access?.contentType || '').toLowerCase();
-
-          const candidateStrings = [
-            resource?.title,
-            resource?.originalName,
-            resource?.fileName,
-            resource?.filename,
-            resource?.name,
-            resource?.sourceUrl,
-            resource?.url,
-            resource?.storagePath,
-            resource?.fileUrl,
-            access?.fileName,
-            access?.originalName,
-            access?.contentType,
-            access?.mimeType,
-            targetUrl
-          ].filter(Boolean).map(s => String(s));
-
-          const isPdf = rawType === 'pdf' || mimeType === 'application/pdf' || candidateStrings.some(s => /\.pdf(\?.*)?$/i.test(s));
-
-          let isImg = !isPdf && (
-            access?.viewerType === 'image' ||
-            imageTypeRegex.test(rawType) ||
-            mimeType.startsWith('image/') ||
-            candidateStrings.some(s => imageExtRegex.test(s)) ||
-            targetUrl.includes('lh3.googleusercontent.com') ||
-            targetUrl.startsWith('data:image/')
-          );
-
-          // Extract drive ID if this resource is hosted on Google Drive
-          const rawDriveStr = candidateStrings.find(s => s.includes('drive.google.com') || s.includes('/file/d/')) || resource?.sourceUrl || resource?.url || resource?.storagePath || (access?.viewerUrl?.includes('drive.google.com') ? access.viewerUrl : '') || (targetUrl.includes('drive.google.com') ? targetUrl : '');
-          const driveMatch = String(rawDriveStr).match(/\/file\/d\/([-\w]{25,})/) || String(rawDriveStr).match(/[?&]id=([-\w]{25,})/) || String(rawDriveStr).match(/([-\w]{25,})/);
-          const driveId = driveMatch ? (driveMatch[1] || driveMatch[0]) : null;
-
-          // If driveId exists and it wasn't flagged as an image yet, probe if it's an image (skip for PDFs)
-          if (!isImg && !isPdf && driveId) {
-            try {
-              const isDriveImg = await new Promise<boolean>((resolve) => {
-                let settled = false;
-                const timer = setTimeout(() => {
-                  if (!settled) {
-                    settled = true;
-                    resolve(false);
-                  }
-                }, 1200);
-
-                Image.getSize(
-                  `https://lh3.googleusercontent.com/d/${driveId}`,
-                  (w, h) => {
-                    if (!settled) {
-                      settled = true;
-                      clearTimeout(timer);
-                      resolve(w > 0 && h > 0);
-                    }
-                  },
-                  () => {
-                    if (!settled) {
-                      settled = true;
-                      clearTimeout(timer);
-                      resolve(false);
-                    }
-                  }
-                );
-              });
-
-              if (isDriveImg) {
-                isImg = true;
-              }
-            } catch (e) {
-              // fallback
-            }
-          }
-
-          if (isImg) {
-            if (driveId) {
-              targetUrl = `https://lh3.googleusercontent.com/d/${driveId}`;
-            } else if (access?.cdnUrl && (access.cdnUrl.startsWith('http://') || access.cdnUrl.startsWith('https://'))) {
-              targetUrl = access.cdnUrl;
-            } else if (access?.signedUrl && (access.signedUrl.startsWith('http://') || access.signedUrl.startsWith('https://'))) {
-              targetUrl = access.signedUrl;
-            } else if (resource?.sourceUrl && (resource.sourceUrl.startsWith('http://') || resource.sourceUrl.startsWith('https://'))) {
-              targetUrl = resource.sourceUrl;
-            }
-          }
-
-          const drivePreviewUrl = driveId ? `https://drive.google.com/file/d/${driveId}/preview` : '';
-          const isDrive = Boolean(driveId && !isImg);
-
-          if (isMounted) {
-            setData({
-              url: targetUrl,
-              title: resource?.title || 'Resource Document',
-              type: isImg ? 'image' : 'pdf',
-              isDrive,
-              drivePreviewUrl
-            });
-          }
-        } catch (err: any) {
-          if (isMounted) setError(err.message || 'Failed to load resource');
-        } finally {
-          if (isMounted) setLoading(false);
-        }
-      })();
-      return () => { isMounted = false; };
-    }, [resourceId]);
-
-    const isImg = data?.type === 'image';
-
-    return (
-      <Modal visible={true} transparent={false} animationType="fade" onRequestClose={onClose}>
-        <SafeAreaView style={{ flex: 1, backgroundColor: "#0f1219" }}>
-          {/* Header */}
-          <View style={{
-            height: 60,
-            borderBottomWidth: 1,
-            borderBottomColor: "rgba(255,255,255,0.08)",
-            backgroundColor: "#151923",
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            paddingHorizontal: 16
-          }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1, marginRight: 8 }}>
-              <TouchableOpacity onPress={onClose} style={{ padding: 6, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.06)" }}>
-                <Ionicons name="close" size={20} color="#fff" />
-              </TouchableOpacity>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 14, flexShrink: 1 }} numberOfLines={1}>
-                    {data?.title || "Resource"}
-                  </Text>
-                  <View style={{ backgroundColor: "rgba(16,185,129,0.2)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, flexDirection: "row", alignItems: "center", gap: 3 }}>
-                    <Ionicons name="shield-checkmark" size={10} color="#34d399" />
-                    <Text style={{ color: "#34d399", fontSize: 9, fontWeight: "bold" }}>SECURE</Text>
-                  </View>
-                </View>
-                <Text style={{ color: "#9ca3af", fontSize: 11 }}>{isImg ? "IMAGE" : "PDF"} • v1</Text>
-              </View>
-            </View>
-
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <View style={{ backgroundColor: "rgba(239,68,68,0.15)", borderWidth: 1, borderColor: "rgba(239,68,68,0.3)", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 4 }}>
-                <Ionicons name="eye-off-outline" size={12} color="#f87171" />
-                <Text style={{ color: "#f87171", fontSize: 10, fontWeight: "bold" }}>No Download</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Content */}
-          <View style={{ flex: 1, backgroundColor: "#000", width: "100%", position: "relative" }}>
-            {loading ? (
-              <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-                <ActivityIndicator size="large" color="#c62828" />
-                <Text style={{ color: "#fff", marginTop: 12, fontSize: 12 }}>Loading secure viewer...</Text>
-              </View>
-            ) : error ? (
-              <View style={{ flex: 1, padding: 24, justifyContent: "center", alignItems: "center" }}>
-                <Ionicons name="alert-circle-outline" size={48} color="#ef4444" />
-                <Text style={{ color: "#fff", fontSize: 15, fontWeight: "bold", marginTop: 8 }}>Access Denied</Text>
-                <Text style={{ color: "#9ca3af", fontSize: 12, textAlign: "center", marginTop: 4 }}>{error}</Text>
-                <TouchableOpacity onPress={onClose} style={{ marginTop: 16, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 8 }}>
-                  <Text style={{ color: "#fff", fontSize: 12, fontWeight: "bold" }}>Close</Text>
-                </TouchableOpacity>
-              </View>
-            ) : isImg ? (
-              <NativeDailyImageZoomView imgSrc={data?.url || ""} darkMode={true} />
-            ) : data?.isDrive && data?.drivePreviewUrl ? (
-              (() => {
-                const { WebView } = require("react-native-webview");
-                return (
-                  <View style={{ flex: 1, width: "100%", height: "100%", position: "relative" }}>
-                    <WebView
-                      source={{ uri: data.drivePreviewUrl }}
-                      style={{ flex: 1, width: "100%", height: "100%", backgroundColor: "#0b0e17" }}
-                      javaScriptEnabled={true}
-                      domStorageEnabled={true}
-                      thirdPartyCookiesEnabled={true}
-                      sharedCookiesEnabled={true}
-                      userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-                      injectedJavaScript={hidePopOutJs}
-                      onShouldStartLoadWithRequest={(req) => {
-                        if (
-                          req.url === data.drivePreviewUrl ||
-                          req.url.startsWith("https://drive.google.com/file/d/") ||
-                          req.url.startsWith("https://docs.google.com") ||
-                          req.url.startsWith("https://accounts.google.com") ||
-                          req.url.startsWith("about:blank")
-                        ) {
-                          return true;
-                        }
-                        return false;
-                      }}
-                      startInLoadingState={true}
-                      renderLoading={() => (
-                        <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "center", alignItems: "center", backgroundColor: "#0f1219" }}>
-                          <ActivityIndicator size="large" color="#c62828" />
-                          <Text style={{ color: "#ccc", marginTop: 10, fontSize: 12 }}>Loading document…</Text>
-                        </View>
-                      )}
-                    />
-                    {/* Security overlay blocking Google Drive pop-out button */}
-                    <View
-                      pointerEvents="auto"
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        right: 0,
-                        width: 76,
-                        height: 58,
-                        backgroundColor: "#151923",
-                        zIndex: 9999,
-                        justifyContent: "center",
-                        alignItems: "center",
-                        borderBottomLeftRadius: 10,
-                        borderLeftWidth: 1,
-                        borderBottomWidth: 1,
-                        borderColor: "rgba(255,255,255,0.08)"
-                      }}
-                    >
-                      <Ionicons name="shield-checkmark" size={16} color="#34d399" />
-                      <Text style={{ color: "#9ca3af", fontSize: 9, fontWeight: "bold", marginTop: 2 }}>PROTECTED</Text>
-                    </View>
-                  </View>
-                );
-              })()
-            ) : (
-              (() => {
-                const { WebView } = require("react-native-webview");
-                const docUrl = data?.url || "";
-                const isExternalHttp = docUrl.startsWith("http://") || docUrl.startsWith("https://");
-                const webViewSource = isExternalHttp
-                  ? { uri: docUrl.includes('drive.google.com') ? docUrl : `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(docUrl)}` }
-                  : { html: buildNativePdfViewerHtml(docUrl, data?.title) };
-                return (
-                  <View style={{ flex: 1, width: "100%", height: "100%", position: "relative" }}>
-                    <WebView
-                      source={webViewSource}
-                      style={{ flex: 1, width: "100%", height: "100%", backgroundColor: "#0b0e17" }}
-                      javaScriptEnabled={true}
-                      domStorageEnabled={true}
-                      thirdPartyCookiesEnabled={true}
-                      sharedCookiesEnabled={true}
-                      userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-                      injectedJavaScript={hidePopOutJs}
-                      onShouldStartLoadWithRequest={(req) => {
-                        if (
-                          req.url.startsWith("https://docs.google.com/gview") ||
-                          req.url.startsWith("https://drive.google.com") ||
-                          req.url === docUrl ||
-                          req.url.startsWith("about:blank")
-                        ) {
-                          return true;
-                        }
-                        return false;
-                      }}
-                      startInLoadingState={true}
-                      renderLoading={() => (
-                        <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "center", alignItems: "center", backgroundColor: "#0f1219" }}>
-                          <ActivityIndicator size="large" color="#c62828" />
-                          <Text style={{ color: "#ccc", marginTop: 10, fontSize: 12 }}>Loading document…</Text>
-                        </View>
-                      )}
-                    />
-                    {/* Security overlay blocking Google Docs pop-out button */}
-                    <View
-                      pointerEvents="auto"
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        right: 0,
-                        width: 76,
-                        height: 58,
-                        backgroundColor: "#151923",
-                        zIndex: 9999,
-                        justifyContent: "center",
-                        alignItems: "center",
-                        borderBottomLeftRadius: 10,
-                        borderLeftWidth: 1,
-                        borderBottomWidth: 1,
-                        borderColor: "rgba(255,255,255,0.08)"
-                      }}
-                    >
-                      <Ionicons name="shield-checkmark" size={16} color="#34d399" />
-                      <Text style={{ color: "#9ca3af", fontSize: 9, fontWeight: "bold", marginTop: 2 }}>PROTECTED</Text>
-                    </View>
-                  </View>
-                );
-              })()
-            )}
-          </View>
-        </SafeAreaView>
-      </Modal>
-    );
-  };
-
-  const NativeDailyContentModal = ({
-    content,
-    displaySrc,
-    onClose,
-    darkMode
-  }: {
-    content: any;
-    displaySrc: string;
-    onClose: () => void;
-    darkMode: boolean;
-  }) => {
-    const rawType = (content?.type || '').toLowerCase();
-    const rawUrl = content?.url || displaySrc || '';
-
-    const candidateStrings = [
-      content?.title,
-      content?.fileName,
-      content?.originalName,
-      content?.name,
-      content?.sourceUrl,
-      content?.url,
-      displaySrc,
-      rawUrl
-    ].filter(Boolean).map(s => String(s));
-
-    const imageExtRegex = /\.(png|jpe?g|webp|gif|svg|bmp|tiff|heic|ico)(\?.*)?$/i;
-    const isImg =
-      rawType === 'image' ||
-      ['image', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'svg', 'bmp'].includes(rawType) ||
-      candidateStrings.some(s => imageExtRegex.test(s)) ||
-      displaySrc.startsWith('data:image/') ||
-      displaySrc.includes('lh3.googleusercontent.com');
-
-    const getGoogleDriveId = (urlStr: string) => {
-      if (!urlStr) return null;
-      const m1 = urlStr.match(/\/file\/d\/([-\w]{25,})/);
-      if (m1 && m1[1]) return m1[1];
-      const m2 = urlStr.match(/[?&]id=([-\w]{25,})/);
-      if (m2 && m2[1]) return m2[1];
-      if (urlStr.includes('drive.google.com') || urlStr.includes('docs.google.com')) {
-        const m3 = urlStr.match(/([-\w]{25,})/);
-        if (m3 && m3[1]) return m3[1];
-      }
-      return null;
-    };
-
-    const driveId = getGoogleDriveId(rawUrl) || getGoogleDriveId(displaySrc);
-    let targetSrc = displaySrc;
-    if (isImg && driveId) {
-      targetSrc = `https://lh3.googleusercontent.com/d/${driveId}`;
-    }
-
-    const contentTypeLabel = isImg ? 'IMAGE' : (content?.type ? content.type.toUpperCase() : 'PDF');
-
-    return (
-      <Modal visible={true} transparent={false} animationType="fade" onRequestClose={onClose}>
-        <SafeAreaView style={{ flex: 1, backgroundColor: "#0f1219" }}>
-          {/* Header */}
-          <View style={{
-            height: 60,
-            borderBottomWidth: 1,
-            borderBottomColor: "rgba(255,255,255,0.08)",
-            backgroundColor: "#151923",
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            paddingHorizontal: 16
-          }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1, marginRight: 8 }}>
-              <TouchableOpacity onPress={onClose} style={{ padding: 6, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.06)" }}>
-                <Ionicons name="close" size={20} color="#fff" />
-              </TouchableOpacity>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 14, flexShrink: 1 }} numberOfLines={1}>
-                    {content?.title || (isImg ? "Daily Study Image" : "Daily Study Material")}
-                  </Text>
-                  <View style={{ backgroundColor: "rgba(16,185,129,0.2)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, flexDirection: "row", alignItems: "center", gap: 3 }}>
-                    <Ionicons name="shield-checkmark" size={10} color="#34d399" />
-                    <Text style={{ color: "#34d399", fontSize: 9, fontWeight: "bold" }}>SECURE</Text>
-                  </View>
-                </View>
-                <Text style={{ color: "#9ca3af", fontSize: 11 }}>{contentTypeLabel} • {content?.date || 'v1'}</Text>
-              </View>
-            </View>
-
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <View style={{ backgroundColor: "rgba(239,68,68,0.15)", borderWidth: 1, borderColor: "rgba(239,68,68,0.3)", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 4 }}>
-                <Ionicons name="eye-off-outline" size={12} color="#f87171" />
-                <Text style={{ color: "#f87171", fontSize: 10, fontWeight: "bold" }}>No Download</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Content */}
-          <View style={{ flex: 1, backgroundColor: "#000", width: "100%", position: "relative" }}>
-            {!targetSrc ? (
-              <View style={{ flex: 1, padding: 24, justifyContent: "center", alignItems: "center" }}>
-                <Ionicons name="alert-circle-outline" size={48} color="#ef4444" />
-                <Text style={{ color: "#fff", fontSize: 15, fontWeight: "bold", marginTop: 8 }}>Content Not Available</Text>
-                <Text style={{ color: "#9ca3af", fontSize: 12, textAlign: "center", marginTop: 4 }}>Preview is not available for this item.</Text>
-                <TouchableOpacity onPress={onClose} style={{ marginTop: 16, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 8 }}>
-                  <Text style={{ color: "#fff", fontSize: 12, fontWeight: "bold" }}>Close</Text>
-                </TouchableOpacity>
-              </View>
-            ) : isImg ? (
-              <NativeDailyImageZoomView imgSrc={targetSrc} darkMode={true} />
-            ) : driveId ? (
-              (() => {
-                const { WebView } = require("react-native-webview");
-                const drivePreview = `https://drive.google.com/file/d/${driveId}/preview`;
-                return (
-                  <View style={{ flex: 1, width: "100%", height: "100%", position: "relative" }}>
-                    <WebView
-                      source={{ uri: drivePreview }}
-                      style={{ flex: 1, width: "100%", height: "100%", backgroundColor: "#0b0e17" }}
-                      javaScriptEnabled={true}
-                      domStorageEnabled={true}
-                      thirdPartyCookiesEnabled={true}
-                      sharedCookiesEnabled={true}
-                      userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-                      injectedJavaScript={hidePopOutJs}
-                      onShouldStartLoadWithRequest={(req) => {
-                        if (
-                          req.url === drivePreview ||
-                          req.url.startsWith("https://drive.google.com/file/d/") ||
-                          req.url.startsWith("https://docs.google.com") ||
-                          req.url.startsWith("https://accounts.google.com") ||
-                          req.url.startsWith("about:blank")
-                        ) {
-                          return true;
-                        }
-                        return false;
-                      }}
-                      startInLoadingState={true}
-                      renderLoading={() => (
-                        <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "center", alignItems: "center", backgroundColor: "#0f1219" }}>
-                          <ActivityIndicator size="large" color="#c62828" />
-                          <Text style={{ color: "#ccc", marginTop: 10, fontSize: 12 }}>Loading document…</Text>
-                        </View>
-                      )}
-                    />
-                    {/* Security overlay blocking Google Drive pop-out button */}
-                    <View
-                      pointerEvents="auto"
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        right: 0,
-                        width: 76,
-                        height: 58,
-                        backgroundColor: "#151923",
-                        zIndex: 9999,
-                        justifyContent: "center",
-                        alignItems: "center",
-                        borderBottomLeftRadius: 10,
-                        borderLeftWidth: 1,
-                        borderBottomWidth: 1,
-                        borderColor: "rgba(255,255,255,0.08)"
-                      }}
-                    >
-                      <Ionicons name="shield-checkmark" size={16} color="#34d399" />
-                      <Text style={{ color: "#9ca3af", fontSize: 9, fontWeight: "bold", marginTop: 2 }}>PROTECTED</Text>
-                    </View>
-                  </View>
-                );
-              })()
-            ) : (targetSrc.startsWith("http://") || targetSrc.startsWith("https://")) ? (
-              (() => {
-                const { WebView } = require("react-native-webview");
-                const docViewerUrl = `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(targetSrc)}`;
-                return (
-                  <View style={{ flex: 1, width: "100%", height: "100%", position: "relative" }}>
-                    <WebView
-                      source={{ uri: docViewerUrl }}
-                      style={{ flex: 1, width: "100%", height: "100%", backgroundColor: "#0b0e17" }}
-                      javaScriptEnabled={true}
-                      domStorageEnabled={true}
-                      thirdPartyCookiesEnabled={true}
-                      sharedCookiesEnabled={true}
-                      userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-                      injectedJavaScript={hidePopOutJs}
-                      onShouldStartLoadWithRequest={(req) => {
-                        if (
-                          req.url.startsWith("https://docs.google.com/gview") ||
-                          req.url.startsWith("https://drive.google.com") ||
-                          req.url === targetSrc ||
-                          req.url.startsWith("about:blank")
-                        ) {
-                          return true;
-                        }
-                        return false;
-                      }}
-                      startInLoadingState={true}
-                      renderLoading={() => (
-                        <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "center", alignItems: "center", backgroundColor: "#0f1219" }}>
-                          <ActivityIndicator size="large" color="#c62828" />
-                          <Text style={{ color: "#ccc", marginTop: 10, fontSize: 12 }}>Loading document…</Text>
-                        </View>
-                      )}
-                    />
-                    {/* Security overlay blocking Google Docs pop-out button */}
-                    <View
-                      pointerEvents="auto"
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        right: 0,
-                        width: 76,
-                        height: 58,
-                        backgroundColor: "#151923",
-                        zIndex: 9999,
-                        justifyContent: "center",
-                        alignItems: "center",
-                        borderBottomLeftRadius: 10,
-                        borderLeftWidth: 1,
-                        borderBottomWidth: 1,
-                        borderColor: "rgba(255,255,255,0.08)"
-                      }}
-                    >
-                      <Ionicons name="shield-checkmark" size={16} color="#34d399" />
-                      <Text style={{ color: "#9ca3af", fontSize: 9, fontWeight: "bold", marginTop: 2 }}>PROTECTED</Text>
-                    </View>
-                  </View>
-                );
-              })()
-            ) : (
-              (() => {
-                const { WebView } = require("react-native-webview");
-                return (
-                  <View style={{ flex: 1, width: "100%", height: "100%", position: "relative" }}>
-                    <WebView
-                      source={{ html: buildNativePdfViewerHtml(targetSrc, content?.title) }}
-                      style={{ flex: 1, width: "100%", height: "100%", backgroundColor: "#0b0e17" }}
-                      javaScriptEnabled={true}
-                      domStorageEnabled={true}
-                      startInLoadingState={true}
-                      renderLoading={() => (
-                        <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "center", alignItems: "center", backgroundColor: "#0f1219" }}>
-                          <ActivityIndicator size="large" color="#c62828" />
-                          <Text style={{ color: "#ccc", marginTop: 10, fontSize: 12 }}>Loading document…</Text>
-                        </View>
-                      )}
-                    />
-                  </View>
-                );
-              })()
-            )}
-          </View>
-        </SafeAreaView>
-      </Modal>
-    );
-  };
+  // Native modal document/image viewers are defined at the module root above MainApp.
 
 
   const getLoggedInStudent = (userObj: any, studentList: any[]) => {
@@ -4253,6 +4533,40 @@ function MainApp() {
         borderColor: "#a5d6a7"
       };
     }
+  };
+
+  const getDailyContentTimestamp = (item: any): number => {
+    if (!item) return 0;
+    const c = item.createdAt || item.updatedAt;
+    if (c) {
+      if (typeof c === "number") return c;
+      if (typeof c.toMillis === "function") return c.toMillis();
+      if (typeof c.toDate === "function") return c.toDate().getTime();
+      if (typeof c === "object") {
+        if (typeof c.seconds === "number") return c.seconds * 1000 + (c.nanoseconds ? Math.floor(c.nanoseconds / 1e6) : 0);
+        if (typeof c._seconds === "number") return c._seconds * 1000 + (c._nanoseconds ? Math.floor(c._nanoseconds / 1e6) : 0);
+      }
+      const parsed = new Date(c).getTime();
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+    if (item.date) {
+      const parsedDate = new Date(item.date).getTime();
+      if (!isNaN(parsedDate) && parsedDate > 0) return parsedDate;
+    }
+    return 0;
+  };
+
+  const sortDailyContentDesc = (a: any, b: any): number => {
+    const dateA = String(a?.date || "").trim();
+    const dateB = String(b?.date || "").trim();
+    if (dateA && dateB && dateA !== dateB) {
+      const cmp = dateB.localeCompare(dateA);
+      if (cmp !== 0) return cmp;
+    }
+    const timeA = getDailyContentTimestamp(a);
+    const timeB = getDailyContentTimestamp(b);
+    if (timeB !== timeA) return timeB - timeA;
+    return String(b?.id || "").localeCompare(String(a?.id || ""));
   };
 
   const [guestNotifications, setGuestNotifications] = useState<any[]>([]);
@@ -4528,8 +4842,6 @@ function MainApp() {
   const [profileForm, setProfileForm] = useState({ name: "", initial: "", dob: "", bloodGroup: "", address: "", gender: "", community: "", fatherName: "", occupation: "", studentOccupation: "", altPhone: "", email: "", qualification: "", college: "", referralSource: "", passportPhotoBase64: "", photoIdBase64: "", photoIdType: "", photoIdConfirmed: false, horizontalReservation: "", constituency: "", constituencyOthers: "" });
   const [showDocModal, setShowDocModal] = useState(false);
   const [showConstituencyModal, setShowConstituencyModal] = useState(false);
-  const [showLedgerTestTypeModal, setShowLedgerTestTypeModal] = useState(false);
-  const [showLedgerExamModal, setShowLedgerExamModal] = useState(false);
   const [previewImageUri, setPreviewImageUri] = useState<string | null>(null);
   const [previewImageTitle, setPreviewImageTitle] = useState<string>("Preview");
   const [editingStaff, setEditingStaff] = useState<any | null>(null);
@@ -4551,8 +4863,6 @@ function MainApp() {
   const [showValidationErrors, setShowValidationErrors] = useState(false);
   const [resultsSubjectFilter, setResultsSubjectFilter] = useState("");
   const [resultsTopicFilter, setResultsTopicFilter] = useState("");
-  const [ledgerTestTypeFilter, setLedgerTestTypeFilter] = useState("");
-  const [ledgerTestNameFilter, setLedgerTestNameFilter] = useState("");
   const [resultsCategoryFilter, setResultsCategoryFilter] = useState("");
   const [testModeFilter, setTestModeFilter] = useState("all");
   const [knownSubjects, setKnownSubjects] = useState<string[]>([]);
@@ -4564,9 +4874,46 @@ function MainApp() {
   const [guestNameInput, setGuestNameInput] = useState("");
   const [guestPhoneInput, setGuestPhoneInput] = useState("");
   const [guestConsentChecked, setGuestConsentChecked] = useState(false);
-  const [guestContentTab, setGuestContentTab] = useState<"resources" | "tests" | "apply">("resources");
+  const [guestContentTab, setGuestContentTab] = useState<"home" | "resources" | "tests" | "apply">(() => {
+    if (initialNav.guestTabVal === "resources" || initialNav.guestTabVal === "tests" || initialNav.guestTabVal === "apply") {
+      return initialNav.guestTabVal;
+    }
+    return "home";
+  });
+  const [guestResourceSearch, setGuestResourceSearch] = useState("");
+  const [guestResourceMobileFilter, setGuestResourceMobileFilter] = useState<"daily" | "resources">("daily");
+  const [selectedPosterPreview, setSelectedPosterPreview] = useState<any>(null);
   const [showNoticesPanel, setShowNoticesPanel] = useState(false);
   const [showContactPanel, setShowContactPanel] = useState(false);
+
+  // Auto-fill Admission Form & Inquiries when opened for logged-in guest / user
+  useEffect(() => {
+    if (showAdmissionForm) {
+      const uName = user?.name || guestName || "";
+      const uPhone = user?.phone || guestPhone || "";
+      const uEmail = user?.email || guestEmail || "";
+      const uCity = user?.city || "";
+      setAdmissionForm(prev => ({
+        ...prev,
+        name: uName || prev.name,
+        phone: uPhone || prev.phone,
+        email: uEmail || prev.email,
+        city: uCity || prev.city
+      }));
+    }
+  }, [showAdmissionForm, user, guestName, guestPhone, guestEmail]);
+
+  useEffect(() => {
+    if (showInquiryForm || showContactPanel) {
+      const uName = user?.name || guestName || "";
+      const uPhone = user?.phone || guestPhone || "";
+      setEnquiryForm(prev => ({
+        ...prev,
+        name: uName || prev.name,
+        phone: uPhone || prev.phone
+      }));
+    }
+  }, [showInquiryForm, showContactPanel, user, guestName, guestPhone]);
 
   // Expiry calendar picker states
   const [showDatePickerModal, setShowDatePickerModal] = useState(false);
@@ -4654,21 +5001,57 @@ function MainApp() {
   const [contactFormType, setContactFormType] = useState<"admission" | "inquiry" | null>(null);
   const [showAuthFlip, setShowAuthFlip] = useState(false);
   const [pendingGoogleUser, setPendingGoogleUser] = useState<any | null>(null);
+  const [showWebPushBanner, setShowWebPushBanner] = useState<boolean>(true);
+  const [webPushStatusText, setWebPushStatusText] = useState<string>("");
 
   useEffect(() => {
     if (Platform.OS !== "web") {
       initNotifications();
       requestNotificationPermission();
     }
-  }, []);
+    if (user) {
+      registerForPushNotificationsAsync(user).catch(() => {});
+      if (Platform.OS === "web" && typeof window !== "undefined" && "Notification" in window) {
+        if (Notification.permission === "denied") {
+          setWebPushStatusText("Notifications are blocked in your browser site settings. Click the lock icon in the address bar to unblock.");
+        }
+      }
+    }
+  }, [user]);
+
+  const handleEnableWebPushClick = async () => {
+    try {
+      const token = await registerForPushNotificationsAsync(user, true);
+      setShowWebPushBanner(false);
+      if (!token && typeof window !== "undefined" && "Notification" in window && Notification.permission === "denied") {
+        setWebPushStatusText("Notifications are blocked in your browser site settings. Click the lock icon in the address bar to unblock.");
+      }
+    } catch (_) {
+      setShowWebPushBanner(false);
+    }
+  };
 
   const handleGoogleAuthSignIn = async (passedName?: string, passedPhone?: string, existingGoogleObj?: any) => {
     console.log("[DEBUG] handleGoogleAuthSignIn called", { passedName, passedPhone, existingGoogleObj });
     try {
       let googleUser = existingGoogleObj;
-      if (!googleUser) {
-        googleUser = await handleFirebaseGoogleSignIn(passedName || guestNameInput, passedPhone || guestPhoneInput);
+      const reqName = (passedName !== undefined ? passedName : guestNameInput).trim();
+      const reqPhone = (passedPhone !== undefined ? passedPhone : guestPhoneInput).trim().replace(/\D/g, "");
+
+      if (existingGoogleObj?.isDirectGuest) {
+        const cleanName = reqName || "Guest Learner";
+        const cleanPhone = reqPhone || "9999999999";
+        const email = `${cleanName.toLowerCase().replace(/[^a-z0-9]/g, "")}_${cleanPhone.slice(-4)}@guest.nermaiias.com`;
+        googleUser = {
+          email,
+          name: cleanName,
+          photoURL: "",
+          uid: `direct_guest_${cleanPhone}_${Date.now()}`
+        };
+      } else if (!googleUser) {
+        googleUser = await handleFirebaseGoogleSignIn(reqName, reqPhone);
       }
+
       console.log("[DEBUG] googleUser obtained:", googleUser);
       const email = googleUser?.email;
       if (!email) {
@@ -4676,8 +5059,6 @@ function MainApp() {
         return;
       }
 
-      const reqName = (passedName !== undefined ? passedName : guestNameInput).trim();
-      const reqPhone = (passedPhone !== undefined ? passedPhone : guestPhoneInput).trim();
       console.log("[DEBUG] Requesting backend guest-login for:", { email, reqName, reqPhone });
 
       const res = await api.post("/crm/leads/guest-login", {
@@ -4727,9 +5108,19 @@ function MainApp() {
       setPendingGoogleUser(null);
       if (pendingGuestTab) {
         setGuestTab(pendingGuestTab);
+        if (pendingGuestTab === "freetest" || pendingGuestTab === "tests") {
+          setGuestContentTab("tests");
+        } else if (pendingGuestTab === "apply" || pendingGuestTab === "courses") {
+          setGuestContentTab("apply");
+        } else if (pendingGuestTab === "resources") {
+          setGuestContentTab("resources");
+        } else {
+          setGuestContentTab("home");
+        }
         setPendingGuestTab(null);
       } else {
         setGuestTab("home");
+        setGuestContentTab("home");
       }
       loadAnnouncements();
       loadGuestNotifications(data.leadId, data.token);
@@ -4884,6 +5275,267 @@ function MainApp() {
       setLeaderboardLoadingTestId(null);
     }
   };
+
+  // Special Mock Test State
+  const [specialMockTitle, setSpecialMockTitle] = useState("");
+  const [specialMockStartingRoll, setSpecialMockStartingRoll] = useState("182026");
+  const [specialMockSelectedBatches, setSpecialMockSelectedBatches] = useState<string[]>([]);
+  const [specialMockDuration, setSpecialMockDuration] = useState("60");
+  const [specialMockMarksPerQ, setSpecialMockMarksPerQ] = useState("2");
+  const [specialMockNegMarks, setSpecialMockNegMarks] = useState("0.66");
+  const [specialMockUnattendedMarks, setSpecialMockUnattendedMarks] = useState("0");
+  const [specialMockStartTime, setSpecialMockStartTime] = useState("");
+  const [specialMockEndTime, setSpecialMockEndTime] = useState("");
+  const [specialMockSubTab, setSpecialMockSubTab] = useState<"create" | "manage">("create");
+  const [isCreatingSpecialMock, setIsCreatingSpecialMock] = useState(false);
+  const [specialMockSelectedBatchFilter, setSpecialMockSelectedBatchFilter] = useState("all");
+  const [selectedMockForIdGen, setSelectedMockForIdGen] = useState<string>("");
+  const [offlineExcelUploading, setOfflineExcelUploading] = useState(false);
+
+  // Auto-calculate Special Mock duration from Start & End time
+  useEffect(() => {
+    if (specialMockStartTime && specialMockEndTime) {
+      const s = new Date(specialMockStartTime).getTime();
+      const e = new Date(specialMockEndTime).getTime();
+      if (!isNaN(s) && !isNaN(e) && e > s) {
+        const diffMins = Math.round((e - s) / 60000);
+        setSpecialMockDuration(String(diffMins));
+      }
+    }
+  }, [specialMockStartTime, specialMockEndTime]);
+
+  // Helper to reorder selected batches
+  const moveSpecialMockBatchUp = (index: number) => {
+    if (index <= 0) return;
+    setSpecialMockSelectedBatches(prev => {
+      const arr = [...prev];
+      const temp = arr[index - 1];
+      arr[index - 1] = arr[index];
+      arr[index] = temp;
+      return arr;
+    });
+  };
+
+  const moveSpecialMockBatchDown = (index: number) => {
+    setSpecialMockSelectedBatches(prev => {
+      if (index >= prev.length - 1) return prev;
+      const arr = [...prev];
+      const temp = arr[index + 1];
+      arr[index + 1] = arr[index];
+      arr[index] = temp;
+      return arr;
+    });
+  };
+
+  const toggleSpecialMockBatch = (batchName: string) => {
+    setSpecialMockSelectedBatches(prev => {
+      if (prev.includes(batchName)) {
+        return prev.filter(b => b !== batchName);
+      }
+      return [...prev, batchName];
+    });
+  };
+
+  // Helper to compute sequential roll numbers across ordered batches
+  const computeSpecialMockAllocations = (orderedBatches: string[], startRollStr: string, studentsList: any[]) => {
+    const startNum = parseInt(String(startRollStr || "").trim(), 10) || 182026;
+    let currentRoll = startNum;
+    const allocations: { batchName: string; count: number; startRoll: number; endRoll: number; students: any[] }[] = [];
+    const mockRollMap: Record<string, string> = {};
+    const norm = (s: string) => String(s || "").trim().toLowerCase();
+
+    (orderedBatches || []).forEach(bName => {
+      const normB = norm(bName);
+      const batchStudents = (studentsList || []).filter(s => {
+        const sBatches = [
+          s.batch,
+          s.batchName,
+          ...(Array.isArray(s.batches) ? s.batches.map((b: any) => typeof b === 'string' ? b : b?.batchName) : [])
+        ].filter(Boolean).map(norm);
+        return sBatches.some(sb => sb === normB || sb.startsWith(normB + " ") || sb.startsWith(normB + "("));
+      });
+
+      const count = batchStudents.length;
+      const sRoll = currentRoll;
+      const eRoll = count > 0 ? (currentRoll + count - 1) : currentRoll;
+
+      batchStudents.forEach(st => {
+        const sid = st?.id || st?.studentId || st?.userId;
+        if (sid && !mockRollMap[sid]) {
+          mockRollMap[sid] = String(currentRoll);
+          currentRoll++;
+        }
+      });
+
+      allocations.push({
+        batchName: bName,
+        count,
+        startRoll: sRoll,
+        endRoll: eRoll,
+        students: batchStudents
+      });
+    });
+
+    return { allocations, mockRollMap, nextStartRoll: currentRoll, totalAssigned: Object.keys(mockRollMap).length };
+  };
+
+  const handleUploadOfflineExcel = async (testObj: any) => {
+    if (!testObj?.id) return;
+    try {
+      if (Platform.OS === "web") {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = ".xlsx, .xls, .csv";
+        input.onchange = async (e: any) => {
+          const file = e.target?.files?.[0];
+          if (!file) return;
+          setOfflineExcelUploading(true);
+          try {
+            const data = await file.arrayBuffer();
+            const workbook = XLSX.read(data, { type: "array" });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            const jsonRows: any[] = XLSX.utils.sheet_to_json(worksheet);
+
+            if (!jsonRows || jsonRows.length === 0) {
+              Alert.alert("Empty File", "The uploaded Excel sheet contains no rows.");
+              return;
+            }
+
+            const records = jsonRows.map((row: any) => {
+              const nameKey = Object.keys(row).find(k => /^(student\s*name|name|student|candidate\s*name)$/i.test(k.trim()));
+              const rollKey = Object.keys(row).find(k => /^(roll\s*number|roll\s*no|roll|reg\s*no|registration\s*no)$/i.test(k.trim()));
+              const studentName = nameKey ? String(row[nameKey] || "").trim() : "Offline Student";
+              const rollNumber = rollKey ? String(row[rollKey] || "").trim() : "Guest";
+
+              const answers: Record<string, string> = {};
+              Object.keys(row).forEach(k => {
+                const qMatch = k.trim().match(/^(?:q|q\.|question)?\s*(\d+)$/i);
+                if (qMatch) {
+                  const qNum = qMatch[1];
+                  const val = String(row[k] || "").trim().toUpperCase();
+                  if (val) answers[qNum] = val;
+                }
+              });
+
+              return { studentName, rollNumber, answers };
+            });
+
+            const res = await api.post(`/test-portal/evaluation/offline-upload/${testObj.id}`, { records });
+            Alert.alert("Success", res.message || `Uploaded and evaluated ${records.length} offline student(s)!`);
+            loadStudentLeaderboard(testObj.id, testObj);
+          } catch (err: any) {
+            console.error("Failed to parse and upload Excel:", err);
+            Alert.alert("Upload Error", err.message || "Failed to process offline Excel file.");
+          } finally {
+            setOfflineExcelUploading(false);
+          }
+        };
+        input.click();
+      } else {
+        const result = await DocumentPicker.getDocumentAsync({
+          type: [
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.ms-excel",
+            "text/csv"
+          ],
+          copyToCacheDirectory: true
+        });
+
+        if (result.canceled || !result.assets || result.assets.length === 0) return;
+        const fileAsset = result.assets[0];
+        setOfflineExcelUploading(true);
+
+        const b64 = await FileSystem.readAsStringAsync(fileAsset.uri, { encoding: FileSystem.EncodingType.Base64 });
+        const workbook = XLSX.read(b64, { type: "base64" });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const jsonRows: any[] = XLSX.utils.sheet_to_json(worksheet);
+
+        if (!jsonRows || jsonRows.length === 0) {
+          Alert.alert("Empty File", "The uploaded Excel sheet contains no rows.");
+          return;
+        }
+
+        const records = jsonRows.map((row: any) => {
+          const nameKey = Object.keys(row).find(k => /^(student\s*name|name|student|candidate\s*name)$/i.test(k.trim()));
+          const rollKey = Object.keys(row).find(k => /^(roll\s*number|roll\s*no|roll|reg\s*no|registration\s*no)$/i.test(k.trim()));
+          const studentName = nameKey ? String(row[nameKey] || "").trim() : "Offline Student";
+          const rollNumber = rollKey ? String(row[rollKey] || "").trim() : "Guest";
+
+          const answers: Record<string, string> = {};
+          Object.keys(row).forEach(k => {
+            const qMatch = k.trim().match(/^(?:q|q\.|question)?\s*(\d+)$/i);
+            if (qMatch) {
+              const qNum = qMatch[1];
+              const val = String(row[k] || "").trim().toUpperCase();
+              if (val) answers[qNum] = val;
+            }
+          });
+
+          return { studentName, rollNumber, answers };
+        });
+
+        const res = await api.post(`/test-portal/evaluation/offline-upload/${testObj.id}`, { records });
+        Alert.alert("Success", res.message || `Uploaded and evaluated ${records.length} offline student(s)!`);
+        loadStudentLeaderboard(testObj.id, testObj);
+      }
+    } catch (e: any) {
+      console.error("Error in handleUploadOfflineExcel:", e);
+      Alert.alert("Error", e.message || "Failed to upload offline Excel.");
+    } finally {
+      setOfflineExcelUploading(false);
+    }
+  };
+
+  const downloadOfflineExcelTemplate = (testObj: any) => {
+    try {
+      const qCount = Number(testObj?.totalQuestions) || (testObj?.questionIds ? testObj.questionIds.length : 100);
+      const sampleRow: any = {
+        "Student Name": "Sample Candidate",
+        "Roll Number": "182026"
+      };
+      for (let i = 1; i <= Math.min(qCount, 200); i++) {
+        sampleRow[`Q${i}`] = i % 4 === 0 ? "D" : i % 3 === 0 ? "C" : i % 2 === 0 ? "B" : "A";
+      }
+
+      const emptyRow1: any = { "Student Name": "Student 1", "Roll Number": "182027" };
+      const emptyRow2: any = { "Student Name": "Student 2", "Roll Number": "182028" };
+      for (let i = 1; i <= Math.min(qCount, 200); i++) {
+        emptyRow1[`Q${i}`] = "";
+        emptyRow2[`Q${i}`] = "";
+      }
+
+      const ws = XLSX.utils.json_to_sheet([sampleRow, emptyRow1, emptyRow2]);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Offline Answers");
+
+      const wbout = XLSX.write(wb, { type: "binary", bookType: "xlsx" });
+
+      if (Platform.OS === "web") {
+        function s2ab(s: string) {
+          const buf = new ArrayBuffer(s.length);
+          const view = new Uint8Array(buf);
+          for (let i = 0; i < s.length; i++) view[i] = s.charCodeAt(i) & 0xff;
+          return buf;
+        }
+        const blob = new Blob([s2ab(wbout)], { type: "application/octet-stream" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        const testName = (testObj?.title || "Test").replace(/[^a-zA-Z0-9_-]/g, "_");
+        a.download = `${testName}_Offline_OMR_Template.xlsx`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        Alert.alert("Template Download", "Template downloading is optimized for the web portal. Please use web portal to download Excel templates.");
+      }
+    } catch (e: any) {
+      console.error("Error creating offline Excel template:", e);
+      Alert.alert("Error", e.message || "Failed to create Excel template");
+    }
+  };
+
   const [extractedQuestions, setExtractedQuestions] = useState<any[]>([]);
   const [extractMode, setExtractMode] = useState<"local" | "ai">("local");
   const [extractDraftId, setExtractDraftId] = useState<string | null>(null);
@@ -4900,6 +5552,7 @@ function MainApp() {
   const [editingNotice, setEditingNotice] = useState<any | null>(null);
   const [editingNoticeId, setEditingNoticeId] = useState<string | null>(null);
   const [editingCampaignId, setEditingCampaignId] = useState<string | null>(null);
+  const [savingCampaign, setSavingCampaign] = useState(false);
   const [selectedCampaignModal, setSelectedCampaignModal] = useState<any | null>(null);
   const [editingQData, setEditingQData] = useState<any | null>(null);
   const [editingQIdx, setEditingQIdx] = useState<number | null>(null);
@@ -4910,6 +5563,9 @@ function MainApp() {
   const [testSidebarCollapsed, setTestSidebarCollapsed] = useState(() => (Platform.OS !== "web" || (typeof window !== "undefined" && window.innerWidth < 768)));
   const changeErpSub = (sub: string) => {
     let targetSub = sub;
+    if (targetSub === "marks") {
+      targetSub = user?.role === "student" ? "my-profile" : "students";
+    }
     if (user?.role === "student" && targetSub === "fees") {
       targetSub = "pay-fees";
     }
@@ -5022,7 +5678,16 @@ function MainApp() {
 
       if (main) {
         if (main === "guest") {
-          if (sub) setGuestTab(sub);
+          if (sub) {
+            setGuestTab(sub);
+            if (sub === "home" || sub === "resources" || sub === "tests" || sub === "apply") {
+              setGuestContentTab(sub as any);
+            } else if (sub === "freetest") {
+              setGuestContentTab("tests");
+            } else if (sub === "courses") {
+              setGuestContentTab("apply");
+            }
+          }
         } else {
           setActiveTab(main);
           let normSub = sub;
@@ -5038,8 +5703,154 @@ function MainApp() {
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
+
+  // ── Notification Click Listener & Cold-Start Redirection Dispatcher ────────
+  const pendingNotificationNavRef = useRef<any>(null);
+
+  const handleNotificationNavigation = (data: Record<string, any>) => {
+    if (!data) return;
+    const rawTab = String(data.targetTab || data.screen || data.tab || "").trim().toLowerCase();
+    const rawSub = String(data.targetSub || data.subTab || data.sub || "").trim().toLowerCase();
+
+    // Buffer destination if user state hasn't resolved yet (e.g. cold start)
+    if (!user) {
+      pendingNotificationNavRef.current = data;
+      return;
+    }
+
+    try {
+      const role = user?.role || "guest";
+
+      // ── 1. GUEST VIEW NAVIGATION ──
+      if (role === "guest") {
+        if (rawTab === "test" || rawTab === "tests" || rawSub === "tests" || rawSub === "available") {
+          setGuestTab("tests");
+          setGuestContentTab("tests");
+        } else if (rawTab === "resources" || rawSub === "resources" || rawTab === "lms" || rawSub === "daily-content") {
+          setGuestTab("resources");
+          setGuestContentTab("resources");
+        } else if (rawTab === "crm" || rawSub === "admissions" || rawSub === "apply") {
+          setGuestTab("apply");
+          setGuestContentTab("apply");
+        } else {
+          setGuestTab("home");
+          setGuestContentTab("home");
+        }
+        return;
+      }
+
+      // ── 2. STUDENT NAVIGATION ──
+      if (role === "student") {
+        if (rawTab === "announcements" || rawTab === "notices" || rawTab === "notice" || rawTab === "dashboard" || rawTab === "home") {
+          setActiveTab("dashboard");
+        } else if (rawTab === "test" || rawTab === "tests") {
+          setActiveTab("test");
+          if (rawSub) changeTestSub(rawSub);
+          else changeTestSub("available");
+        } else if (rawTab === "lms" || rawTab === "classes" || rawTab === "class" || rawTab === "resources" || rawTab === "recorded" || rawTab === "live" || rawTab === "daily-content" || rawTab === "quiz") {
+          setActiveTab("lms");
+          let sub = rawSub;
+          if (!sub && (rawTab === "resources" || rawTab === "recorded" || rawTab === "live" || rawTab === "daily-content" || rawTab === "quiz")) {
+            sub = rawTab;
+          }
+          if (sub) changeLmsSub(sub);
+          else changeLmsSub("resources");
+        } else if (rawTab === "erp" || rawTab === "profile" || rawTab === "my-profile") {
+          setActiveTab("erp");
+          if (rawSub === "fees" || rawSub === "pay-fees") {
+            changeErpSub("pay-fees");
+          } else if (rawSub === "id-card" || rawSub === "idcard") {
+            changeErpSub("id-card");
+            setMyCardSubTab("idcard");
+          } else if (rawSub === "hall-ticket" || rawSub === "hallticket") {
+            changeErpSub("id-card");
+            setMyCardSubTab("hallticket");
+          } else {
+            changeErpSub("my-profile");
+          }
+        } else {
+          setActiveTab("dashboard");
+        }
+        return;
+      }
+
+      // ── 3. ADMIN & SUPER ADMIN NAVIGATION ──
+      if (rawTab === "test" || rawTab === "tests") {
+        setActiveTab("test");
+        if (rawSub === "requests" || rawSub === "offline-requests" || rawSub === "offline_requests") {
+          changeTestSub("offline-requests");
+        } else if (rawSub) {
+          changeTestSub(rawSub);
+        } else {
+          changeTestSub("test-list");
+        }
+      } else if (rawTab === "lms" || rawTab === "classes") {
+        setActiveTab("lms");
+        if (rawSub === "requests" || rawSub === "lms-access" || rawSub === "access" || rawSub === "sacs") {
+          changeLmsSub("lms-access");
+        } else if (rawSub === "qr" || rawSub === "qr-permissions") {
+          changeLmsSub("qr-permissions");
+        } else if (rawSub) {
+          changeLmsSub(rawSub);
+        } else {
+          changeLmsSub("resources");
+        }
+      } else if (rawTab === "crm") {
+        setActiveTab("crm");
+        if (rawSub) changeCrmSub(rawSub);
+        else changeCrmSub("leads");
+      } else if (rawTab === "erp" || rawTab === "announcements" || rawTab === "notices") {
+        setActiveTab("erp");
+        if (rawTab === "announcements" || rawTab === "notices" || rawSub === "announcements" || rawSub === "notices") {
+          changeErpSub("announcements");
+        } else if (rawSub === "profile-requests" || rawSub === "profile_requests") {
+          changeErpSub("profile-requests");
+          setProfileRequestsTab("requests");
+        } else if (rawSub === "approvals" || rawSub === "admin_approval") {
+          changeErpSub("approvals");
+          loadPendingApprovals();
+        } else if (rawSub) {
+          changeErpSub(rawSub);
+        } else {
+          changeErpSub("students");
+        }
+      } else if (rawTab === "audit-logs" && (user?.role === "super_admin" || user?.role === "developer")) {
+        setActiveTab("audit-logs");
+      } else {
+        setActiveTab("dashboard");
+      }
+    } catch (navErr) {
+      console.log("[Notifications] Navigation dispatch error:", navErr);
+      setActiveTab("dashboard");
+    }
+  };
+
+  useEffect(() => {
+    if (Platform.OS !== "web") {
+      const unsubClick = setupNotificationClickListener((data) => {
+        handleNotificationNavigation(data);
+      });
+      return () => {
+        if (unsubClick) unsubClick();
+      };
+    }
+  }, [user]);
+
+  // Flush queued notification navigation once user session is loaded
+  useEffect(() => {
+    if (user && pendingNotificationNavRef.current) {
+      const data = pendingNotificationNavRef.current;
+      pendingNotificationNavRef.current = null;
+      setTimeout(() => {
+        handleNotificationNavigation(data);
+      }, 400);
+    }
+  }, [user]);
   const [expandedTestId, setExpandedTestId] = useState<string | null>(null);
   const [selectedMonitorTestId, setSelectedMonitorTestId] = useState<string | null>(null);
+  const [monitorActiveTab, setMonitorActiveTab] = useState<"leaderboard" | "absent">("leaderboard");
+  const [monitorBatchFilter, setMonitorBatchFilter] = useState<string>("all");
+  const [monitorAbsentSearch, setMonitorAbsentSearch] = useState<string>("");
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const [reviewData, setReviewData] = useState<any | null>(null);
   const [reviewMode, setReviewMode] = useState(false);
@@ -5059,6 +5870,7 @@ function MainApp() {
   const [resultsDateFilter, setResultsDateFilter] = useState("");
   const [resultsLoading, setResultsLoading] = useState(false);
   const [allTestResults, setAllTestResults] = useState<any[]>([]);
+  const [downloadingTestId, setDownloadingTestId] = useState<string | null>(null);
   const [currentQIdx, setCurrentQIdx] = useState(0);
   const [liveCount, setLiveCount] = useState<any | null>(null);
   const [questionReports, setQuestionReports] = useState<Record<string, Record<string, number>>>({});
@@ -5083,6 +5895,13 @@ function MainApp() {
   };
   const [reportsModalTestTitle, setReportsModalTestTitle] = useState<string>("");
   const [testDiagnosticsMap, setTestDiagnosticsMap] = useState<Record<string, any>>({});
+  const [endClassTarget, setEndClassTarget] = useState<{
+    sessionTitle: string;
+    onConfirm: (convertToYoutube: boolean, youtubeUrl?: string) => Promise<void> | void;
+  } | null>(null);
+  const [endClassYtOption, setEndClassYtOption] = useState<'none' | 'youtube'>('none');
+  const [endClassYtUrl, setEndClassYtUrl] = useState('');
+  const [endClassSubmitting, setEndClassSubmitting] = useState(false);
   const [loadingDiagnosticsTestId, setLoadingDiagnosticsTestId] = useState<string | null>(null);
   const [selectedSubjectTabMap, setSelectedSubjectTabMap] = useState<Record<string, string>>({});
   const [diagnosticSubTabMap, setDiagnosticSubTabMap] = useState<Record<string, "wrong" | "skipped" | "all">>({});
@@ -5187,6 +6006,11 @@ function MainApp() {
   const [offlineAttendanceDate, setOfflineAttendanceDate] = useState<string>(new Date().toISOString().slice(0, 10));
   const [offlineAttendanceMarks, setOfflineAttendanceMarks] = useState<Record<string, "present" | "absent" | null>>({});
   const [offlineAttendanceSaving, setOfflineAttendanceSaving] = useState<Record<string, boolean>>({});
+  const [offlineAttendanceViewMode, setOfflineAttendanceViewMode] = useState<"daily" | "monthly">("daily");
+  const [offlineAttendanceMonth, setOfflineAttendanceMonth] = useState<string>(() => new Date().toISOString().slice(0, 7)); // "YYYY-MM"
+  const [offlineAttendanceMonthlyBatch, setOfflineAttendanceMonthlyBatch] = useState<string>("");
+  const [selectedMonthlyCalendarStudent, setSelectedMonthlyCalendarStudent] = useState<any | null>(null);
+  const [offlineAttendanceCellSaving, setOfflineAttendanceCellSaving] = useState<Record<string, boolean>>({});
 
   // Offline Student Test Permission Requests State
   const [offlineTestRequests, setOfflineTestRequests] = useState<any[]>(() => {
@@ -5223,6 +6047,7 @@ function MainApp() {
       where("studentId", "in", targetIds)
     );
 
+    let isFirstSnapshot = true;
     const unsub = onSnapshot(q, (snapshot) => {
       const reqs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
       setOfflineTestRequests(reqs);
@@ -5231,6 +6056,36 @@ function MainApp() {
           localStorage.setItem("nermai_offline_test_requests", JSON.stringify(reqs));
         }
       } catch (storageErr) { }
+
+      if (Platform.OS !== "web" && !isFirstSnapshot) {
+        snapshot.docChanges().forEach((change) => {
+          if (change.type === "modified" || change.type === "added") {
+            const data = change.doc.data() as any;
+            if (data.status === "approved") {
+              showPhoneNotification(
+                "✅ Test Entrance Approved",
+                `Your request to enter "${data.testTitle || 'Scheduled Test'}" has been approved!`,
+                {
+                  targetTab: "test",
+                  targetSub: "available",
+                  dedupeId: `test_req_appr_${change.doc.id}`
+                }
+              );
+            } else if (data.status === "rejected") {
+              showPhoneNotification(
+                "❌ Test Request Update",
+                `Your request to enter "${data.testTitle || 'Scheduled Test'}" was declined.`,
+                {
+                  targetTab: "test",
+                  targetSub: "available",
+                  dedupeId: `test_req_rej_${change.doc.id}`
+                }
+              );
+            }
+          }
+        });
+      }
+      isFirstSnapshot = false;
     }, (err) => {
       console.log("Student offline request listener error:", err);
       loadOfflineTestRequests();
@@ -5393,10 +6248,93 @@ function MainApp() {
         where("isDismissed", "==", false)
       );
 
+      let isFirstSnapshot = true;
       const unsub = onSnapshot(q, (snapshot) => {
         const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
         list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
         setAdminAlerts(list);
+
+        if (Platform.OS !== "web" && !isFirstSnapshot) {
+          snapshot.docChanges().forEach((change) => {
+            if (change.type === "added") {
+              const alert = change.doc.data() as any;
+              if (alert.type === "admin_approval") {
+                if (user?.role === "super_admin" || user?.role === "developer") {
+                  showPhoneNotification(
+                    "⚠️ Super Admin Approval Required",
+                    `${alert.title || "Admin Proposal"}: ${alert.message || "Awaiting review"}`,
+                    {
+                      targetTab: "erp",
+                      targetSub: "approvals",
+                      dedupeId: `alert_${alert.id}`
+                    }
+                  );
+                }
+              } else if (alert.type === "offline_test") {
+                showPhoneNotification(
+                  "🛡️ Offline Test Entrance Request",
+                  `${alert.subtitle || "A student"}: ${alert.message || "Requested entrance"}`,
+                  {
+                    targetTab: "test",
+                    targetSub: "offline-requests",
+                    dedupeId: `alert_${alert.id}`
+                  }
+                );
+              } else if (alert.type === "sacs_request") {
+                showPhoneNotification(
+                  "🔑 Access Control Request",
+                  `${alert.subtitle || "A student"}: ${alert.message || "Access requested"}`,
+                  {
+                    targetTab: "lms",
+                    targetSub: "lms-access",
+                    dedupeId: `alert_${alert.id}`
+                  }
+                );
+              } else if (alert.type === "profile_submission") {
+                showPhoneNotification(
+                  "📋 Profile Verification Request",
+                  `${alert.subtitle || "A student"}: ${alert.message || "Verification submitted"}`,
+                  {
+                    targetTab: "erp",
+                    targetSub: "profile-requests",
+                    dedupeId: `alert_${alert.id}`
+                  }
+                );
+              } else if (alert.type === "qr_permission") {
+                showPhoneNotification(
+                  "📱 QR Permission Request",
+                  `${alert.subtitle || "A student"}: ${alert.message || "Permission requested"}`,
+                  {
+                    targetTab: "lms",
+                    targetSub: "qr-permissions",
+                    dedupeId: `alert_${alert.id}`
+                  }
+                );
+              } else if (alert.type === "admission") {
+                showPhoneNotification(
+                  "🎓 New Student Admission",
+                  `${alert.subtitle || "A student"}: ${alert.message || "New admission applied"}`,
+                  {
+                    targetTab: "crm",
+                    targetSub: "admissions",
+                    dedupeId: `alert_${alert.id}`
+                  }
+                );
+              } else if (alert.type === "inquiry") {
+                showPhoneNotification(
+                  "💬 New Inquiry / Lead",
+                  `${alert.subtitle || "A visitor"}: ${alert.message || "New inquiry received"}`,
+                  {
+                    targetTab: "crm",
+                    targetSub: "leads",
+                    dedupeId: `alert_${alert.id}`
+                  }
+                );
+              }
+            }
+          });
+        }
+        isFirstSnapshot = false;
       }, (err) => {
         console.log("Admin alerts listener note:", err?.message);
       });
@@ -5405,7 +6343,7 @@ function MainApp() {
     } catch (e) {
       console.log("Failed to attach admin alerts listener:", e);
     }
-  }, [isAdmin]);
+  }, [isAdmin, user?.role]);
 
   // Load pending approvals on mount for super_admin
   useEffect(() => {
@@ -5413,6 +6351,29 @@ function MainApp() {
       loadPendingApprovals();
     }
   }, [isAdmin, user?.role]);
+
+  // Real-time listener for SACS access_requests
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    let unsub: (() => void) | null = null;
+    try {
+      unsub = onSnapshot(collection(db, "access_requests"), (snapshot) => {
+        const list = snapshot.docs
+          .map(d => ({ id: d.id, ...d.data() as any }))
+          .filter((r: any) => !r.isDeleted && (r.status === "PENDING" || r.status === "pending"));
+        setSacsRequests(list);
+      }, (err) => {
+        console.log("Admin access_requests listener note:", err?.message);
+      });
+    } catch (e) {
+      console.log("Failed to attach access_requests listener:", e);
+    }
+
+    return () => {
+      if (unsub) unsub();
+    };
+  }, [isAdmin]);
 
   // Sync existing pending requests into admin_alerts if not already dismissed by admin
   useEffect(() => {
@@ -5502,7 +6463,35 @@ function MainApp() {
         }
       });
     }
-  }, [isAdmin, offlineTestRequests, profileRequests, pendingApprovals, user?.role]);
+
+    // 4. Sync pending SACS access control requests
+    (sacsRequests || []).forEach((req: any) => {
+      const reqId = req.id || req._id;
+      if (req && reqId && (req.status === "PENDING" || req.status === "pending")) {
+        const alertId = `sacs_req_${reqId}`;
+        if (!dismissedSet.has(alertId) && !adminAlerts.some(a => a.id === alertId)) {
+          const studentLabel = req.studentName || req.userName || req.userEmail || "Student";
+          const contentLabel = req.contentTitle || req.className || req.resourceTitle || req.requestType || "Content";
+          setDoc(doc(db, "admin_alerts", alertId), {
+            id: alertId,
+            type: "sacs_request",
+            title: "Access Control Request",
+            subtitle: `${studentLabel} (${req.batchName || req.requestType || "SACS"})`,
+            message: `Requested access to ${contentLabel}: "${req.reason || 'Awaiting approval'}"`,
+            studentId: req.studentId || req.userId || "",
+            studentName: studentLabel,
+            rollNumber: req.rollNumber || "—",
+            sourceDocId: reqId,
+            sourceCollection: "access_requests",
+            targetTab: "lms",
+            targetSub: "lms-access",
+            createdAt: req.requestedAt || req.createdAt || new Date().toISOString(),
+            isDismissed: false
+          }, { merge: true }).catch(() => { });
+        }
+      }
+    });
+  }, [isAdmin, offlineTestRequests, profileRequests, pendingApprovals, sacsRequests, user?.role]);
 
   const handleViewAdminAlert = async (alertItem: any) => {
     if (!alertItem) return;
@@ -5535,6 +6524,8 @@ function MainApp() {
         if (alertItem.targetSub) changeCrmSub(alertItem.targetSub);
       } else if (alertItem.targetTab === "lms") {
         if (alertItem.targetSub) changeLmsSub(alertItem.targetSub);
+      } else if (alertItem.targetTab === "test") {
+        if (alertItem.targetSub) changeTestSub(alertItem.targetSub);
       }
     }
 
@@ -5672,7 +6663,7 @@ function MainApp() {
   const [scriptCopied, setScriptCopied] = useState(false);
 
   const loadDriveConfig = async () => {
-    if (!user || (user.role !== "super_admin" && user.role !== "developer")) return;
+    if (!user || !["admin", "super_admin", "developer", "staff"].includes(user.role)) return;
     try {
       const res = await api.get("/developer/drive-config");
       // Backend returns { success: true, data: { appsScriptUrl, rootFolderId } }
@@ -5754,7 +6745,6 @@ function MainApp() {
     { key: "erp-announcements", label: "ERP - Notices", icon: "megaphone-outline", type: "panel" },
     { key: "erp-analytics", label: "ERP - Analytics", icon: "analytics-outline", type: "panel" },
     { key: "erp-fees", label: "ERP - Fee Portal", icon: "cash-outline", type: "panel" },
-    { key: "erp-marks", label: "ERP - Marks Ledger", icon: "checkbox-outline", type: "panel" },
     { key: "erp-offline-attendance", label: "ERP - Offline Attendance", icon: "clipboard-outline", type: "panel" },
 
     // LMS Sub-Panels:
@@ -5773,6 +6763,7 @@ function MainApp() {
     // Test Portal Sub-Panels:
     { key: "test-available", label: "Test - Available Mock Exams", icon: "document-text-outline", type: "panel" },
     { key: "test-pdf-create", label: "Test - AI Create Exam", icon: "sparkles-outline", type: "panel" },
+    { key: "test-special-mock", label: "Test - Special Mock Tests", icon: "medal-outline", type: "panel" },
     { key: "test-feedback", label: "Test - Exams Feedback logs", icon: "chatbubbles-outline", type: "panel" },
     { key: "test-results", label: "Test - Results & Leaderboards", icon: "trophy-outline", type: "panel" },
   ];
@@ -5992,7 +6983,6 @@ function MainApp() {
     { key: "staff_management", label: "ERP — Staff & Admin Directory", icon: "body-outline", category: "ERP" },
     { key: "batch_management", label: "ERP — Batch & Course Management", icon: "calendar-outline", category: "ERP" },
     { key: "fees_management", label: "ERP — Tuition Fees & Ledger", icon: "cash-outline", category: "ERP" },
-    { key: "marks_management", label: "ERP — Marks & Score Records", icon: "bar-chart-outline", category: "ERP" },
     { key: "id_card", label: "ERP — ID Card Generation", icon: "card-outline", category: "ERP" },
     { key: "hall_ticket", label: "ERP — Hall Ticket Generation", icon: "ticket-outline", category: "ERP" },
     { key: "profile_requests", label: "ERP — Profile Edit Approvals", icon: "checkmark-circle-outline", category: "ERP" },
@@ -6248,7 +7238,6 @@ function MainApp() {
       case "edit-permissions": return "profile_requests";
       case "offline-attendance": return "offline_attendance";
       case "staff": return "staff_management";
-      case "marks": return "marks_management";
       case "analytics": return "analytics";
       default: return "";
     }
@@ -6289,6 +7278,7 @@ function MainApp() {
     switch (sub) {
       case "available": return "examinations";
       case "pdf-create": return "test_creation";
+      case "special-mock": return "test_creation";
       case "feedback": return "test_review";
       case "results": return "test_results";
       default: return "";
@@ -6477,6 +7467,54 @@ function MainApp() {
   const [newLead, setNewLead] = useState({ name: "", phone: "", source: "", notes: "" });
   const [newFeedback, setNewFeedback] = useState({ name: "", batch: "", rating: "", comments: "" });
 
+  // Dashboard Quick Inquiry Form State & Options
+  const DASH_NATURE_OPTIONS = [
+    { val: 'phone', label: 'Phone', bg: '#dcfce7', color: '#15803d', activeBg: '#16a34a' },
+    { val: 'visit', label: 'Visit', bg: '#fee2e2', color: '#b91c1c', activeBg: '#dc2626' },
+    { val: 'whatsapp', label: 'WhatsApp', bg: '#d1fae5', color: '#047857', activeBg: '#25D366' },
+    { val: 'Telegram', label: 'Telegram', bg: '#bae6fd', color: '#0369a1', activeBg: '#0284c7' },
+    { val: 'W35', label: 'W35', bg: '#e0e7ff', color: '#1e3a8a', activeBg: '#1e3a8a' },
+    { val: 'FB', label: 'FB', bg: '#ede9fe', color: '#6d28d9', activeBg: '#1877f2' },
+    { val: 'Instagram', label: 'Instagram', bg: '#fef3c7', color: '#b45309', activeBg: '#e1306c' },
+    { val: 'portal', label: 'Portal', bg: '#f1f5f9', color: '#475569', activeBg: '#475569' }
+  ];
+  const DASH_COURSE_OPTIONS = [
+    'LDC', 'UDC', 'VAO', 'SSC', 'PC', 'SI', 'Banking', 'RRB',
+    'Puducherry Govt Exams', 'TNPSC 1 & 2', 'TNPSC 4', 'UPSC', 'Others'
+  ];
+  const DASH_MODE_OPTIONS = ['Offline', 'Online', 'Hybrid', 'Recorded'];
+
+  const [showDashboardInquiryModal, setShowDashboardInquiryModal] = useState(false);
+  const [dashInquiryName, setDashInquiryName] = useState("");
+  const [dashInquiryPhone, setDashInquiryPhone] = useState("");
+  const [dashInquiryEmail, setDashInquiryEmail] = useState("");
+  const [dashInquiryCourse, setDashInquiryCourse] = useState("");
+  const [dashInquiryIsCustomCourse, setDashInquiryIsCustomCourse] = useState(false);
+  const [dashInquiryShowCoursePicker, setDashInquiryShowCoursePicker] = useState(false);
+  const [dashInquiryNature, setDashInquiryNature] = useState("phone");
+  const [dashInquiryMode, setDashInquiryMode] = useState("Offline");
+  const [dashInquiryShowModePicker, setDashInquiryShowModePicker] = useState(false);
+  const [dashInquiryAtten, setDashInquiryAtten] = useState("Admin Staff");
+  const [dashInquiryIsCustomAtten, setDashInquiryIsCustomAtten] = useState(false);
+  const [dashInquiryShowAttenPicker, setDashInquiryShowAttenPicker] = useState(false);
+  const [dashInquiryStaffList, setDashInquiryStaffList] = useState<string[]>(() => {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const saved = localStorage.getItem('crm_atten_staff_list');
+        const removed = localStorage.getItem('crm_atten_removed_staff_list');
+        const parsedStaff = saved ? JSON.parse(saved) : null;
+        const parsedRemoved = removed ? JSON.parse(removed) : [];
+        if (Array.isArray(parsedStaff) && parsedStaff.length > 0) {
+          return parsedStaff.filter((s: string) => !parsedRemoved.includes(s));
+        }
+      }
+    } catch (e) {}
+    return ['Admin Staff', 'Reception', 'Counselor 1', 'Counselor 2', 'Faculty Team', 'Academic Coordinator'];
+  });
+  const [dashInquiryReference, setDashInquiryReference] = useState("");
+  const [dashInquiryRemarks, setDashInquiryRemarks] = useState("");
+  const [submittingDashInquiry, setSubmittingDashInquiry] = useState(false);
+
   // Campaign creation form state
   const [newCampaign, setNewCampaign] = useState({
     title: "",
@@ -6509,7 +7547,7 @@ function MainApp() {
   const [studentSearchQuery, setStudentSearchQuery] = useState("");
   const [generationMode, setGenerationMode] = useState<"individual" | "batch">("individual");
   const [selectedBatchForGen, setSelectedBatchForGen] = useState<string>("All Batches");
-  const [bulkTargetGroup, setBulkTargetGroup] = useState<"all" | "paid" | "free">("all");
+  const [bulkTargetGroup, setBulkTargetGroup] = useState<"all" | "paid" | "free" | "mock">("all");
   const [isBulkGenerating, setIsBulkGenerating] = useState(false);
 
   // ID Card & Hall Ticket Builder States
@@ -6591,7 +7629,7 @@ function MainApp() {
           </View>
 
           <Text style={styles.idCardName}>{getStudentName(student)}</Text>
-          <Text style={{ color: cardTheme, fontSize: 12, fontWeight: "bold", marginBottom: 6, letterSpacing: 0.5 }}>Roll No: {student.rollNumber || student.loginUsername || "—"}</Text>
+          <Text style={{ color: cardTheme, fontSize: 12, fontWeight: "bold", marginBottom: 6, letterSpacing: 0.5 }}>Roll No: {student.mockRollNumber || student.rollNumber || student.loginUsername || "—"}</Text>
 
           <View style={{ width: "100%", borderTopWidth: 1, borderColor: "#eeeeee", paddingTop: 6, gap: 3 }}>
             <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
@@ -6697,7 +7735,7 @@ function MainApp() {
                   <View style={{ flex: 1, gap: 4 }}>
                     <Text style={{ fontSize: 12, color: "#757575", fontWeight: "bold" }}>CANDIDATE DETAILS</Text>
                     <Text style={{ fontSize: 16, fontWeight: "bold", color: "#212121" }}>{getStudentName(student)}</Text>
-                    <Text style={{ fontSize: 13, color: "#424242" }}><Text style={{ fontWeight: "bold" }}>Roll No:</Text> {student.rollNumber || student.loginUsername || "—"}</Text>
+                    <Text style={{ fontSize: 13, color: "#424242" }}><Text style={{ fontWeight: "bold" }}>Roll No:</Text> {student.mockRollNumber || student.rollNumber || student.loginUsername || "—"}</Text>
                     <Text style={{ fontSize: 13, color: "#424242" }}><Text style={{ fontWeight: "bold" }}>Course:</Text> {student.course}</Text>
                     <Text style={{ fontSize: 13, color: "#424242" }}><Text style={{ fontWeight: "bold" }}>Batch:</Text> {student.batch || "General"}</Text>
                   </View>
@@ -6847,75 +7885,12 @@ function MainApp() {
     );
   };
 
-  // ERP Marks & Analytics State
-  const [selectedErpTestId, setSelectedErpTestId] = useState<string>("");
-  const [erpTestResults, setErpTestResults] = useState<any[]>([]);
-
-  const loadErpTestResults = async (testId: string) => {
-    if (!testId) {
-      setErpTestResults([]);
-      return;
-    }
-    try {
-      const res = await api.get(`/test-portal/evaluation/test/${testId}`);
-      const data = res?.data || res || [];
-      if (Array.isArray(data) && data.length > 0) {
-        setErpTestResults(data);
-      } else {
-        const lbRes = await api.get(`/test-portal/review/leaderboard/${testId}`);
-        const lbData = lbRes?.data || lbRes || [];
-        setErpTestResults(Array.isArray(lbData) ? lbData : []);
-      }
-    } catch (e) {
-      console.log("Failed loading test results for ERP, trying leaderboard fallback:", e);
-      try {
-        const lbRes = await api.get(`/test-portal/review/leaderboard/${testId}`);
-        const lbData = lbRes?.data || lbRes || [];
-        setErpTestResults(Array.isArray(lbData) ? lbData : []);
-      } catch (err) {
-        console.log("Failed loading leaderboard fallback for ERP:", err);
-        setErpTestResults([]);
-      }
-    }
-  };
-
+  // Fallback redirect for deprecated marks ledger
   useEffect(() => {
-    if (erpSub !== "marks" || !tests || tests.length === 0) return;
-
-    const filtered = tests.filter((t: any) => {
-      let tType = t.testType || t.category || "";
-      if (!tType && t.title) {
-        const titleLower = t.title.toLowerCase();
-        if (titleLower.includes("daily")) tType = "daily";
-        else if (titleLower.includes("weekly")) tType = "weekly";
-        else tType = "mock";
-      }
-      if (!tType) tType = "mock";
-
-      if (ledgerTestTypeFilter) {
-        const tVal = tType.toLowerCase();
-        const fVal = ledgerTestTypeFilter.toLowerCase();
-        if (!tVal.includes(fVal) && !fVal.includes(tVal)) return false;
-      }
-      if (ledgerTestNameFilter.trim() !== "") {
-        const query = ledgerTestNameFilter.toLowerCase().trim();
-        const title = (t.title || "").toLowerCase();
-        if (!title.includes(query)) return false;
-      }
-      return true;
-    });
-
-    const isCurrentValid = filtered.some((t: any) => t.id === selectedErpTestId);
-    if (!isCurrentValid) {
-      if (filtered.length > 0) {
-        setSelectedErpTestId(filtered[0].id);
-        loadErpTestResults(filtered[0].id);
-      } else {
-        setSelectedErpTestId("");
-        setErpTestResults([]);
-      }
+    if (erpSub === "marks") {
+      setErpSub(user?.role === "student" ? "my-profile" : "students");
     }
-  }, [ledgerTestTypeFilter, ledgerTestNameFilter, tests, erpSub, selectedErpTestId]);
+  }, [erpSub, user?.role]);
 
   const renderUniversalImagePreviewModal = () => {
     if (previewImageUri === null) return null;
@@ -7487,6 +8462,7 @@ function MainApp() {
     setShowFeedbackModal(false);
     setTestFeedbackModal({ visible: false, testId: "", testTitle: "", rating: 5, comments: "" });
     setUser(null);
+    setAuthGate("unauthenticated");
     setGuestTab("home");
     setActiveTab("dashboard");
   };
@@ -7609,6 +8585,8 @@ function MainApp() {
         if (isManuallyLoggedOut) {
           setUser(null);
           setGuestTab("home");
+          setIsInitialLoading(false);
+          setAuthGate("unauthenticated");
           return;
         }
       } else {
@@ -7617,6 +8595,8 @@ function MainApp() {
           if (isManuallyLoggedOut === "true") {
             setUser(null);
             setGuestTab("home");
+            setIsInitialLoading(false);
+            setAuthGate("unauthenticated");
             return;
           }
         } catch (e) { }
@@ -7630,12 +8610,16 @@ function MainApp() {
         if (savedUser.token && savedUser.role !== "guest") {
           try {
             const baseUrl = getBaseUrl();
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 3500);
             const validationRes = await fetch(`${baseUrl}/auth/debug`, {
+              signal: controller.signal,
               headers: {
                 "Authorization": `Bearer ${savedUser.token}`,
                 "Content-Type": "application/json"
               }
             });
+            clearTimeout(timeoutId);
             const validationData = await validationRes.json().catch(() => ({}));
             if (!validationRes.ok) {
               // Session revoked (another device logged in) — clear local data
@@ -7643,6 +8627,7 @@ function MainApp() {
               setUser(null);
               setGuestTab("home");
               setIsInitialLoading(false);
+              setAuthGate("unauthenticated");
               if (
                 String(validationData?.message).toLowerCase().includes("revoked") ||
                 String(validationData?.message).toLowerCase().includes("session")
@@ -7658,6 +8643,7 @@ function MainApp() {
           }
         }
         setUser(savedUser);
+        setAuthGate("authenticated");
         return;
       }
       const persisted = await guestStorage.get();
@@ -7687,6 +8673,7 @@ function MainApp() {
                 userId: data.leadId,
                 token: data.token
               });
+              setAuthGate("authenticated");
               setAdmissionSubmitted(data.hasApplied || false);
               if (!initialNav.hasExplicitSub) {
                 setGuestTab("home");
@@ -7720,25 +8707,8 @@ function MainApp() {
           }
         }
       }
-      if (Platform.OS === "web" && typeof window !== "undefined") {
-        try {
-          if ("serviceWorker" in navigator) {
-            navigator.serviceWorker.getRegistrations().then(registrations => {
-              for (const registration of registrations) {
-                registration.unregister();
-              }
-            }).catch(() => { });
-          }
-          if (typeof caches !== "undefined") {
-            caches.keys().then(names => {
-              for (const name of names) {
-                caches.delete(name);
-              }
-            }).catch(() => { });
-          }
-        } catch (_) { }
-      }
       setIsInitialLoading(false);
+      setAuthGate(prev => prev === "checking" ? "unauthenticated" : prev);
     };
     checkPersistedSession();
     loadGuestCustomForm();
@@ -7871,11 +8841,19 @@ function MainApp() {
             const reloaders = getFeatureReloaders();
             reloaders[data.feature]?.();
             if (Platform.OS !== "web") {
-              showPhoneNotification("✅ Submission Approved", `Your submission for ${data.feature?.replace(/_/g, " ") || "item"} was approved!`);
+              showPhoneNotification(
+                "✅ Submission Approved",
+                `Your submission for ${data.feature?.replace(/_/g, " ") || "item"} was approved!`,
+                { targetTab: "erp", dedupeId: `sub_app_${change.doc.id}` }
+              );
             }
           } else if (data.status === "rejected") {
             if (Platform.OS !== "web") {
-              showPhoneNotification("❌ Submission Update", `Your submission for ${data.feature?.replace(/_/g, " ") || "item"} was rejected.`);
+              showPhoneNotification(
+                "❌ Submission Update",
+                `Your submission for ${data.feature?.replace(/_/g, " ") || "item"} was rejected.`,
+                { targetTab: "erp", dedupeId: `sub_rej_${change.doc.id}` }
+              );
             }
           }
 
@@ -7939,10 +8917,13 @@ function MainApp() {
     } else if (erpSub === "staff") {
       loadStaff();
     } else if (erpSub === "fees") {
+      loadStudents();
       loadFees();
     } else if (erpSub === "approvals") {
       loadPendingApprovals();
       loadOneTimePermissions();
+    } else if (erpSub === "drive") {
+      loadDriveConfig();
     }
   }, [erpSub, user]);
 
@@ -8066,11 +9047,12 @@ function MainApp() {
     return () => clearInterval(timerId);
   }, [activeAttempt, examEndTime]);
 
-  // Clock tick for live test filtering — re-evaluates every 30 seconds
+  // Clock tick for live test filtering — only active when on test portal tab
   useEffect(() => {
+    if (activeTab !== "test") return;
     const clockTick = setInterval(() => setNowTick(Date.now()), 30000);
     return () => clearInterval(clockTick);
-  }, []);
+  }, [activeTab]);
 
   // Reload tests when student/guest navigates to the available tests tab
   useEffect(() => {
@@ -8363,12 +9345,16 @@ function MainApp() {
         window.removeEventListener("contextmenu", handleContextMenu, true);
         window.removeEventListener("copy", handleCopyCut, true);
         window.removeEventListener("cut", handleCopyCut, true);
-        try { ScreenCapture.allowScreenCaptureAsync().catch(() => { }); } catch (_) { }
+        if (!isProtectedRole) {
+          try { ScreenCapture.allowScreenCaptureAsync().catch(() => { }); } catch (_) { }
+        }
       };
     }
 
     return () => {
-      try { ScreenCapture.allowScreenCaptureAsync().catch(() => { }); } catch (_) { }
+      if (!isProtectedRole) {
+        try { ScreenCapture.allowScreenCaptureAsync().catch(() => { }); } catch (_) { }
+      }
     };
   }, [isProtectedRole, activeAttempt]);
 
@@ -8967,6 +9953,7 @@ function MainApp() {
       where("isDeleted", "==", false)
     );
 
+    let isFirstAnnouncementsSnapshot = true;
     const unsubscribe = onSnapshot(
       announcementsQuery,
       (snapshot) => {
@@ -8981,14 +9968,35 @@ function MainApp() {
 
         // Filter in-memory by target Audience & Batch
         let notices = rawNotices.filter((ann: any) => {
-          const audience = ann.targetAudience || "all";
+          const target = (ann.targetDashboard || ann.targetAudience || "all").toLowerCase();
           if (role === "admin" || role === "super_admin" || role === "staff") return true;
-          if (audience === "all") return true;
-          if (role === "student" && audience === "paid") return true;
-          if (role === "guest" && audience === "free") return true;
-          if (audience === "batch") {
-            const annBatch = (ann.targetBatch || "").trim().toLowerCase();
-            return annBatch !== "" && studentBatch !== "" && annBatch === studentBatch;
+
+          // GUEST: Guests must NEVER see notices targeted at enrolled/paid students or specific batches
+          if (role === "guest") {
+            if (target === "paid" || target === "student" || target === "batch") return false;
+            return target === "all" || target === "free" || target === "guest";
+          }
+
+          // STUDENT: Enrolled students see 'all', 'paid'/'student', and their matching 'batch'
+          if (role === "student") {
+            if (target === "free" || target === "guest") return false; // Guest-only notices hidden from enrolled students
+            if (target === "all" || target === "paid" || target === "student") return true;
+            if (target === "batch") {
+              const targetBatches = (ann.targetBatch || "").split(",").map((b: string) => b.trim().toLowerCase()).filter(Boolean);
+              const studentBatches: string[] = [
+                String(studentBatch || "").trim().toLowerCase(),
+                String(myStudent?.batchName || "").trim().toLowerCase(),
+                String(user?.batchName || "").trim().toLowerCase()
+              ].filter(Boolean);
+              const arrBatches = myStudent?.batches || user?.batches;
+              if (Array.isArray(arrBatches)) {
+                arrBatches.forEach((b: any) => {
+                  if (b) studentBatches.push(String(b).trim().toLowerCase());
+                });
+              }
+              return targetBatches.length > 0 && studentBatches.some((sB: string) => targetBatches.includes(sB));
+            }
+            return false;
           }
           return false;
         });
@@ -9042,8 +10050,23 @@ function MainApp() {
             if (!playedNoticeIdsRef.current.has(n.id)) {
               playedNoticeIdsRef.current.add(n.id);
               hasNewlyPlayed = true;
-              if (Platform.OS !== "web" && isInitialAnnouncementsLoadRef.current) {
-                showPhoneNotification(n.title || "Academy Announcement", n.content || "A new notice has been published.", { id: n.id });
+              if (Platform.OS !== "web" && !isFirstAnnouncementsSnapshot) {
+                const isFeeAlert = (n.title || "").includes("Fee Payment Alert") ||
+                  (n.content || "").toLowerCase().includes("pay your pending") ||
+                  (n.content || "").toLowerCase().includes("pending tuition fee");
+                if (isFeeAlert) {
+                  showPhoneNotification(
+                    "💳 Fee Payment Reminder",
+                    n.content || "Tuition fee payment reminder. Tap to review in ERP.",
+                    { targetTab: "erp", targetSub: "pay-fees", dedupeId: `fee_${n.id}` }
+                  );
+                } else {
+                  showPhoneNotification(
+                    "📢 " + (n.title || "Academy Announcement"),
+                    n.content || "A new notice has been published.",
+                    { targetTab: user?.role === "guest" ? "home" : "dashboard", targetSub: "notices", dedupeId: `notice_${n.id}` }
+                  );
+                }
               }
               if (n.priority === "high") {
                 hasNewHigh = true;
@@ -9052,6 +10075,7 @@ function MainApp() {
               }
             }
           });
+          isFirstAnnouncementsSnapshot = false;
           isInitialAnnouncementsLoadRef.current = true;
 
           if (hasNewlyPlayed) {
@@ -9086,6 +10110,7 @@ function MainApp() {
     if (!lookupId) return;
 
     const studentDocRef = doc(db, "students", String(lookupId));
+    let isFirstStudentSnapshot = true;
     const unsubscribe = onSnapshot(
       studentDocRef,
       (docSnap) => {
@@ -9102,8 +10127,26 @@ function MainApp() {
               }
               return [updatedStudent];
             });
+
+            if (Platform.OS !== "web" && !isFirstStudentSnapshot) {
+              if (data.idCardGenerated) {
+                showPhoneNotification(
+                  "🪪 ID Card Released",
+                  "Your official student ID card is ready. Tap to view and download.",
+                  { targetTab: "erp", targetSub: "id-card", dedupeId: `idcard_${lookupId}` }
+                );
+              }
+              if (data.hallTicketGenerated) {
+                showPhoneNotification(
+                  "🎫 Hall Ticket Released",
+                  `Your exam hall ticket has been released (${data.hallTicketExamName || "Mock Exam"}). Tap to view.`,
+                  { targetTab: "erp", targetSub: "id-card", dedupeId: `hallticket_${lookupId}` }
+                );
+              }
+            }
           }
         }
+        isFirstStudentSnapshot = false;
       },
       (err) => {
         console.log("Real-time student profile snapshot listener note:", err?.message);
@@ -9121,6 +10164,7 @@ function MainApp() {
       collection(db, "profile_requests")
     );
 
+    let isFirstProfileReqSnapshot = true;
     const unsubscribe = onSnapshot(
       requestsQuery,
       (snapshot) => {
@@ -9134,14 +10178,19 @@ function MainApp() {
         });
         setProfileRequests(requests);
 
-        if (Platform.OS !== "web" && isInitialProfileReqLoadRef.current) {
+        if (Platform.OS !== "web" && !isFirstProfileReqSnapshot) {
           snapshot.docChanges().forEach((change) => {
             if (change.type === "added") {
               const data = change.doc.data() as any;
-              showPhoneNotification("🛡️ Profile Edit Request", `${data.studentName || data.name || "A student"} submitted a profile edit request.`);
+              showPhoneNotification(
+                "🛡️ Profile Edit / Complete Request",
+                `${data.studentName || data.name || "A student"} submitted a profile request.`,
+                { targetTab: "erp", targetSub: "profile-requests", dedupeId: `prof_req_${change.doc.id}` }
+              );
             }
           });
         }
+        isFirstProfileReqSnapshot = false;
         isInitialProfileReqLoadRef.current = true;
       },
       (err) => {
@@ -9181,28 +10230,59 @@ function MainApp() {
 
   // True Real-Time (0-second delay) Snapshot Listener for LMS Resources (PDFs & Documents)
   useEffect(() => {
-    if (!user) return;
+    let isFirstResourceSnapshot = true;
     try {
       const resourcesQuery = query(collection(db, "resources"), where("isDeleted", "==", false));
       const unsubscribe = onSnapshot(
         resourcesQuery,
         (snapshot) => {
-          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          let list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
           list.sort((a: any, b: any) => {
             const timeA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;
             const timeB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;
             return timeB - timeA;
           });
+
+          // Filter out enrolled-only resources for guest users in real-time
+          if (user?.role === "guest") {
+            list = list.filter((r: any) => {
+              const vis = (r.visibility || "").toLowerCase();
+              if (vis === "premium" || vis === "paid" || vis === "batch" || vis === "enrolled") return false;
+              const aud = (r.targetAudience || r.audience || "").toLowerCase();
+              if (aud === "paid" || aud === "enrolled" || aud === "batch") return false;
+              if (Array.isArray(r.targetBatchIds) && (r.targetBatchIds.includes("all_paid") || (vis === "batch" && r.targetBatchIds.length > 0))) return false;
+              return vis === "public" || vis === "free" || vis === "guest" || aud === "all" || aud === "free" || aud === "guest";
+            });
+          }
+
           setLmsResources(list);
 
           if (Platform.OS !== "web" && isInitialResourceLoadRef.current) {
             snapshot.docChanges().forEach((change) => {
               if (change.type === "added") {
                 const data = change.doc.data() as any;
-                showPhoneNotification("📚 New Study Material", data.title || "New study PDF uploaded");
+                const createdMs = data.createdAt ? (data.createdAt.toDate ? data.createdAt.toDate().getTime() : new Date(data.createdAt).getTime()) : 0;
+                if (createdMs > 0 && createdMs < (appStartTimeRef.current - 60000)) {
+                  return;
+                }
+                const vis = (data.visibility || "").toLowerCase();
+                const aud = (data.targetAudience || data.audience || "").toLowerCase();
+                const isEnrolledOnly = vis === "premium" || vis === "paid" || vis === "batch" || vis === "enrolled" ||
+                  aud === "paid" || aud === "enrolled" || aud === "batch" ||
+                  (Array.isArray(data.targetBatchIds) && (data.targetBatchIds.includes("all_paid") || (vis === "batch" && data.targetBatchIds.length > 0)));
+                if (user?.role === "guest" && isEnrolledOnly) {
+                  return;
+                }
+                const notifTitle = isAdmin ? "📚 New Resource Added" : (user?.role === "guest" ? "📚 Free Study Material Available" : "📚 New Study Material");
+                showPhoneNotification(notifTitle, data.title || "New study PDF uploaded", {
+                  targetTab: user?.role === "guest" ? "resources" : "lms",
+                  targetSub: "resources",
+                  dedupeId: `res_${change.doc.id}`
+                });
               }
             });
           }
+          isFirstResourceSnapshot = false;
           isInitialResourceLoadRef.current = true;
         },
         (err) => console.log("Real-time resources listener note:", err?.message)
@@ -9214,27 +10294,33 @@ function MainApp() {
   // True Real-Time (0-second delay) Snapshot Listener for Daily Content
   useEffect(() => {
     if (!user) return;
+    let isFirstDailySnapshot = true;
     try {
       const dailyContentQuery = query(collection(db, "dailyContent"), where("isDeleted", "==", false));
       const unsubscribe = onSnapshot(
         dailyContentQuery,
         (snapshot) => {
           const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-          list.sort((a: any, b: any) => {
-            const dateA = a.date || a.createdAt || "";
-            const dateB = b.date || b.createdAt || "";
-            return String(dateB).localeCompare(String(dateA));
-          });
+          list.sort(sortDailyContentDesc);
           setLmsDailyContent(list);
 
           if (Platform.OS !== "web" && isInitialDailyContentLoadRef.current) {
             snapshot.docChanges().forEach((change) => {
               if (change.type === "added") {
                 const data = change.doc.data() as any;
-                showPhoneNotification("📰 Daily Study Content", data.title || "Today's daily study update is now available");
+                const createdMs = data.createdAt ? (data.createdAt.toDate ? data.createdAt.toDate().getTime() : new Date(data.createdAt).getTime()) : 0;
+                if (createdMs > 0 && createdMs < (appStartTimeRef.current - 60000)) {
+                  return;
+                }
+                showPhoneNotification(
+                  "📰 Daily Study Content",
+                  data.title || "Today's daily study update is now available",
+                  { targetTab: "lms", targetSub: "daily-content", dedupeId: `daily_${change.doc.id}` }
+                );
               }
             });
           }
+          isFirstDailySnapshot = false;
           isInitialDailyContentLoadRef.current = true;
         },
         (err) => console.log("Real-time daily content listener note:", err?.message)
@@ -9246,6 +10332,7 @@ function MainApp() {
   // True Real-Time (0-second delay) Snapshot Listener for Recorded Classes
   useEffect(() => {
     if (!user || activeTab !== "lms") return;
+    let isFirstRecordedSnapshot = true;
     try {
       const recordedQuery = query(collection(db, "recorded_classes"), where("isDeleted", "==", false));
       const unsubscribe = onSnapshot(
@@ -9258,6 +10345,24 @@ function MainApp() {
             return timeB - timeA;
           });
           setLmsRecordedClasses(list);
+
+          if (Platform.OS !== "web" && isInitialResourceLoadRef.current) {
+            snapshot.docChanges().forEach((change) => {
+              if (change.type === "added") {
+                const data = change.doc.data() as any;
+                const createdMs = data.createdAt ? (data.createdAt.toDate ? data.createdAt.toDate().getTime() : new Date(data.createdAt).getTime()) : 0;
+                if (createdMs > 0 && createdMs < (appStartTimeRef.current - 60000)) {
+                  return;
+                }
+                showPhoneNotification(
+                  "📹 New Recorded Class Available",
+                  data.title || data.name || "A new recorded lecture has been uploaded.",
+                  { targetTab: "lms", targetSub: "recorded", dedupeId: `rec_${change.doc.id}` }
+                );
+              }
+            });
+          }
+          isFirstRecordedSnapshot = false;
         },
         (err) => console.log("Real-time recorded classes listener note:", err?.message)
       );
@@ -9268,6 +10373,7 @@ function MainApp() {
   // True Real-Time (0-second delay) Snapshot Listener for Daily Quizzes
   useEffect(() => {
     if (!user) return;
+    let isFirstQuizSnapshot = true;
     try {
       const quizzesQuery = query(collection(db, "dailyQuizzes"), where("isDeleted", "==", false));
       const unsubscribe = onSnapshot(
@@ -9284,10 +10390,20 @@ function MainApp() {
           if (Platform.OS !== "web" && isInitialQuizLoadRef.current) {
             snapshot.docChanges().forEach((change) => {
               if (change.type === "added") {
-                showPhoneNotification("⚡ Daily Quiz Live", "Today's daily quiz is now active. Test your knowledge in 5 minutes!");
+                const qData = change.doc.data() as any;
+                const createdMs = qData.createdAt ? (qData.createdAt.toDate ? qData.createdAt.toDate().getTime() : new Date(qData.createdAt).getTime()) : 0;
+                if (createdMs > 0 && createdMs < (appStartTimeRef.current - 60000)) {
+                  return;
+                }
+                showPhoneNotification(
+                  "⚡ Daily Quiz Live",
+                  qData.title || "Today's daily quiz is now active. Test your knowledge in 5 minutes!",
+                  { targetTab: "lms", targetSub: "daily-quiz", dedupeId: `quiz_${change.doc.id}` }
+                );
               }
             });
           }
+          isFirstQuizSnapshot = false;
           isInitialQuizLoadRef.current = true;
         },
         (err) => console.log("Real-time daily quizzes listener note:", err?.message)
@@ -9299,6 +10415,7 @@ function MainApp() {
   // True Real-Time (0-second delay) Snapshot Listener for Admissions
   useEffect(() => {
     if (!user || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "staff")) return;
+    let isFirstAdmissionSnapshot = true;
     try {
       const admissionsQuery = query(collection(db, "admissions"));
       const unsubscribe = onSnapshot(
@@ -9318,10 +10435,19 @@ function MainApp() {
             snapshot.docChanges().forEach((change) => {
               if (change.type === "added") {
                 const data = change.doc.data() as any;
-                showPhoneNotification("🎓 New Student Admission", `${data.name || "A new student"} applied for ${data.course || "course"}`);
+                const createdMs = data.createdAt ? (data.createdAt.toDate ? data.createdAt.toDate().getTime() : new Date(data.createdAt).getTime()) : 0;
+                if (createdMs > 0 && createdMs < (appStartTimeRef.current - 60000)) {
+                  return;
+                }
+                showPhoneNotification(
+                  "🎓 New Student Admission",
+                  `${data.name || "A new student"} applied for ${data.course || "course"}`,
+                  { targetTab: "crm", targetSub: "admissions", dedupeId: `adm_${change.doc.id}` }
+                );
               }
             });
           }
+          isFirstAdmissionSnapshot = false;
           isInitialAdmissionLoadRef.current = true;
         },
         (err) => console.log("Real-time admissions listener note:", err?.message)
@@ -9333,6 +10459,7 @@ function MainApp() {
   // True Real-Time (0-second delay) Snapshot Listener for Leads & Custom Leads
   useEffect(() => {
     if (!user || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "staff")) return;
+    let isFirstLeadSnapshot = true;
     try {
       const leadsQuery = query(collection(db, "leads"));
       const unsubscribe = onSnapshot(
@@ -9352,13 +10479,39 @@ function MainApp() {
             snapshot.docChanges().forEach((change) => {
               if (change.type === "added") {
                 const data = change.doc.data() as any;
-                showPhoneNotification("💬 New Inquiry / Lead", `${data.name || "A visitor"} submitted an inquiry: ${data.message || data.course || "Contact requested"}`);
+                const createdMs = data.createdAt ? (data.createdAt.toDate ? data.createdAt.toDate().getTime() : new Date(data.createdAt).getTime()) : 0;
+                if (createdMs > 0 && createdMs < (appStartTimeRef.current - 60000)) {
+                  return;
+                }
+                showPhoneNotification(
+                  "💬 New Inquiry / Lead",
+                  `${data.name || "A visitor"} submitted an inquiry: ${data.message || data.course || "Contact requested"}`,
+                  { targetTab: "crm", targetSub: "leads", dedupeId: `lead_${change.doc.id}` }
+                );
               }
             });
           }
+          isFirstLeadSnapshot = false;
           isInitialInquiryLoadRef.current = true;
         },
         (err) => console.log("Real-time leads listener note:", err?.message)
+      );
+      return () => unsubscribe();
+    } catch (_) { }
+  }, [user]);
+
+  // True Real-Time Snapshot Listener for Custom Application Leads
+  useEffect(() => {
+    if (!user) return;
+    try {
+      const customLeadsQuery = query(collection(db, "custom_application_leads"), where("isDeleted", "==", false), orderBy("createdAt", "desc"));
+      const unsubscribe = onSnapshot(
+        customLeadsQuery,
+        (snapshot) => {
+          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          setCustomLeads(list);
+        },
+        (err) => console.log("Real-time custom leads listener note:", err?.message)
       );
       return () => unsubscribe();
     } catch (_) { }
@@ -9387,6 +10540,7 @@ function MainApp() {
   // True Real-Time (0-second delay) Snapshot Listener for Website Inquiries
   useEffect(() => {
     if (!user || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "staff")) return;
+    let isFirstInquirySnapshot = true;
     try {
       const inquiriesQuery = query(collection(db, "inquiries"));
       const unsubscribe = onSnapshot(
@@ -9406,10 +10560,19 @@ function MainApp() {
             snapshot.docChanges().forEach((change) => {
               if (change.type === "added") {
                 const data = change.doc.data() as any;
-                showPhoneNotification("📩 New Admission Inquiry", `${data.name || "A candidate"} sent an inquiry: ${data.message || data.subject || "Contact requested"}`);
+                const createdMs = data.createdAt ? (data.createdAt.toDate ? data.createdAt.toDate().getTime() : new Date(data.createdAt).getTime()) : 0;
+                if (createdMs > 0 && createdMs < (appStartTimeRef.current - 60000)) {
+                  return;
+                }
+                showPhoneNotification(
+                  "📩 New Admission Inquiry",
+                  `${data.name || "A candidate"} sent an inquiry: ${data.message || data.subject || "Contact requested"}`,
+                  { targetTab: "crm", targetSub: "enquiries", dedupeId: `inq_${change.doc.id}` }
+                );
               }
             });
           }
+          isFirstInquirySnapshot = false;
           isInitialInquiryLoadRef.current = true;
         },
         (err) => console.log("Real-time inquiries listener note:", err?.message)
@@ -9421,6 +10584,7 @@ function MainApp() {
   // True Real-Time (0-second delay) Snapshot Listener for Tests & Exams in Test Portal (Guests & Students)
   useEffect(() => {
     if (!user) return;
+    let isFirstTestSnapshot = true;
 
     try {
       const testsQuery = query(collection(db, "tests"), where("isDeleted", "==", false));
@@ -9447,9 +10611,39 @@ function MainApp() {
               if (t.targetAudience === "all" || !t.targetAudience) return true;
               if (t.targetAudience === "paid") return true;
               if (t.targetAudience === "batch") {
-                const tBatch = String(t.targetBatch || "").trim().toLowerCase();
-                const sBatch = String(studentBatchName).trim().toLowerCase();
-                return tBatch !== "" && sBatch !== "" && tBatch === sBatch;
+                const allowedBatches = String(t.targetBatch || "")
+                  .split(",")
+                  .map((b: string) => b.trim().toLowerCase())
+                  .filter(Boolean);
+                if (allowedBatches.length === 0) return false;
+
+                const studentBatches: string[] = [];
+                if (myStudent?.batch) studentBatches.push(String(myStudent.batch).trim().toLowerCase());
+                if (myStudent?.batchName) studentBatches.push(String(myStudent.batchName).trim().toLowerCase());
+                if (user?.batch) studentBatches.push(String(user.batch).trim().toLowerCase());
+                if (user?.batchName) studentBatches.push(String(user.batchName).trim().toLowerCase());
+                const arrBatches = myStudent?.batches || user?.batches;
+                if (Array.isArray(arrBatches)) {
+                  arrBatches.forEach((b: any) => {
+                    if (b) studentBatches.push(String(b).trim().toLowerCase());
+                  });
+                }
+
+                return studentBatches.some((sB: string) => allowedBatches.includes(sB));
+              }
+              if (t.targetAudience === "special_mock" || t.isSpecialMock || t.testType === "special_mock") {
+                const smAllowed = String(t.targetBatch || "").split(",").map((b: string) => b.trim().toLowerCase()).filter(Boolean);
+                const smBatches: string[] = [];
+                if (myStudent?.batch) smBatches.push(String(myStudent.batch).trim().toLowerCase());
+                if (myStudent?.batchName) smBatches.push(String(myStudent.batchName).trim().toLowerCase());
+                if (user?.batch) smBatches.push(String(user.batch).trim().toLowerCase());
+                if (user?.batchName) smBatches.push(String(user.batchName).trim().toLowerCase());
+                const smArr = myStudent?.batches || user?.batches;
+                if (Array.isArray(smArr)) { smArr.forEach((b: any) => { if (b) smBatches.push(String(b).trim().toLowerCase()); }); }
+                if (smAllowed.length === 0 || smBatches.some((sB: string) => smAllowed.includes(sB))) return true;
+                const smId = String(myStudent?.id || user?.userId || user?.username || "").toLowerCase();
+                if (smId && t.mockConfig?.mockRollNumbers?.[smId]) return true;
+                return false;
               }
               return false;
             });
@@ -9465,12 +10659,38 @@ function MainApp() {
             snapshot.docChanges().forEach((change) => {
               if (change.type === "added") {
                 const data = change.doc.data() as any;
+                const now = Date.now();
+
+                // 1. Strict time cutoff: Do NOT fire for historical tests created prior to app launch
+                const createdMs = parseTestTimeMs(data.createdAt);
+                if (createdMs > 0 && createdMs < (appStartTimeRef.current - 60000)) {
+                  return;
+                }
+
+                // 2. Validate expiration / ended status
+                const startMs = data.startTime ? parseTestTimeMs(data.startTime) : (data.createdAt ? parseTestTimeMs(data.createdAt) : 0);
+                const durationMs = (data.durationMinutes ? Number(data.durationMinutes) : 60) * 60 * 1000;
+                const endMs = data.endTime ? parseTestTimeMs(data.endTime) : (startMs ? startMs + durationMs : 0);
+                const isEnded = (endMs > 0 && now > endMs) || data.status === "completed" || data.status === "ended";
+                if (isEnded) return;
+
+                // 3. Null sanitization for test title
+                const rawTitle = data.title || data.name || data.examName;
+                const testTitle = (typeof rawTitle === "string" && rawTitle.trim() !== "" && rawTitle.trim().toLowerCase() !== "null")
+                  ? rawTitle.trim()
+                  : "A new exam is now open for you!";
+
                 if (data.published !== false && data.status !== "draft_extraction") {
-                  showPhoneNotification("📝 New Test Available", data.title || "A new exam is now open for you!");
+                  showPhoneNotification(
+                    user?.role === "guest" ? "📝 Free Test Available" : "📝 New Test Available",
+                    testTitle,
+                    { targetTab: "test", targetSub: "available", dedupeId: `test_${change.doc.id}` }
+                  );
                 }
               }
             });
           }
+          isFirstTestSnapshot = false;
           isInitialTestLoadRef.current = true;
         },
         (err) => console.log("Real-time tests listener note:", err?.message)
@@ -10116,9 +11336,39 @@ function MainApp() {
           if (t.targetAudience === "all" || !t.targetAudience) return true;
           if (t.targetAudience === "paid") return true;
           if (t.targetAudience === "batch") {
-            const tBatch = String(t.targetBatch || "").trim().toLowerCase();
-            const sBatch = String(studentBatchName).trim().toLowerCase();
-            return tBatch !== "" && sBatch !== "" && tBatch === sBatch;
+            const allowedBatches = String(t.targetBatch || "")
+              .split(",")
+              .map((b: string) => b.trim().toLowerCase())
+              .filter(Boolean);
+            if (allowedBatches.length === 0) return false;
+
+            const studentBatches: string[] = [];
+            if (myStudent?.batch) studentBatches.push(String(myStudent.batch).trim().toLowerCase());
+            if (myStudent?.batchName) studentBatches.push(String(myStudent.batchName).trim().toLowerCase());
+            if (user?.batch) studentBatches.push(String(user.batch).trim().toLowerCase());
+            if (user?.batchName) studentBatches.push(String(user.batchName).trim().toLowerCase());
+            const arrBatches = myStudent?.batches || user?.batches;
+            if (Array.isArray(arrBatches)) {
+              arrBatches.forEach((b: any) => {
+                if (b) studentBatches.push(String(b).trim().toLowerCase());
+              });
+            }
+
+            return studentBatches.some((sB: string) => allowedBatches.includes(sB));
+          }
+          if (t.targetAudience === "special_mock" || t.isSpecialMock || t.testType === "special_mock") {
+            const smAllowed = String(t.targetBatch || "").split(",").map((b: string) => b.trim().toLowerCase()).filter(Boolean);
+            const smBatches: string[] = [];
+            if (myStudent?.batch) smBatches.push(String(myStudent.batch).trim().toLowerCase());
+            if (myStudent?.batchName) smBatches.push(String(myStudent.batchName).trim().toLowerCase());
+            if (user?.batch) smBatches.push(String(user.batch).trim().toLowerCase());
+            if (user?.batchName) smBatches.push(String(user.batchName).trim().toLowerCase());
+            const smArr = myStudent?.batches || user?.batches;
+            if (Array.isArray(smArr)) { smArr.forEach((b: any) => { if (b) smBatches.push(String(b).trim().toLowerCase()); }); }
+            if (smAllowed.length === 0 || smBatches.some((sB: string) => smAllowed.includes(sB))) return true;
+            const smId = String(myStudent?.id || user?.userId || user?.username || "").toLowerCase();
+            if (smId && t.mockConfig?.mockRollNumbers?.[smId]) return true;
+            return false;
           }
           return false;
         });
@@ -10412,12 +11662,153 @@ function MainApp() {
     }
   };
 
+  // ── Real-Time Sync: Student Access Requests (Recorded Classes & LMS Resources) ──
+  // Watches the student's own access_requests in Firestore in real time.
+  // When admin APPROVES or REJECTS a request:
+  // 1. Immediately reloads recorded classes so "⏳ Request Pending" flips to "Watch Recording" (or back to "Request Access" if rejected)
+  // 2. Immediately reloads LMS resources so newly approved PDFs/docs unlock without refresh
+  // 3. Immediately reloads live sessions so access decisions are reflected
+  // Works identically in both Website and native Android APK.
+  useEffect(() => {
+    if (!user || user.role === "admin" || user.role === "staff" || user.role === "teacher") return;
+
+    const loggedStudent = getLoggedInStudent(user, students);
+    const targetStudentIds = Array.from(new Set([
+      user?.userId,
+      user?.studentId,
+      user?.id,
+      user?._id,
+      user?.username,
+      loggedStudent?.id,
+      loggedStudent?.userId,
+      loggedStudent?.studentId,
+      loggedStudent?.rollNumber
+    ].filter(Boolean))) as string[];
+
+    if (targetStudentIds.length === 0) return;
+
+    let unsub: (() => void) | null = null;
+    let isInitial = true;
+
+    try {
+      const qRequests = targetStudentIds.length === 1
+        ? query(collection(db, "access_requests"), where("studentId", "==", targetStudentIds[0]))
+        : query(collection(db, "access_requests"), where("studentId", "in", targetStudentIds.slice(0, 10)));
+
+      unsub = onSnapshot(
+        qRequests,
+        (snapshot) => {
+          let hasStatusChange = false;
+          let approvedItemTitle = "";
+          let rejectedItemTitle = "";
+
+          snapshot.docChanges().forEach((change) => {
+            if (change.type === "modified" || change.type === "added") {
+              const data = change.doc.data() as any;
+              const status = (data.status || "").toUpperCase();
+              if (status === "APPROVED") {
+                hasStatusChange = true;
+                if (!isInitial) {
+                  approvedItemTitle = data.entityName || data.title || data.resourceTitle || data.className || "Requested Content";
+                }
+              } else if (status === "REJECTED") {
+                hasStatusChange = true;
+                if (!isInitial) {
+                  rejectedItemTitle = data.entityName || data.title || data.resourceTitle || data.className || "Requested Content";
+                }
+              }
+            }
+          });
+
+          if (isInitial) {
+            isInitial = false;
+            return;
+          }
+
+          if (hasStatusChange) {
+            console.log("[AccessSync] Real-time access decision received from admin. Updating student views...");
+            loadRecordedClasses();
+            loadLmsResources();
+            loadLiveSessions();
+            setRequestingAccessIds(new Set());
+
+            if (approvedItemTitle) {
+              Alert.alert(
+                "Access Granted ✅",
+                `Your request to access "${approvedItemTitle}" has been approved by admin! You can now watch or view it.`
+              );
+            } else if (rejectedItemTitle) {
+              Alert.alert(
+                "Access Declined",
+                `Your access request for "${rejectedItemTitle}" was reviewed and declined by admin.`
+              );
+            }
+          }
+        },
+        (err) => console.log("Student access_requests listener note:", err?.message)
+      );
+    } catch (e) {
+      console.log("Failed to attach student access_requests listener:", e);
+    }
+
+    return () => {
+      if (unsub) unsub();
+    };
+  }, [user?.userId, user?.studentId, user?.id, user?._id, user?.role, students?.length]);
+
+  // ── Real-Time Sync: Live Sessions & Dashboard Live Class Indicator ───────────
+  // Watches the live_sessions collection in Firestore in real time.
+  // The moment an admin starts a class (LIVE / JOINING), ends a class (ENDED),
+  // or reschedules/adds a session:
+  // 1. Immediately reloads live sessions via loadLiveSessions()
+  // 2. Real-time updates lmsLiveSessions state
+  // 3. Immediately triggers the Student Dashboard "🟢 LIVE NOW" indicator badge
+  //    without any page reload or tab switch in both Website and Android APK.
+  useEffect(() => {
+    if (!user) return;
+
+    let unsubLive: (() => void) | null = null;
+    let isInitialLive = true;
+
+    try {
+      unsubLive = onSnapshot(
+        collection(db, "live_sessions"),
+        (snapshot) => {
+          if (isInitialLive) {
+            isInitialLive = false;
+            return;
+          }
+          console.log("[LiveSync] Live sessions snapshot update detected. Syncing live classes in real-time...");
+          loadLiveSessions();
+        },
+        (err) => console.log("Live sessions real-time listener note:", err?.message)
+      );
+    } catch (e) {
+      console.log("Failed to attach live_sessions listener:", e);
+    }
+
+    return () => {
+      if (unsubLive) unsubLive();
+    };
+  }, [user?.id, user?.userId, user?.role]);
 
   const loadLmsDailyContent = async () => {
     if (!user) return;
     try {
-      const res = await api.get("/lms/daily-content");
-      setLmsDailyContent(res?.data || res || []);
+      const myStudent = getLoggedInStudent(user, students) || user;
+      const isPaid = (Number(myStudent?.feesPaid) > 0) || myStudent?.type === "paid" || user?.type === "paid" || myStudent?.status === "active" || myStudent?.status === "enrolled" || user?.status === "active" || user?.status === "enrolled" || (Number(myStudent?.totalFees) > 0 && Number(myStudent?.feesPaid) >= Number(myStudent?.totalFees)) || Boolean(myStudent?.batch || myStudent?.batchName || user?.batch || user?.batchName);
+      let queryParam = "";
+      if (user.role === "student") {
+        queryParam = isPaid ? "?isPaid=true" : "";
+      }
+      const res = await api.get(`/lms/daily-content${queryParam}`);
+      const list = res?.data || res || [];
+      if (Array.isArray(list)) {
+        list.sort(sortDailyContentDesc);
+        setLmsDailyContent(list);
+      } else {
+        setLmsDailyContent([]);
+      }
     } catch (e) {
       console.log("Failed loading LMS daily content:", e);
       setLmsDailyContent([]);
@@ -10459,12 +11850,14 @@ function MainApp() {
     return trimmed;
   };
 
-  const toggleDailyContentBatchSelection = (batchName: string) => {
+  const toggleDailyContentBatchSelection = (batchIdentifier: string) => {
+    if (!batchIdentifier) return;
+    const cleanId = String(batchIdentifier).trim();
     let current = dailyContentForm.targetBatch ? dailyContentForm.targetBatch.split(",").map(s => s.trim()).filter(Boolean) : [];
-    if (current.includes(batchName)) {
-      current = current.filter(b => b !== batchName);
+    if (current.includes(cleanId)) {
+      current = current.filter(b => b !== cleanId);
     } else {
-      current.push(batchName);
+      current.push(cleanId);
     }
     setDailyContentForm({ ...dailyContentForm, targetBatch: current.join(",") });
   };
@@ -10710,6 +12103,12 @@ function MainApp() {
         requestIds: sacsSelectedIds,
         grantExpiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString()
       });
+      // Remove all matching sacs alerts from Admin Dashboard
+      sacsSelectedIds.forEach(reqId => {
+        const alertId = `sacs_req_${reqId}`;
+        deleteDoc(doc(db, "admin_alerts", alertId)).catch(() => {});
+      });
+      setAdminAlerts(prev => prev.filter(a => !sacsSelectedIds.some(rid => a.id === `sacs_req_${rid}`)));
       Alert.alert("Success", `Approved ${sacsSelectedIds.length} requests successfully.`);
       setSacsSelectedIds([]);
       loadSacsRequests();
@@ -10723,6 +12122,10 @@ function MainApp() {
       await api.post(`/access-rules/admin/requests/${requestId}/approve`, {
         grantExpiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString()
       });
+      // Remove matching alert from Admin Dashboard
+      const sacsApproveAlertId = `sacs_req_${requestId}`;
+      deleteDoc(doc(db, "admin_alerts", sacsApproveAlertId)).catch(() => {});
+      setAdminAlerts(prev => prev.filter(a => a.id !== sacsApproveAlertId));
       Alert.alert("Success", "Request approved successfully.");
       loadSacsRequests();
     } catch (e: any) {
@@ -10735,6 +12138,10 @@ function MainApp() {
       await api.post(`/access-rules/admin/requests/${requestId}/reject`, {
         reason: "Rejected by Administrator"
       });
+      // Remove matching alert from Admin Dashboard
+      const sacsRejectAlertId = `sacs_req_${requestId}`;
+      deleteDoc(doc(db, "admin_alerts", sacsRejectAlertId)).catch(() => {});
+      setAdminAlerts(prev => prev.filter(a => a.id !== sacsRejectAlertId));
       Alert.alert("Success", "Request rejected successfully.");
       loadSacsRequests();
     } catch (e: any) {
@@ -10848,8 +12255,13 @@ function MainApp() {
       } else if (finalVisibility === "batch") {
         if (targetBatchIds) {
           finalTargetBatchIds = typeof targetBatchIds === "string"
-            ? targetBatchIds.split(",").map((s: string) => s.trim()).filter(Boolean)
-            : (Array.isArray(targetBatchIds) ? targetBatchIds : []);
+            ? targetBatchIds.split(",").map((s: string) => s.trim()).filter(Boolean).filter((s: string) => s !== "all")
+            : (Array.isArray(targetBatchIds) ? targetBatchIds.filter((s: string) => s !== "all") : []);
+        }
+        if (finalTargetBatchIds.length === 0) {
+          Alert.alert("Required", "Please select at least one target batch for Batch-Wise visibility.");
+          setIsSavingResource(false);
+          return;
         }
       }
 
@@ -11028,7 +12440,7 @@ function MainApp() {
             const subList = Array.isArray(fetchedSubjs) ? fetchedSubjs : fetchedSubjs?.data || [];
             const match = subList.find((s: any) => (s.name || s.title || '').trim().toLowerCase() === customSubjectName.trim().toLowerCase());
             if (match) newSubjId = match.id || match._id;
-          } catch (_) {}
+          } catch (_) { }
           if (!newSubjId) {
             const existingSubj = lmsSubjects.find((s: any) => (s.courseId === courseId || s.courseId === 'erp_course_ldc') && (s.name || s.title || '').trim().toLowerCase() === customSubjectName.trim().toLowerCase());
             if (existingSubj) {
@@ -11049,7 +12461,7 @@ function MainApp() {
             const topList = Array.isArray(fetchedTopics) ? fetchedTopics : fetchedTopics?.data || [];
             const match = topList.find((t: any) => (t.name || t.title || '').trim().toLowerCase() === customTopicName.trim().toLowerCase());
             if (match) newTopId = match.id || match._id;
-          } catch (_) {}
+          } catch (_) { }
           if (!newTopId) {
             const existingTop = lmsTopics.find((t: any) => t.subjectId === newSubjId && (t.name || t.title || '').trim().toLowerCase() === customTopicName.trim().toLowerCase());
             if (existingTop) {
@@ -11075,7 +12487,7 @@ function MainApp() {
             const topList = Array.isArray(fetchedTopics) ? fetchedTopics : fetchedTopics?.data || [];
             const match = topList.find((t: any) => (t.name || t.title || '').trim().toLowerCase() === customTopicName.trim().toLowerCase());
             if (match) newTopId = match.id || match._id;
-          } catch (_) {}
+          } catch (_) { }
           if (!newTopId) {
             const existingTop = lmsTopics.find((t: any) => t.subjectId === subjectId && (t.name || t.title || '').trim().toLowerCase() === customTopicName.trim().toLowerCase());
             if (existingTop) {
@@ -11234,7 +12646,7 @@ function MainApp() {
             const subList = Array.isArray(fetchedSubjs) ? fetchedSubjs : fetchedSubjs?.data || [];
             const match = subList.find((s: any) => (s.name || s.title || '').trim().toLowerCase() === customSubjectName.trim().toLowerCase());
             if (match) newSubjId = match.id || match._id;
-          } catch (_) {}
+          } catch (_) { }
           if (!newSubjId) {
             const existingSubj = lmsSubjects.find((s: any) => (s.courseId === courseId || s.courseId === 'erp_course_ldc') && (s.name || s.title || '').trim().toLowerCase() === customSubjectName.trim().toLowerCase());
             if (existingSubj) {
@@ -11255,7 +12667,7 @@ function MainApp() {
             const topList = Array.isArray(fetchedTopics) ? fetchedTopics : fetchedTopics?.data || [];
             const match = topList.find((t: any) => (t.name || t.title || '').trim().toLowerCase() === customTopicName.trim().toLowerCase());
             if (match) newTopId = match.id || match._id;
-          } catch (_) {}
+          } catch (_) { }
           if (!newTopId) {
             const existingTop = lmsTopics.find((t: any) => t.subjectId === newSubjId && (t.name || t.title || '').trim().toLowerCase() === customTopicName.trim().toLowerCase());
             if (existingTop) {
@@ -11281,7 +12693,7 @@ function MainApp() {
             const topList = Array.isArray(fetchedTopics) ? fetchedTopics : fetchedTopics?.data || [];
             const match = topList.find((t: any) => (t.name || t.title || '').trim().toLowerCase() === customTopicName.trim().toLowerCase());
             if (match) newTopId = match.id || match._id;
-          } catch (_) {}
+          } catch (_) { }
           if (!newTopId) {
             const existingTop = lmsTopics.find((t: any) => t.subjectId === subjectId && (t.name || t.title || '').trim().toLowerCase() === customTopicName.trim().toLowerCase());
             if (existingTop) {
@@ -11670,6 +13082,10 @@ function MainApp() {
   const resolveEnquiry = async (id: string) => {
     try {
       await api.patch(`/crm/inquiry/${id}`, { status: "resolved" });
+      // Remove matching crm_inquiry alerts from Admin Dashboard
+      const resolveInqAlerts = adminAlerts.filter((a) => a.type === "crm_inquiry" && (a.sourceDocId === id || (a.id || "").includes(id)));
+      resolveInqAlerts.forEach((a) => { deleteDoc(doc(db, "admin_alerts", a.id)).catch(() => {}); });
+      if (resolveInqAlerts.length > 0) setAdminAlerts((prev) => prev.filter((a) => !(a.type === "crm_inquiry" && (a.sourceDocId === id || (a.id || "").includes(id)))));
       loadEnquiries();
     } catch {
       Alert.alert("Error", "Could not update status.");
@@ -11688,6 +13104,10 @@ function MainApp() {
   const deleteEnquiry = async (id: string) => {
     try {
       await api.delete(`/crm/inquiry/${id}`);
+      // Remove matching crm_inquiry alerts from Admin Dashboard
+      const deleteInqAlerts = adminAlerts.filter((a) => a.type === "crm_inquiry" && (a.sourceDocId === id || (a.id || "").includes(id)));
+      deleteInqAlerts.forEach((a) => { deleteDoc(doc(db, "admin_alerts", a.id)).catch(() => {}); });
+      if (deleteInqAlerts.length > 0) setAdminAlerts((prev) => prev.filter((a) => !(a.type === "crm_inquiry" && (a.sourceDocId === id || (a.id || "").includes(id)))));
       loadEnquiries();
     } catch {
       Alert.alert("Error", "Could not delete inquiry.");
@@ -11781,7 +13201,7 @@ function MainApp() {
 
       const normalized = parsed.map((q: any) => {
         const questionEn = q.questionEn || q.questionText || q.question || "";
-        const questionTa = q.questionTa || "";
+        const questionTa = q.questionTa || q.question_tamil || q.questionTamil || q["question tamil"] || q["question_ta"] || q["questionTa"] || "";
         const questionMl = q.questionMl || "";
         const questionTe = sanitizeTelugu(q.questionTe || "");
         const formula = q.formula || "";
@@ -11795,14 +13215,35 @@ function MainApp() {
         };
         if (q.options && typeof q.options === "object" && !Array.isArray(q.options)) {
           ["A", "B", "C", "D"].forEach(k => {
-            optionsObj[k].en = q.options[k]?.en || q.options[k] || "";
-            optionsObj[k].ta = q.options[k]?.ta || "";
-            optionsObj[k].ml = q.options[k]?.ml || "";
-            optionsObj[k].te = q.options[k]?.te || "";
+            const lk = k.toLowerCase();
+            const optVal = q.options[k] || q.options[lk] || "";
+            if (typeof optVal === "object" && optVal !== null) {
+              optionsObj[k].en = optVal.en || optVal.English || "";
+              optionsObj[k].ta = optVal.ta || optVal.Tamil || "";
+              optionsObj[k].ml = optVal.ml || optVal.Malayalam || "";
+              optionsObj[k].te = optVal.te || optVal.Telugu || "";
+            } else if (typeof optVal === "string") {
+              if (optVal.includes(" / ")) {
+                const parts = optVal.split(" / ");
+                optionsObj[k].en = parts[0].trim();
+                optionsObj[k].ta = parts.slice(1).join(" / ").trim();
+              } else if (/[\u0B80-\u0BFF]/.test(optVal) && !/[a-zA-Z]/.test(optVal)) {
+                optionsObj[k].ta = optVal.trim();
+              } else {
+                optionsObj[k].en = optVal.trim();
+              }
+            }
           });
         } else if (Array.isArray(q.options)) {
           ["A", "B", "C", "D"].forEach((k, idx) => {
-            optionsObj[k].en = q.options[idx] || "";
+            const optVal = String(q.options[idx] || "");
+            if (optVal.includes(" / ")) {
+              const parts = optVal.split(" / ");
+              optionsObj[k].en = parts[0].trim();
+              optionsObj[k].ta = parts.slice(1).join(" / ").trim();
+            } else {
+              optionsObj[k].en = optVal;
+            }
           });
         }
         ["A", "B", "C", "D"].forEach(k => {
@@ -11901,7 +13342,7 @@ function MainApp() {
         questionPaperBase64: genMode === "file" ? pdfBase64 : undefined,
         answerKeyBase64: akBase64 || undefined,
         filename: genMode === "file" ? pdfFilename : "pasted_text.txt",
-        title: newPdfTest.title || "Untitled Test",
+        title: (specialMockTitle && specialMockTitle.trim()) || newPdfTest.title || "Untitled Test",
         mode: extractMode
       }, undefined, 180000); // 3 minutes timeout for AI processing
       if (abortCtrl.signal.aborted) return;
@@ -11977,76 +13418,140 @@ function MainApp() {
     );
   };
 
-  // Upload & Attach Image to Extracted Question (uploads to Google Drive)
-  const handleUploadQuestionImage = (qIdx: number) => {
-    if (typeof document === "undefined") return;
-    const fileInput = document.createElement("input");
-    fileInput.type = "file";
-    fileInput.accept = "image/*";
-    fileInput.onchange = async (e: any) => {
-      const file = e.target?.files?.[0];
-      if (!file) return;
-      setUploadingImageQIdx(qIdx);
-      try {
-        // First compress locally (keeps bandwidth reasonable and prevents Firestore size limit errors)
-        const compressedBase64 = await compressFileImage(file, 800, 800, 0.7);
-
-        // Try uploading to Google Drive via backend
-        let finalImageUrl: string = compressedBase64;
-        let uploadedToDrive = false;
-        let driveRes: any = null;
-
+  // Upload & Attach Image to Extracted Question (uploads to Google Drive, Web & APK)
+  const handleUploadQuestionImage = async (qIdx: number) => {
+    if (Platform.OS === "web") {
+      if (typeof document === "undefined") return;
+      const fileInput = document.createElement("input");
+      fileInput.type = "file";
+      fileInput.accept = "image/*";
+      fileInput.onchange = async (e: any) => {
+        const file = e.target?.files?.[0];
+        if (!file) return;
+        setUploadingImageQIdx(qIdx);
         try {
-          driveRes = await api.post("/test-portal/test-creation/upload-question-image", {
-            base64: compressedBase64,
-            fileName: `q${qIdx + 1}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`,
-            testTitle: newPdfTest.title || "Test"
-          });
-          if (driveRes?.driveUrl || driveRes?.imageUrl) {
-            uploadedToDrive = true;
+          const compressedBase64 = await compressFileImage(file, 800, 800, 0.7);
+          let driveRes: any = null;
+          let uploadedToDrive = false;
+          try {
+            driveRes = await api.post("/test-portal/test-creation/upload-question-image", {
+              base64: compressedBase64,
+              fileName: `q${qIdx + 1}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`,
+              testTitle: (specialMockTitle && specialMockTitle.trim()) || newPdfTest.title || "Test"
+            });
+            const resData = driveRes?.data || driveRes || {};
+            if (resData?.driveUrl || resData?.imageUrl || resData?.success) {
+              uploadedToDrive = true;
+            }
+          } catch (driveErr: any) {
+            console.warn("[Drive] Question image upload failed, falling back to base64:", driveErr?.message);
           }
-        } catch (driveErr: any) {
-          console.warn("[Drive] Question image upload failed, falling back to base64:", driveErr?.message);
+
+          const resData = driveRes?.data || driveRes || {};
+          const driveUrl = resData?.driveUrl || (typeof resData?.imageUrl === "string" && resData.imageUrl.startsWith("http") ? resData.imageUrl : "");
+          const driveFileId = resData?.fileId || "";
+
+          setExtractedQuestions(prev => {
+            const updated = [...prev];
+            updated[qIdx] = {
+              ...updated[qIdx],
+              imageUrl: compressedBase64,
+              imageBase64: compressedBase64,
+              driveUrl: driveUrl,
+              driveFileId: driveFileId
+            };
+            return updated;
+          });
+          if (editingQIdx === qIdx && editingQData) {
+            setEditingQData((prev: any) => prev ? {
+              ...prev,
+              imageUrl: compressedBase64,
+              imageBase64: compressedBase64,
+              driveUrl: driveUrl,
+              driveFileId: driveFileId
+            } : null);
+          }
+
+          Alert.alert(
+            "Image Attached!",
+            uploadedToDrive
+              ? `Image uploaded to Google Drive & saved for live exam on Question #${qIdx + 1}.`
+              : `Image attached to Question #${qIdx + 1} (stored locally — Drive upload unavailable).`
+          );
+        } catch (err: any) {
+          Alert.alert("Upload Error", err.message || "Could not read image file.");
+        } finally {
+          setUploadingImageQIdx(null);
         }
-
-        const driveUrl = driveRes?.driveUrl || (typeof driveRes?.imageUrl === "string" && driveRes.imageUrl.startsWith("http") ? driveRes.imageUrl : "");
-        const driveFileId = driveRes?.fileId || "";
-
-        // Update extractedQuestions and editingQData with local Base64 (for instant live test) + Drive URL (for backup)
-        setExtractedQuestions(prev => {
-          const updated = [...prev];
-          updated[qIdx] = {
-            ...updated[qIdx],
-            imageUrl: compressedBase64,
-            imageBase64: compressedBase64,
-            driveUrl: driveUrl,
-            driveFileId: driveFileId
-          };
-          return updated;
+      };
+      fileInput.click();
+    } else {
+      // Native Mobile (APK / Android)
+      try {
+        const res = await DocumentPicker.getDocumentAsync({
+          type: ["image/*"],
+          copyToCacheDirectory: true,
         });
-        if (editingQIdx === qIdx && editingQData) {
-          setEditingQData((prev: any) => prev ? {
-            ...prev,
-            imageUrl: compressedBase64,
-            imageBase64: compressedBase64,
-            driveUrl: driveUrl,
-            driveFileId: driveFileId
-          } : null);
-        }
+        if (!res.canceled && res.assets && res.assets.length > 0) {
+          const asset = res.assets[0];
+          setUploadingImageQIdx(qIdx);
+          const rawBase64 = await FileSystem.readAsStringAsync(asset.uri, {
+            encoding: "base64",
+          });
+          const mime = asset.mimeType || "image/jpeg";
+          const compressedBase64 = `data:${mime};base64,${rawBase64}`;
+          let driveRes: any = null;
+          let uploadedToDrive = false;
+          try {
+            driveRes = await api.post("/test-portal/test-creation/upload-question-image", {
+              base64: compressedBase64,
+              fileName: `q${qIdx + 1}_${asset.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`,
+              testTitle: (specialMockTitle && specialMockTitle.trim()) || newPdfTest.title || "Test"
+            });
+            const resData = driveRes?.data || driveRes || {};
+            if (resData?.driveUrl || resData?.imageUrl || resData?.success) {
+              uploadedToDrive = true;
+            }
+          } catch (driveErr: any) {
+            console.warn("[Drive] Mobile question image upload fallback:", driveErr?.message);
+          }
+          const resData = driveRes?.data || driveRes || {};
+          const driveUrl = resData?.driveUrl || (typeof resData?.imageUrl === "string" && resData.imageUrl.startsWith("http") ? resData.imageUrl : "");
+          const driveFileId = resData?.fileId || "";
 
-        Alert.alert(
-          "Image Attached!",
-          uploadedToDrive
-            ? `Image uploaded to Google Drive & saved for live exam on Question #${qIdx + 1}.`
-            : `Image attached to Question #${qIdx + 1} (stored locally — Drive upload unavailable).`
-        );
+          setExtractedQuestions(prev => {
+            const updated = [...prev];
+            updated[qIdx] = {
+              ...updated[qIdx],
+              imageUrl: compressedBase64,
+              imageBase64: compressedBase64,
+              driveUrl: driveUrl,
+              driveFileId: driveFileId
+            };
+            return updated;
+          });
+          if (editingQIdx === qIdx && editingQData) {
+            setEditingQData((prev: any) => prev ? {
+              ...prev,
+              imageUrl: compressedBase64,
+              imageBase64: compressedBase64,
+              driveUrl: driveUrl,
+              driveFileId: driveFileId
+            } : null);
+          }
+          Alert.alert(
+            "Image Attached!",
+            uploadedToDrive
+              ? `Image uploaded to Google Drive & saved for live exam on Question #${qIdx + 1}.`
+              : `Image attached to Question #${qIdx + 1} (stored locally — Drive upload unavailable).`
+          );
+        }
       } catch (err: any) {
-        Alert.alert("Upload Error", err.message || "Could not read image file.");
+        Alert.alert("Upload Error", err.message || "Could not select image file.");
       } finally {
         setUploadingImageQIdx(null);
       }
-    };
-    fileInput.click();
+    }
   };
 
   // Create Test from AI Extracted Questions
@@ -12087,7 +13592,7 @@ function MainApp() {
         testMode: newPdfTest.testMode || "online",
         schedulingMode: newPdfTest.schedulingMode || "fixed",
         schedulingType: newPdfTest.schedulingMode || "fixed",
-        subjectSections: (newPdfTest.testType === "mock" && Array.isArray(newPdfTest.subjectSections))
+        subjectSections: ((newPdfTest.testType === "mock" || newPdfTest.testType === "weekly") && Array.isArray(newPdfTest.subjectSections))
           ? newPdfTest.subjectSections
             .filter((s: any) => s && String(s.subject || s.customSubject || "").trim())
             .map((s: any) => ({
@@ -12466,6 +13971,7 @@ function MainApp() {
       }
       await api.put(`/erp/student/${student.id}`, payload);
       setStudents(prev => prev.map(s => (s.id === student.id ? { ...s, ...payload } : s)));
+      loadStudents(true);
       Alert.alert(
         "Access Status Updated",
         `Service access for ${getStudentName(student)} has been ${newBlockState ? "restricted/blocked" : "unblocked and restored"}.`
@@ -12511,6 +14017,7 @@ function MainApp() {
       try {
         await api.put(`/erp/student/${s.id}`, studentUpdatePayload);
         setStudents(prev => prev.map(item => item.id === s.id ? { ...item, ...studentUpdatePayload } : item));
+        loadStudents(true);
       } catch (updateErr) {
         console.warn("Failed to update student feeAlert record:", updateErr);
       }
@@ -12921,6 +14428,10 @@ function MainApp() {
         setIsProcessingProfile(id);
         try {
           await api.put(`/erp/profile-request/${id}/approve`, { reviewedBy: user.name }, undefined, 60000);
+          // Remove matching alert from Admin Dashboard
+          const approveProfileAlertId = `profile_req_${id}`;
+          deleteDoc(doc(db, "admin_alerts", approveProfileAlertId)).catch(() => {});
+          setAdminAlerts(prev => prev.filter(a => a.id !== approveProfileAlertId));
           Alert.alert("Success", "Profile request approved successfully.");
           setViewingProfileReqId(null);
           loadProfileRequests();
@@ -12944,6 +14455,10 @@ function MainApp() {
         setIsProcessingProfile(id);
         try {
           await api.put(`/erp/profile-request/${id}/reject`, { reviewedBy: user.name, rejectionReason: reason });
+          // Remove matching alert from Admin Dashboard
+          const rejectProfileAlertId = `profile_req_${id}`;
+          deleteDoc(doc(db, "admin_alerts", rejectProfileAlertId)).catch(() => {});
+          setAdminAlerts(prev => prev.filter(a => a.id !== rejectProfileAlertId));
           Alert.alert("Success", "Profile request rejected successfully.");
           setViewingProfileReqId(null);
           loadProfileRequests();
@@ -13153,7 +14668,7 @@ function MainApp() {
         testMode: newTest.testMode || "online",
         schedulingMode: newTest.schedulingMode || "fixed",
         schedulingType: newTest.schedulingMode || "fixed",
-        subjectSections: (newTest.testType === "mock" && Array.isArray(newTest.subjectSections))
+        subjectSections: ((newTest.testType === "mock" || newTest.testType === "weekly") && Array.isArray(newTest.subjectSections))
           ? newTest.subjectSections
             .filter((s: any) => s && String(s.subject || s.customSubject || "").trim())
             .map((s: any) => ({
@@ -13188,6 +14703,60 @@ function MainApp() {
       loadAdmissions();
     } catch (e: any) {
       Alert.alert("Error", e.message || "Failed to save inquiry.");
+    }
+  };
+
+  const resetDashboardInquiryForm = () => {
+    setDashInquiryName("");
+    setDashInquiryPhone("");
+    setDashInquiryEmail("");
+    setDashInquiryCourse("");
+    setDashInquiryIsCustomCourse(false);
+    setDashInquiryShowCoursePicker(false);
+    setDashInquiryNature("phone");
+    setDashInquiryMode("Offline");
+    setDashInquiryShowModePicker(false);
+    setDashInquiryAtten("Admin Staff");
+    setDashInquiryIsCustomAtten(false);
+    setDashInquiryShowAttenPicker(false);
+    setDashInquiryReference("");
+    setDashInquiryRemarks("");
+    setShowDashboardInquiryModal(false);
+  };
+
+  const submitDashboardInquiry = async () => {
+    if (!dashInquiryName.trim() || !dashInquiryPhone.trim()) {
+      Alert.alert("Required Fields", "Please enter candidate name and contact phone number.");
+      return;
+    }
+    setSubmittingDashInquiry(true);
+    try {
+      const payload = {
+        name: dashInquiryName.trim(),
+        phone: dashInquiryPhone.trim(),
+        email: dashInquiryEmail.trim(),
+        course: dashInquiryCourse.trim(),
+        preferredCourse: dashInquiryCourse.trim(),
+        natureOfEnquiry: dashInquiryNature || "phone",
+        mode: dashInquiryMode || "Offline",
+        preferredMode: dashInquiryMode || "Offline",
+        atten: dashInquiryAtten.trim() || user?.name || "Admin Staff",
+        reference: dashInquiryReference.trim(),
+        notes: dashInquiryRemarks.trim(),
+        remarks1: dashInquiryRemarks.trim(),
+        status: "pending",
+        joinStatus: "new",
+        createdBy: user?.name || "Admin"
+      };
+
+      await api.post("/crm/admission", payload);
+      Alert.alert("Success", "New candidate inquiry recorded successfully!");
+      resetDashboardInquiryForm();
+      loadAdmissions();
+    } catch (err: any) {
+      Alert.alert("Error", err?.message || "Failed to save inquiry.");
+    } finally {
+      setSubmittingDashInquiry(false);
     }
   };
 
@@ -13339,14 +14908,20 @@ function MainApp() {
       Alert.alert("Error", "Campaign Title is required.");
       return;
     }
+    setSavingCampaign(true);
     try {
+      let finalPosterDisplay = newCampaign.posterDisplay;
+      if (newCampaign.showInDashboard && (!finalPosterDisplay || finalPosterDisplay === "none")) {
+        finalPosterDisplay = "both";
+      }
+
       const payload: any = {
         title: newCampaign.title,
         description: newCampaign.description,
         posterUrl: newCampaign.posterUrl,
         posterBase64: newCampaign.posterBase64 || undefined,
         targetUsers: newCampaign.targetUsers,
-        posterDisplay: newCampaign.posterDisplay === "none" ? null : newCampaign.posterDisplay,
+        posterDisplay: finalPosterDisplay === "none" ? null : finalPosterDisplay,
         isActive: newCampaign.isActive,
         showInDashboard: newCampaign.showInDashboard,
         sendNotification: newCampaign.sendNotification,
@@ -13376,6 +14951,8 @@ function MainApp() {
       loadCampaigns();
     } catch (e: any) {
       Alert.alert("Error", e.message || "Failed to save campaign.");
+    } finally {
+      setSavingCampaign(false);
     }
   };
 
@@ -13494,7 +15071,8 @@ function MainApp() {
       // Clear answers state for the next quiz
       setQuizAnswers({});
 
-      // Reload quizzes list in the background
+      // Reload today's quiz & all quizzes in the background
+      await loadTodayQuiz();
       await loadAllQuizzes();
     } catch (e: any) {
       Alert.alert("Submission Error", e.message || "Failed to submit answers.");
@@ -13604,7 +15182,7 @@ function MainApp() {
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1, flexShrink: 1 }}>
             <Ionicons name="library" size={16} color="#c62828" />
             <Text style={{ fontSize: (isMobile || Platform.OS !== "web") ? 12 : 13, fontWeight: "bold", color: darkMode ? "#f1f5f9" : "#1e293b", flexShrink: 1 }}>
-              Mock Test Subject Sections & Question Ranges
+              Subject Sections & Question Ranges
             </Text>
           </View>
           <TouchableOpacity
@@ -14505,9 +16083,8 @@ function MainApp() {
       return { status: "completed", label: "Review Answers", attemptId: attempt.id || attempt.attemptId, disabled: false };
     }
 
-    // Flexible mode: skip waiting room — student can start anytime within the window
-    const isFlexible = (test.schedulingMode === "flexible" || test.schedulingType === "flexible" || test.schedulingType === "flexible_window");
-    if (!isFlexible && startTimeMs && now < startTimeMs) {
+    // If test hasn't started yet, direct student/guest to Waiting Room (applies to both Fixed and Flexible modes)
+    if (startTimeMs && now < startTimeMs) {
       return { status: "scheduled", label: "Enter Waiting Room", disabled: false };
     }
 
@@ -14604,8 +16181,14 @@ function MainApp() {
 
   const monitorTest = async (testId: string) => {
     setSelectedMonitorTestId(testId);
+    setMonitorActiveTab("leaderboard");
+    setMonitorBatchFilter("all");
+    setMonitorAbsentSearch("");
     if (students.length === 0) {
       loadStudents();
+    }
+    if (batches.length === 0) {
+      loadBatches();
     }
     try {
       const liveRes = await api.get(`/test-portal/examination/live-count/${testId}`);
@@ -14615,6 +16198,67 @@ function MainApp() {
       setLeaderboard(leaderboardRes?.data || leaderboardRes || []);
     } catch (e) {
       console.log("Failed loading monitor data:", e);
+    }
+  };
+
+  const downloadSingleTestLeaderboard = async (t: any) => {
+    if (!t || !t.id) return;
+    setDownloadingTestId(t.id);
+    try {
+      const res = await api.get(`/test-portal/review/leaderboard/${t.id}`);
+      const rawList = res?.data || res || [];
+      const entries = Array.isArray(rawList) ? rawList : (Array.isArray(rawList?.data) ? rawList.data : []);
+
+      if (entries.length === 0) {
+        Alert.alert("Leaderboard Empty", "No completed student attempts found for this test yet.");
+        return;
+      }
+
+      const testTitle = t.title || t.testTitle || "Test";
+      const rows = entries.map((e: any, idx: number) => {
+        const rank = e.rank || idx + 1;
+        const displayRoll = (e.rollNumber && e.rollNumber !== "N/A" && e.rollNumber !== "Guest" && !String(e.rollNumber).startsWith("STU-")) ? e.rollNumber : (e.studentName || "Guest Student");
+        const sName = e.studentName || "Guest Student";
+        const correct = e.correct ?? 0;
+        const wrong = e.wrong ?? 0;
+        const skipped = e.skipped ?? 0;
+        const obtained = e.obtainedMarks ?? 0;
+        const total = e.totalMarks ?? (t.totalMarks || (t.questions?.length ? t.questions.length * (t.marksPerQuestion || 1) : 0));
+        const pct = typeof e.percentage === "number" ? Math.round(e.percentage) : (total > 0 ? Math.round((obtained / total) * 100) : 0);
+        const perf = getPerformanceStatus(obtained, total, pct);
+        const statusLabel = e.status ? String(e.status).toUpperCase() : perf.label;
+        const statusColor = (e.status === "pass" || perf.label === "PASSED" || perf.color === "#2e7d32") ? "#2e7d32" : "#c62828";
+
+        return `<tr style="border-bottom:1px solid #eee">
+          <td style="padding:6px 8px;text-align:center">${rank}</td>
+          <td style="padding:6px 8px">${displayRoll}</td>
+          <td style="padding:6px 8px">${sName}</td>
+          <td style="padding:6px 8px;text-align:center;color:#2e7d32;font-weight:bold">${correct}</td>
+          <td style="padding:6px 8px;text-align:center;color:#c62828;font-weight:bold">${wrong}</td>
+          <td style="padding:6px 8px;text-align:center">${skipped}</td>
+          <td style="padding:6px 8px;text-align:center;font-weight:bold">${obtained} / ${total}</td>
+          <td style="padding:6px 8px;text-align:center">${pct}%</td>
+          <td style="padding:6px 8px;text-align:center;color:${statusColor};font-weight:bold">${statusLabel}</td>
+        </tr>`;
+      }).join("");
+
+      const testDate = t.createdAt ? new Date(t.createdAt).toLocaleDateString() : (t.startTime ? new Date(t.startTime).toLocaleDateString() : "N/A");
+      const participants = entries.length;
+      const marksPerQ = t.marksPerQuestion ?? 1;
+      const negMarks = t.negativeMarks ?? 0;
+
+      const html = `<!DOCTYPE html><html><head><title>${testTitle} - Results</title>
+        <style>body{font-family:Arial,sans-serif;padding:20px}h2{color:#c62828}table{width:100%;border-collapse:collapse}th{background:#c62828;color:white;padding:8px;text-align:left}td{border-bottom:1px solid #eee;padding:6px 8px}</style></head>
+        <body><h2>${testTitle}</h2>
+        <p>Date: ${testDate} | Participants: ${participants} | Marks/Q: ${marksPerQ} | Negative: -${negMarks}</p>
+        <table><thead><tr><th>#</th><th>Roll No</th><th>Name</th><th>Correct</th><th>Wrong</th><th>Skipped</th><th>Marks</th><th>%</th><th>Result</th></tr></thead>
+        <tbody>${rows}</tbody></table></body></html>`;
+
+      await downloadPdfDocument(html, `${testTitle}_Leaderboard.pdf`);
+    } catch (err: any) {
+      Alert.alert("Export Error", err.message || "Failed to download test leaderboard.");
+    } finally {
+      setDownloadingTestId(null);
     }
   };
 
@@ -16159,8 +17803,8 @@ function MainApp() {
                     </>
                   )}
 
-                  {/* Show Subject Sections & Question Ranges ONLY for Mock Test */}
-                  {(newTest.testType || "daily") === "mock" && (
+                  {/* Show Subject Sections & Question Ranges for Mock & Weekly Tests */}
+                  {((newTest.testType || "daily") === "mock" || (newTest.testType || "daily") === "weekly") && (
                     renderMockSubjectSectionsConfigurator(
                       newTest.subjectSections || [],
                       (updated) => setNewTest({ ...newTest, subjectSections: updated })
@@ -17019,11 +18663,21 @@ function MainApp() {
                         }}
                         onPress={() => setResourceForm({ ...resourceForm, isBatchDropdownOpen: !resourceForm.isBatchDropdownOpen })}
                       >
-                        <Text style={{ color: (resourceForm.targetBatchIds && resourceForm.targetBatchIds !== "all") ? (darkMode ? "#fff" : "#212121") : (darkMode ? "#666" : "#999") }}>
-                          {(resourceForm.targetBatchIds && resourceForm.targetBatchIds !== "all")
-                            ? `${resourceForm.targetBatchIds.split(",").length} batch(es) selected`
-                            : "Select Batches..."}
-                        </Text>
+                        {(() => {
+                          const currentBatchList = (resourceForm.targetBatchIds || "")
+                            .split(",")
+                            .map((s: string) => s.trim())
+                            .filter(Boolean)
+                            .filter((s: string) => s !== "all");
+
+                          return (
+                            <Text style={{ color: currentBatchList.length > 0 ? (darkMode ? "#fff" : "#212121") : (darkMode ? "#666" : "#999") }}>
+                              {currentBatchList.length > 0
+                                ? `${currentBatchList.length} batch(es) selected`
+                                : "Select Batches..."}
+                            </Text>
+                          );
+                        })()}
                         <Ionicons name={resourceForm.isBatchDropdownOpen ? "chevron-up" : "chevron-down"} size={16} color={darkMode ? "#aaa" : "#555"} />
                       </TouchableOpacity>
 
@@ -17037,23 +18691,35 @@ function MainApp() {
                           ) : (
                             <ScrollView nestedScrollEnabled style={{ maxHeight: 200 }}>
                               {erpBatches.map((b: any) => {
-                                const batchId = b.id || b._id;
-                                const batchName = b.batchName || b.name || "Unnamed Batch";
-                                const currentBatchList = (resourceForm.targetBatchIds || "").split(",").map((s: string) => s.trim()).filter(Boolean);
-                                const isSelected = currentBatchList.includes(batchId) || resourceForm.targetBatchIds === "all";
+                                const batchId = String(b.id || b._id || "").trim();
+                                const batchName = String(b.batchName || b.name || "Unnamed Batch").trim();
+                                const currentBatchList = (resourceForm.targetBatchIds || "")
+                                  .split(",")
+                                  .map((s: string) => s.trim())
+                                  .filter(Boolean)
+                                  .filter((s: string) => s !== "all");
+
+                                const isSelected = currentBatchList.includes(batchId) ||
+                                  (Boolean(b.batchName) && currentBatchList.includes(String(b.batchName).trim())) ||
+                                  (Boolean(b.name) && currentBatchList.includes(String(b.name).trim()));
+
                                 const toggleBatch = () => {
                                   let updated: string[];
                                   if (isSelected) {
-                                    updated = currentBatchList.filter((id: string) => id !== batchId && id !== "all");
+                                    updated = currentBatchList.filter((id: string) =>
+                                      id !== batchId &&
+                                      id !== batchName &&
+                                      id !== (b.name ? String(b.name).trim() : "") &&
+                                      id !== (b.batchName ? String(b.batchName).trim() : "")
+                                    );
                                   } else {
-                                    updated = [...currentBatchList.filter((id: string) => id !== "all"), batchId];
+                                    updated = [...currentBatchList.filter((id: string) => id !== batchId && id !== batchName), batchId];
                                   }
-                                  if (updated.length === 0) updated = ["all"];
                                   setResourceForm({ ...resourceForm, targetBatchIds: updated.join(",") });
                                 };
                                 return (
                                   <TouchableOpacity
-                                    key={batchId}
+                                    key={batchId || batchName}
                                     onPress={toggleBatch}
                                     style={{
                                       flexDirection: "row", alignItems: "center", padding: 10,
@@ -17317,10 +18983,10 @@ function MainApp() {
                         ...lmsSubjects.filter(s => s.courseId === liveClassForm.courseId).map(s => ({ label: s.name || s.title || "Untitled Subject", value: s.id })),
                         { label: "+ Add Custom Subject...", value: "__custom__" }
                       ]}
-                      onSelect={val => setLiveClassForm({ 
-                        ...liveClassForm, 
-                        subjectId: val, 
-                        topicId: val === '__custom__' ? '__custom__' : '' 
+                      onSelect={val => setLiveClassForm({
+                        ...liveClassForm,
+                        subjectId: val,
+                        topicId: val === '__custom__' ? '__custom__' : ''
                       })}
                     />
 
@@ -17460,7 +19126,7 @@ function MainApp() {
                   )}
 
                   <View style={{ flexDirection: "row", gap: 10 }}>
-                    <View style={{ flex: 1 }}>
+                    <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Date</Text>
                       {Platform.OS === "web" ? (
                         <input
@@ -17469,15 +19135,17 @@ function MainApp() {
                           onChange={(e: any) => setLiveClassForm({ ...liveClassForm, startDate: e.target.value })}
                           style={{
                             width: "100%",
+                            minWidth: 0,
                             height: 38,
                             borderRadius: 8,
-                            padding: "0 10px",
+                            padding: "0 8px",
                             borderWidth: 1,
                             borderColor: darkMode ? "#444" : "#ccc",
                             backgroundColor: darkMode ? "#2a2a2a" : "#fff",
                             color: darkMode ? "#e0e0e0" : "#333",
                             fontSize: 14,
-                            outline: "none"
+                            outline: "none",
+                            boxSizing: "border-box"
                           }}
                         />
                       ) : (
@@ -17489,34 +19157,13 @@ function MainApp() {
                         />
                       )}
                     </View>
-                    <View style={{ flex: 1 }}>
+                    <View style={{ flex: 1.25, minWidth: 0 }}>
                       <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Time</Text>
-                      {Platform.OS === "web" ? (
-                        <input
-                          type="time"
-                          value={liveClassForm.startTime}
-                          onChange={(e: any) => setLiveClassForm({ ...liveClassForm, startTime: e.target.value })}
-                          style={{
-                            width: "100%",
-                            height: 38,
-                            borderRadius: 8,
-                            padding: "0 10px",
-                            borderWidth: 1,
-                            borderColor: darkMode ? "#444" : "#ccc",
-                            backgroundColor: darkMode ? "#2a2a2a" : "#fff",
-                            color: darkMode ? "#e0e0e0" : "#333",
-                            fontSize: 14,
-                            outline: "none"
-                          }}
-                        />
-                      ) : (
-                        <TextInput
-                          style={[styles.input, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444", color: "#e0e0e0" }]}
-                          placeholder="HH:MM"
-                          value={liveClassForm.startTime}
-                          onChangeText={txt => setLiveClassForm({ ...liveClassForm, startTime: txt })}
-                        />
-                      )}
+                      <UniversalTime12Picker
+                        value={liveClassForm.startTime}
+                        onChange={(val24) => setLiveClassForm({ ...liveClassForm, startTime: val24 })}
+                        darkMode={darkMode}
+                      />
                     </View>
                   </View>
 
@@ -17814,10 +19461,10 @@ function MainApp() {
                         ...lmsSubjects.filter(s => s.courseId === recordedClassForm.courseId).map(s => ({ label: s.name || s.title || "Untitled Subject", value: s.id })),
                         { label: "+ Add Custom Subject...", value: "__custom__" }
                       ]}
-                      onSelect={val => setRecordedClassForm({ 
-                        ...recordedClassForm, 
-                        subjectId: val, 
-                        topicId: val === '__custom__' ? '__custom__' : '' 
+                      onSelect={val => setRecordedClassForm({
+                        ...recordedClassForm,
+                        subjectId: val,
+                        topicId: val === '__custom__' ? '__custom__' : ''
                       })}
                     />
 
@@ -18102,7 +19749,33 @@ function MainApp() {
     );
   }
 
-  // When activeAttempt, reviewMode, or studyModalVisible is set, skip this block so those screens can render
+  // 1. Initial Verification Phase: Render branded splash screen while checking session
+  if ((authGate === "checking" || !splashDone) && !activeAttempt && !reviewMode && !studyModalVisible) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: "#7b0000" }]}>
+        <StatusBar style="light" />
+        <SplashScreen onDone={() => {
+          setSplashDone(true);
+          setAuthGate(prev => prev === "checking" ? "unauthenticated" : prev);
+          setIsInitialLoading(false);
+        }} />
+      </SafeAreaView>
+    );
+  }
+
+  // 2. Unauthenticated Phase on Phone: Show Onboarding for fresh installs before login
+  if (!user && !onboardDone && Platform.OS !== "web" && !activeAttempt && !reviewMode && !studyModalVisible) {
+    return (
+      <OnboardingScreens
+        onDone={() => {
+          setOnboardDone(true);
+          AsyncStorage.setItem(ONBOARDING_KEY, "true").catch(() => {});
+        }}
+      />
+    );
+  }
+
+  // 3. Unauthenticated Phase: Login / Register Form (Never rendered during 'checking')
   if (!user && !activeAttempt && !reviewMode && !studyModalVisible) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: "#7b0000" }]}>
@@ -18231,8 +19904,8 @@ function MainApp() {
                       })()}
                     </View>
                   ) : (
-                    // STEP 1: Direct Google Login Button
-                    <View style={{ gap: 16, paddingVertical: 10 }}>
+                    // STEP 1: Direct Google Login Button & Direct Guest Option
+                    <View style={{ gap: 14, paddingVertical: 10 }}>
                       <Text style={{ fontSize: 13, color: "#616161", textAlign: "center", lineHeight: 18 }}>
                         Register or Sign In with your Google account to access public mock tests & study materials.
                       </Text>
@@ -18326,44 +19999,27 @@ function MainApp() {
               elevation: 6,
               padding: 4
             }}>
-              {/* Dark/Light mode */}
-              <TouchableOpacity
-                style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 12, gap: 10, borderRadius: 6 }}
-                onPress={() => setDarkMode(!darkMode)}
-              >
-                <Ionicons name={darkMode ? "sunny-outline" : "moon-outline"} size={18} color={darkMode ? "#ffb74d" : "#757575"} />
-                <Text style={{ fontSize: 13, color: darkMode ? "#e0e0e0" : "#212121", flex: 1 }}>
-                  {darkMode ? "Light Mode" : "Dark Mode"}
-                </Text>
-              </TouchableOpacity>
-
               {user?.hallTicketGenerated && (
                 <TouchableOpacity
                   style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 12, gap: 10, borderRadius: 6 }}
                   onPress={() => { setShowHamburger(false); setShowGuestHallTicketModal(true); }}
                 >
-                  <Ionicons name="card-outline" size={18} color={darkMode ? "#9e9e9e" : "#757575"} />
-                  <Text style={{ fontSize: 13, color: darkMode ? "#e0e0e0" : "#212121" }}>My Hall Ticket</Text>
+                  <Ionicons name="card-outline" size={18} color="#757575" />
+                  <Text style={{ fontSize: 13, color: "#212121" }}>My Hall Ticket</Text>
                 </TouchableOpacity>
               )}
 
-              <TouchableOpacity
-                style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 12, gap: 10, borderRadius: 6 }}
-                onPress={() => { setShowHamburger(false); setShowFeedbackModal(true); }}
-              >
-                <Ionicons name="chatbox-ellipses-outline" size={18} color={darkMode ? "#9e9e9e" : "#757575"} />
-                <Text style={{ fontSize: 13, color: darkMode ? "#e0e0e0" : "#212121" }}>Send Feedback</Text>
-              </TouchableOpacity>
+              {(user?.role === "student" || user?.role === "guest") && (
+                <TouchableOpacity
+                  style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 12, gap: 10, borderRadius: 6 }}
+                  onPress={() => { setShowHamburger(false); setShowFeedbackModal(true); }}
+                >
+                  <Ionicons name="chatbox-ellipses-outline" size={18} color="#757575" />
+                  <Text style={{ fontSize: 13, color: "#212121" }}>Send Feedback</Text>
+                </TouchableOpacity>
+              )}
 
-              <TouchableOpacity
-                style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 12, gap: 10, borderRadius: 6 }}
-                onPress={() => { setShowHamburger(false); setShowIpConfig(!showIpConfig); }}
-              >
-                <Ionicons name="settings-outline" size={18} color={darkMode ? "#9e9e9e" : "#757575"} />
-                <Text style={{ fontSize: 13, color: darkMode ? "#e0e0e0" : "#212121" }}>Server Settings</Text>
-              </TouchableOpacity>
-
-              <View style={{ height: 1, backgroundColor: darkMode ? "#2a2a2a" : "#e0e0e0", marginVertical: 4 }} />
+              <View style={{ height: 1, backgroundColor: "#e0e0e0", marginVertical: 4 }} />
 
               <TouchableOpacity
                 style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 12, gap: 10, borderRadius: 6 }}
@@ -18521,6 +20177,48 @@ function MainApp() {
           </View>
         </View>
 
+        {/* ─── WEB PUSH PERMISSION PROMPT BANNER ─── */}
+        {Platform.OS === "web" && user && typeof window !== "undefined" && "Notification" in window && (
+          showWebPushBanner && Notification.permission === "default" ? (
+            <View style={{
+              flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+              backgroundColor: darkMode ? "#2a1b1b" : "#fff5f5", paddingHorizontal: 16, paddingVertical: 10,
+              borderBottomWidth: 1, borderColor: darkMode ? "#5c1d1d" : "#ffcdd2", gap: 10
+            }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+                <Ionicons name="notifications-outline" size={20} color="#c62828" />
+                <Text style={{ fontSize: 12, color: darkMode ? "#ffcdd2" : "#b71c1c", fontWeight: "600", flex: 1 }}>
+                  Enable push notifications to receive real-time class, exam & fee updates.
+                </Text>
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <TouchableOpacity
+                  onPress={handleEnableWebPushClick}
+                  style={{ backgroundColor: "#c62828", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 }}
+                >
+                  <Text style={{ color: "#ffffff", fontSize: 12, fontWeight: "700" }}>Enable</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setShowWebPushBanner(false)}>
+                  <Ionicons name="close" size={18} color={darkMode ? "#b0b0b0" : "#757575"} />
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : Notification.permission === "denied" && webPushStatusText ? (
+            <View style={{
+              flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+              backgroundColor: darkMode ? "#2a2010" : "#fffde7", paddingHorizontal: 16, paddingVertical: 8,
+              borderBottomWidth: 1, borderColor: darkMode ? "#5c4010" : "#fff59d"
+            }}>
+              <Text style={{ fontSize: 11, color: darkMode ? "#fff59d" : "#f57f17", flex: 1 }}>
+                {webPushStatusText}
+              </Text>
+              <TouchableOpacity onPress={() => setWebPushStatusText("")}>
+                <Ionicons name="close" size={16} color={darkMode ? "#b0b0b0" : "#757575"} />
+              </TouchableOpacity>
+            </View>
+          ) : null
+        )}
+
         {/* ─── NOTICES PANEL (dropdown below header) ──────────────────────────── */}
         {showNoticesPanel && (
           <View style={{
@@ -18562,7 +20260,26 @@ function MainApp() {
                           </Text>
                         )}
                         <Text style={{ fontSize: 10, color: "#c62828", marginTop: 4 }}>
-                          {n.publishedAt || n.sentAt ? new Date(n.publishedAt || n.sentAt).toLocaleDateString() : ""}
+                          {(() => {
+                            const rawDate = n.publishedAt || n.sentAt || n.createdAt;
+                            if (!rawDate) return "";
+                            let dateObj: Date | null = null;
+                            if (typeof rawDate === "object") {
+                              if (typeof rawDate.toDate === "function") {
+                                dateObj = rawDate.toDate();
+                              } else if (rawDate.seconds || rawDate._seconds) {
+                                dateObj = new Date((rawDate.seconds || rawDate._seconds) * 1000);
+                              }
+                            } else if (typeof rawDate === "number") {
+                              dateObj = new Date(rawDate);
+                            } else if (typeof rawDate === "string") {
+                              const parsed = Date.parse(rawDate);
+                              if (!isNaN(parsed)) dateObj = new Date(parsed);
+                            }
+                            return dateObj && !isNaN(dateObj.getTime())
+                              ? dateObj.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+                              : String(rawDate);
+                          })()}
                         </Text>
                       </View>
                     </View>
@@ -18617,6 +20334,17 @@ function MainApp() {
                   id="contact-admission-btn"
                   onPress={() => {
                     setShowContactPanel(false);
+                    const uName = user?.name || guestName || "";
+                    const uPhone = user?.phone || guestPhone || "";
+                    const uEmail = user?.email || guestEmail || "";
+                    const uCity = user?.city || "";
+                    setAdmissionForm(prev => ({
+                      ...prev,
+                      name: uName || prev.name,
+                      phone: uPhone || prev.phone,
+                      email: uEmail || prev.email,
+                      city: uCity || prev.city
+                    }));
                     setShowAdmissionForm(true);
                   }}
                   style={[styles.primaryBtn, { flex: 1, backgroundColor: "#c62828", marginVertical: 0 }]}
@@ -18628,6 +20356,13 @@ function MainApp() {
                   id="contact-inquiry-btn"
                   onPress={() => {
                     setShowContactPanel(false);
+                    const uName = user?.name || guestName || "";
+                    const uPhone = user?.phone || guestPhone || "";
+                    setEnquiryForm(prev => ({
+                      ...prev,
+                      name: uName || prev.name,
+                      phone: uPhone || prev.phone
+                    }));
                     setShowInquiryForm(true);
                   }}
                   style={[styles.primaryBtn, { flex: 1, backgroundColor: "#1565c0", marginVertical: 0 }]}
@@ -19241,6 +20976,17 @@ function MainApp() {
                     onPress={() => {
                       handleCloseCampaignBanner();
                       if (user?.role === "guest" || !user) {
+                        const uName = user?.name || guestName || "";
+                        const uPhone = user?.phone || guestPhone || "";
+                        const uEmail = user?.email || guestEmail || "";
+                        const uCity = user?.city || "";
+                        setAdmissionForm(prev => ({
+                          ...prev,
+                          name: uName || prev.name,
+                          phone: uPhone || prev.phone,
+                          email: uEmail || prev.email,
+                          city: uCity || prev.city
+                        }));
                         setShowAdmissionForm(true);
                       } else {
                         Alert.alert("Enquiry Recorded", "Thank you for your interest! Our team has logged your response.");
@@ -19358,8 +21104,12 @@ function MainApp() {
             <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" }}>
               <View style={[styles.feedbackSheet, darkMode && styles.feedbackSheetDark, { maxHeight: "82%" }]}>
                 <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                  {selectedCampaignModal.posterUrl ? (
-                    <Image source={{ uri: getDirectImageUrl(selectedCampaignModal.posterUrl) }} style={{ width: "100%", height: 160, borderRadius: 12, resizeMode: "cover" }} />
+                  {getCampaignPosterUri(selectedCampaignModal) ? (
+                    Platform.OS === "web" ? (
+                      <img src={getCampaignPosterUri(selectedCampaignModal)} alt={selectedCampaignModal.title || "Campaign"} style={{ width: "100%", height: "160px", objectFit: "cover", borderRadius: "12px", display: "block" }} />
+                    ) : (
+                      <Image source={{ uri: getCampaignPosterUri(selectedCampaignModal) }} style={{ width: "100%", height: 160, borderRadius: 12, resizeMode: "cover" }} />
+                    )
                   ) : (
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                       <Ionicons name="ribbon-outline" size={20} color="#c62828" />
@@ -19395,10 +21145,16 @@ function MainApp() {
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 18, fontWeight: "900", color: "#FFD700", letterSpacing: 0.5 }}>
-                  {user ? `Welcome back, ${user.name.split(" ")[0]}! 👋` : "Explore Free Content 🎓"}
+                  {user ? `Welcome back, ${user.name.split(" ")[0]}! 👋` : "Explore NERMAI IAS 🎓"}
                 </Text>
                 <Text style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", marginTop: 4, lineHeight: 18 }}>
-                  {user ? "Browse free resources & take practice tests" : "Register with Google to access free resources"}
+                  {guestContentTab === "resources"
+                    ? (user ? "Browse daily study content & free reference materials" : "Register with Google to access all free study resources")
+                    : guestContentTab === "tests"
+                      ? (user ? "Attempt free mock tests & assess your preparation" : "Register with Google to attempt free mock tests")
+                      : guestContentTab === "apply"
+                        ? "Apply for academy courses, mock tests & special programs"
+                        : (user ? "Puducherry's Premier Civil Services Academy • Admissions Open" : "Register with Google to unlock free materials & mock tests")}
                 </Text>
               </View>
               {!user && (
@@ -19412,213 +21168,607 @@ function MainApp() {
             </View>
           </View>
 
-          {/* ── HOME TAB ─────────────────────────────────────────────────────── */}
-          {guestContentTab === "resources" && (
-            <View>
-              {/* Poster Carousel */}
-              {guestPosters.length > 0 && (
-                <View style={{ marginTop: 14 }}>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}>
-                    {guestPosters.map((poster: any) => (
-                      <View key={poster.id} style={{ width: 280, borderRadius: 14, overflow: "hidden", backgroundColor: darkMode ? "#1e1e1e" : "#fff", borderWidth: 1, borderColor: darkMode ? "#333" : "#eee", shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 8, elevation: 3 }}>
-                        <Image source={{ uri: getDirectImageUrl(poster.posterUrl) }} style={{ width: 280, height: 160, resizeMode: "cover" }} />
-                        {poster.title ? (
-                          <View style={{ padding: 10 }}>
-                            <Text style={{ fontSize: 13, fontWeight: "700", color: darkMode ? "#f0f0f0" : "#212121" }}>{poster.title}</Text>
-                          </View>
-                        ) : null}
-                      </View>
-                    ))}
-                  </ScrollView>
+          {/* ── Custom Application Form Banner (shown on ALL tabs) ───────── */}
+          {guestCustomAppConfig?.isActive && (
+            <View style={{ paddingHorizontal: isMobile ? 12 : 16, marginTop: 14, maxWidth: 960, width: "100%", alignSelf: "center" }}>
+              <TouchableOpacity
+                onPress={() => {
+                  if (!user) { setPendingGuestTab("courses"); setShowGuestGoogleAuthModal(true); return; }
+                  setShowDynamicAppModal(true);
+                }}
+                style={[
+                  styles.card,
+                  darkMode && { backgroundColor: "#1e1e1e", borderColor: "#333" },
+                  {
+                    backgroundColor: darkMode ? "#241212" : "#fef2f2",
+                    borderColor: "#b91c1c",
+                    borderWidth: 1.5,
+                    borderRadius: 14,
+                    padding: 16,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 14,
+                    shadowColor: "#b91c1c",
+                    shadowOpacity: 0.1,
+                    shadowRadius: 6
+                  }
+                ]}
+                activeOpacity={0.85}
+              >
+                <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: "#b91c1c22", alignItems: "center", justifyContent: "center" }}>
+                  <Text style={{ fontSize: 22 }}>📝</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Text style={{ fontSize: 14, fontWeight: "900", color: "#b91c1c" }}>{guestCustomAppConfig?.title || "Mock Test Application Form"}</Text>
+                    <View style={{ backgroundColor: "#b91c1c", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                      <Text style={{ color: "#fff", fontSize: 9, fontWeight: "800" }}>SPECIAL</Text>
+                    </View>
+                  </View>
+                  <Text style={{ fontSize: 11, color: darkMode ? "#ccc" : "#4b5563", marginTop: 2 }}>
+                    {guestCustomAppConfig?.bannerText || guestCustomAppConfig?.subtitle || "Register for upcoming academy mock tests and scholarship evaluation."}
+                  </Text>
+                </View>
+                <View style={{ backgroundColor: "#b91c1c", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 }}>
+                  <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>Apply</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* ── HOME TAB (GUEST DASHBOARD) ────────────────────────────────── */}
+          {guestContentTab === "home" && (
+            <View style={{ paddingHorizontal: isMobile ? 12 : 20, paddingTop: 16 }}>
+              {/* Posters Displayed One by One */}
+              {guestPosters.length > 0 ? (
+                guestPosters.map((poster: any, idx: number) => (
+                  <ResponsivePosterItem
+                    key={poster.id || idx}
+                    poster={poster}
+                    darkMode={darkMode}
+                    isMobile={isMobile}
+                    onSelect={() => setSelectedPosterPreview(poster)}
+                  />
+                ))
+              ) : (
+                <View
+                  style={{
+                    width: "100%",
+                    maxWidth: 960,
+                    alignSelf: "center",
+                    backgroundColor: "#4a0505",
+                    borderRadius: 16,
+                    padding: 24,
+                    alignItems: "center",
+                    marginBottom: 20,
+                  }}
+                >
+                  <Text style={{ fontSize: 24, marginBottom: 8 }}>🏛️</Text>
+                  <Text style={{ fontSize: isMobile ? 18 : 24, fontWeight: "900", color: "#FFD700", textAlign: "center" }}>
+                    NERMAI IAS ACADEMY
+                  </Text>
+                  <Text style={{ fontSize: 13, color: "#fff", textAlign: "center", marginTop: 4 }}>
+                    Puducherry&apos;s Premier Academy for UPSC, TNPSC &amp; State Competitive Examinations
+                  </Text>
                 </View>
               )}
 
-              {/* Prominent Mock Test / Custom Application Form Card on Guest Home */}
-              {guestCustomAppConfig?.isActive && (
-                <View style={{ paddingHorizontal: 16, marginTop: 14 }}>
-                  <TouchableOpacity
-                    onPress={() => {
-                      if (!user) { setPendingGuestTab("courses"); setShowGuestGoogleAuthModal(true); return; }
-                      setShowDynamicAppModal(true);
-                    }}
-                    style={[
-                      styles.card,
-                      darkMode && { backgroundColor: "#1e1e1e", borderColor: "#333" },
-                      {
-                        backgroundColor: darkMode ? "#241212" : "#fef2f2",
-                        borderColor: "#b91c1c",
-                        borderWidth: 1.5,
-                        borderRadius: 14,
-                        padding: 16,
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 14,
-                        shadowColor: "#b91c1c",
-                        shadowOpacity: 0.1,
-                        shadowRadius: 6
-                      }
-                    ]}
-                    activeOpacity={0.85}
-                  >
-                    <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: "#b91c1c22", alignItems: "center", justifyContent: "center" }}>
-                      <Text style={{ fontSize: 22 }}>📝</Text>
+              {/* Student Conversion Quick Callout Card */}
+              <View style={{ paddingHorizontal: 16, marginTop: 18, maxWidth: 960, width: "100%", alignSelf: "center" }}>
+                <View style={{
+                  backgroundColor: darkMode ? "#1c1414" : "#fff8f6",
+                  borderRadius: 16,
+                  borderWidth: 1.5,
+                  borderColor: darkMode ? "#4a1515" : "#fecaca",
+                  padding: 18,
+                  gap: 12
+                }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                    <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: "#c62828", justifyContent: "center", alignItems: "center" }}>
+                      <Ionicons name="ribbon-outline" size={22} color="#fff" />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                        <Text style={{ fontSize: 14, fontWeight: "900", color: "#b91c1c" }}>{guestCustomAppConfig?.title || "Mock Test Application Form"}</Text>
-                        <View style={{ backgroundColor: "#b91c1c", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
-                          <Text style={{ color: "#fff", fontSize: 9, fontWeight: "800" }}>SPECIAL</Text>
-                        </View>
-                      </View>
+                      <Text style={{ fontSize: 15, fontWeight: "900", color: darkMode ? "#fff" : "#991b1b" }}>
+                        Join NERMAI IAS Academy
+                      </Text>
                       <Text style={{ fontSize: 11, color: darkMode ? "#ccc" : "#4b5563", marginTop: 2 }}>
-                        {guestCustomAppConfig?.bannerText || guestCustomAppConfig?.subtitle || "Register for upcoming academy mock tests and scholarship evaluation."}
+                        Classroom & Online Coaching for UPSC, TNPSC & State Competitive Exams.
                       </Text>
                     </View>
-                    <View style={{ backgroundColor: "#b91c1c", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 }}>
-                      <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>Apply</Text>
-                    </View>
-                  </TouchableOpacity>
+                  </View>
+                  <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
+                    <TouchableOpacity
+                      onPress={() => { setGuestContentTab("apply"); setGuestTab("apply"); }}
+                      style={{ flex: 1, minWidth: 130, backgroundColor: "#c62828", paddingVertical: 10, borderRadius: 10, alignItems: "center" }}
+                    >
+                      <Text style={{ color: "#fff", fontWeight: "800", fontSize: 12 }}>Apply for Courses</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => { setGuestContentTab("resources"); setGuestTab("resources"); }}
+                      style={{ flex: 1, minWidth: 130, backgroundColor: darkMode ? "#2c2c2c" : "#f3f4f6", borderWidth: 1, borderColor: darkMode ? "#444" : "#d1d5db", paddingVertical: 10, borderRadius: 10, alignItems: "center" }}
+                    >
+                      <Text style={{ color: darkMode ? "#fff" : "#1f2937", fontWeight: "800", fontSize: 12 }}>Free Resources</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              )}
+              </View>
+            </View>
+          )}
 
-              {/* Daily IAS Study Content Section for Guests */}
-              {user && (() => {
-                const guestDailyContent = (lmsDailyContent || []).filter((c: any) => {
-                  const aud = c.targetAudience || "all";
-                  return aud === "all" || aud === "guest" || aud === "free";
-                });
-                if (guestDailyContent.length === 0) return null;
+          {/* ── FREE RESOURCES TAB ────────────────────────────────────────────── */}
+          {guestContentTab === "resources" && (() => {
+            const rawDailyContent = (lmsDailyContent || []).filter((c: any) => {
+              const aud = c.targetAudience || "all";
+              return aud === "all" || aud === "guest" || aud === "free";
+            });
 
-                return (
-                  <View style={{ paddingHorizontal: 16, marginTop: 20, gap: 14 }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 2 }}>
+            const rawResources = (lmsResources || []).filter((res: any) => {
+              const vis = (res.visibility || "").toLowerCase();
+              if (vis === "premium" || vis === "paid" || vis === "batch" || vis === "enrolled") return false;
+              const aud = (res.targetAudience || res.audience || "all").toLowerCase();
+              if (aud === "paid" || aud === "enrolled" || aud === "batch") return false;
+              if (Array.isArray(res.targetBatchIds) && (res.targetBatchIds.includes("all_paid") || (vis === "batch" && res.targetBatchIds.length > 0))) return false;
+              return vis === "public" || vis === "free" || vis === "guest" || aud === "all" || aud === "free" || aud === "guest";
+            });
+
+            const query = guestResourceSearch.trim().toLowerCase();
+            const filteredDaily = rawDailyContent.filter((item: any) => {
+              if (!query) return true;
+              const t = (item.title || "").toLowerCase();
+              const d = (item.description || "").toLowerCase();
+              return t.includes(query) || d.includes(query);
+            }).sort(sortDailyContentDesc);
+
+            const filteredResources = rawResources.filter((res: any) => {
+              if (!query) return true;
+              const t = (res.title || res.name || "").toLowerCase();
+              const d = (res.description || "").toLowerCase();
+              const ft = (res.type || res.fileType || "").toLowerCase();
+              return t.includes(query) || d.includes(query) || ft.includes(query);
+            });
+
+            const totalResults = (user ? filteredDaily.length : 0) + (user ? filteredResources.length : 0);
+
+            // Reusable Daily Content Section
+            const renderDailyContent = (boxMaxHeight?: number) => {
+              if (!user) return null;
+              if (rawDailyContent.length === 0 && !query) return null;
+
+              return (
+                <View style={{ flex: 1, minWidth: isMobile ? undefined : 320 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                       <View style={{ width: 4, height: 20, borderRadius: 2, backgroundColor: "#c62828" }} />
                       <Text style={{ fontSize: 16, fontWeight: "800", color: darkMode ? "#fff" : "#212121" }}>
                         Daily IAS Study Content
                       </Text>
                     </View>
-                    {guestDailyContent.map((item: any, idx: number) => {
-                      const isImg = item.type === "image";
-                      const itemDate = item.date || (item.createdAt ? new Date(item.createdAt).toLocaleDateString("en-IN") : "Today");
-                      return (
-                        <View
-                          key={item.id || idx}
-                          style={[
-                            styles.card,
-                            darkMode && { backgroundColor: "#1e1e1e", borderColor: "#2a2a2a" },
-                            { borderLeftWidth: 4, borderLeftColor: "#c62828" }
-                          ]}
-                        >
-                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                            <View style={{ flex: 1, paddingRight: 12 }}>
-                              <Text style={{ fontSize: 15, fontWeight: "800", color: "#c62828", marginBottom: 4 }}>
+                    <View style={{ backgroundColor: darkMode ? "#2a2a2a" : "#ffebee", paddingHorizontal: 10, paddingVertical: 3, borderRadius: 12 }}>
+                      <Text style={{ fontSize: 11, fontWeight: "800", color: "#c62828" }}>
+                        {filteredDaily.length} {filteredDaily.length === 1 ? "item" : "items"}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={{
+                    backgroundColor: darkMode ? "#181818" : "#ffffff",
+                    borderRadius: 16,
+                    borderWidth: 1.5,
+                    borderColor: darkMode ? "#2a2a2a" : "#e5e7eb",
+                    padding: 12,
+                    ...(boxMaxHeight ? { maxHeight: boxMaxHeight, height: boxMaxHeight } : {}),
+                    shadowColor: "#000",
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.04,
+                    shadowRadius: 5,
+                    elevation: 1
+                  }}>
+                    {filteredDaily.length === 0 ? (
+                      <View style={{ padding: 28, alignItems: "center", justifyContent: "center" }}>
+                        <Ionicons name="search-outline" size={32} color={darkMode ? "#555" : "#9e9e9e"} />
+                        <Text style={{ color: darkMode ? "#9e9e9e" : "#666", fontSize: 13, marginTop: 8, textAlign: "center" }}>
+                          {query ? `No daily study content found matching "${query}"` : "No daily content available."}
+                        </Text>
+                      </View>
+                    ) : (
+                      <ScrollView
+                        nestedScrollEnabled
+                        showsVerticalScrollIndicator
+                        style={{ flex: 1 }}
+                        contentContainerStyle={{ gap: 10, paddingBottom: 6 }}
+                      >
+                        {filteredDaily.map((item: any, idx: number) => {
+                          const isImg = item.type === "image";
+                          const itemDate = item.date || (item.createdAt ? new Date(item.createdAt).toLocaleDateString("en-IN") : "Today");
+                          return (
+                            <View
+                              key={item.id || idx}
+                              style={[
+                                styles.card,
+                                darkMode && { backgroundColor: "#1f1f1f", borderColor: "#2e2e2e" },
+                                {
+                                  borderLeftWidth: 4,
+                                  borderLeftColor: "#c62828",
+                                  marginHorizontal: 0,
+                                  marginVertical: 0,
+                                  padding: isMobile ? 12 : 14,
+                                  borderRadius: 12
+                                }
+                              ]}
+                            >
+                              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                                <View style={{
+                                  backgroundColor: darkMode ? "#3b1212" : "#ffebee",
+                                  paddingHorizontal: 8,
+                                  paddingVertical: 2,
+                                  borderRadius: 6
+                                }}>
+                                  <Text style={{ fontSize: 10, fontWeight: "800", color: "#c62828" }}>
+                                    {isImg ? "IMAGE NOTE" : "PDF NOTE"}
+                                  </Text>
+                                </View>
+                                <Text style={{ fontSize: 11, color: darkMode ? "#888" : "#6b7280" }}>
+                                  {itemDate}
+                                </Text>
+                              </View>
+
+                              <Text style={{
+                                fontSize: isMobile ? 14 : 15,
+                                fontWeight: "800",
+                                color: darkMode ? "#fff" : "#1f2937",
+                                marginBottom: item.description ? 4 : 8
+                              }} numberOfLines={2}>
                                 {item.title}
                               </Text>
+
                               {item.description ? (
-                                <Text style={{ color: darkMode ? "#ccc" : "#555", fontSize: 13, marginBottom: 6, lineHeight: 18 }}>
+                                <Text style={{
+                                  color: darkMode ? "#bbb" : "#555",
+                                  fontSize: 12,
+                                  marginBottom: 8,
+                                  lineHeight: 17
+                                }} numberOfLines={2}>
                                   {item.description}
                                 </Text>
                               ) : null}
-                              <Text style={{ fontSize: 11, color: darkMode ? "#9e9e9e" : "#888" }}>
-                                {isImg ? "IMAGE" : "PDF"} • {itemDate}
-                              </Text>
-                            </View>
-                            <TouchableOpacity
-                              onPress={() => setSelectedDailyContentPreview(item)}
-                              style={[styles.primaryBtn, { backgroundColor: "#c62828", paddingHorizontal: 16, paddingVertical: 8, marginVertical: 0 }]}
-                            >
-                              <Ionicons name={isImg ? "image-outline" : "document-text-outline"} size={14} color="#fff" />
-                              <Text style={styles.primaryBtnTxt}>{isImg ? "View Image" : "Open PDF"}</Text>
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                      );
-                    })}
-                  </View>
-                );
-              })()}
 
-              {/* Free Resources Section */}
-              <View style={{ paddingHorizontal: 16, gap: 14, marginTop: 20 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 2 }}>
-                  <View style={{ width: 4, height: 20, borderRadius: 2, backgroundColor: "#c62828" }} />
-                  <Text style={{ fontSize: 16, fontWeight: "800", color: darkMode ? "#fff" : "#212121" }}>Free Resources</Text>
-                </View>
-                {!user ? (
-                  <View style={[styles.card, darkMode && { backgroundColor: "#1e1e1e", borderColor: "#2a2a2a" }, { alignItems: "center", padding: 28 }]}>
-                    <View style={{ width: 70, height: 70, borderRadius: 35, backgroundColor: "#ffebee", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
-                      <Ionicons name="lock-open-outline" size={36} color="#c62828" />
-                    </View>
-                    <Text style={{ fontSize: 16, fontWeight: "800", color: darkMode ? "#fff" : "#212121", textAlign: "center" }}>Unlock Free Resources</Text>
-                    <Text style={{ fontSize: 12, color: darkMode ? "#9e9e9e" : "#757575", textAlign: "center", marginTop: 8, lineHeight: 18 }}>
-                      Register with your name, phone number and Google account to access all free study materials.
-                    </Text>
-                    <TouchableOpacity
-                      onPress={() => { setShowAuthFlip(false); setShowNavbarSignInModal(true); }}
-                      style={[styles.primaryBtn, { backgroundColor: "#c62828", marginTop: 18, paddingHorizontal: 28 }]}
-                    >
-                      <Ionicons name="logo-google" size={16} color="#fff" />
-                      <Text style={styles.primaryBtnTxt}>Register with Google</Text>
-                    </TouchableOpacity>
+                              <View style={{ flexDirection: "row", justifyContent: "flex-end", alignItems: "center", marginTop: 2 }}>
+                                <TouchableOpacity
+                                  onPress={() => setSelectedDailyContentPreview(item)}
+                                  style={[
+                                    styles.primaryBtn,
+                                    {
+                                      backgroundColor: "#c62828",
+                                      paddingHorizontal: isMobile ? 12 : 16,
+                                      paddingVertical: isMobile ? 6 : 8,
+                                      marginVertical: 0,
+                                      borderRadius: 8
+                                    }
+                                  ]}
+                                >
+                                  <Ionicons name={isImg ? "image-outline" : "document-text-outline"} size={13} color="#fff" />
+                                  <Text style={[styles.primaryBtnTxt, { fontSize: isMobile ? 11 : 12 }]}>
+                                    {isImg ? "View Image" : "Open PDF"}
+                                  </Text>
+                                </TouchableOpacity>
+                              </View>
+                            </View>
+                          );
+                        })}
+                      </ScrollView>
+                    )}
                   </View>
-                ) : lmsResources.length === 0 ? (
-                  <View style={[styles.card, darkMode && { backgroundColor: "#1e1e1e" }, { alignItems: "center", padding: 28 }]}>
-                    <Ionicons name="book-outline" size={48} color={darkMode ? "#555" : "#bdbdbd"} />
-                    <Text style={[styles.emptyText, darkMode && { color: "#616161" }]}>No free resources published yet.</Text>
+                </View>
+              );
+            };
+
+            // Reusable Free Resources Section
+            const renderResources = (boxMaxHeight?: number) => {
+              return (
+                <View style={{ flex: 1, minWidth: isMobile ? undefined : 320 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <View style={{ width: 4, height: 20, borderRadius: 2, backgroundColor: "#c62828" }} />
+                      <Text style={{ fontSize: 16, fontWeight: "800", color: darkMode ? "#fff" : "#212121" }}>
+                        Free Resources & Study Materials
+                      </Text>
+                    </View>
+                    {user && (
+                      <View style={{ backgroundColor: darkMode ? "#2a2a2a" : "#ffebee", paddingHorizontal: 10, paddingVertical: 3, borderRadius: 12 }}>
+                        <Text style={{ fontSize: 11, fontWeight: "800", color: "#c62828" }}>
+                          {filteredResources.length} {filteredResources.length === 1 ? "item" : "items"}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {!user ? (
+                    <View style={[styles.card, darkMode && { backgroundColor: "#1e1e1e", borderColor: "#2a2a2a" }, { alignItems: "center", padding: 28, marginHorizontal: 0, borderRadius: 16 }]}>
+                      <View style={{ width: 70, height: 70, borderRadius: 35, backgroundColor: "#ffebee", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
+                        <Ionicons name="lock-open-outline" size={36} color="#c62828" />
+                      </View>
+                      <Text style={{ fontSize: 16, fontWeight: "800", color: darkMode ? "#fff" : "#212121", textAlign: "center" }}>Unlock Free Resources</Text>
+                      <Text style={{ fontSize: 12, color: darkMode ? "#9e9e9e" : "#757575", textAlign: "center", marginTop: 8, lineHeight: 18 }}>
+                        Register with your name, phone number and Google account to access all free study materials.
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => { setShowAuthFlip(false); setShowNavbarSignInModal(true); }}
+                        style={[styles.primaryBtn, { backgroundColor: "#c62828", marginTop: 18, paddingHorizontal: 28 }]}
+                      >
+                        <Ionicons name="logo-google" size={16} color="#fff" />
+                        <Text style={styles.primaryBtnTxt}>Register with Google</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : rawResources.length === 0 ? (
+                    <View style={[styles.card, darkMode && { backgroundColor: "#1e1e1e" }, { alignItems: "center", padding: 28, marginHorizontal: 0, borderRadius: 16 }]}>
+                      <Ionicons name="book-outline" size={48} color={darkMode ? "#555" : "#bdbdbd"} />
+                      <Text style={[styles.emptyText, darkMode && { color: "#616161" }]}>No free resources published yet.</Text>
+                    </View>
+                  ) : (
+                    <View style={{
+                      backgroundColor: darkMode ? "#181818" : "#ffffff",
+                      borderRadius: 16,
+                      borderWidth: 1.5,
+                      borderColor: darkMode ? "#2a2a2a" : "#e5e7eb",
+                      padding: 12,
+                      ...(boxMaxHeight ? { maxHeight: boxMaxHeight, height: boxMaxHeight } : {}),
+                      shadowColor: "#000",
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.04,
+                      shadowRadius: 5,
+                      elevation: 1
+                    }}>
+                      {filteredResources.length === 0 ? (
+                        <View style={{ padding: 28, alignItems: "center", justifyContent: "center" }}>
+                          <Ionicons name="search-outline" size={32} color={darkMode ? "#555" : "#9e9e9e"} />
+                          <Text style={{ color: darkMode ? "#9e9e9e" : "#666", fontSize: 13, marginTop: 8, textAlign: "center" }}>
+                            {query ? `No resources found matching "${query}"` : "No resources available."}
+                          </Text>
+                        </View>
+                      ) : (
+                        <ScrollView
+                          nestedScrollEnabled
+                          showsVerticalScrollIndicator
+                          style={{ flex: 1 }}
+                          contentContainerStyle={{ gap: 10, paddingBottom: 6 }}
+                        >
+                          {filteredResources.map((res: any) => {
+                            const resId = res.id || res._id;
+                            const resTitle = res.title || res.name || "Untitled Resource";
+                            const resType = res.type || res.fileType || "Document";
+                            const resDate = res.createdAt ? new Date(res.createdAt._seconds ? res.createdAt._seconds * 1000 : res.createdAt).toLocaleDateString("en-IN") : "";
+                            const isPdf = resType.toLowerCase().includes("pdf");
+                            const isImage = resType.toLowerCase().includes("image") || resType.toLowerCase().includes("png") || resType.toLowerCase().includes("jpg") || resType.toLowerCase().includes("jpeg");
+                            return (
+                              <View
+                                key={resId}
+                                style={[
+                                  styles.card,
+                                  darkMode && { backgroundColor: "#1f1f1f", borderColor: "#2e2e2e" },
+                                  {
+                                    borderLeftWidth: 4,
+                                    borderLeftColor: "#c62828",
+                                    marginHorizontal: 0,
+                                    marginVertical: 0,
+                                    padding: isMobile ? 12 : 14,
+                                    borderRadius: 12
+                                  }
+                                ]}
+                              >
+                                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                                  <View style={{
+                                    backgroundColor: darkMode ? "#0f2744" : "#e0f2fe",
+                                    paddingHorizontal: 8,
+                                    paddingVertical: 2,
+                                    borderRadius: 6
+                                  }}>
+                                    <Text style={{ fontSize: 10, fontWeight: "800", color: "#0284c7" }}>
+                                      {isPdf ? "PDF RESOURCE" : isImage ? "IMAGE RESOURCE" : `${resType.toUpperCase()} RESOURCE`}
+                                    </Text>
+                                  </View>
+                                  {resDate ? (
+                                    <Text style={{ fontSize: 11, color: darkMode ? "#888" : "#6b7280" }}>
+                                      {resDate}
+                                    </Text>
+                                  ) : null}
+                                </View>
+
+                                <Text style={{
+                                  fontSize: isMobile ? 14 : 15,
+                                  fontWeight: "800",
+                                  color: darkMode ? "#fff" : "#1f2937",
+                                  marginBottom: res.description ? 4 : 8
+                                }} numberOfLines={2}>
+                                  {resTitle}
+                                </Text>
+
+                                {res.description && (
+                                  <Text style={{
+                                    color: darkMode ? "#bbb" : "#555",
+                                    fontSize: 12,
+                                    marginBottom: 8,
+                                    lineHeight: 17
+                                  }} numberOfLines={2}>
+                                    {res.description}
+                                  </Text>
+                                )}
+
+                                <View style={{ flexDirection: "row", justifyContent: "flex-end", alignItems: "center", marginTop: 2 }}>
+                                  <TouchableOpacity
+                                    onPress={async () => {
+                                      try {
+                                        const accessRes = await api.get(`/resources/${resId}/access`);
+                                        const hasAccess = accessRes?.hasAccess ?? accessRes?.data?.hasAccess ?? accessRes?.data?.token ?? true;
+                                        if (!hasAccess) {
+                                          Alert.alert("Access Restricted", "You do not have permission to view or download this resource.");
+                                          return;
+                                        }
+                                        const fullUrl = accessRes?.viewerUrl || accessRes?.data?.viewerUrl || `${getBaseUrl()}/resources/${resId}/content?token=${user?.token || ""}`;
+                                        if (isPdf || isImage) {
+                                          setSelectedResourceId(resId);
+                                          return;
+                                        }
+                                        if (typeof window !== "undefined") {
+                                          window.open(fullUrl, "_blank");
+                                        } else {
+                                          Alert.alert("Open Resource", `Opening: ${resTitle}`);
+                                        }
+                                      } catch (err: any) {
+                                        const errorMsg = err.response?.data?.message || err.message || "Failed to access guest resource.";
+                                        Alert.alert("Access Restricted", errorMsg);
+                                      }
+                                    }}
+                                    style={[
+                                      styles.primaryBtn,
+                                      {
+                                        backgroundColor: "#c62828",
+                                        paddingHorizontal: isMobile ? 12 : 16,
+                                        paddingVertical: isMobile ? 6 : 8,
+                                        marginVertical: 0,
+                                        borderRadius: 8
+                                      }
+                                    ]}
+                                  >
+                                    <Ionicons name={isPdf ? "cloud-download-outline" : isImage ? "image-outline" : "play-outline"} size={13} color="#fff" />
+                                    <Text style={[styles.primaryBtnTxt, { fontSize: isMobile ? 11 : 12 }]}>
+                                      {isPdf ? "Open PDF" : isImage ? "View Image" : "Open"}
+                                    </Text>
+                                  </TouchableOpacity>
+                                </View>
+                              </View>
+                            );
+                          })}
+                        </ScrollView>
+                      )}
+                    </View>
+                  )}
+                </View>
+              );
+            };
+
+            return (
+              <View style={{
+                width: "100%",
+                maxWidth: 1200,
+                alignSelf: "center",
+                paddingHorizontal: isMobile ? 12 : 20,
+                marginTop: 16,
+                gap: 16
+              }}>
+                {/* ── Universal Search Box ──────────────────────────────────── */}
+                <View style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  backgroundColor: darkMode ? "#1e1e1e" : "#ffffff",
+                  borderRadius: 14,
+                  borderWidth: 1.5,
+                  borderColor: darkMode ? "#333" : "#e5e7eb",
+                  paddingHorizontal: 16,
+                  paddingVertical: Platform.OS === "web" ? 11 : 9,
+                  gap: 10,
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.05,
+                  shadowRadius: 4,
+                  elevation: 1
+                }}>
+                  <Ionicons name="search-outline" size={19} color="#c62828" />
+                  <TextInput
+                    value={guestResourceSearch}
+                    onChangeText={setGuestResourceSearch}
+                    placeholder={isMobile ? "Search notes, PDFs & resources..." : "Search daily IAS study content & free reference materials by title or topic..."}
+                    placeholderTextColor={darkMode ? "#888" : "#9ca3af"}
+                    style={{
+                      flex: 1,
+                      fontSize: 14,
+                      color: darkMode ? "#fff" : "#1f2937",
+                      padding: 0,
+                      ...(Platform.OS === "web" ? { outlineStyle: "none" as any } : {})
+                    }}
+                  />
+                  {guestResourceSearch.length > 0 && (
+                    <TouchableOpacity onPress={() => setGuestResourceSearch("")} style={{ padding: 4 }}>
+                      <Ionicons name="close-circle" size={18} color={darkMode ? "#888" : "#9ca3af"} />
+                    </TouchableOpacity>
+                  )}
+                  {query.length > 0 && (
+                    <View style={{ backgroundColor: darkMode ? "#2a2a2a" : "#ffebee", paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10 }}>
+                      <Text style={{ fontSize: 11, fontWeight: "800", color: "#c62828" }}>
+                        {totalResults} found
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* ── Mobile / Phone View (2-Tab Segmented Pill Switcher) ────────── */}
+                {isMobile ? (
+                  <View style={{ gap: 14 }}>
+                    {/* Segmented Pill Selector (2 pills: Daily IAS & Resources) */}
+                    <View style={{
+                      flexDirection: "row",
+                      backgroundColor: darkMode ? "#1a1a1a" : "#f3f4f6",
+                      borderRadius: 12,
+                      padding: 4,
+                      gap: 4
+                    }}>
+                      <TouchableOpacity
+                        onPress={() => setGuestResourceMobileFilter("daily")}
+                        style={{
+                          flex: 1,
+                          paddingVertical: 9,
+                          borderRadius: 9,
+                          alignItems: "center",
+                          backgroundColor: guestResourceMobileFilter === "daily" ? "#c62828" : "transparent"
+                        }}
+                      >
+                        <Text style={{
+                          fontSize: 12,
+                          fontWeight: "800",
+                          color: guestResourceMobileFilter === "daily" ? "#fff" : (darkMode ? "#aaa" : "#555")
+                        }}>
+                          Daily IAS ({user ? filteredDaily.length : 0})
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        onPress={() => setGuestResourceMobileFilter("resources")}
+                        style={{
+                          flex: 1,
+                          paddingVertical: 9,
+                          borderRadius: 9,
+                          alignItems: "center",
+                          backgroundColor: guestResourceMobileFilter === "resources" ? "#c62828" : "transparent"
+                        }}
+                      >
+                        <Text style={{
+                          fontSize: 12,
+                          fontWeight: "800",
+                          color: guestResourceMobileFilter === "resources" ? "#fff" : (darkMode ? "#aaa" : "#555")
+                        }}>
+                          Resources ({user ? filteredResources.length : 0})
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {/* Mobile Feed */}
+                    {guestResourceMobileFilter === "daily" ? renderDailyContent(560) : renderResources(560)}
                   </View>
                 ) : (
-                  lmsResources.map((res: any) => {
-                    const resId = res.id || res._id;
-                    const resTitle = res.title || res.name || "Untitled Resource";
-                    const resType = res.type || res.fileType || "Document";
-                    const resDate = res.createdAt ? new Date(res.createdAt._seconds ? res.createdAt._seconds * 1000 : res.createdAt).toLocaleDateString("en-IN") : "";
-                    const isPdf = resType.toLowerCase().includes("pdf");
-                    const isImage = resType.toLowerCase().includes("image") || resType.toLowerCase().includes("png") || resType.toLowerCase().includes("jpg") || resType.toLowerCase().includes("jpeg");
-                    return (
-                      <View key={resId} style={[styles.card, darkMode && { backgroundColor: "#1e1e1e", borderColor: "#2a2a2a" }, { borderLeftWidth: 4, borderLeftColor: "#c62828" }]}>
-                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                          <View style={{ flex: 1, paddingRight: 12 }}>
-                            <Text style={{ fontSize: 15, fontWeight: "800", color: "#c62828", marginBottom: 4 }}>{resTitle}</Text>
-                            {res.description && <Text style={{ color: darkMode ? "#ccc" : "#555", fontSize: 13, marginBottom: 6, lineHeight: 18 }}>{res.description}</Text>}
-                            <Text style={{ fontSize: 11, color: darkMode ? "#9e9e9e" : "#888" }}>{resType.toUpperCase()} • {resDate}</Text>
-                          </View>
-                          <TouchableOpacity
-                            onPress={async () => {
-                              try {
-                                const accessRes = await api.get(`/resources/${resId}/access`);
-                                const hasAccess = accessRes?.hasAccess ?? accessRes?.data?.hasAccess ?? accessRes?.data?.token ?? true;
-                                if (!hasAccess) {
-                                  Alert.alert("Access Restricted", "You do not have permission to view or download this resource.");
-                                  return;
-                                }
-                                const fullUrl = accessRes?.viewerUrl || accessRes?.data?.viewerUrl || `${getBaseUrl()}/resources/${resId}/content?token=${user?.token || ""}`;
-                                if (isPdf || isImage) {
-                                  setSelectedResourceId(resId);
-                                  return;
-                                }
-                                if (typeof window !== "undefined") {
-                                  window.open(fullUrl, "_blank");
-                                } else {
-                                  Alert.alert("Open Resource", `Opening: ${resTitle}`);
-                                }
-                              } catch (err: any) {
-                                const errorMsg = err.response?.data?.message || err.message || "Failed to access guest resource.";
-                                Alert.alert("Access Restricted", errorMsg);
-                              }
-                            }}
-                            style={[styles.primaryBtn, { backgroundColor: "#c62828", paddingHorizontal: 16, paddingVertical: 8, marginVertical: 0 }]}
-                          >
-                            <Ionicons name={isPdf ? "cloud-download-outline" : isImage ? "image-outline" : "play-outline"} size={14} color="#fff" />
-                            <Text style={styles.primaryBtnTxt}>{isPdf ? "Open PDF" : isImage ? "View Image" : "Open"}</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    );
-                  })
+                  /* ── Desktop / Laptop Website (Side-by-Side Dual Column) ─────── */
+                  <View style={{ flexDirection: "row", gap: 20, alignItems: "flex-start", width: "100%" }}>
+                    {user && rawDailyContent.length > 0 ? (
+                      <>
+                        <View style={{ flex: 1 }}>{renderDailyContent(580)}</View>
+                        <View style={{ flex: 1 }}>{renderResources(580)}</View>
+                      </>
+                    ) : (
+                      <View style={{ flex: 1 }}>{renderResources(580)}</View>
+                    )}
+                  </View>
                 )}
               </View>
-            </View>
-          )}
+            );
+          })()}
 
           {/* ── FREE TESTS TAB ────────────────────────────────────────────────── */}
           {guestContentTab === "tests" && user && (() => {
@@ -19676,52 +21826,6 @@ function MainApp() {
           {/* ── APPLY TAB — Per-Course Application Forms ─────────────────────── */}
           {guestContentTab === "apply" && (
             <View style={{ paddingHorizontal: 16, paddingTop: 16, gap: 12 }}>
-              {/* Prominent Mock Test Application Form Card */}
-              {guestCustomAppConfig?.isActive && (
-                <TouchableOpacity
-                  onPress={() => {
-                    if (!user) { setPendingGuestTab("apply"); setShowGuestGoogleAuthModal(true); return; }
-                    setShowDynamicAppModal(true);
-                  }}
-                  style={[
-                    styles.card,
-                    darkMode && { backgroundColor: "#1e1e1e", borderColor: "#333" },
-                    {
-                      backgroundColor: darkMode ? "#241212" : "#fef2f2",
-                      borderColor: "#b91c1c",
-                      borderWidth: 1.5,
-                      borderRadius: 14,
-                      padding: 16,
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 14,
-                      shadowColor: "#b91c1c",
-                      shadowOpacity: 0.1,
-                      shadowRadius: 6
-                    }
-                  ]}
-                  activeOpacity={0.85}
-                >
-                  <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: "#b91c1c22", alignItems: "center", justifyContent: "center" }}>
-                    <Text style={{ fontSize: 22 }}>📝</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                      <Text style={{ fontSize: 14, fontWeight: "900", color: "#b91c1c" }}>{guestCustomAppConfig?.title || "Mock Test Application Form"}</Text>
-                      <View style={{ backgroundColor: "#b91c1c", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
-                        <Text style={{ color: "#fff", fontSize: 9, fontWeight: "800" }}>SPECIAL</Text>
-                      </View>
-                    </View>
-                    <Text style={{ fontSize: 11, color: darkMode ? "#ccc" : "#4b5563", marginTop: 2 }}>
-                      {guestCustomAppConfig?.bannerText || guestCustomAppConfig?.subtitle || "Register for upcoming academy mock tests and scholarship evaluation."}
-                    </Text>
-                  </View>
-                  <View style={{ backgroundColor: "#b91c1c", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 }}>
-                    <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>Apply</Text>
-                  </View>
-                </TouchableOpacity>
-              )}
-
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4, marginTop: 4 }}>
                 <View style={{ width: 4, height: 22, borderRadius: 2, backgroundColor: "#2e7d32" }} />
                 <View>
@@ -19781,7 +21885,8 @@ function MainApp() {
           elevation: 12,
         }}>
           {[
-            { key: "resources", label: "Home", icon: "home-outline", iconActive: "home", color: "#c62828" },
+            { key: "home", label: "Home", icon: "home-outline", iconActive: "home", color: "#c62828" },
+            { key: "resources", label: "Free Resources", icon: "book-outline", iconActive: "book", color: "#d97706" },
             { key: "tests", label: "Free Tests", icon: "clipboard-outline", iconActive: "clipboard", color: "#1565c0" },
             { key: "apply", label: "Apply", icon: "school-outline", iconActive: "school", color: "#2e7d32" },
           ].map(tab => {
@@ -19793,13 +21898,14 @@ function MainApp() {
                 onPress={() => {
                   if (tab.key === "tests" && !user) { setPendingGuestTab("freetest"); setShowGuestGoogleAuthModal(true); return; }
                   setGuestContentTab(tab.key as any);
+                  setGuestTab(tab.key);
                 }}
                 style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 3 }}
               >
-                <View style={isActive ? { backgroundColor: tab.color + "18", borderRadius: 16, paddingHorizontal: 16, paddingVertical: 4 } : {}}>
+                <View style={isActive ? { backgroundColor: tab.color + "18", borderRadius: 16, paddingHorizontal: 14, paddingVertical: 4 } : {}}>
                   <Ionicons name={(isActive ? tab.iconActive : tab.icon) as any} size={22} color={isActive ? tab.color : (darkMode ? "#666" : "#9e9e9e")} />
                 </View>
-                <Text style={{ fontSize: 10, fontWeight: isActive ? "800" : "600", color: isActive ? tab.color : (darkMode ? "#666" : "#9e9e9e") }}>
+                <Text style={{ fontSize: 10, fontWeight: isActive ? "800" : "600", color: isActive ? tab.color : (darkMode ? "#666" : "#9e9e9e") }} numberOfLines={1}>
                   {tab.label}
                 </Text>
               </TouchableOpacity>
@@ -19818,6 +21924,31 @@ function MainApp() {
               prefillEmail={user?.email || ""}
             />
           </Suspense>
+        )}
+
+        {/* Full-Screen Poster Zoom/Preview Modal for Guest Portal */}
+        {selectedPosterPreview && (
+          <Modal visible={true} transparent animationType="fade">
+            <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.92)", justifyContent: "center", alignItems: "center", padding: 12 }}>
+              <TouchableOpacity
+                onPress={() => setSelectedPosterPreview(null)}
+                style={{ position: "absolute", top: Platform.OS === "ios" ? 48 : 20, right: 20, zIndex: 10, backgroundColor: "rgba(255,255,255,0.25)", width: 40, height: 40, borderRadius: 20, justifyContent: "center", alignItems: "center" }}
+              >
+                <Ionicons name="close" size={26} color="#fff" />
+              </TouchableOpacity>
+              <View style={{ width: "100%", maxWidth: 1100, height: "80%", justifyContent: "center", alignItems: "center" }}>
+                <Image
+                  source={{ uri: getDirectImageUrl(selectedPosterPreview.posterUrl || selectedPosterPreview.posterBase64) }}
+                  style={{ width: "100%", height: "100%", resizeMode: "contain" }}
+                />
+              </View>
+              {selectedPosterPreview.title ? (
+                <Text style={{ color: "#fff", fontSize: 16, fontWeight: "700", marginTop: 12, textAlign: "center", paddingHorizontal: 20 }}>
+                  {selectedPosterPreview.title}
+                </Text>
+              ) : null}
+            </View>
+          </Modal>
         )}
 
         {/* Daily Content Preview Modal for Guest Portal */}
@@ -19848,6 +21979,7 @@ function MainApp() {
 
           return (
             <NativeDailyContentModal
+              user={user}
               content={selectedDailyContentPreview}
               displaySrc={displaySrc}
               onClose={() => setSelectedDailyContentPreview(null)}
@@ -19859,7 +21991,7 @@ function MainApp() {
         {/* Secure PDF Container Modal for Guest Portal */}
         {selectedResourceId && (Platform.OS === 'web' ? (
           <Suspense fallback={
-            <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#0f1219", zIndex: 9999, justifyContent: "center", alignItems: "center" }}>
+            <View style={{ position: "fixed" as any, top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#0f1219", zIndex: 99999, justifyContent: "center", alignItems: "center" }}>
               <RNSkeleton style={{ width: "90%", height: 44, marginBottom: 16 }} darkMode={darkMode} />
               <RNSkeleton style={{ width: "90%", height: "80%" }} darkMode={darkMode} />
             </View>
@@ -19874,6 +22006,9 @@ function MainApp() {
             resourceId={selectedResourceId}
             onClose={() => setSelectedResourceId(null)}
             darkMode={darkMode}
+            user={user}
+            api={api}
+            getBaseUrl={getBaseUrl}
           />
         ))}
       </SafeAreaView>
@@ -19890,8 +22025,8 @@ function MainApp() {
       setCurrentQIdx(idx);
       setExploredQuestions(prev => { const s = new Set(prev); s.add(idx); return s; });
       if (qNavScrollViewRef.current) {
-        const itemWidth = 38;
-        const targetX = Math.max(0, idx * itemWidth - 100);
+        const itemWidth = isMobile ? 34 : 38;
+        const targetX = Math.max(0, idx * itemWidth - (isMobile ? 60 : 100));
         qNavScrollViewRef.current.scrollTo({ x: targetX, animated: true });
       }
     };
@@ -19902,19 +22037,53 @@ function MainApp() {
         <TestWatermarkOverlay studentText={user ? `${user.username || user.rollNumber || user.name || "Student"}${user.rollNumber && !user.username?.includes(user.rollNumber) ? ` (${user.rollNumber})` : ''} • ${user.email || ""}` : (activeAttempt?.userId || "Student")} />
 
         {/* ── EXAM HEADER ─────────────────────────────────── */}
-        <View style={[styles.header, { backgroundColor: "#c62828", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 14, paddingVertical: 10, flexWrap: "wrap", gap: 8, zIndex: 99999, elevation: 99999, overflow: "visible" }]}>
-          <View style={{ flex: 1, minWidth: 220, marginRight: 8 }}>
-            <Text style={[styles.headerTitle, { fontSize: 13, fontWeight: "800" }]} numberOfLines={1}>
-              Nermai IAS Academy — {activeAttempt.title || "Examination in Progress"}
-            </Text>
-            {user && (
-              <Text style={{ fontSize: 11, color: "rgba(255, 255, 255, 0.95)", fontWeight: "600", marginTop: 2 }} numberOfLines={1}>
-                Student: {user.name || user.fullName || user.username || "Student"} {user.rollNumber ? `(${user.rollNumber})` : ''}
+        <View style={[styles.header, {
+          backgroundColor: "#c62828",
+          flexDirection: isMobile ? "column" : "row",
+          alignItems: isMobile ? "stretch" : "center",
+          justifyContent: "space-between",
+          paddingHorizontal: isMobile ? 12 : 14,
+          paddingVertical: isMobile ? 8 : 10,
+          gap: isMobile ? 6 : 8,
+          zIndex: 99999,
+          elevation: 99999
+        }]}>
+          {/* Top Row: Title & Prominently Pinned Timer */}
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <Text style={[styles.headerTitle, { fontSize: isMobile ? 12 : 13, fontWeight: "800" }]} numberOfLines={1}>
+                Nermai IAS — {activeAttempt.title || "Examination in Progress"}
               </Text>
+              {user && (
+                <Text style={{ fontSize: isMobile ? 10 : 11, color: "rgba(255, 255, 255, 0.95)", fontWeight: "600", marginTop: 1 }} numberOfLines={1}>
+                  Student: {user.name || user.fullName || user.username || "Student"} {user.rollNumber ? `(${user.rollNumber})` : ''}
+                </Text>
+              )}
+            </View>
+
+            {/* Countdown timer (Mobile view): Pinned in top row */}
+            {isMobile && (
+              <View style={{
+                backgroundColor: timeLeft <= 300 ? "#b71c1c" : "rgba(0,0,0,0.45)",
+                borderWidth: 1,
+                borderColor: timeLeft <= 300 ? "#ff8a80" : "rgba(255,255,255,0.35)",
+                borderRadius: 8,
+                paddingHorizontal: 8,
+                paddingVertical: 4,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 4
+              }}>
+                <Ionicons name="time-outline" size={14} color={timeLeft <= 300 ? "#ff8a80" : "#ffffff"} />
+                <Text style={{ color: timeLeft <= 300 ? "#ffcdd2" : "#ffffff", fontWeight: "900", fontSize: 13 }}>
+                  {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, "0")}
+                </Text>
+              </View>
             )}
           </View>
 
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {/* Action Row: Language Switcher and Info button */}
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: isMobile ? "space-between" : "flex-end", gap: 6 }}>
             {/* Top Bar Language View Selector Custom Dropdown */}
             {(() => {
               // Determine allowed target languages
@@ -19994,36 +22163,73 @@ function MainApp() {
                 "te": "Telugu Only 🇮🇳"
               };
 
-              return (
-                <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, position: "relative", zIndex: 99999 }}>
-                  <Text style={{ fontSize: 11, fontWeight: "bold", color: "#ffffff", marginRight: 6 }}>文A View:</Text>
-                  <View style={{ position: "relative" }}>
-                    <TouchableOpacity
-                      onPress={() => setShowLangDropdown(!showLangDropdown)}
-                      style={{ backgroundColor: "#ffffff", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 6 }}
-                    >
-                      <Text style={{ fontSize: 11, fontWeight: "bold", color: "#c62828" }}>
-                        {mapping[activeLangKey] || "Select View"}
-                      </Text>
-                      <Ionicons name={showLangDropdown ? "chevron-up" : "chevron-down"} size={12} color="#c62828" />
-                    </TouchableOpacity>
+              const mobileMapping: Record<string, string> = {
+                "all": "All 🌐",
+                "en-ta-ml-te": "4-Lang 🇮🇳",
+                "en-ta-ml": "EN+TA+ML",
+                "en-ta-te": "EN+TA+TE",
+                "en-ta": "EN + TA",
+                "en": "EN Only",
+                "ta": "TA Only",
+                "en-ml": "EN + ML",
+                "ml": "ML Only",
+                "en-te": "EN + TE",
+                "te": "TE Only"
+              };
 
-                    {showLangDropdown && (
-                      <View style={{
-                        position: "absolute",
-                        top: 34,
-                        left: -30,
-                        backgroundColor: "#ffffff",
-                        borderRadius: 8,
-                        padding: 4,
-                        width: 185,
-                        shadowColor: "#000",
-                        shadowOffset: { width: 0, height: 2 },
-                        shadowOpacity: 0.25,
-                        shadowRadius: 6,
-                        elevation: 10,
-                        zIndex: 100000
-                      }}>
+              return (
+                <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 8, paddingHorizontal: isMobile ? 6 : 8, paddingVertical: isMobile ? 3 : 4 }}>
+                  <Text style={{ fontSize: isMobile ? 10 : 11, fontWeight: "bold", color: "#ffffff", marginRight: 4 }}>文A View:</Text>
+                  <TouchableOpacity
+                    onPress={() => setShowLangDropdown(true)}
+                    style={{ backgroundColor: "#ffffff", paddingHorizontal: isMobile ? 8 : 10, paddingVertical: isMobile ? 4 : 6, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 4 }}
+                  >
+                    <Text style={{ fontSize: isMobile ? 10 : 11, fontWeight: "bold", color: "#c62828" }}>
+                      {(isMobile ? mobileMapping[activeLangKey] : mapping[activeLangKey]) || "Select View"}
+                    </Text>
+                    <Ionicons name="chevron-down" size={isMobile ? 10 : 12} color="#c62828" />
+                  </TouchableOpacity>
+
+                  {/* Native Modal for reliable touch handling across all Android phones and browsers */}
+                  <Modal
+                    transparent
+                    animationType="fade"
+                    visible={showLangDropdown}
+                    onRequestClose={() => setShowLangDropdown(false)}
+                  >
+                    <TouchableOpacity
+                      activeOpacity={1}
+                      onPress={() => setShowLangDropdown(false)}
+                      style={{
+                        flex: 1,
+                        backgroundColor: "rgba(0,0,0,0.5)",
+                        justifyContent: "center",
+                        alignItems: "center",
+                        padding: 20
+                      }}
+                    >
+                      <TouchableOpacity
+                        activeOpacity={1}
+                        onPress={e => e.stopPropagation()}
+                        style={{
+                          backgroundColor: "#ffffff",
+                          borderRadius: 12,
+                          padding: 16,
+                          width: "100%",
+                          maxWidth: 320,
+                          shadowColor: "#000",
+                          shadowOffset: { width: 0, height: 4 },
+                          shadowOpacity: 0.3,
+                          shadowRadius: 8,
+                          elevation: 12
+                        }}
+                      >
+                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12, borderBottomWidth: 1, borderBottomColor: "#f1f5f9", paddingBottom: 8 }}>
+                          <Text style={{ fontSize: 13, fontWeight: "800", color: "#c62828" }}>文A Select Question View</Text>
+                          <TouchableOpacity onPress={() => setShowLangDropdown(false)}>
+                            <Ionicons name="close-circle" size={22} color="#c62828" />
+                          </TouchableOpacity>
+                        </View>
                         {availableOptions.map(l => (
                           <TouchableOpacity
                             key={l.key}
@@ -20031,35 +22237,60 @@ function MainApp() {
                               setTestLangFilter(l.key);
                               setShowLangDropdown(false);
                             }}
-                            style={{ padding: 8, borderRadius: 4, backgroundColor: activeLangKey === l.key ? "#ffebee" : "transparent" }}
+                            style={{
+                              paddingVertical: 10,
+                              paddingHorizontal: 12,
+                              borderRadius: 8,
+                              marginBottom: 4,
+                              backgroundColor: activeLangKey === l.key ? "#ffebee" : "#f8fafc",
+                              flexDirection: "row",
+                              justifyContent: "space-between",
+                              alignItems: "center"
+                            }}
                           >
-                            <Text style={{ fontSize: 11, fontWeight: "bold", color: activeLangKey === l.key ? "#c62828" : "#333" }}>
+                            <Text style={{ fontSize: 12, fontWeight: activeLangKey === l.key ? "800" : "600", color: activeLangKey === l.key ? "#c62828" : "#334155" }}>
                               {l.label}
                             </Text>
+                            {activeLangKey === l.key && (
+                              <Ionicons name="checkmark-circle" size={16} color="#c62828" />
+                            )}
                           </TouchableOpacity>
                         ))}
-                      </View>
-                    )}
-                  </View>
+                      </TouchableOpacity>
+                    </TouchableOpacity>
+                  </Modal>
                 </View>
               );
             })()}
 
+            {/* Countdown timer (Website view): Pinned on far right beside Info button */}
+            {!isMobile && (
+              <View style={{
+                backgroundColor: timeLeft <= 300 ? "#b71c1c" : "rgba(0,0,0,0.45)",
+                borderWidth: 1,
+                borderColor: timeLeft <= 300 ? "#ff8a80" : "rgba(255,255,255,0.35)",
+                borderRadius: 8,
+                paddingHorizontal: 12,
+                paddingVertical: 5,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 4
+              }}>
+                <Ionicons name="time-outline" size={16} color={timeLeft <= 300 ? "#ff8a80" : "#ffffff"} />
+                <Text style={{ color: timeLeft <= 300 ? "#ffcdd2" : "#ffffff", fontWeight: "900", fontSize: 16 }}>
+                  {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, "0")}
+                </Text>
+              </View>
+            )}
+
             {/* Info button */}
             <TouchableOpacity
               onPress={() => setShowInstructions(true)}
-              style={{ backgroundColor: "rgba(255,255,255,0.25)", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, flexDirection: "row", alignItems: "center", gap: 4 }}
+              style={{ backgroundColor: "rgba(255,255,255,0.25)", borderRadius: 8, paddingHorizontal: isMobile ? 8 : 10, paddingVertical: isMobile ? 4 : 6, flexDirection: "row", alignItems: "center", gap: 3 }}
             >
-              <Ionicons name="information-circle-outline" size={16} color="#ffffff" />
-              <Text style={{ color: "#ffffff", fontWeight: "700", fontSize: 11 }}>Info</Text>
+              <Ionicons name="information-circle-outline" size={isMobile ? 14 : 16} color="#ffffff" />
+              <Text style={{ color: "#ffffff", fontWeight: "700", fontSize: isMobile ? 10 : 11 }}>Info</Text>
             </TouchableOpacity>
-
-            {/* Countdown timer */}
-            <View style={{ backgroundColor: "rgba(0,0,0,0.3)", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}>
-              <Text style={{ color: timeLeft <= 300 ? "#ffcdd2" : "#ffffff", fontWeight: "bold", fontSize: 16 }}>
-                {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, "0")}
-              </Text>
-            </View>
           </View>
         </View>
 
@@ -20118,7 +22349,7 @@ function MainApp() {
         </Modal>
 
         {attemptQuestions[currentQIdx] ? (
-          <View style={{ flex: 1, padding: 20, backgroundColor: "#ffffff", position: "relative" }}>
+          <View style={{ flex: 1, padding: isMobile ? 10 : 20, backgroundColor: "#ffffff", position: "relative" }}>
             {/* Sections / Subjects Top Bar if Mock Test has Subject Sections */}
             {(() => {
               const activeSections: Array<{ subject: string; fromQ: number; toQ: number }> =
@@ -20131,10 +22362,10 @@ function MainApp() {
               const currentQNum = currentQIdx + 1;
 
               return (
-                <View style={{ marginBottom: 12, paddingBottom: 8, borderBottomWidth: 1, borderColor: "#f1f5f9" }}>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                    <Text style={{ fontSize: 11, fontWeight: "bold", color: "#64748b" }}>SECTIONS / SUBJECTS:</Text>
-                    <Text style={{ fontSize: 10, color: "#94a3b8", fontWeight: "600" }}>Tap section to jump</Text>
+                <View style={{ marginBottom: isMobile ? 8 : 12, paddingBottom: isMobile ? 6 : 8, borderBottomWidth: 1, borderColor: "#f1f5f9" }}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: isMobile ? 4 : 6 }}>
+                    <Text style={{ fontSize: isMobile ? 10 : 11, fontWeight: "bold", color: "#64748b" }}>SECTIONS / SUBJECTS:</Text>
+                    <Text style={{ fontSize: 9, color: "#94a3b8", fontWeight: "600" }}>Tap section to jump</Text>
                   </View>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: "row" }}>
                     {activeSections.map((sec, secI) => {
@@ -20144,28 +22375,28 @@ function MainApp() {
                           key={secI}
                           onPress={() => navigateTo(Math.max(0, Number(sec.fromQ) - 1))}
                           style={{
-                            paddingHorizontal: 12,
-                            paddingVertical: 6,
+                            paddingHorizontal: isMobile ? 8 : 12,
+                            paddingVertical: isMobile ? 4 : 6,
                             borderRadius: 20,
                             backgroundColor: isSecActive ? "#c62828" : "#f1f5f9",
                             borderWidth: 1,
                             borderColor: isSecActive ? "#c62828" : "#cbd5e1",
                             flexDirection: "row",
                             alignItems: "center",
-                            gap: 6,
-                            marginRight: 8
+                            gap: 4,
+                            marginRight: 6
                           }}
                         >
-                          <Text style={{ fontSize: 12, fontWeight: "bold", color: isSecActive ? "#ffffff" : "#1e293b" }}>
+                          <Text style={{ fontSize: isMobile ? 11 : 12, fontWeight: "bold", color: isSecActive ? "#ffffff" : "#1e293b" }}>
                             {sec.subject}
                           </Text>
                           <View style={{
                             backgroundColor: isSecActive ? "rgba(255,255,255,0.25)" : "#e2e8f0",
-                            paddingHorizontal: 6,
-                            paddingVertical: 2,
+                            paddingHorizontal: isMobile ? 5 : 6,
+                            paddingVertical: 1.5,
                             borderRadius: 10
                           }}>
-                            <Text style={{ fontSize: 10, fontWeight: "bold", color: isSecActive ? "#ffffff" : "#475569" }}>
+                            <Text style={{ fontSize: 9, fontWeight: "bold", color: isSecActive ? "#ffffff" : "#475569" }}>
                               Q{sec.fromQ}–{sec.toQ}
                             </Text>
                           </View>
@@ -20178,14 +22409,14 @@ function MainApp() {
             })()}
 
             {/* Question Quick Navigation Grid */}
-            <View style={{ marginBottom: 12 }}>
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                <Text style={{ fontSize: 11, fontWeight: "bold", color: "#757575" }}>QUESTIONS NAVIGATOR:</Text>
+            <View style={{ marginBottom: isMobile ? 8 : 12 }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: isMobile ? 4 : 6 }}>
+                <Text style={{ fontSize: isMobile ? 10 : 11, fontWeight: "bold", color: "#757575" }}>QUESTIONS NAVIGATOR:</Text>
                 <Text style={{ fontSize: 10, color: allExplored ? "#2e7d32" : "#f57c00", fontWeight: "700" }}>
                   {exploredQuestions.size}/{attemptQuestions.length} visited
                 </Text>
               </View>
-              <ScrollView ref={qNavScrollViewRef} horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: "row", maxHeight: 40 }}>
+              <ScrollView ref={qNavScrollViewRef} horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: "row", maxHeight: isMobile ? 34 : 40 }}>
                 {attemptQuestions.map((_, qIdx) => {
                   const isAnswered = selectedAnswers[attemptQuestions[qIdx].id] !== undefined;
                   const isActive = qIdx === currentQIdx;
@@ -20199,18 +22430,18 @@ function MainApp() {
                       key={qIdx}
                       onPress={() => navigateTo(qIdx)}
                       style={{
-                        width: 32,
-                        height: 32,
-                        borderRadius: 16,
+                        width: isMobile ? 28 : 32,
+                        height: isMobile ? 28 : 32,
+                        borderRadius: isMobile ? 14 : 16,
                         backgroundColor: bgColor,
                         justifyContent: "center",
                         alignItems: "center",
-                        marginRight: 6,
+                        marginRight: 5,
                         borderWidth: isActive ? 2 : 1,
                         borderColor: borderColor
                       }}
                     >
-                      <Text style={{ color: textColor, fontWeight: "bold", fontSize: 12 }}>
+                      <Text style={{ color: textColor, fontWeight: "bold", fontSize: isMobile ? 11 : 12 }}>
                         {qIdx + 1}
                       </Text>
                     </TouchableOpacity>
@@ -20222,9 +22453,9 @@ function MainApp() {
             <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={true} contentContainerStyle={{ paddingBottom: 20 }}>
 
 
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 6 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  <Text style={{ color: "#c62828", fontWeight: "bold", fontSize: 13 }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6, flexWrap: "wrap", gap: 6 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <Text style={{ color: "#c62828", fontWeight: "bold", fontSize: isMobile ? 12 : 13 }}>
                     QUESTION {currentQIdx + 1} OF {attemptQuestions.length}
                   </Text>
                   {(() => {
@@ -20236,9 +22467,9 @@ function MainApp() {
                     const matchedSec = activeSections.find(s => currentQNum >= Number(s.fromQ) && currentQNum <= Number(s.toQ));
                     if (!matchedSec) return null;
                     return (
-                      <View style={{ backgroundColor: "#eff6ff", borderColor: "#bfdbfe", borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 4 }}>
-                        <Ionicons name="bookmark" size={11} color="#1d4ed8" />
-                        <Text style={{ color: "#1d4ed8", fontSize: 11, fontWeight: "bold" }}>
+                      <View style={{ backgroundColor: "#eff6ff", borderColor: "#bfdbfe", borderWidth: 1, paddingHorizontal: 6, paddingVertical: 1.5, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 3 }}>
+                        <Ionicons name="bookmark" size={10} color="#1d4ed8" />
+                        <Text style={{ color: "#1d4ed8", fontSize: 10, fontWeight: "bold" }}>
                           {matchedSec.subject} (Q{matchedSec.fromQ}–{matchedSec.toQ})
                         </Text>
                       </View>
@@ -20250,18 +22481,18 @@ function MainApp() {
                   style={{
                     flexDirection: "row",
                     alignItems: "center",
-                    gap: 4,
+                    gap: 3,
                     backgroundColor: userReportedSet.has(`${activeAttempt.testId}_${currentQIdx}`) ? "#ffebee" : "#f5f5f5",
                     borderColor: userReportedSet.has(`${activeAttempt.testId}_${currentQIdx}`) ? "#c62828" : "#e0e0e0",
                     borderWidth: 1,
-                    borderRadius: 8,
-                    paddingHorizontal: 8,
-                    paddingVertical: 4
+                    borderRadius: 6,
+                    paddingHorizontal: 6,
+                    paddingVertical: 3
                   }}
                 >
-                  <Ionicons name="warning-outline" size={14} color={userReportedSet.has(`${activeAttempt.testId}_${currentQIdx}`) ? "#c62828" : "#757575"} />
-                  <Text style={{ fontSize: 11, fontWeight: "700", color: userReportedSet.has(`${activeAttempt.testId}_${currentQIdx}`) ? "#c62828" : "#616161" }}>
-                    {userReportedSet.has(`${activeAttempt.testId}_${currentQIdx}`) ? "Reported" : "Report Question"}
+                  <Ionicons name="warning-outline" size={13} color={userReportedSet.has(`${activeAttempt.testId}_${currentQIdx}`) ? "#c62828" : "#757575"} />
+                  <Text style={{ fontSize: 10, fontWeight: "700", color: userReportedSet.has(`${activeAttempt.testId}_${currentQIdx}`) ? "#c62828" : "#616161" }}>
+                    {userReportedSet.has(`${activeAttempt.testId}_${currentQIdx}`) ? "Reported" : "Report"}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -20276,18 +22507,18 @@ function MainApp() {
                 const showTe = filter === "all" || filter.includes("te");
 
                 return (
-                  <View style={{ marginBottom: 14, gap: 10 }}>
+                  <View style={{ marginBottom: isMobile ? 10 : 14, gap: isMobile ? 6 : 10 }}>
                     {showEn && (currentQ.question || currentQ.questionEn) && (
-                      renderFormattedQuestion(currentQ.questionEn || currentQ.question, false, 17)
+                      renderFormattedQuestion(currentQ.questionEn || currentQ.question, false, isMobile ? 14 : 17)
                     )}
                     {showTa && currentQ.questionTa && (
-                      renderFormattedQuestion(currentQ.questionTa, true, 16)
+                      renderFormattedQuestion(currentQ.questionTa, true, isMobile ? 13 : 16)
                     )}
                     {showMl && currentQ.questionMl && (
-                      renderFormattedQuestion(currentQ.questionMl, true, 16)
+                      renderFormattedQuestion(currentQ.questionMl, true, isMobile ? 13 : 16)
                     )}
                     {showTe && currentQ.questionTe && (
-                      renderFormattedQuestion(currentQ.questionTe, true, 16)
+                      renderFormattedQuestion(currentQ.questionTe, true, isMobile ? 13 : 16)
                     )}
                   </View>
                 );
@@ -20303,19 +22534,19 @@ function MainApp() {
                       setPreviewImageUri(cdnQUri);
                       setPreviewImageTitle(`Question #${currentQIdx + 1} Image`);
                     }}
-                    style={{ marginBottom: 16 }}
+                    style={{ marginBottom: isMobile ? 10 : 16 }}
                   >
                     <Image
                       source={{ uri: cdnQUri }}
-                      style={{ width: "100%", height: 220, borderRadius: 10, resizeMode: "contain", backgroundColor: "#ffffff", borderWidth: 1, borderColor: "#e0e0e0" }}
+                      style={{ width: "100%", height: isMobile ? 160 : 220, borderRadius: 10, resizeMode: "contain", backgroundColor: "#ffffff", borderWidth: 1, borderColor: "#e0e0e0" }}
                       pointerEvents="none"
                     />
-                    <Text style={{ fontSize: 11, color: "#1976d2", textAlign: "right", marginTop: 4, fontWeight: "600" }}>Tap image to view full screen</Text>
+                    <Text style={{ fontSize: 10, color: "#1976d2", textAlign: "right", marginTop: 3, fontWeight: "600" }}>Tap image to view full screen</Text>
                   </TouchableOpacity>
                 );
               })()}
 
-              <View style={{ gap: 10 }}>
+              <View style={{ gap: isMobile ? 8 : 10 }}>
                 {attemptQuestions[currentQIdx].options?.map((opt: string, oIdx: number) => {
                   const currentQ = attemptQuestions[currentQIdx];
                   const selected = selectedAnswers[currentQ.id] === opt;
@@ -20333,26 +22564,26 @@ function MainApp() {
                     <TouchableOpacity
                       key={oIdx}
                       onPress={() => selectAnswer(opt)}
-                      style={[styles.modalOptionBtn, selected && styles.modalOptionBtnSelected, { minHeight: 48, paddingVertical: 8 }]}
+                      style={[styles.modalOptionBtn, selected && styles.modalOptionBtnSelected, { minHeight: isMobile ? 40 : 48, paddingVertical: isMobile ? 6 : 8 }]}
                     >
                       <View style={{ flexDirection: "column", gap: 2 }}>
                         {showEn && (
-                          <Text style={{ color: selected ? "#ffffff" : "#212121", fontWeight: "bold", fontSize: 14 }}>
+                          <Text style={{ color: selected ? "#ffffff" : "#212121", fontWeight: "bold", fontSize: isMobile ? 13 : 14 }}>
                             {`${String.fromCharCode(65 + oIdx)}. ${opt}`}
                           </Text>
                         )}
                         {showTa && optTa && (
-                          <Text style={{ color: selected ? "#ffffff" : "#455a64", fontSize: 13, fontStyle: "italic" }}>
+                          <Text style={{ color: selected ? "#ffffff" : "#455a64", fontSize: isMobile ? 12 : 13, fontStyle: "italic" }}>
                             {!showEn ? `${String.fromCharCode(65 + oIdx)}. ${optTa}` : optTa}
                           </Text>
                         )}
                         {showMl && optMl && (
-                          <Text style={{ color: selected ? "#b2ebf2" : "#00838f", fontSize: 13, fontStyle: "italic" }}>
+                          <Text style={{ color: selected ? "#b2ebf2" : "#00838f", fontSize: isMobile ? 12 : 13, fontStyle: "italic" }}>
                             {!showEn && !showTa ? `${String.fromCharCode(65 + oIdx)}. ${optMl}` : optMl}
                           </Text>
                         )}
                         {showTe && optTe && (
-                          <Text style={{ color: selected ? "#fff9c4" : "#f57f17", fontSize: 13, fontStyle: "italic" }}>
+                          <Text style={{ color: selected ? "#fff9c4" : "#f57f17", fontSize: isMobile ? 12 : 13, fontStyle: "italic" }}>
                             {!showEn && !showTa && !showMl ? `${String.fromCharCode(65 + oIdx)}. ${optTe}` : optTe}
                           </Text>
                         )}
@@ -20364,13 +22595,20 @@ function MainApp() {
             </ScrollView>
 
             {/* Navigation Row */}
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 15, gap: 10 }}>
+            <View style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginTop: isMobile ? 8 : 15,
+              gap: isMobile ? 6 : 10,
+              paddingBottom: insets.bottom ? Math.max(insets.bottom - 4, 4) : 4
+            }}>
               <TouchableOpacity
                 disabled={currentQIdx === 0}
                 onPress={() => navigateTo(currentQIdx - 1)}
                 style={{
                   flex: 1,
-                  height: 44,
+                  height: isMobile ? 40 : 44,
                   borderRadius: 8,
                   borderWidth: 1,
                   borderColor: "#c62828",
@@ -20380,7 +22618,7 @@ function MainApp() {
                   opacity: currentQIdx === 0 ? 0.5 : 1
                 }}
               >
-                <Text style={{ color: "#c62828", fontWeight: "bold", fontSize: 13 }}>◀ Previous</Text>
+                <Text style={{ color: "#c62828", fontWeight: "bold", fontSize: isMobile ? 12 : 13 }}>◀ Prev</Text>
               </TouchableOpacity>
 
               {/* Submit: only shown when all questions are explored */}
@@ -20393,37 +22631,38 @@ function MainApp() {
                   }}
                   disabled={submitLoading}
                   style={{
-                    flex: 1.2,
-                    height: 44,
+                    flex: isMobile ? 1.4 : 1.2,
+                    height: isMobile ? 40 : 44,
                     borderRadius: 8,
                     backgroundColor: submitLoading ? "#e57373" : "#c62828",
                     justifyContent: "center",
                     alignItems: "center",
                     flexDirection: "row",
-                    gap: 6
+                    gap: 4
                   }}
                 >
                   {submitLoading
                     ? <ActivityIndicator size="small" color="#ffffff" />
-                    : <><Ionicons name="checkmark-circle-outline" size={16} color="#ffffff" /><Text style={{ color: "#ffffff", fontWeight: "bold", fontSize: 13 }}>Submit Exam</Text></>
+                    : <><Ionicons name="checkmark-circle-outline" size={isMobile ? 14 : 16} color="#ffffff" /><Text style={{ color: "#ffffff", fontWeight: "bold", fontSize: isMobile ? 12 : 13 }}>Submit Exam</Text></>
                   }
                 </TouchableOpacity>
               ) : (
                 <View
                   style={{
-                    flex: 1.2,
-                    height: 44,
+                    flex: isMobile ? 1.4 : 1.2,
+                    height: isMobile ? 40 : 44,
                     borderRadius: 8,
                     backgroundColor: "#e0e0e0",
                     justifyContent: "center",
                     alignItems: "center",
                     flexDirection: "row",
-                    gap: 6
+                    gap: 4,
+                    paddingHorizontal: 4
                   }}
                 >
-                  <Ionicons name="eye-outline" size={14} color="#9e9e9e" />
-                  <Text style={{ color: "#9e9e9e", fontWeight: "600", fontSize: 11 }}>
-                    Visit all ({attemptQuestions.length - exploredQuestions.size} left)
+                  <Ionicons name="eye-outline" size={isMobile ? 12 : 14} color="#9e9e9e" />
+                  <Text style={{ color: "#9e9e9e", fontWeight: "600", fontSize: isMobile ? 10 : 11 }}>
+                    Visit all ({attemptQuestions.length - exploredQuestions.size})
                   </Text>
                 </View>
               )}
@@ -20433,7 +22672,7 @@ function MainApp() {
                 onPress={() => navigateTo(currentQIdx + 1)}
                 style={{
                   flex: 1,
-                  height: 44,
+                  height: isMobile ? 40 : 44,
                   borderRadius: 8,
                   borderWidth: 1,
                   borderColor: "#c62828",
@@ -20443,7 +22682,7 @@ function MainApp() {
                   opacity: currentQIdx === attemptQuestions.length - 1 ? 0.5 : 1
                 }}
               >
-                <Text style={{ color: "#c62828", fontWeight: "bold", fontSize: 13 }}>Next ▶</Text>
+                <Text style={{ color: "#c62828", fontWeight: "bold", fontSize: isMobile ? 12 : 13 }}>Next ▶</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -20936,38 +23175,19 @@ function MainApp() {
             elevation: 6,
             padding: 4
           }}>
-            {/* Dark/Light mode */}
-            <TouchableOpacity
-              style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 12, gap: 10, borderRadius: 6 }}
-              onPress={() => setDarkMode(!darkMode)}
-            >
-              <Ionicons name={darkMode ? "sunny-outline" : "moon-outline"} size={18} color={darkMode ? "#ffb74d" : "#757575"} />
-              <Text style={{ fontSize: 13, color: darkMode ? "#e0e0e0" : "#212121", flex: 1 }}>
-                {darkMode ? "Light Mode" : "Dark Mode"}
-              </Text>
-            </TouchableOpacity>
-
             {(user?.role === "student" || user?.role === "guest") && (
-              <TouchableOpacity
-                style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 12, gap: 10, borderRadius: 6 }}
-                onPress={() => { setShowHamburger(false); setShowFeedbackModal(true); }}
-              >
-                <Ionicons name="chatbox-ellipses-outline" size={18} color={darkMode ? "#9e9e9e" : "#757575"} />
-                <Text style={{ fontSize: 13, color: darkMode ? "#e0e0e0" : "#212121" }}>Send Feedback</Text>
-              </TouchableOpacity>
+              <>
+                <TouchableOpacity
+                  style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 12, gap: 10, borderRadius: 6 }}
+                  onPress={() => { setShowHamburger(false); setShowFeedbackModal(true); }}
+                >
+                  <Ionicons name="chatbox-ellipses-outline" size={18} color="#757575" />
+                  <Text style={{ fontSize: 13, color: "#212121" }}>Send Feedback</Text>
+                </TouchableOpacity>
+
+                <View style={{ height: 1, backgroundColor: "#e0e0e0", marginVertical: 4 }} />
+              </>
             )}
-
-
-
-            <TouchableOpacity
-              style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 12, gap: 10, borderRadius: 6 }}
-              onPress={() => { setShowHamburger(false); setShowIpConfig(!showIpConfig); }}
-            >
-              <Ionicons name="settings-outline" size={18} color={darkMode ? "#9e9e9e" : "#757575"} />
-              <Text style={{ fontSize: 13, color: darkMode ? "#e0e0e0" : "#212121" }}>Server Settings</Text>
-            </TouchableOpacity>
-
-            <View style={{ height: 1, backgroundColor: darkMode ? "#2a2a2a" : "#e0e0e0", marginVertical: 4 }} />
 
             <TouchableOpacity
               style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 12, gap: 10, borderRadius: 6 }}
@@ -21322,9 +23542,13 @@ function MainApp() {
         <Modal visible={true} transparent animationType="fade" onRequestClose={() => setSelectedCampaignModal(null)}>
           <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.65)", justifyContent: "center", alignItems: "center", padding: 20 }}>
             <View style={[styles.card, darkMode && styles.cardDark, { width: "100%", maxWidth: 460, maxHeight: "85%", padding: 0, overflow: "hidden", borderRadius: 16, borderTopWidth: 4, borderTopColor: "#c62828" }]}>
-              {selectedCampaignModal.posterUrl ? (
-                <View style={{ width: "100%", height: 180, backgroundColor: "#000", position: "relative" }}>
-                  <Image source={{ uri: getDirectImageUrl(selectedCampaignModal.posterUrl) }} style={{ width: "100%", height: "100%", resizeMode: "cover" }} />
+              {getCampaignPosterUri(selectedCampaignModal) ? (
+                <View style={{ width: "100%", height: 180, backgroundColor: darkMode ? "#2a2a2a" : "#f5f5f5", position: "relative" }}>
+                  {Platform.OS === "web" ? (
+                    <img src={getCampaignPosterUri(selectedCampaignModal)} alt={selectedCampaignModal.title || "Campaign"} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                  ) : (
+                    <Image source={{ uri: getCampaignPosterUri(selectedCampaignModal) }} style={{ width: "100%", height: "100%", resizeMode: "cover" }} />
+                  )}
                   <TouchableOpacity
                     onPress={() => setSelectedCampaignModal(null)}
                     style={{ position: "absolute", top: 10, right: 10, backgroundColor: "rgba(0,0,0,0.6)", borderRadius: 16, width: 32, height: 32, alignItems: "center", justifyContent: "center" }}
@@ -21385,6 +23609,17 @@ function MainApp() {
                   onPress={() => {
                     setSelectedCampaignModal(null);
                     if (user?.role === "guest") {
+                      const uName = user?.name || guestName || "";
+                      const uPhone = user?.phone || guestPhone || "";
+                      const uEmail = user?.email || guestEmail || "";
+                      const uCity = user?.city || "";
+                      setAdmissionForm(prev => ({
+                        ...prev,
+                        name: uName || prev.name,
+                        phone: uPhone || prev.phone,
+                        email: uEmail || prev.email,
+                        city: uCity || prev.city
+                      }));
                       setShowAdmissionForm(true);
                     } else {
                       Alert.alert("Enquiry Recorded", "Thank you for your interest! Our team has logged your response.");
@@ -21701,6 +23936,589 @@ function MainApp() {
         </View>
       )}
 
+      {/* ─── Admin Dashboard Quick Inquiry Modal ─── */}
+      {showDashboardInquiryModal && (
+        <Modal
+          visible={true}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={resetDashboardInquiryForm}
+        >
+          <View style={{
+            flex: 1,
+            backgroundColor: "rgba(0, 0, 0, 0.65)",
+            justifyContent: "center",
+            alignItems: "center",
+            padding: 16,
+            zIndex: 99999
+          }}>
+            <View style={{
+              width: "100%",
+              maxWidth: 560,
+              backgroundColor: darkMode ? "#1e1e1e" : "#ffffff",
+              borderRadius: 16,
+              overflow: "hidden",
+              borderWidth: 1,
+              borderColor: darkMode ? "#333333" : "#e2e8f0",
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 10 },
+              shadowOpacity: 0.25,
+              shadowRadius: 20,
+              elevation: 10
+            }}>
+              {/* Modal Header */}
+              <View style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+                paddingHorizontal: 20,
+                paddingVertical: 16,
+                borderBottomWidth: 1,
+                borderBottomColor: darkMode ? "#2a2a2a" : "#f1f5f9",
+                backgroundColor: darkMode ? "#181818" : "#f8fafc"
+              }}>
+                <View>
+                  <Text style={{ fontSize: 16, fontWeight: "bold", color: darkMode ? "#ffffff" : "#0f172a" }}>
+                    Record New Candidate Enquiry
+                  </Text>
+                  <Text style={{ fontSize: 12, color: darkMode ? "#94a3b8" : "#64748b", marginTop: 2 }}>
+                    Add a new walk-in, phone call, or social inquiry directly from Dashboard.
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={resetDashboardInquiryForm}
+                  style={{ padding: 6, borderRadius: 20, backgroundColor: darkMode ? "#2a2a2a" : "#e2e8f0" }}
+                >
+                  <Ionicons name="close" size={20} color={darkMode ? "#ffffff" : "#475569"} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Form Body */}
+              <ScrollView style={{ maxHeight: 480 }} contentContainerStyle={{ padding: 20, gap: 14 }}>
+                {/* Row 1: Name and Contact */}
+                <View style={{ flexDirection: isMobile ? "column" : "row", gap: 12 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 11, fontWeight: "700", color: darkMode ? "#cbd5e1" : "#475569", marginBottom: 6, letterSpacing: 0.5 }}>
+                      CANDIDATE NAME *
+                    </Text>
+                    <TextInput
+                      style={{
+                        height: 40,
+                        borderWidth: 1,
+                        borderColor: darkMode ? "#404040" : "#cbd5e1",
+                        borderRadius: 8,
+                        paddingHorizontal: 12,
+                        fontSize: 14,
+                        color: darkMode ? "#ffffff" : "#0f172a",
+                        backgroundColor: darkMode ? "#262626" : "#ffffff"
+                      }}
+                      placeholder="Full name..."
+                      placeholderTextColor="#94a3b8"
+                      value={dashInquiryName}
+                      onChangeText={setDashInquiryName}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 11, fontWeight: "700", color: darkMode ? "#cbd5e1" : "#475569", marginBottom: 6, letterSpacing: 0.5 }}>
+                      CONTACT PHONE *
+                    </Text>
+                    <TextInput
+                      style={{
+                        height: 40,
+                        borderWidth: 1,
+                        borderColor: darkMode ? "#404040" : "#cbd5e1",
+                        borderRadius: 8,
+                        paddingHorizontal: 12,
+                        fontSize: 14,
+                        color: darkMode ? "#ffffff" : "#0f172a",
+                        backgroundColor: darkMode ? "#262626" : "#ffffff"
+                      }}
+                      placeholder="Phone number..."
+                      placeholderTextColor="#94a3b8"
+                      keyboardType="phone-pad"
+                      value={dashInquiryPhone}
+                      onChangeText={setDashInquiryPhone}
+                    />
+                  </View>
+                </View>
+
+                {/* Row 2: Email and Course */}
+                <View style={{ flexDirection: isMobile ? "column" : "row", gap: 12 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 11, fontWeight: "700", color: darkMode ? "#cbd5e1" : "#475569", marginBottom: 6, letterSpacing: 0.5 }}>
+                      EMAIL (OPTIONAL)
+                    </Text>
+                    <TextInput
+                      style={{
+                        height: 40,
+                        borderWidth: 1,
+                        borderColor: darkMode ? "#404040" : "#cbd5e1",
+                        borderRadius: 8,
+                        paddingHorizontal: 12,
+                        fontSize: 14,
+                        color: darkMode ? "#ffffff" : "#0f172a",
+                        backgroundColor: darkMode ? "#262626" : "#ffffff"
+                      }}
+                      placeholder="Email address..."
+                      placeholderTextColor="#94a3b8"
+                      keyboardType="email-address"
+                      value={dashInquiryEmail}
+                      onChangeText={setDashInquiryEmail}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 11, fontWeight: "700", color: darkMode ? "#cbd5e1" : "#475569", marginBottom: 6, letterSpacing: 0.5 }}>
+                      TARGET EXAM / COURSE
+                    </Text>
+                    {Platform.OS === 'web' ? (
+                      <select
+                        value={DASH_COURSE_OPTIONS.includes(dashInquiryCourse) ? dashInquiryCourse : (dashInquiryIsCustomCourse || dashInquiryCourse ? 'Others' : '')}
+                        onChange={(e: any) => {
+                          const val = e.target.value;
+                          if (val === 'Others') {
+                            setDashInquiryIsCustomCourse(true);
+                            setDashInquiryCourse('');
+                          } else {
+                            setDashInquiryIsCustomCourse(false);
+                            setDashInquiryCourse(val);
+                          }
+                        }}
+                        style={{
+                          borderWidth: 1,
+                          borderColor: darkMode ? '#404040' : '#cbd5e1',
+                          borderRadius: 8,
+                          paddingLeft: 12,
+                          paddingRight: 12,
+                          fontSize: 14,
+                          color: darkMode ? '#ffffff' : '#0f172a',
+                          backgroundColor: darkMode ? '#262626' : '#ffffff',
+                          width: '100%',
+                          outline: 'none',
+                          cursor: 'pointer',
+                          height: 40
+                        }}
+                      >
+                        <option value="" disabled style={{ color: '#94a3b8', backgroundColor: darkMode ? '#262626' : '#fff' }}>-- Select Course --</option>
+                        {DASH_COURSE_OPTIONS.map(c => (
+                          <option key={c} value={c} style={{ color: darkMode ? '#ffffff' : '#0f172a', backgroundColor: darkMode ? '#262626' : '#fff' }}>
+                            {c === 'Others' ? 'Others / Custom...' : c}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <TouchableOpacity
+                        style={{
+                          height: 40,
+                          borderWidth: 1,
+                          borderColor: darkMode ? '#404040' : '#cbd5e1',
+                          borderRadius: 8,
+                          paddingHorizontal: 12,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          backgroundColor: darkMode ? '#262626' : '#ffffff'
+                        }}
+                        onPress={() => setDashInquiryShowCoursePicker(!dashInquiryShowCoursePicker)}
+                      >
+                        <Text style={{ fontSize: 14, color: dashInquiryCourse || dashInquiryIsCustomCourse ? (darkMode ? '#ffffff' : '#0f172a') : '#94a3b8' }} numberOfLines={1}>
+                          {dashInquiryIsCustomCourse ? (dashInquiryCourse ? `Other: ${dashInquiryCourse}` : 'Others / Custom') : (dashInquiryCourse || '-- Select Course --')}
+                        </Text>
+                        <Ionicons name={dashInquiryShowCoursePicker ? "chevron-up" : "chevron-down"} size={16} color="#64748b" />
+                      </TouchableOpacity>
+                    )}
+
+                    {dashInquiryShowCoursePicker && Platform.OS !== 'web' && (
+                      <View style={{
+                        marginTop: 4,
+                        backgroundColor: darkMode ? '#262626' : '#fff',
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: darkMode ? '#404040' : '#cbd5e1',
+                        maxHeight: 160
+                      }}>
+                        <ScrollView nestedScrollEnabled style={{ maxHeight: 160 }}>
+                          {DASH_COURSE_OPTIONS.map(c => (
+                            <TouchableOpacity
+                              key={c}
+                              style={{
+                                paddingVertical: 10,
+                                paddingHorizontal: 12,
+                                borderBottomWidth: 1,
+                                borderBottomColor: darkMode ? '#333' : '#f1f5f9'
+                              }}
+                              onPress={() => {
+                                if (c === 'Others') {
+                                  setDashInquiryIsCustomCourse(true);
+                                  setDashInquiryCourse('');
+                                } else {
+                                  setDashInquiryIsCustomCourse(false);
+                                  setDashInquiryCourse(c);
+                                }
+                                setDashInquiryShowCoursePicker(false);
+                              }}
+                            >
+                              <Text style={{ fontSize: 13, color: darkMode ? '#ffffff' : '#0f172a' }}>{c === 'Others' ? 'Others / Custom...' : c}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </ScrollView>
+                      </View>
+                    )}
+
+                    {dashInquiryIsCustomCourse && (
+                      <TextInput
+                        style={{
+                          height: 38,
+                          marginTop: 6,
+                          borderWidth: 1,
+                          borderColor: darkMode ? "#404040" : "#cbd5e1",
+                          borderRadius: 8,
+                          paddingHorizontal: 12,
+                          fontSize: 13,
+                          color: darkMode ? "#ffffff" : "#0f172a",
+                          backgroundColor: darkMode ? "#262626" : "#ffffff"
+                        }}
+                        placeholder="Type custom course / exam..."
+                        placeholderTextColor="#94a3b8"
+                        value={dashInquiryCourse}
+                        onChangeText={setDashInquiryCourse}
+                        autoFocus
+                      />
+                    )}
+                  </View>
+                </View>
+
+                {/* Nature of Enquiry */}
+                <View>
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: darkMode ? "#cbd5e1" : "#475569", marginBottom: 6, letterSpacing: 0.5 }}>
+                    NATURE OF ENQUIRY
+                  </Text>
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                    {DASH_NATURE_OPTIONS.map(opt => {
+                      const isSelected = dashInquiryNature === opt.val;
+                      return (
+                        <TouchableOpacity
+                          key={opt.val}
+                          style={{
+                            paddingVertical: 5,
+                            paddingHorizontal: 12,
+                            borderRadius: 16,
+                            borderWidth: 1,
+                            backgroundColor: isSelected ? opt.activeBg : (darkMode ? "#262626" : "#ffffff"),
+                            borderColor: isSelected ? opt.activeBg : (darkMode ? "#404040" : "#cbd5e1")
+                          }}
+                          onPress={() => setDashInquiryNature(opt.val)}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: "600", color: isSelected ? "#ffffff" : (darkMode ? "#cbd5e1" : "#334155") }}>
+                            {opt.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* Row 3: Attended By & Mode */}
+                <View style={{ flexDirection: isMobile ? "column" : "row", gap: 12 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 11, fontWeight: "700", color: darkMode ? "#cbd5e1" : "#475569", marginBottom: 6, letterSpacing: 0.5 }}>
+                      ATTENDED BY
+                    </Text>
+                    {Platform.OS === 'web' ? (
+                      <select
+                        value={dashInquiryAtten === 'Admin Staff' ? 'Admin Staff' : (dashInquiryIsCustomAtten || dashInquiryAtten ? 'Others' : 'Admin Staff')}
+                        onChange={(e: any) => {
+                          const val = e.target.value;
+                          if (val === 'Others') {
+                            setDashInquiryIsCustomAtten(true);
+                            setDashInquiryAtten('');
+                          } else {
+                            setDashInquiryIsCustomAtten(false);
+                            setDashInquiryAtten(val);
+                          }
+                        }}
+                        style={{
+                          borderWidth: 1,
+                          borderColor: darkMode ? '#404040' : '#cbd5e1',
+                          borderRadius: 8,
+                          paddingLeft: 12,
+                          paddingRight: 12,
+                          fontSize: 14,
+                          color: darkMode ? '#ffffff' : '#0f172a',
+                          backgroundColor: darkMode ? '#262626' : '#ffffff',
+                          width: '100%',
+                          outline: 'none',
+                          cursor: 'pointer',
+                          height: 40
+                        }}
+                      >
+                        {dashInquiryStaffList.map(st => (
+                          <option key={st} value={st} style={{ color: darkMode ? '#ffffff' : '#0f172a', backgroundColor: darkMode ? '#262626' : '#fff' }}>{st}</option>
+                        ))}
+                        <option value="Others" style={{ color: darkMode ? '#ffffff' : '#0f172a', backgroundColor: darkMode ? '#262626' : '#fff' }}>Others / Custom...</option>
+                      </select>
+                    ) : (
+                      <TouchableOpacity
+                        style={{
+                          height: 40,
+                          borderWidth: 1,
+                          borderColor: darkMode ? '#404040' : '#cbd5e1',
+                          borderRadius: 8,
+                          paddingHorizontal: 12,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          backgroundColor: darkMode ? '#262626' : '#ffffff'
+                        }}
+                        onPress={() => setDashInquiryShowAttenPicker(!dashInquiryShowAttenPicker)}
+                      >
+                        <Text style={{ fontSize: 14, color: darkMode ? '#ffffff' : '#0f172a' }} numberOfLines={1}>
+                          {dashInquiryIsCustomAtten ? (dashInquiryAtten ? `Other: ${dashInquiryAtten}` : 'Others / Custom') : (dashInquiryAtten || 'Admin Staff')}
+                        </Text>
+                        <Ionicons name={dashInquiryShowAttenPicker ? "chevron-up" : "chevron-down"} size={16} color="#64748b" />
+                      </TouchableOpacity>
+                    )}
+
+                    {dashInquiryShowAttenPicker && Platform.OS !== 'web' && (
+                      <View style={{
+                        marginTop: 4,
+                        backgroundColor: darkMode ? '#262626' : '#fff',
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: darkMode ? '#404040' : '#cbd5e1'
+                      }}>
+                        {Array.from(new Set([...dashInquiryStaffList, 'Others'])).map(st => (
+                          <TouchableOpacity
+                            key={st}
+                            style={{
+                              paddingVertical: 10,
+                              paddingHorizontal: 12,
+                              borderBottomWidth: 1,
+                              borderBottomColor: darkMode ? '#333' : '#f1f5f9'
+                            }}
+                            onPress={() => {
+                              if (st === 'Others') {
+                                setDashInquiryIsCustomAtten(true);
+                                setDashInquiryAtten('');
+                              } else {
+                                setDashInquiryIsCustomAtten(false);
+                                setDashInquiryAtten(st);
+                              }
+                              setDashInquiryShowAttenPicker(false);
+                            }}
+                          >
+                            <Text style={{ fontSize: 13, color: darkMode ? '#ffffff' : '#0f172a' }}>{st === 'Others' ? 'Others / Custom...' : st}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
+
+                    {dashInquiryIsCustomAtten && (
+                      <TextInput
+                        style={{
+                          height: 38,
+                          marginTop: 6,
+                          borderWidth: 1,
+                          borderColor: darkMode ? "#404040" : "#cbd5e1",
+                          borderRadius: 8,
+                          paddingHorizontal: 12,
+                          fontSize: 13,
+                          color: darkMode ? "#ffffff" : "#0f172a",
+                          backgroundColor: darkMode ? "#262626" : "#ffffff"
+                        }}
+                        placeholder="Type staff name..."
+                        placeholderTextColor="#94a3b8"
+                        value={dashInquiryAtten}
+                        onChangeText={setDashInquiryAtten}
+                        autoFocus
+                      />
+                    )}
+                  </View>
+
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 11, fontWeight: "700", color: darkMode ? "#cbd5e1" : "#475569", marginBottom: 6, letterSpacing: 0.5 }}>
+                      CLASS MODE
+                    </Text>
+                    {Platform.OS === 'web' ? (
+                      <select
+                        value={dashInquiryMode}
+                        onChange={(e: any) => setDashInquiryMode(e.target.value)}
+                        style={{
+                          borderWidth: 1,
+                          borderColor: darkMode ? '#404040' : '#cbd5e1',
+                          borderRadius: 8,
+                          paddingLeft: 12,
+                          paddingRight: 12,
+                          fontSize: 14,
+                          color: darkMode ? '#ffffff' : '#0f172a',
+                          backgroundColor: darkMode ? '#262626' : '#ffffff',
+                          width: '100%',
+                          outline: 'none',
+                          cursor: 'pointer',
+                          height: 40
+                        }}
+                      >
+                        {DASH_MODE_OPTIONS.map(m => (
+                          <option key={m} value={m} style={{ color: darkMode ? '#ffffff' : '#0f172a', backgroundColor: darkMode ? '#262626' : '#fff' }}>
+                            {m}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <TouchableOpacity
+                        style={{
+                          height: 40,
+                          borderWidth: 1,
+                          borderColor: darkMode ? '#404040' : '#cbd5e1',
+                          borderRadius: 8,
+                          paddingHorizontal: 12,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          backgroundColor: darkMode ? '#262626' : '#ffffff'
+                        }}
+                        onPress={() => setDashInquiryShowModePicker(!dashInquiryShowModePicker)}
+                      >
+                        <Text style={{ fontSize: 14, color: darkMode ? '#ffffff' : '#0f172a' }}>{dashInquiryMode}</Text>
+                        <Ionicons name={dashInquiryShowModePicker ? "chevron-up" : "chevron-down"} size={16} color="#64748b" />
+                      </TouchableOpacity>
+                    )}
+
+                    {dashInquiryShowModePicker && Platform.OS !== 'web' && (
+                      <View style={{
+                        marginTop: 4,
+                        backgroundColor: darkMode ? '#262626' : '#fff',
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: darkMode ? '#404040' : '#cbd5e1'
+                      }}>
+                        {DASH_MODE_OPTIONS.map(m => (
+                          <TouchableOpacity
+                            key={m}
+                            style={{
+                              paddingVertical: 10,
+                              paddingHorizontal: 12,
+                              borderBottomWidth: 1,
+                              borderBottomColor: darkMode ? '#333' : '#f1f5f9'
+                            }}
+                            onPress={() => {
+                              setDashInquiryMode(m);
+                              setDashInquiryShowModePicker(false);
+                            }}
+                          >
+                            <Text style={{ fontSize: 13, color: darkMode ? '#ffffff' : '#0f172a' }}>{m}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                </View>
+
+                {/* Reference */}
+                <View>
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: darkMode ? "#cbd5e1" : "#475569", marginBottom: 6, letterSpacing: 0.5 }}>
+                    REFERENCE / LEAD SOURCE
+                  </Text>
+                  <TextInput
+                    style={{
+                      height: 40,
+                      borderWidth: 1,
+                      borderColor: darkMode ? "#404040" : "#cbd5e1",
+                      borderRadius: 8,
+                      paddingHorizontal: 12,
+                      fontSize: 14,
+                      color: darkMode ? "#ffffff" : "#0f172a",
+                      backgroundColor: darkMode ? "#262626" : "#ffffff"
+                    }}
+                    placeholder="e.g. Walk-in, Alumni, Newspaper, Banner, Friend..."
+                    placeholderTextColor="#94a3b8"
+                    value={dashInquiryReference}
+                    onChangeText={setDashInquiryReference}
+                  />
+                </View>
+
+                {/* Remarks */}
+                <View>
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: darkMode ? "#cbd5e1" : "#475569", marginBottom: 6, letterSpacing: 0.5 }}>
+                    REMARKS / COUNSELOR NOTES
+                  </Text>
+                  <TextInput
+                    style={{
+                      height: 65,
+                      borderWidth: 1,
+                      borderColor: darkMode ? "#404040" : "#cbd5e1",
+                      borderRadius: 8,
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      fontSize: 14,
+                      textAlignVertical: "top",
+                      color: darkMode ? "#ffffff" : "#0f172a",
+                      backgroundColor: darkMode ? "#262626" : "#ffffff"
+                    }}
+                    multiline
+                    placeholder="Candidate background, follow-up notes, discussion..."
+                    placeholderTextColor="#94a3b8"
+                    value={dashInquiryRemarks}
+                    onChangeText={setDashInquiryRemarks}
+                  />
+                </View>
+              </ScrollView>
+
+              {/* Modal Footer */}
+              <View style={{
+                flexDirection: "row",
+                justifyContent: "flex-end",
+                alignItems: "center",
+                gap: 12,
+                paddingHorizontal: 20,
+                paddingVertical: 14,
+                borderTopWidth: 1,
+                borderTopColor: darkMode ? "#2a2a2a" : "#f1f5f9",
+                backgroundColor: darkMode ? "#181818" : "#f8fafc"
+              }}>
+                <TouchableOpacity
+                  onPress={resetDashboardInquiryForm}
+                  style={{
+                    paddingVertical: 9,
+                    paddingHorizontal: 16,
+                    borderRadius: 8,
+                    backgroundColor: darkMode ? "#2a2a2a" : "#e2e8f0"
+                  }}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: "600", color: darkMode ? "#e2e8f0" : "#475569" }}>
+                    Cancel
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={submitDashboardInquiry}
+                  disabled={submittingDashInquiry}
+                  style={{
+                    paddingVertical: 9,
+                    paddingHorizontal: 20,
+                    borderRadius: 8,
+                    backgroundColor: "#b91c1c",
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 6
+                  }}
+                >
+                  {submittingDashInquiry ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <>
+                      <Ionicons name="checkmark-circle-outline" size={17} color="#ffffff" />
+                      <Text style={{ fontSize: 13, fontWeight: "bold", color: "#ffffff" }}>
+                        Save Inquiry
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+
       <View style={[styles.header, darkMode && styles.headerDark]}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
           <View style={[styles.headerLogo, { backgroundColor: "transparent", borderWidth: 0 }]}>
@@ -21708,7 +24526,11 @@ function MainApp() {
           </View>
           <View>
             <Text style={[styles.headerTitle, darkMode && { color: "#f5f5f5" }]}>Nermai IAS</Text>
-            <Text style={{ color: darkMode ? "#9e9e9e" : "#9e9e9e", fontSize: 10 }}>{user.role === "student" ? `Student · ${user.name}` : `${user.role.charAt(0).toUpperCase() + user.role.slice(1)} Portal`}</Text>
+            <Text style={{ color: darkMode ? "#9e9e9e" : "#9e9e9e", fontSize: 10 }}>
+              {user.role === "student"
+                ? `Student · ${user.name}${user.batch || user.course ? ` (${[user.batch, user.course].filter(Boolean).join(" • ")})` : ""}`
+                : `${user.role.charAt(0).toUpperCase() + user.role.slice(1)} Portal`}
+            </Text>
           </View>
         </View>
         <TouchableOpacity onPress={() => setShowHamburger(true)} style={[styles.hamburgerBtn, darkMode && { backgroundColor: "#303030" }]}>
@@ -21733,14 +24555,14 @@ function MainApp() {
             <ScrollView style={[styles.body, darkMode && { backgroundColor: "#121212" }]} contentContainerStyle={{ paddingBottom: 80 }}>
               <View style={{ gap: 15 }}>
                 {/* Active Campaign banners for Students */}
-                {user.role === "student" && campaigns.filter((c: any) => c.showInDashboard && c.posterUrl).length > 0 && (
+                {user.role === "student" && campaigns.filter((c: any) => c.showInDashboard && (c.posterUrl || c.posterBase64)).length > 0 && (
                   <View style={{ marginBottom: 10 }}>
                     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                       <Text style={[styles.sectionTitle, darkMode && styles.sectionTitleDark]}>Special Highlights & Programs</Text>
                       <Text style={{ fontSize: 11, color: "#c62828", fontWeight: "bold" }}>Swipe &rarr;</Text>
                     </View>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: "row", marginVertical: 4 }}>
-                      {campaigns.filter((c: any) => c.showInDashboard && c.posterUrl).map((cp: any) => (
+                      {campaigns.filter((c: any) => c.showInDashboard && (c.posterUrl || c.posterBase64)).map((cp: any) => (
                         <TouchableOpacity
                           key={cp.id}
                           onPress={() => setSelectedCampaignModal(cp)}
@@ -21760,8 +24582,14 @@ function MainApp() {
                             elevation: 5
                           }}
                         >
-                          <View style={{ width: "100%", height: 135, position: "relative", backgroundColor: "#000" }}>
-                            <Image source={{ uri: getDirectImageUrl(cp.posterUrl) }} style={{ width: "100%", height: "100%", resizeMode: "cover" }} />
+                          <View style={{ width: "100%", height: 135, position: "relative", backgroundColor: darkMode ? "#2a2a2a" : "#f5f5f5" }}>
+                            {getCampaignPosterUri(cp) ? (
+                              Platform.OS === "web" ? (
+                                <img src={getCampaignPosterUri(cp)} alt={cp.title || "Poster"} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                              ) : (
+                                <Image source={{ uri: getCampaignPosterUri(cp) }} style={{ width: "100%", height: "100%", resizeMode: "cover" }} />
+                              )
+                            ) : null}
                             <View style={{ position: "absolute", top: 10, left: 10, backgroundColor: "rgba(198,40,40,0.9)", borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 }}>
                               <Text style={{ color: "#fff", fontSize: 10, fontWeight: "800", letterSpacing: 0.5 }}>FEATURED</Text>
                             </View>
@@ -21990,9 +24818,26 @@ function MainApp() {
                     {/* ══════════════════════════════════════════════════════════════════
                         2. ACADEMY MODULE SHORTCUTS & QUICK NAVIGATION (Fully Dynamic)
                     ══════════════════════════════════════════════════════════════════ */}
-                    <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12, paddingHorizontal: 4 }}>
-                      <Ionicons name="apps-outline" size={17} color="#c62828" style={{ marginRight: 6 }} />
-                      <Text style={{ fontSize: 14, fontWeight: "bold", color: darkMode ? "#ffffff" : "#424242" }}>Module Shortcuts &amp; Live Status</Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12, paddingHorizontal: 4, flexWrap: "wrap", gap: 8 }}>
+                      <View style={{ flexDirection: "row", alignItems: "center" }}>
+                        <Ionicons name="apps-outline" size={17} color="#c62828" style={{ marginRight: 6 }} />
+                        <Text style={{ fontSize: 14, fontWeight: "bold", color: darkMode ? "#ffffff" : "#424242" }}>Module Shortcuts &amp; Live Status</Text>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => setShowDashboardInquiryModal(true)}
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          backgroundColor: "#c62828",
+                          paddingHorizontal: 12,
+                          paddingVertical: 7,
+                          borderRadius: 8,
+                          gap: 6
+                        }}
+                      >
+                        <Ionicons name="add-circle-outline" size={16} color="#ffffff" />
+                        <Text style={{ color: "#ffffff", fontSize: 12, fontWeight: "bold" }}>+ Add New Inquiry</Text>
+                      </TouchableOpacity>
                     </View>
                     <View style={{
                       flexDirection: "row",
@@ -22056,18 +24901,65 @@ function MainApp() {
                           >
                             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                               <Ionicons name="chatbubble-ellipses-outline" size={20} color="#0288d1" />
-                              {pendingCount > 0 ? (
-                                <View style={{ backgroundColor: "#0288d1", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
-                                  <Text style={{ color: "#fff", fontSize: 10, fontWeight: "bold" }}>{pendingCount} New</Text>
-                                </View>
-                              ) : (
-                                <Ionicons name="arrow-forward" size={14} color="#0288d1" />
-                              )}
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                                <TouchableOpacity
+                                  onPress={(e: any) => {
+                                    if (e && typeof e.stopPropagation === "function") e.stopPropagation();
+                                    setShowDashboardInquiryModal(true);
+                                  }}
+                                  style={{ backgroundColor: "#0288d1", paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8 }}
+                                >
+                                  <Text style={{ color: "#fff", fontSize: 10, fontWeight: "bold" }}>+ New</Text>
+                                </TouchableOpacity>
+                                {pendingCount > 0 ? (
+                                  <View style={{ backgroundColor: "#0288d1", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
+                                    <Text style={{ color: "#fff", fontSize: 10, fontWeight: "bold" }}>{pendingCount} New</Text>
+                                  </View>
+                                ) : (
+                                  <Ionicons name="arrow-forward" size={14} color="#0288d1" />
+                                )}
+                              </View>
                             </View>
                             <View>
                               <Text style={{ fontWeight: "bold", fontSize: (isMobile || Platform.OS !== "web") ? 12.5 : 13, color: darkMode ? "#b3e5fc" : "#01579b" }}>Inquiries</Text>
                               <Text style={{ fontSize: (isMobile || Platform.OS !== "web") ? 10.5 : 11, color: darkMode ? "#4fc3f7" : "#0288d1", marginTop: 2 }} numberOfLines={2}>
                                 {pendingCount > 0 ? `${pendingCount} new lead(s) & queries` : "CRM Leads & Queries"}
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })()}
+
+                      {/* Card 2b: Custom Application Leads */}
+                      {(() => {
+                        const newCustomCount = (customLeads || []).filter((l: any) => l.status === "new" || !l.status).length;
+                        return (
+                          <TouchableOpacity
+                            onPress={() => { setActiveTab("crm"); changeCrmSub("custom-leads"); }}
+                            style={{
+                              width: (isMobile || Platform.OS !== "web") ? "48%" : ("calc(33.33% - 8px)" as any),
+                              padding: (isMobile || Platform.OS !== "web") ? 12 : 14,
+                              borderRadius: 12,
+                              backgroundColor: darkMode ? "#3b1717" : "#ffebee",
+                              borderWidth: 1,
+                              borderColor: darkMode ? "#c62828" : "#ffcdd2",
+                              justifyContent: "space-between",
+                            }}
+                          >
+                            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                              <Ionicons name="clipboard-outline" size={20} color="#c62828" />
+                              {newCustomCount > 0 ? (
+                                <View style={{ backgroundColor: "#c62828", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
+                                  <Text style={{ color: "#fff", fontSize: 10, fontWeight: "bold" }}>{newCustomCount} New</Text>
+                                </View>
+                              ) : (
+                                <Ionicons name="arrow-forward" size={14} color="#c62828" />
+                              )}
+                            </View>
+                            <View>
+                              <Text style={{ fontWeight: "bold", fontSize: (isMobile || Platform.OS !== "web") ? 12.5 : 13, color: darkMode ? "#ffcdd2" : "#b71c1c" }}>Custom Leads</Text>
+                              <Text style={{ fontSize: (isMobile || Platform.OS !== "web") ? 10.5 : 11, color: darkMode ? "#ef9a9a" : "#c62828", marginTop: 2 }} numberOfLines={2}>
+                                {newCustomCount > 0 ? `${newCustomCount} new form submission(s)` : "Custom Form Leads"}
                               </Text>
                             </View>
                           </TouchableOpacity>
@@ -22225,28 +25117,41 @@ function MainApp() {
                       })()}
 
                       {/* Card 7: Access Control */}
-                      <TouchableOpacity
-                        onPress={() => { setActiveTab("lms"); changeLmsSub("lms-access"); }}
-                        style={{
-                          width: (isMobile || Platform.OS !== "web") ? "48%" : ("calc(33.33% - 8px)" as any),
-                          padding: (isMobile || Platform.OS !== "web") ? 12 : 14,
-                          borderRadius: 12,
-                          backgroundColor: darkMode ? "#2e1c38" : "#f3e5f5",
-                          borderWidth: 1,
-                          borderColor: darkMode ? "#6a1b9a" : "#ce93d8",
-                          minHeight: (isMobile || Platform.OS !== "web") ? 98 : 90,
-                          justifyContent: "space-between"
-                        }}
-                      >
-                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                          <Ionicons name="shield-checkmark-outline" size={20} color="#6a1b9a" />
-                          <Ionicons name="arrow-forward" size={14} color="#6a1b9a" />
-                        </View>
-                        <View>
-                          <Text style={{ fontWeight: "bold", fontSize: (isMobile || Platform.OS !== "web") ? 12.5 : 13, color: darkMode ? "#ce93d8" : "#6a1b9a" }}>Access Control</Text>
-                          <Text style={{ fontSize: (isMobile || Platform.OS !== "web") ? 10.5 : 11, color: darkMode ? "#ce93d8" : "#6a1b9a", marginTop: 2 }} numberOfLines={2}>SACS Security &amp; Permissions</Text>
-                        </View>
-                      </TouchableOpacity>
+                      {(() => {
+                        const pendingCount = (sacsRequests || []).length;
+                        return (
+                          <TouchableOpacity
+                            onPress={() => { setActiveTab("lms"); changeLmsSub("lms-access"); }}
+                            style={{
+                              width: (isMobile || Platform.OS !== "web") ? "48%" : ("calc(33.33% - 8px)" as any),
+                              padding: (isMobile || Platform.OS !== "web") ? 12 : 14,
+                              borderRadius: 12,
+                              backgroundColor: darkMode ? "#2e1c38" : "#f3e5f5",
+                              borderWidth: 1,
+                              borderColor: darkMode ? "#6a1b9a" : "#ce93d8",
+                              minHeight: (isMobile || Platform.OS !== "web") ? 98 : 90,
+                              justifyContent: "space-between"
+                            }}
+                          >
+                            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                              <Ionicons name="shield-checkmark-outline" size={20} color="#6a1b9a" />
+                              {pendingCount > 0 ? (
+                                <View style={{ backgroundColor: "#6a1b9a", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
+                                  <Text style={{ color: "#fff", fontSize: 10, fontWeight: "bold" }}>{pendingCount} Pending</Text>
+                                </View>
+                              ) : (
+                                <Ionicons name="arrow-forward" size={14} color="#6a1b9a" />
+                              )}
+                            </View>
+                            <View>
+                              <Text style={{ fontWeight: "bold", fontSize: (isMobile || Platform.OS !== "web") ? 12.5 : 13, color: darkMode ? "#ce93d8" : "#6a1b9a" }}>Access Control</Text>
+                              <Text style={{ fontSize: (isMobile || Platform.OS !== "web") ? 10.5 : 11, color: darkMode ? "#ce93d8" : "#6a1b9a", marginTop: 2 }} numberOfLines={2}>
+                                {pendingCount > 0 ? `${pendingCount} request(s) awaiting review` : "SACS Security & Permissions"}
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })()}
                     </View>
 
                     {/* ══════════════════════════════════════════════════════════════════
@@ -22337,19 +25242,14 @@ function MainApp() {
                             });
                         };
 
-                        if (Platform.OS === 'web' && typeof window !== 'undefined') {
-                          const choice = window.confirm(`End "${sessionTitle}"?\n\nPress OK to end class.\nPress Cancel to stay.`);
-                          if (choice) doEnd();
-                        } else {
-                          Alert.alert(
-                            "End Class",
-                            `Are you sure you want to end "${sessionTitle}"?`,
-                            [
-                              { text: "Cancel", style: "cancel" },
-                              { text: "End Class", style: "destructive", onPress: doEnd }
-                            ]
-                          );
-                        }
+                        setEndClassYtOption('none');
+                        setEndClassYtUrl('');
+                        setEndClassTarget({
+                          sessionTitle,
+                          onConfirm: async (convertToYoutube, youtubeUrl) => {
+                            await doEnd();
+                          }
+                        });
                       };
 
                       const handleDashboardViewAttendance = async (session: any) => {
@@ -22594,6 +25494,104 @@ function MainApp() {
                   </View>
                 ) : (
                   <>
+                    {/* ─── ONGOING LIVE CLASS ALERT (STUDENT WEB & APK) ─── */}
+                    {user?.role === "student" && (() => {
+                      const onLiveSessions = (lmsLiveSessions || []).filter((session: any) => {
+                        const sessionStatus = session.status || 'scheduled';
+                        const scheduledTimeObj = session.scheduledStartTime
+                          ? new Date(session.scheduledStartTime._seconds ? session.scheduledStartTime._seconds * 1000 : session.scheduledStartTime)
+                          : (session.scheduledAt ? new Date(session.scheduledAt) : null);
+                        const startTimeMs = scheduledTimeObj ? scheduledTimeObj.getTime() : 0;
+                        const durationMins = session.expectedDurationMinutes || session.liveSession?.expectedDurationMinutes || 60;
+                        const endTimeMs = startTimeMs + durationMins * 60 * 1000;
+                        const isExpired = startTimeMs > 0 && Date.now() > endTimeMs;
+
+                        const isEnded = sessionStatus === 'ENDED' || sessionStatus === 'CANCELLED' || sessionStatus === 'EXPIRED' || sessionStatus === 'ARCHIVED' || sessionStatus === 'ended' || isExpired;
+                        const isLive = !isEnded && (sessionStatus === 'live' || sessionStatus === 'active' || sessionStatus === 'in_progress' || sessionStatus === 'LIVE' || sessionStatus === 'JOINING' || sessionStatus === 'HOST_CONNECTED' || sessionStatus === 'ATTENDANCE_RUNNING');
+                        return isLive;
+                      });
+
+                      if (onLiveSessions.length === 0) return null;
+
+                      return (
+                        <View style={{ gap: 10, marginBottom: 8 }}>
+                          {onLiveSessions.map((session: any) => {
+                            const sessionTitle = session.title || session.className || session.topicName || "Live Class";
+                            const faculty = session.teacherName || session.staffName || session.instructorName || "";
+                            const courseName = session.courseName || session.courseTitle || "";
+
+                            return (
+                              <TouchableOpacity
+                                key={session.id || session._id || `live-${Math.random()}`}
+                                activeOpacity={0.9}
+                                onPress={() => {
+                                  setActiveTab("lms");
+                                  changeLmsSub("my-live");
+                                }}
+                                style={{
+                                  backgroundColor: darkMode ? "#14291e" : "#e8f5e9",
+                                  borderRadius: 14,
+                                  padding: 16,
+                                  borderWidth: 1.5,
+                                  borderColor: "#2e7d32",
+                                  shadowColor: "#2e7d32",
+                                  shadowOffset: { width: 0, height: 2 },
+                                  shadowOpacity: 0.15,
+                                  shadowRadius: 6,
+                                  elevation: 4,
+                                  gap: 10
+                                }}
+                              >
+                                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                                    <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: "#00e676" }} />
+                                    <View style={{ backgroundColor: "#2e7d32", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
+                                      <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "900", letterSpacing: 0.5 }}>
+                                        LIVE NOW
+                                      </Text>
+                                    </View>
+                                  </View>
+                                  <Text style={{ fontSize: 11, color: darkMode ? "#a5d6a7" : "#2e7d32", fontWeight: "bold" }}>
+                                    Interactive Lecture
+                                  </Text>
+                                </View>
+
+                                <View style={{ gap: 4 }}>
+                                  <Text style={{ fontSize: 15, fontWeight: "bold", color: darkMode ? "#ffffff" : "#1b5e20", lineHeight: 20 }}>
+                                    {sessionTitle}
+                                  </Text>
+                                  {(courseName || faculty) ? (
+                                    <Text style={{ fontSize: 12, color: darkMode ? "#c8e6c9" : "#388e3c" }} numberOfLines={1}>
+                                      {courseName ? `${courseName} ` : ""}{faculty ? `• Faculty: ${faculty}` : ""}
+                                    </Text>
+                                  ) : null}
+                                </View>
+
+                                <View style={{
+                                  flexDirection: "row",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  backgroundColor: "#2e7d32",
+                                  paddingVertical: 10,
+                                  paddingHorizontal: 14,
+                                  borderRadius: 8,
+                                  marginTop: 2
+                                }}>
+                                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                                    <Ionicons name="videocam" size={16} color="#ffffff" />
+                                    <Text style={{ color: "#ffffff", fontSize: 13, fontWeight: "bold" }}>
+                                      Join Live Class
+                                    </Text>
+                                  </View>
+                                  <Ionicons name="arrow-forward" size={16} color="#ffffff" />
+                                </View>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      );
+                    })()}
+
                     {user.role === "student" && (() => {
                       const myStudent = getLoggedInStudent(user, students);
                       if (myStudent && (myStudent.profileComplete === true || myStudent.profileComplete === "true")) return null;
@@ -22796,7 +25794,7 @@ function MainApp() {
                     {(() => {
                       if (!lmsDailyContent || lmsDailyContent.length === 0) return null;
                       const myStudent = getLoggedInStudent(user, students) || user;
-                      const isPaid = (Number(myStudent?.feesPaid) > 0) || myStudent?.type === "paid" || user?.type === "paid" || (Number(myStudent?.totalFees) > 0 && Number(myStudent?.feesPaid) >= Number(myStudent?.totalFees));
+                      const isPaid = (Number(myStudent?.feesPaid) > 0) || myStudent?.type === "paid" || user?.type === "paid" || myStudent?.status === "active" || myStudent?.status === "enrolled" || user?.status === "active" || user?.status === "enrolled" || (Number(myStudent?.totalFees) > 0 && Number(myStudent?.feesPaid) >= Number(myStudent?.totalFees)) || Boolean(myStudent?.batch || myStudent?.batchName || user?.batch || user?.batchName);
 
                       const studentBatchesList: string[] = [];
                       if (myStudent?.batch) studentBatchesList.push(myStudent.batch);
@@ -22832,7 +25830,9 @@ function MainApp() {
                         return true;
                       });
 
-                      if (eligibleDailyContent.length === 0) return null; // HIDDEN if no content!
+                      const sortedDailyContent = [...eligibleDailyContent].sort(sortDailyContentDesc);
+
+                      if (sortedDailyContent.length === 0) return null; // HIDDEN if no content!
 
                       return (
                         <View style={[styles.card, darkMode && styles.cardDark, { borderLeftWidth: 4, borderLeftColor: "#c62828", marginBottom: 14 }]}>
@@ -22854,14 +25854,14 @@ function MainApp() {
                               onPress={() => { setActiveTab("lms"); setLmsSub("daily-content"); }}
                               style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6, backgroundColor: darkMode ? "#2c1a1a" : "#ffebee" }}
                             >
-                              <Text style={{ color: "#c62828", fontSize: 11, fontWeight: "bold" }}>View All ({eligibleDailyContent.length}) →</Text>
+                              <Text style={{ color: "#c62828", fontSize: 11, fontWeight: "bold" }}>View All ({sortedDailyContent.length}) →</Text>
                             </TouchableOpacity>
                           </View>
 
                           <View style={{ gap: 8 }}>
-                            {eligibleDailyContent.slice(0, 4).map((item: any, idx: number) => {
+                            {sortedDailyContent.slice(0, 4).map((item: any, idx: number) => {
                               const isImg = item.type === "image";
-                              const itemDate = item.date || (item.createdAt ? new Date(item.createdAt).toLocaleDateString("en-IN") : "Today");
+                              const itemDate = item.date || (item.createdAt ? (typeof item.createdAt === "object" && (item.createdAt.seconds || item.createdAt._seconds) ? new Date((item.createdAt.seconds || item.createdAt._seconds) * 1000).toLocaleDateString("en-IN") : new Date(item.createdAt).toLocaleDateString("en-IN")) : "Today");
                               return (
                                 <View
                                   key={item.id || idx}
@@ -23183,6 +26183,7 @@ function MainApp() {
                     {isAdmin && (
                       <>
                         {renderSidebarItem("pdf-create", testSub, "AI Create", "sparkles-outline", () => changeTestSub("pdf-create"), "test-pdf-create", undefined, testSidebarCollapsed && !isMobile, "test_creation")}
+                        {renderSidebarItem("special-mock", testSub, "Special Mock", "medal-outline", () => changeTestSub("special-mock"), "test-special-mock", undefined, testSidebarCollapsed && !isMobile, "test_creation")}
                         {renderSidebarItem("feedback", testSub, "Exams Feedback", "chatbubbles-outline", () => changeTestSub("feedback"), "test-feedback", undefined, testSidebarCollapsed && !isMobile, "test_review")}
                       </>
                     )}
@@ -23232,10 +26233,10 @@ function MainApp() {
                         </TouchableOpacity>
                         <View style={{ flex: 1 }}>
                           <Text style={{ fontSize: 14, fontWeight: "bold", color: darkMode ? "#ffffff" : "#1a237e" }} numberOfLines={1}>
-                            {testSub === "available" ? "Available Exams" : testSub === "pdf-create" ? "AI Test Creation" : testSub === "feedback" ? "Exams Feedback" : testSub === "results" ? "Results Log" : "Test Portal"}
+                            {testSub === "available" ? "Available Exams" : testSub === "pdf-create" ? "AI Test Creation" : testSub === "special-mock" ? "Special Mock Tests" : testSub === "feedback" ? "Exams Feedback" : testSub === "results" ? "Results Log" : "Test Portal"}
                           </Text>
                           <Text style={{ fontSize: 10, color: "#888", fontWeight: "500" }} numberOfLines={1}>
-                            Test Portal • {testSub === "available" ? "Active Mock Tests" : testSub === "pdf-create" ? "Authoring & AI" : testSub === "feedback" ? "Student Feedback" : "Rankings & Scores"}
+                            Test Portal • {testSub === "available" ? "Active Mock Tests" : testSub === "pdf-create" ? "Authoring & AI" : testSub === "special-mock" ? "Special Roll No & Batches" : testSub === "feedback" ? "Student Feedback" : "Rankings & Scores"}
                           </Text>
                         </View>
                       </View>
@@ -23492,6 +26493,10 @@ function MainApp() {
                                                         try {
                                                           await setDoc(doc(db, "offlineTestPermissionRequests", req.id), { ...req, status: "approved", updatedAt: new Date().toISOString() }, { merge: true });
                                                         } catch (_) { }
+                                                        // Remove matching alert from Admin Dashboard
+                                                        const approveTestAlertId = `offline_test_${req.id}`;
+                                                        deleteDoc(doc(db, "admin_alerts", approveTestAlertId)).catch(() => {});
+                                                        setAdminAlerts((prev) => prev.filter((a) => a.id !== approveTestAlertId));
                                                         // Also update matching requests for this test & student in state
                                                         setOfflineTestRequests(prev => prev.map((r: any) => {
                                                           const matchTest = String(r.testId || '') === String(req.testId || '');
@@ -23519,6 +26524,10 @@ function MainApp() {
                                                         try {
                                                           await setDoc(doc(db, "offlineTestPermissionRequests", req.id), { ...req, status: "rejected", updatedAt: new Date().toISOString() }, { merge: true });
                                                         } catch (_) { }
+                                                        // Remove matching alert from Admin Dashboard
+                                                        const rejectTestAlertId = `offline_test_${req.id}`;
+                                                        deleteDoc(doc(db, "admin_alerts", rejectTestAlertId)).catch(() => {});
+                                                        setAdminAlerts((prev) => prev.filter((a) => a.id !== rejectTestAlertId));
                                                         setOfflineTestRequests(prev => prev.map((r: any) => {
                                                           const matchTest = String(r.testId || '') === String(req.testId || '');
                                                           const matchStudent = (r.studentId && r.studentId === req.studentId) || (r.rollNumber && r.rollNumber === req.rollNumber) || (r.id === req.id);
@@ -23572,7 +26581,54 @@ function MainApp() {
                                         studentType === "offline" ||
                                         myStudent?.isOffline === true
                                       );
-                                      const requiresPermissionRequest = isOfflineStudent && !t.allowOfflineDirectly;
+                                      const isOfflineRestricted = isOfflineStudent && !t.allowOfflineDirectly;
+
+                                      // Resolve student batch modes for this test
+                                      const testBatches = String(t.targetBatch || "")
+                                        .split(",")
+                                        .map((b: string) => b.trim().toLowerCase())
+                                        .filter(Boolean);
+
+                                      let studentModes: string[] = [];
+                                      if (targetModes.length > 0) {
+                                        studentModes = targetModes;
+                                      } else if (myStudent?.batchModes) {
+                                        if (myStudent.batch && myStudent.batchModes[myStudent.batch]) {
+                                          studentModes = myStudent.batchModes[myStudent.batch];
+                                        } else {
+                                          for (const [bName, modes] of Object.entries(myStudent.batchModes)) {
+                                            if (testBatches.length === 0 || testBatches.includes(bName.trim().toLowerCase())) {
+                                              if (Array.isArray(modes)) {
+                                                studentModes = modes;
+                                                break;
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+
+                                      const isRecordedStudent = !isAdmin && !isOfflineStudent && (
+                                        studentModes.length > 0
+                                          ? (studentModes.includes("recorded") && !studentModes.includes("online"))
+                                          : (studentType === "recorded")
+                                      );
+                                      const isOnlineStudent = !isAdmin && !isOfflineStudent && (
+                                        studentModes.length > 0
+                                          ? (studentModes.includes("online") && !studentModes.includes("recorded"))
+                                          : (studentType === "online" || (!isRecordedStudent && studentType !== "offline"))
+                                      );
+
+                                      const currentTestMode = String(t.testMode || "online").trim().toLowerCase();
+                                      let isModeRestricted = false;
+                                      if (currentTestMode === "online" && isRecordedStudent) {
+                                        isModeRestricted = true;
+                                      } else if (currentTestMode === "recorded" && isOnlineStudent) {
+                                        isModeRestricted = true;
+                                      } else if (currentTestMode === "both") {
+                                        isModeRestricted = false;
+                                      }
+
+                                      const requiresPermissionRequest = isOfflineRestricted || isModeRestricted;
 
                                       const matchingReqs = requiresPermissionRequest
                                         ? offlineTestRequests.filter((r: any) => {
@@ -23689,9 +26745,9 @@ function MainApp() {
                                                     testId: t.id,
                                                     testTitle: t.title,
                                                     studentId: myStudent?.id || user?.userId || user?.username || cleanSId,
-                                                    studentName: getStudentName(myStudent) || user?.fullName || user?.username || "Offline Student",
+                                                    studentName: getStudentName(myStudent) || user?.fullName || user?.username || (isRecordedStudent ? "Recorded Student" : isOnlineStudent ? "Online Student" : "Offline Student"),
                                                     rollNumber: myStudent?.rollNumber || user?.username || "—",
-                                                    batch: myStudent?.batch || myStudent?.batchName || "Offline",
+                                                    batch: myStudent?.batch || myStudent?.batchName || "General",
                                                     username: user?.username || "",
                                                     status: "pending",
                                                     requestedAt: new Date().toISOString()
@@ -23704,7 +26760,7 @@ function MainApp() {
                                                       await setDoc(doc(db, "admin_alerts", alertDocId), {
                                                         id: alertDocId,
                                                         type: "offline_test",
-                                                        title: "Offline Test Attendance Request",
+                                                        title: isRecordedStudent ? "Recorded Student Test Request" : isOnlineStudent ? "Online Student Test Request" : "Offline Test Attendance Request",
                                                         subtitle: `${reqObj.studentName} (${reqObj.rollNumber})`,
                                                         message: `Requested permission to attend: "${reqObj.testTitle}"`,
                                                         studentId: reqObj.studentId,
@@ -23779,7 +26835,54 @@ function MainApp() {
                                         studentType === "offline" ||
                                         myStudent?.isOffline === true
                                       );
-                                      const requiresPermissionRequest = isOfflineStudent && !t.allowOfflineDirectly;
+                                      const isOfflineRestricted = isOfflineStudent && !t.allowOfflineDirectly;
+
+                                      // Resolve student batch modes for this test
+                                      const testBatches = String(t.targetBatch || "")
+                                        .split(",")
+                                        .map((b: string) => b.trim().toLowerCase())
+                                        .filter(Boolean);
+
+                                      let studentModes: string[] = [];
+                                      if (targetModes.length > 0) {
+                                        studentModes = targetModes;
+                                      } else if (myStudent?.batchModes) {
+                                        if (myStudent.batch && myStudent.batchModes[myStudent.batch]) {
+                                          studentModes = myStudent.batchModes[myStudent.batch];
+                                        } else {
+                                          for (const [bName, modes] of Object.entries(myStudent.batchModes)) {
+                                            if (testBatches.length === 0 || testBatches.includes(bName.trim().toLowerCase())) {
+                                              if (Array.isArray(modes)) {
+                                                studentModes = modes;
+                                                break;
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+
+                                      const isRecordedStudent = !isAdmin && !isOfflineStudent && (
+                                        studentModes.length > 0
+                                          ? (studentModes.includes("recorded") && !studentModes.includes("online"))
+                                          : (studentType === "recorded")
+                                      );
+                                      const isOnlineStudent = !isAdmin && !isOfflineStudent && (
+                                        studentModes.length > 0
+                                          ? (studentModes.includes("online") && !studentModes.includes("recorded"))
+                                          : (studentType === "online" || (!isRecordedStudent && studentType !== "offline"))
+                                      );
+
+                                      const currentTestMode = String(t.testMode || "online").trim().toLowerCase();
+                                      let isModeRestricted = false;
+                                      if (currentTestMode === "online" && isRecordedStudent) {
+                                        isModeRestricted = true;
+                                      } else if (currentTestMode === "recorded" && isOnlineStudent) {
+                                        isModeRestricted = true;
+                                      } else if (currentTestMode === "both") {
+                                        isModeRestricted = false;
+                                      }
+
+                                      const requiresPermissionRequest = isOfflineRestricted || isModeRestricted;
 
                                       /* requiresPermissionRequest computed above */
 
@@ -23860,9 +26963,9 @@ function MainApp() {
                                                       testId: t.id,
                                                       testTitle: t.title,
                                                       studentId: myStudent?.id || user?.userId || user?.username || cleanSId,
-                                                      studentName: getStudentName(myStudent) || user?.fullName || user?.username || "Offline Student",
+                                                      studentName: getStudentName(myStudent) || user?.fullName || user?.username || (isRecordedStudent ? "Recorded Student" : isOnlineStudent ? "Online Student" : "Offline Student"),
                                                       rollNumber: myStudent?.rollNumber || user?.username || "—",
-                                                      batch: myStudent?.batch || myStudent?.batchName || "Offline",
+                                                      batch: myStudent?.batch || myStudent?.batchName || "General",
                                                       username: user?.username || "",
                                                       status: "pending",
                                                       requestedAt: new Date().toISOString()
@@ -23875,7 +26978,7 @@ function MainApp() {
                                                         await setDoc(doc(db, "admin_alerts", alertDocId), {
                                                           id: alertDocId,
                                                           type: "offline_test",
-                                                          title: "Offline Test Attendance Request",
+                                                          title: isRecordedStudent ? "Recorded Student Test Request" : isOnlineStudent ? "Online Student Test Request" : "Offline Test Attendance Request",
                                                           subtitle: `${reqObj.studentName} (${reqObj.rollNumber})`,
                                                           message: `Requested permission to attend: "${reqObj.testTitle}"`,
                                                           studentId: reqObj.studentId,
@@ -24042,8 +27145,8 @@ function MainApp() {
                                 </>
                               )}
 
-                              {/* Show Subject Sections & Question Ranges ONLY for Mock Test */}
-                              {(newPdfTest.testType || "daily") === "mock" && (
+                              {/* Show Subject Sections & Question Ranges for Mock & Weekly Tests */}
+                              {((newPdfTest.testType || "daily") === "mock" || (newPdfTest.testType || "daily") === "weekly") && (
                                 renderMockSubjectSectionsConfigurator(
                                   newPdfTest.subjectSections || [],
                                   (updated) => setNewPdfTest({ ...newPdfTest, subjectSections: updated })
@@ -26124,6 +29227,1382 @@ SOURCE QUESTION PAPER:
                       )}
 
 
+                      {testSub === "special-mock" && isAdmin && (() => {
+                        const allAvailableBatchNames = Array.from(new Set([
+                          ...(Array.isArray(batches) ? batches.map((b: any) => typeof b === 'string' ? b : b?.name || b?.batchName) : []),
+                          ...(Array.isArray(students) ? students.flatMap((s: any) => [
+                            s.batch,
+                            s.batchName,
+                            ...(Array.isArray(s.batches) ? s.batches.map((b: any) => typeof b === 'string' ? b : b?.batchName) : [])
+                          ]) : [])
+                        ].filter(Boolean))).sort();
+
+                        const { allocations, mockRollMap, nextStartRoll, totalAssigned } = computeSpecialMockAllocations(
+                          specialMockSelectedBatches,
+                          specialMockStartingRoll,
+                          students
+                        );
+
+                        const specialMockTestsList = (tests || []).filter((t: any) => t && (t.isSpecialMock || t.testType === "special_mock" || t.mockConfig));
+
+                        const handleCreateSpecialMock = async () => {
+                          if (!specialMockTitle.trim()) {
+                            Alert.alert("Required", "Please enter a title for the Special Mock Exam.");
+                            return;
+                          }
+                          if (specialMockSelectedBatches.length === 0) {
+                            Alert.alert("Required", "Please select at least one batch for this Special Mock Exam.");
+                            return;
+                          }
+
+                          if (totalAssigned === 0) {
+                            Alert.alert("Notice", "The selected batches have 0 enrolled candidates. Students will be assigned roll numbers when enrolled.");
+                          }
+
+                          setIsCreatingSpecialMock(true);
+                          try {
+                            const correctVal = parseFloat(specialMockMarksPerQ) || 2;
+                            const wrongVal = Math.abs(parseFloat(specialMockNegMarks) || 0.66);
+                            const unattendedVal = parseFloat(specialMockUnattendedMarks) || 0;
+                            const qCount = extractedQuestions.length > 0 ? extractedQuestions.length : 100;
+
+                            const payload = {
+                              title: specialMockTitle.trim(),
+                              testType: "special_mock",
+                              isSpecialMock: true,
+                              mockConfig: {
+                                startingRollNo: specialMockStartingRoll.trim() || "182026",
+                                orderedBatches: specialMockSelectedBatches,
+                                batchAllocations: allocations.map(a => ({
+                                  batchName: a.batchName,
+                                  count: a.count,
+                                  startRoll: a.startRoll,
+                                  endRoll: a.endRoll
+                                })),
+                                mockRollNumbers: mockRollMap
+                              },
+                              targetAudience: "special_mock",
+                              targetBatch: specialMockSelectedBatches.join(","),
+                              durationMinutes: Number(specialMockDuration) || 60,
+                              marksPerQuestion: correctVal,
+                              negativeMarks: wrongVal,
+                              unattendedMarks: unattendedVal,
+                              totalMarks: qCount * correctVal,
+                              totalQuestions: qCount,
+                              questions: extractedQuestions.length > 0 ? extractedQuestions : undefined,
+                              startTime: specialMockStartTime || new Date().toISOString(),
+                              endTime: specialMockEndTime || new Date(Date.now() + (Number(specialMockDuration) || 60) * 60 * 1000).toISOString(),
+                              createdBy: user?.name || "admin",
+                              published: true
+                            };
+
+                            const res = await api.post("/test-portal/test-creation", payload);
+                            Alert.alert("Success", res.message || "Special Mock Test created successfully with sequential roll numbers!");
+                            await loadTests();
+                            setExtractedQuestions([]);
+                            setPdfFilename("");
+                            setPdfBase64("");
+                            setAkFilename("");
+                            setAkBase64("");
+                            setJsonQuestionsInput("");
+                            setSpecialMockSubTab("manage");
+                          } catch (e: any) {
+                            console.error("Error creating special mock:", e);
+                            Alert.alert("Error", e.message || "Failed to create Special Mock Test");
+                          } finally {
+                            setIsCreatingSpecialMock(false);
+                          }
+                        };
+
+                        return (
+                          <View style={{ gap: 15 }}>
+                            {/* Page Header */}
+                            <View style={[styles.card, darkMode && styles.cardDark]}>
+                              <View style={{ flexDirection: isMobile ? "column" : "row", justifyContent: "space-between", alignItems: isMobile ? "flex-start" : "center", gap: 10, borderBottomWidth: 1, borderColor: darkMode ? "#333" : "#eee", paddingBottom: 12 }}>
+                                <View>
+                                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                                    <Ionicons name="medal" size={24} color="#c62828" />
+                                    <Text style={[styles.sectionTitle, darkMode && styles.sectionTitleDark, { marginBottom: 0 }]}>
+                                      Special Mock Test Management
+                                    </Text>
+                                  </View>
+                                  <Text style={{ color: darkMode ? "#9e9e9e" : "#666", fontSize: 12, marginTop: 4 }}>
+                                    Order batches freely (move up/down) and generate dedicated sequential roll numbers for mock exams and ID cards.
+                                  </Text>
+                                </View>
+
+                                {/* Sub Tabs */}
+                                <View style={{ flexDirection: "row", gap: 6, backgroundColor: darkMode ? "#222" : "#f1f5f9", padding: 4, borderRadius: 8 }}>
+                                  <TouchableOpacity
+                                    onPress={() => setSpecialMockSubTab("create")}
+                                    style={{
+                                      paddingHorizontal: 14,
+                                      paddingVertical: 7,
+                                      borderRadius: 6,
+                                      backgroundColor: specialMockSubTab === "create" ? "#c62828" : "transparent"
+                                    }}
+                                  >
+                                    <Text style={{ fontSize: 12, fontWeight: "bold", color: specialMockSubTab === "create" ? "#ffffff" : (darkMode ? "#ccc" : "#475569") }}>
+                                      + Create Special Mock
+                                    </Text>
+                                  </TouchableOpacity>
+                                  <TouchableOpacity
+                                    onPress={() => setSpecialMockSubTab("manage")}
+                                    style={{
+                                      paddingHorizontal: 14,
+                                      paddingVertical: 7,
+                                      borderRadius: 6,
+                                      backgroundColor: specialMockSubTab === "manage" ? "#c62828" : "transparent"
+                                    }}
+                                  >
+                                    <Text style={{ fontSize: 12, fontWeight: "bold", color: specialMockSubTab === "manage" ? "#ffffff" : (darkMode ? "#ccc" : "#475569") }}>
+                                      All Special Mocks ({specialMockTestsList.length})
+                                    </Text>
+                                  </TouchableOpacity>
+                                </View>
+                              </View>
+                            </View>
+
+                            {/* View 1: Create Special Mock */}
+                            {specialMockSubTab === "create" && (
+                              <View style={{ gap: 15 }}>
+                                {/* Step 1: Mock Test Details & Starting Roll Number */}
+                                <View style={[styles.card, darkMode && styles.cardDark]}>
+                                  <Text style={[styles.sectionTitle, darkMode && styles.sectionTitleDark]}>1. Mock Test Name & Starting Roll Number</Text>
+                                  <View style={{ flexDirection: isMobile ? "column" : "row", gap: 15 }}>
+                                    <View style={{ flex: 2 }}>
+                                      <Text style={styles.label}>Mock Test Name / Title *</Text>
+                                      <TextInput
+                                        style={[styles.input, darkMode && styles.inputDark]}
+                                        placeholder="e.g. UPSC Prelims Mega Mock 2026 - Test 1"
+                                        placeholderTextColor={darkMode ? "#777" : "#999"}
+                                        value={specialMockTitle}
+                                        onChangeText={setSpecialMockTitle}
+                                      />
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                      <Text style={styles.label}>Starting Roll Number Box *</Text>
+                                      <TextInput
+                                        style={[styles.input, darkMode && styles.inputDark, { fontWeight: "bold", color: "#c62828" }]}
+                                        placeholder="e.g. 182026"
+                                        placeholderTextColor={darkMode ? "#777" : "#999"}
+                                        value={specialMockStartingRoll}
+                                        onChangeText={setSpecialMockStartingRoll}
+                                        keyboardType="numeric"
+                                      />
+                                      <Text style={{ fontSize: 10, color: darkMode ? "#888" : "#757575", marginTop: 3 }}>
+                                        Sequential roll numbers will begin from this value.
+                                      </Text>
+                                    </View>
+                                  </View>
+                                </View>
+
+                                {/* Step 2: Batches Selection & Priority Order */}
+                                <View style={[styles.card, darkMode && styles.cardDark]}>
+                                  <Text style={[styles.sectionTitle, darkMode && styles.sectionTitleDark]}>
+                                    2. Select & Order Batches ({specialMockSelectedBatches.length} Selected)
+                                  </Text>
+                                  <Text style={{ fontSize: 12, color: darkMode ? "#9e9e9e" : "#666", marginBottom: 10 }}>
+                                    Select multiple batches. All students (Online, Offline, or Recorded) in the chosen batches will receive sequential mock roll numbers in the exact order specified below.
+                                  </Text>
+
+                                  {/* Available Batch Chips */}
+                                  <Text style={[styles.label, { marginBottom: 6 }]}>Available Batches (Click to Add / Remove):</Text>
+                                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexDirection: "row", gap: 8, paddingBottom: 6 }}>
+                                    {allAvailableBatchNames.length === 0 ? (
+                                      <Text style={{ fontSize: 12, color: "#999", fontStyle: "italic" }}>No batches found in ERP.</Text>
+                                    ) : (
+                                      allAvailableBatchNames.map(bName => {
+                                        const isSel = specialMockSelectedBatches.includes(bName);
+                                        return (
+                                          <TouchableOpacity
+                                            key={bName}
+                                            onPress={() => toggleSpecialMockBatch(bName)}
+                                            style={{
+                                              paddingHorizontal: 12,
+                                              paddingVertical: 6,
+                                              borderRadius: 20,
+                                              backgroundColor: isSel ? "#c62828" : (darkMode ? "#2a2a2a" : "#f1f5f9"),
+                                              borderWidth: 1,
+                                              borderColor: isSel ? "#c62828" : (darkMode ? "#444" : "#cbd5e1"),
+                                              flexDirection: "row",
+                                              alignItems: "center",
+                                              gap: 6
+                                            }}
+                                          >
+                                            <Ionicons name={isSel ? "checkmark-circle" : "add-circle-outline"} size={14} color={isSel ? "#fff" : (darkMode ? "#aaa" : "#555")} />
+                                            <Text style={{ fontSize: 12, fontWeight: "600", color: isSel ? "#fff" : (darkMode ? "#e4e4e7" : "#334155") }}>
+                                              {bName}
+                                            </Text>
+                                          </TouchableOpacity>
+                                        );
+                                      })
+                                    )}
+                                  </ScrollView>
+
+                                  {/* Ordered Batches Queue */}
+                                  <View style={{ marginTop: 15, borderTopWidth: 1, borderColor: darkMode ? "#333" : "#eee", paddingTop: 12 }}>
+                                    <Text style={[styles.label, { marginBottom: 8 }]}>
+                                      Active Batch Queue (Arrange Priority with 🔼 Up / 🔽 Down):
+                                    </Text>
+
+                                    {specialMockSelectedBatches.length === 0 ? (
+                                      <View style={{ padding: 20, alignItems: "center", backgroundColor: darkMode ? "#222" : "#fafafa", borderRadius: 8, borderStyle: "dashed", borderWidth: 1, borderColor: darkMode ? "#444" : "#e0e0e0" }}>
+                                        <Ionicons name="list-outline" size={32} color="#9e9e9e" />
+                                        <Text style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
+                                          No batches added yet. Click on the batch chips above to add them to this Special Mock.
+                                        </Text>
+                                      </View>
+                                    ) : (
+                                      <View style={{ gap: 8 }}>
+                                        {specialMockSelectedBatches.map((bName, idx) => {
+                                          const bAlloc = allocations.find(a => a.batchName === bName);
+                                          const count = bAlloc ? bAlloc.count : 0;
+                                          const startR = bAlloc ? bAlloc.startRoll : specialMockStartingRoll;
+                                          const endR = bAlloc ? bAlloc.endRoll : specialMockStartingRoll;
+
+                                          return (
+                                            <View
+                                              key={bName}
+                                              style={{
+                                                flexDirection: "row",
+                                                alignItems: "center",
+                                                justifyContent: "space-between",
+                                                backgroundColor: darkMode ? "#27272a" : "#ffffff",
+                                                padding: 10,
+                                                borderRadius: 8,
+                                                borderWidth: 1,
+                                                borderColor: darkMode ? "#3f3f46" : "#e2e8f0"
+                                              }}
+                                            >
+                                              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+                                                <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: "#c62828", justifyContent: "center", alignItems: "center" }}>
+                                                  <Text style={{ color: "#ffffff", fontWeight: "bold", fontSize: 11 }}>#{idx + 1}</Text>
+                                                </View>
+                                                <View style={{ flex: 1 }}>
+                                                  <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#1e293b" }}>{bName}</Text>
+                                                  <Text style={{ fontSize: 11, color: "#1565c0", fontWeight: "600" }}>
+                                                    {count} candidates • Roll No: {startR} {count > 1 ? `to ${endR}` : ""}
+                                                  </Text>
+                                                </View>
+                                              </View>
+
+                                              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                                                <TouchableOpacity
+                                                  disabled={idx === 0}
+                                                  onPress={() => moveSpecialMockBatchUp(idx)}
+                                                  style={{
+                                                    paddingHorizontal: 8,
+                                                    paddingVertical: 5,
+                                                    borderRadius: 6,
+                                                    backgroundColor: idx === 0 ? (darkMode ? "#333" : "#f1f5f9") : "#e0e7ff",
+                                                    opacity: idx === 0 ? 0.4 : 1
+                                                  }}
+                                                >
+                                                  <Text style={{ fontSize: 12, fontWeight: "bold", color: "#3730a3" }}>▲ Up</Text>
+                                                </TouchableOpacity>
+                                                <TouchableOpacity
+                                                  disabled={idx === specialMockSelectedBatches.length - 1}
+                                                  onPress={() => moveSpecialMockBatchDown(idx)}
+                                                  style={{
+                                                    paddingHorizontal: 8,
+                                                    paddingVertical: 5,
+                                                    borderRadius: 6,
+                                                    backgroundColor: idx === specialMockSelectedBatches.length - 1 ? (darkMode ? "#333" : "#f1f5f9") : "#e0e7ff",
+                                                    opacity: idx === specialMockSelectedBatches.length - 1 ? 0.4 : 1
+                                                  }}
+                                                >
+                                                  <Text style={{ fontSize: 12, fontWeight: "bold", color: "#3730a3" }}>▼ Down</Text>
+                                                </TouchableOpacity>
+                                                <TouchableOpacity
+                                                  onPress={() => toggleSpecialMockBatch(bName)}
+                                                  style={{ padding: 5 }}
+                                                >
+                                                  <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                                                </TouchableOpacity>
+                                              </View>
+                                            </View>
+                                          );
+                                        })}
+                                      </View>
+                                    )}
+                                  </View>
+
+                                  {/* Live Calculation Preview Breakdown Table */}
+                                  {specialMockSelectedBatches.length > 0 && (
+                                    <View style={{ marginTop: 15, backgroundColor: darkMode ? "#1a251b" : "#f0fdf4", padding: 14, borderRadius: 10, borderWidth: 1, borderColor: darkMode ? "#22543d" : "#bbf7d0" }}>
+                                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                                        <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#86efac" : "#166534" }}>
+                                          Sequential Roll Number Allocation Preview:
+                                        </Text>
+                                        <Text style={{ fontSize: 12, fontWeight: "bold", color: darkMode ? "#86efac" : "#166534" }}>
+                                          Total: {totalAssigned} Students ({specialMockSelectedBatches.length} Batches)
+                                        </Text>
+                                      </View>
+
+                                      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                                        <View style={{ minWidth: 500 }}>
+                                          <View style={{ flexDirection: "row", borderBottomWidth: 1, borderColor: darkMode ? "#22543d" : "#86efac", paddingBottom: 6, marginBottom: 6 }}>
+                                            <Text style={{ width: 40, fontWeight: "bold", fontSize: 11, color: darkMode ? "#cbd5e1" : "#475569" }}>#</Text>
+                                            <Text style={{ flex: 1, minWidth: 150, fontWeight: "bold", fontSize: 11, color: darkMode ? "#cbd5e1" : "#475569" }}>Batch Name</Text>
+                                            <Text style={{ width: 90, textAlign: "center", fontWeight: "bold", fontSize: 11, color: darkMode ? "#cbd5e1" : "#475569" }}>Candidates</Text>
+                                            <Text style={{ width: 140, textAlign: "center", fontWeight: "bold", fontSize: 11, color: darkMode ? "#cbd5e1" : "#475569" }}>Assigned Roll Range</Text>
+                                          </View>
+                                          {allocations.map((a, i) => (
+                                            <View key={a.batchName} style={{ flexDirection: "row", paddingVertical: 4 }}>
+                                              <Text style={{ width: 40, fontSize: 12, fontWeight: "bold", color: darkMode ? "#fff" : "#1e293b" }}>#{i + 1}</Text>
+                                              <Text style={{ flex: 1, minWidth: 150, fontSize: 12, color: darkMode ? "#fff" : "#1e293b", fontWeight: "600" }}>{a.batchName}</Text>
+                                              <Text style={{ width: 90, textAlign: "center", fontSize: 12, color: "#1565c0", fontWeight: "bold" }}>{a.count}</Text>
+                                              <Text style={{ width: 140, textAlign: "center", fontSize: 12, color: "#2e7d32", fontWeight: "bold" }}>
+                                                {a.count > 0 ? `${a.startRoll} — ${a.endRoll}` : "No candidates"}
+                                              </Text>
+                                            </View>
+                                          ))}
+                                        </View>
+                                      </ScrollView>
+                                    </View>
+                                  )}
+                                </View>
+
+                                {/* Step 3: Question Paper & Answer Key (Upload / JSON) */}
+                                <View style={[styles.card, darkMode && styles.cardDark]}>
+                                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6, flexWrap: "wrap", gap: 8 }}>
+                                    <Text style={[styles.sectionTitle, darkMode && styles.sectionTitleDark, { marginBottom: 0 }]}>
+                                      3. Question Paper & Answer Key (Upload / JSON)
+                                    </Text>
+                                    {extractedQuestions.length > 0 && (
+                                      <View style={{ backgroundColor: "#dcfce7", borderColor: "#86efac", borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 4 }}>
+                                        <Ionicons name="checkmark-circle" size={14} color="#166534" />
+                                        <Text style={{ fontSize: 11, fontWeight: "bold", color: "#166534" }}>
+                                          ✓ {extractedQuestions.length} Questions Loaded
+                                        </Text>
+                                      </View>
+                                    )}
+                                  </View>
+                                  <Text style={{ fontSize: 11, color: darkMode ? "#9e9e9e" : "#757575", marginBottom: 12 }}>
+                                    Upload a Word document (.docx) to auto-extract questions and options using Local Regex or Gemini AI, or paste a structured JSON array.
+                                  </Text>
+
+                                  {/* Mode Tabs: Word File Upload vs Paste JSON Array (No copy-paste text tab) */}
+                                  <View style={{ flexDirection: "row", marginBottom: 14, borderRadius: 8, backgroundColor: darkMode ? "#222" : "#eee", padding: 4 }}>
+                                    <TouchableOpacity
+                                      onPress={() => setGenMode("file")}
+                                      style={{
+                                        flex: 1,
+                                        paddingVertical: 9,
+                                        borderRadius: 6,
+                                        backgroundColor: genMode !== "json" ? (darkMode ? "#333" : "#fff") : "transparent",
+                                        alignItems: "center"
+                                      }}
+                                    >
+                                      <Text style={{ fontWeight: "bold", color: genMode !== "json" ? "#c62828" : (darkMode ? "#aaa" : "#555"), fontSize: 12 }}>
+                                        📄 Word File Upload
+                                      </Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                      onPress={() => setGenMode("json")}
+                                      style={{
+                                        flex: 1,
+                                        paddingVertical: 9,
+                                        borderRadius: 6,
+                                        backgroundColor: genMode === "json" ? (darkMode ? "#333" : "#fff") : "transparent",
+                                        alignItems: "center"
+                                      }}
+                                    >
+                                      <Text style={{ fontWeight: "bold", color: genMode === "json" ? "#c62828" : (darkMode ? "#aaa" : "#555"), fontSize: 12 }}>
+                                        📋 Paste JSON Array
+                                      </Text>
+                                    </TouchableOpacity>
+                                  </View>
+
+                                  {/* Hidden file inputs for Web */}
+                                  {Platform.OS === "web" && (
+                                    <>
+                                      <input
+                                        id="special-mock-qp-input"
+                                        type="file"
+                                        accept=".docx,.doc"
+                                        style={{ display: "none" }}
+                                        onChange={(e: any) => {
+                                          const file = e.target?.files?.[0];
+                                          if (file) {
+                                            setPdfFilename(file.name);
+                                            const reader = new FileReader();
+                                            reader.onload = (event: any) => {
+                                              try {
+                                                const dataUrl = event.target?.result as string;
+                                                setPdfBase64(dataUrl.split(",")[1]);
+                                                Alert.alert("Success", `Question Paper "${file.name}" loaded! Click "Extract Questions" below to process.`);
+                                              } catch (err: any) {
+                                                Alert.alert("Error", "Failed to process Question Paper: " + err.message);
+                                              }
+                                            };
+                                            reader.readAsDataURL(file);
+                                          }
+                                        }}
+                                      />
+                                      <input
+                                        id="special-mock-ak-input"
+                                        type="file"
+                                        accept=".docx,.doc,.csv"
+                                        style={{ display: "none" }}
+                                        onChange={(e: any) => {
+                                          const file = e.target?.files?.[0];
+                                          if (file) {
+                                            setAkFilename(file.name);
+                                            const reader = new FileReader();
+                                            reader.onload = (event: any) => {
+                                              try {
+                                                const dataUrl = event.target?.result as string;
+                                                setAkBase64(dataUrl.split(",")[1]);
+                                                Alert.alert("Success", `Answer Key "${file.name}" loaded successfully!`);
+                                              } catch (err: any) {
+                                                Alert.alert("Error", "Failed to process Answer Key: " + err.message);
+                                              }
+                                            };
+                                            reader.readAsDataURL(file);
+                                          }
+                                        }}
+                                      />
+                                    </>
+                                  )}
+
+                                  {genMode !== "json" ? (
+                                    <View>
+                                      {/* Extraction Mode Toggle: Local-Only vs AI-Only */}
+                                      <Text style={[styles.label, darkMode && styles.labelDark]}>Extraction Mode:</Text>
+                                      <View style={{ flexDirection: "row", marginBottom: 14, borderRadius: 8, backgroundColor: darkMode ? "#222" : "#eee", padding: 4 }}>
+                                        <TouchableOpacity
+                                          onPress={() => setExtractMode("local")}
+                                          style={{
+                                            flex: 1,
+                                            paddingVertical: 8,
+                                            borderRadius: 6,
+                                            backgroundColor: extractMode === "local" ? (darkMode ? "#333" : "#fff") : "transparent",
+                                            alignItems: "center"
+                                          }}
+                                        >
+                                          <Text style={{ fontWeight: "bold", color: extractMode === "local" ? "#c62828" : (darkMode ? "#aaa" : "#555"), fontSize: 11 }}>
+                                            ⚡ Local-Only (Free)
+                                          </Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                          onPress={() => setExtractMode("ai")}
+                                          style={{
+                                            flex: 1,
+                                            paddingVertical: 8,
+                                            borderRadius: 6,
+                                            backgroundColor: extractMode === "ai" ? (darkMode ? "#333" : "#fff") : "transparent",
+                                            alignItems: "center"
+                                          }}
+                                        >
+                                          <Text style={{ fontWeight: "bold", color: extractMode === "ai" ? "#c62828" : (darkMode ? "#aaa" : "#555"), fontSize: 11 }}>
+                                            🤖 AI-Only (Gemini)
+                                          </Text>
+                                        </TouchableOpacity>
+                                      </View>
+
+                                      {/* Upload Boxes: Question Paper & Answer Key */}
+                                      <View style={{ flexDirection: isMobile ? "column" : "row", gap: 12, marginBottom: 12 }}>
+                                        {/* Question Paper Word File */}
+                                        <TouchableOpacity
+                                          onPress={() => {
+                                            setGenMode("file");
+                                            if (Platform.OS === "web") {
+                                              document.getElementById("special-mock-qp-input")?.click();
+                                            } else {
+                                              pickWordDocument("qp");
+                                            }
+                                          }}
+                                          style={{
+                                            flex: 1,
+                                            borderWidth: 2,
+                                            borderStyle: "dashed",
+                                            borderColor: "#c62828",
+                                            backgroundColor: darkMode ? "#2a1e1e" : "#fff8f8",
+                                            borderRadius: 12,
+                                            padding: 16,
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            gap: 6
+                                          }}
+                                        >
+                                          <Ionicons name="document-text-outline" size={28} color="#c62828" />
+                                          <Text style={{ fontWeight: "bold", color: "#c62828", fontSize: 12, textAlign: "center" }}>
+                                            {pdfFilename ? "Replace Question Paper (.docx)" : "Upload Question Paper Word File (.docx)"}
+                                          </Text>
+                                          <Text style={{ fontSize: 10, color: darkMode ? "#9e9e9e" : "#757575", textAlign: "center" }}>
+                                            {pdfFilename ? `Selected: ${pdfFilename}` : "Extracts bilingual English & Tamil questions"}
+                                          </Text>
+                                        </TouchableOpacity>
+
+                                        {/* Answer Key File (Optional) */}
+                                        <TouchableOpacity
+                                          onPress={() => {
+                                            setGenMode("file");
+                                            if (Platform.OS === "web") {
+                                              document.getElementById("special-mock-ak-input")?.click();
+                                            } else {
+                                              pickWordDocument("ak");
+                                            }
+                                          }}
+                                          style={{
+                                            flex: 1,
+                                            borderWidth: 2,
+                                            borderStyle: "dashed",
+                                            borderColor: "#2e7d32",
+                                            backgroundColor: darkMode ? "#1e2a1e" : "#f4f9f4",
+                                            borderRadius: 12,
+                                            padding: 16,
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            gap: 6
+                                          }}
+                                        >
+                                          <Ionicons name="key-outline" size={28} color="#2e7d32" />
+                                          <Text style={{ fontWeight: "bold", color: "#2e7d32", fontSize: 12, textAlign: "center" }}>
+                                            {akFilename ? "Replace Answer Key File" : "Upload Answer Key File (.docx / .csv)"}
+                                          </Text>
+                                          <Text style={{ fontSize: 10, color: darkMode ? "#9e9e9e" : "#757575", textAlign: "center" }}>
+                                            {akFilename ? `Selected: ${akFilename}` : "Optional: auto-matches correct answers"}
+                                          </Text>
+                                        </TouchableOpacity>
+                                      </View>
+
+                                      {/* Extract Questions Action Button */}
+                                      <View style={{ flexDirection: "row", gap: 10, marginTop: 4 }}>
+                                        <TouchableOpacity
+                                          disabled={isExtracting}
+                                          onPress={() => {
+                                            setGenMode("file");
+                                            extractQuestionsFromText();
+                                          }}
+                                          style={[styles.primaryBtn, { flex: 1, backgroundColor: "#c62828" }, isExtracting && { opacity: 0.6 }]}
+                                        >
+                                          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                                            {isExtracting && <ActivityIndicator size="small" color="#fff" />}
+                                            <Text style={styles.primaryBtnTxt}>
+                                              {isExtracting
+                                                ? "Extracting Questions..."
+                                                : extractMode === "local"
+                                                  ? "⚡ Extract Questions (Local Regex)"
+                                                  : "🤖 Extract Questions (Gemini AI)"}
+                                            </Text>
+                                          </View>
+                                        </TouchableOpacity>
+                                        {isExtracting && (
+                                          <TouchableOpacity
+                                            onPress={cancelExtraction}
+                                            style={[styles.primaryBtn, { backgroundColor: "#ef4444", minWidth: 80 }]}
+                                          >
+                                            <Ionicons name="close-circle-outline" size={16} color="#fff" />
+                                            <Text style={[styles.primaryBtnTxt, { marginLeft: 4 }]}>Cancel</Text>
+                                          </TouchableOpacity>
+                                        )}
+                                      </View>
+                                    </View>
+                                  ) : (
+                                    <View>
+                                      <Text style={[styles.label, darkMode && styles.labelDark]}>Paste Questions JSON Array *:</Text>
+                                      <TextInput
+                                        style={[
+                                          styles.input,
+                                          darkMode && styles.inputDark,
+                                          { minHeight: 180, maxHeight: 300, textAlignVertical: "top", padding: 12, fontFamily: "monospace", fontSize: 11 }
+                                        ]}
+                                        placeholder={`[\n  {\n    "question": "Question text...",\n    "option a": "Choice 1",\n    "option b": "Choice 2",\n    "option c": "Choice 3",\n    "option d": "Choice 4",\n    "correctAnswer": "A"\n  }\n]`}
+                                        placeholderTextColor="#999"
+                                        multiline
+                                        scrollEnabled={true}
+                                        value={jsonQuestionsInput}
+                                        onChangeText={setJsonQuestionsInput}
+                                      />
+                                      <TouchableOpacity
+                                        onPress={parseAndLoadJsonQuestions}
+                                        style={[styles.primaryBtn, { marginTop: 10, backgroundColor: "#1565c0" }]}
+                                      >
+                                        <Text style={styles.primaryBtnTxt}>Parse & Load JSON Questions</Text>
+                                      </TouchableOpacity>
+                                    </View>
+                                  )}
+
+                                  {/* Questions Loaded Badge & Clear Option */}
+                                  {extractedQuestions.length > 0 && (
+                                    <View style={{
+                                      marginTop: 14,
+                                      backgroundColor: darkMode ? "#1a2a1a" : "#f0fdf4",
+                                      padding: 12,
+                                      borderRadius: 10,
+                                      borderWidth: 1,
+                                      borderColor: darkMode ? "#22543d" : "#bbf7d0",
+                                      flexDirection: "row",
+                                      alignItems: "center",
+                                      justifyContent: "space-between"
+                                    }}>
+                                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1 }}>
+                                        <Ionicons name="checkmark-circle" size={22} color="#16a34a" />
+                                        <View style={{ flex: 1 }}>
+                                          <Text style={{ fontWeight: "bold", color: darkMode ? "#86efac" : "#166534", fontSize: 13 }}>
+                                            {extractedQuestions.length} Questions Loaded & Ready!
+                                          </Text>
+                                          <Text style={{ fontSize: 11, color: darkMode ? "#cbd5e1" : "#475569" }}>
+                                            Edit questions, attach images, or delete any question below before creating this Special Mock Exam.
+                                          </Text>
+                                        </View>
+                                      </View>
+                                      <TouchableOpacity
+                                        onPress={() => {
+                                          setExtractedQuestions([]);
+                                          setPdfFilename("");
+                                          setPdfBase64("");
+                                          setAkFilename("");
+                                          setAkBase64("");
+                                          setJsonQuestionsInput("");
+                                          Alert.alert("Cleared", "Question paper and loaded questions have been cleared.");
+                                        }}
+                                        style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: darkMode ? "#333" : "#fff", borderRadius: 6, borderWidth: 1, borderColor: "#ef4444" }}
+                                      >
+                                        <Text style={{ fontSize: 11, color: "#ef4444", fontWeight: "bold" }}>Clear</Text>
+                                      </TouchableOpacity>
+                                    </View>
+                                  )}
+                                </View>
+
+                                {/* Extracted Questions Workspace (Image 3) */}
+                                {extractedQuestions.length > 0 && (
+                                  <View style={[styles.card, darkMode && styles.cardDark]}>
+                                    <Text style={[styles.sectionTitle, darkMode && styles.sectionTitleDark]}>Extracted Questions Workspace</Text>
+
+                                    {/* Test Settings (Marking Scheme) */}
+                                    <View style={{ backgroundColor: darkMode ? "#222" : "#f9f9f9", padding: 15, borderRadius: 12, marginBottom: 15, borderLeftWidth: 4, borderLeftColor: "#2e7d32" }}>
+                                      <Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#212121", marginBottom: 10 }}>Test Settings (Marking Scheme)</Text>
+                                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12, alignItems: "flex-start" }}>
+
+                                        {/* Correct Answer Marks */}
+                                        <View style={{ flex: 1, minWidth: 140 }}>
+                                          <Text style={[styles.label, darkMode && styles.labelDark]}>Correct Answer Marks:</Text>
+                                          <TextInput
+                                            style={[styles.input, darkMode && styles.inputDark, { fontWeight: "bold", color: "#2e7d32" }]}
+                                            placeholder="+1"
+                                            placeholderTextColor="#999"
+                                            value={specialMockMarksPerQ}
+                                            onChangeText={v => {
+                                              let clean = v.replace(/[+]/g, "").trim();
+                                              let formatted = clean;
+                                              const parseFloatVal = parseFloat(clean);
+                                              if (!isNaN(parseFloatVal) && parseFloatVal > 0) {
+                                                formatted = "+" + clean;
+                                              } else if (clean === "0") {
+                                                formatted = "0";
+                                              }
+                                              setSpecialMockMarksPerQ(formatted);
+                                            }}
+                                          />
+                                        </View>
+
+                                        {/* Wrong Answer Marks */}
+                                        <View style={{ flex: 1.5, minWidth: 220 }}>
+                                          <Text style={[styles.label, darkMode && styles.labelDark]}>Wrong Answer Marks:</Text>
+                                          <TextInput
+                                            style={[styles.input, darkMode && styles.inputDark, { fontWeight: "bold", color: "#c62828" }]}
+                                            placeholder="-0.25"
+                                            placeholderTextColor="#999"
+                                            value={specialMockNegMarks}
+                                            onChangeText={v => {
+                                              let clean = v.replace(/[+]/g, "").trim();
+                                              let formatted = clean;
+                                              if (clean === "") {
+                                                formatted = "";
+                                              } else if (clean === "-") {
+                                                formatted = "-";
+                                              } else if (clean === "0") {
+                                                formatted = "0";
+                                              } else if (clean.startsWith("-")) {
+                                                formatted = clean;
+                                              } else {
+                                                formatted = "-" + clean;
+                                              }
+                                              setSpecialMockNegMarks(formatted);
+                                            }}
+                                          />
+                                          {/* Quick Presets for Wrong Answer Marks */}
+                                          <View style={{ flexDirection: "row", gap: 6, marginTop: 6, alignItems: "center" }}>
+                                            <Text style={{ fontSize: 11, color: "#757575", fontWeight: "600" }}>Presets:</Text>
+                                            {["-0.25", "-0.33", "-0.66"].map((preset) => {
+                                              const isSelected = specialMockNegMarks === preset;
+                                              return (
+                                                <TouchableOpacity
+                                                  key={preset}
+                                                  onPress={() => setSpecialMockNegMarks(preset)}
+                                                  style={{
+                                                    paddingHorizontal: 8,
+                                                    paddingVertical: 3,
+                                                    borderRadius: 6,
+                                                    backgroundColor: isSelected ? "#c62828" : (darkMode ? "#333" : "#e0e0e0"),
+                                                    borderWidth: 1,
+                                                    borderColor: isSelected ? "#b71c1c" : "#ccc"
+                                                  }}
+                                                >
+                                                  <Text style={{ fontSize: 11, fontWeight: "bold", color: isSelected ? "#fff" : (darkMode ? "#ccc" : "#333") }}>
+                                                    {preset}
+                                                  </Text>
+                                                </TouchableOpacity>
+                                              );
+                                            })}
+                                          </View>
+                                        </View>
+
+                                        {/* Unattended Marks */}
+                                        <View style={{ flex: 1, minWidth: 140 }}>
+                                          <Text style={[styles.label, darkMode && styles.labelDark]}>Unattended Marks:</Text>
+                                          <TextInput
+                                            style={[styles.input, darkMode && styles.inputDark]}
+                                            placeholder="0"
+                                            placeholderTextColor="#999"
+                                            value={specialMockUnattendedMarks}
+                                            onChangeText={v => {
+                                              let clean = v.replace(/[+]/g, "").trim();
+                                              let formatted = clean;
+                                              const parseFloatVal = parseFloat(clean);
+                                              if (clean === "0") {
+                                                formatted = "0";
+                                              } else if (!isNaN(parseFloatVal) && parseFloatVal > 0) {
+                                                formatted = "+" + clean;
+                                              }
+                                              setSpecialMockUnattendedMarks(formatted);
+                                            }}
+                                          />
+                                        </View>
+
+                                      </View>
+                                    </View>
+
+                                    {/* Question List Header */}
+                                    <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#ef9a9a" : "#c62828", marginBottom: 10 }}>
+                                      Questions List ({extractedQuestions.length} extracted):
+                                    </Text>
+
+                                    {/* Inline Question Editor */}
+                                    {editingQIdx !== null && editingQData !== null && (
+                                      <View style={{ backgroundColor: darkMode ? "#1a2a1a" : "#f1f8e9", borderWidth: 1, borderColor: "#2e7d32", borderRadius: 12, padding: 15, marginBottom: 15 }}>
+                                        <Text style={{ fontWeight: "bold", color: "#2e7d32", marginBottom: 10, fontSize: 13 }}>
+                                          Editing Question #{editingQIdx + 1}
+                                        </Text>
+
+                                        <Text style={[styles.label, darkMode && styles.labelDark]}>English Question Text:</Text>
+                                        <TextInput
+                                          style={[styles.input, darkMode && styles.inputDark, { height: 60 }]}
+                                          multiline
+                                          value={editingQData.questionEn}
+                                          onChangeText={text => setEditingQData({ ...editingQData, questionEn: text })}
+                                        />
+
+                                        <Text style={[styles.label, darkMode && styles.labelDark]}>Tamil Question Text:</Text>
+                                        <TextInput
+                                          style={[styles.input, darkMode && styles.inputDark, { height: 60 }]}
+                                          multiline
+                                          value={editingQData.questionTa}
+                                          onChangeText={text => setEditingQData({ ...editingQData, questionTa: text })}
+                                        />
+
+                                        {["A", "B", "C", "D"].map(opt => (
+                                          <View key={opt} style={{ marginBottom: 10, borderBottomWidth: 0.5, borderBottomColor: "#ccc", paddingBottom: 8 }}>
+                                            <Text style={{ fontWeight: "bold", fontSize: 11, color: "#2e7d32" }}>Option {opt}:</Text>
+                                            <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
+                                              <TextInput
+                                                style={[styles.input, darkMode && styles.inputDark, { flex: 1, marginBottom: 0, fontSize: 12 }]}
+                                                placeholder={`English Option ${opt}`}
+                                                value={editingQData.options?.[opt]?.en || ""}
+                                                onChangeText={text => {
+                                                  const updatedOptions = { ...editingQData.options };
+                                                  updatedOptions[opt] = { ...updatedOptions[opt], en: text };
+                                                  setEditingQData({ ...editingQData, options: updatedOptions });
+                                                }}
+                                              />
+                                              <TextInput
+                                                style={[styles.input, darkMode && styles.inputDark, { flex: 1, marginBottom: 0, fontSize: 12 }]}
+                                                placeholder={`Tamil Option ${opt}`}
+                                                value={editingQData.options?.[opt]?.ta || ""}
+                                                onChangeText={text => {
+                                                  const updatedOptions = { ...editingQData.options };
+                                                  updatedOptions[opt] = { ...updatedOptions[opt], ta: text };
+                                                  setEditingQData({ ...editingQData, options: updatedOptions });
+                                                }}
+                                              />
+                                            </View>
+                                          </View>
+                                        ))}
+
+                                        {/* Question Image Attachment */}
+                                        <Text style={[styles.label, darkMode && styles.labelDark]}>Question Image (Optional):</Text>
+                                        {(editingQData.imageUrl || editingQData.questionImage) ? (
+                                          <View style={{ gap: 8, marginBottom: 12, alignItems: "flex-start" }}>
+                                            <Image
+                                              source={{ uri: editingQData.imageUrl || editingQData.questionImage }}
+                                              style={{ width: 220, height: 130, borderRadius: 8, resizeMode: "contain", backgroundColor: "#ffffff", borderWidth: 1, borderColor: "#e0e0e0" }}
+                                            />
+                                            <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+                                              <TouchableOpacity
+                                                disabled={uploadingImageQIdx === editingQIdx}
+                                                onPress={() => handleUploadQuestionImage(editingQIdx)}
+                                                style={{ backgroundColor: uploadingImageQIdx === editingQIdx ? "#0277bd" : "#0288d1", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 6 }}
+                                              >
+                                                {uploadingImageQIdx === editingQIdx ? (
+                                                  <>
+                                                    <ActivityIndicator size="small" color="#ffffff" />
+                                                    <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "bold" }}>Uploading...</Text>
+                                                  </>
+                                                ) : (
+                                                  <>
+                                                    <Ionicons name="image-outline" size={14} color="#ffffff" />
+                                                    <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "bold" }}>Change Image File</Text>
+                                                  </>
+                                                )}
+                                              </TouchableOpacity>
+                                              <TouchableOpacity
+                                                disabled={uploadingImageQIdx === editingQIdx}
+                                                onPress={() => setEditingQData({ ...editingQData, imageUrl: "", questionImage: "" })}
+                                                style={{ backgroundColor: "#c62828", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 4 }}
+                                              >
+                                                <Ionicons name="trash-outline" size={14} color="#ffffff" />
+                                                <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "bold" }}>Remove Image</Text>
+                                              </TouchableOpacity>
+                                            </View>
+                                            {uploadingImageQIdx === editingQIdx && (
+                                              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#e3f2fd", padding: 8, borderRadius: 6, borderWidth: 1, borderColor: "#90caf9", marginTop: 4 }}>
+                                                <ActivityIndicator size="small" color="#1976d2" />
+                                                <Text style={{ color: "#0d47a1", fontSize: 11, fontWeight: "bold" }}>Uploading image to Google Drive & compressing...</Text>
+                                              </View>
+                                            )}
+                                          </View>
+                                        ) : (
+                                          <View style={{ gap: 8, marginBottom: 12 }}>
+                                            <TouchableOpacity
+                                              disabled={uploadingImageQIdx === editingQIdx}
+                                              onPress={() => handleUploadQuestionImage(editingQIdx)}
+                                              style={{ backgroundColor: uploadingImageQIdx === editingQIdx ? "#1b5e20" : "#2e7d32", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start" }}
+                                            >
+                                              {uploadingImageQIdx === editingQIdx ? (
+                                                <>
+                                                  <ActivityIndicator size="small" color="#ffffff" />
+                                                  <Text style={{ color: "#ffffff", fontSize: 12, fontWeight: "bold" }}>Uploading Image...</Text>
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <Ionicons name="image-outline" size={16} color="#ffffff" />
+                                                  <Text style={{ color: "#ffffff", fontSize: 12, fontWeight: "bold" }}>Upload Question Image File</Text>
+                                                </>
+                                              )}
+                                            </TouchableOpacity>
+                                            {uploadingImageQIdx === editingQIdx && (
+                                              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#e3f2fd", padding: 8, borderRadius: 6, borderWidth: 1, borderColor: "#90caf9" }}>
+                                                <ActivityIndicator size="small" color="#1976d2" />
+                                                <Text style={{ color: "#0d47a1", fontSize: 11, fontWeight: "bold" }}>Uploading image to Google Drive & compressing...</Text>
+                                              </View>
+                                            )}
+                                            <TextInput
+                                              style={[styles.input, darkMode && styles.inputDark, { fontSize: 12, marginBottom: 0 }]}
+                                              placeholder="Or paste Image URL (http://... or data:image/...)"
+                                              placeholderTextColor="#999"
+                                              value={editingQData.imageUrl || ""}
+                                              onChangeText={url => setEditingQData({ ...editingQData, imageUrl: url })}
+                                            />
+                                          </View>
+                                        )}
+
+                                        <Text style={[styles.label, darkMode && styles.labelDark]}>Correct Answer:</Text>
+                                        <View style={{ flexDirection: "row", gap: 10, marginBottom: 15 }}>
+                                          {["A", "B", "C", "D"].map(opt => (
+                                            <TouchableOpacity
+                                              key={opt}
+                                              onPress={() => setEditingQData({ ...editingQData, correctAnswer: opt })}
+                                              style={[
+                                                styles.roleBtn,
+                                                editingQData.correctAnswer === opt && { backgroundColor: "#2e7d32", borderColor: "#2e7d32" }
+                                              ]}
+                                            >
+                                              <Text style={[
+                                                styles.roleBtnTxt,
+                                                editingQData.correctAnswer === opt && { color: "#ffffff" }
+                                              ]}>
+                                                Option {opt}
+                                              </Text>
+                                            </TouchableOpacity>
+                                          ))}
+                                        </View>
+
+                                        <View style={{ flexDirection: "row", gap: 10 }}>
+                                          <TouchableOpacity
+                                            onPress={() => { setEditingQIdx(null); setEditingQData(null); }}
+                                            style={[styles.outlineBtn, { flex: 1, borderColor: "#757575" }]}
+                                          >
+                                            <Text style={[styles.outlineBtnTxt, { color: "#757575" }]}>Cancel</Text>
+                                          </TouchableOpacity>
+                                          <TouchableOpacity
+                                            onPress={() => {
+                                              const updated = [...extractedQuestions];
+                                              updated[editingQIdx] = editingQData;
+                                              setExtractedQuestions(updated);
+                                              setEditingQIdx(null);
+                                              setEditingQData(null);
+                                              Alert.alert("Updated", "Question updated in list successfully.");
+                                            }}
+                                            style={[styles.primaryBtn, { flex: 1, backgroundColor: "#2e7d32" }]}
+                                          >
+                                            <Text style={styles.primaryBtnTxt}>Save Changes</Text>
+                                          </TouchableOpacity>
+                                        </View>
+                                      </View>
+                                    )}
+
+                                    {/* List of Questions */}
+                                    <ScrollView style={{ maxHeight: 520 }} nestedScrollEnabled>
+                                      {extractedQuestions.map((q: any, idx: number) => {
+                                        const isCorrect = (opt: string) => q.correctAnswer === opt;
+                                        const hasQuestionImage = !!(q.imageUrl || q.questionImage);
+                                        const isUploadingThisQ = uploadingImageQIdx === idx;
+                                        return (
+                                          <View
+                                            key={idx}
+                                            style={{
+                                              padding: 12,
+                                              backgroundColor: darkMode ? "#1e1e1e" : "#fdfdfd",
+                                              borderWidth: 1,
+                                              borderColor: darkMode ? "#333" : "#e0e0e0",
+                                              borderRadius: 12,
+                                              marginBottom: 10,
+                                              borderLeftWidth: 4,
+                                              borderLeftColor: isExtracting ? "#aaa" : "#c62828"
+                                            }}
+                                          >
+                                            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                                              <View style={{ backgroundColor: "#c62828", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12 }}>
+                                                <Text style={{ color: "#ffffff", fontWeight: "bold", fontSize: 10 }}>Q{q.questionNo || idx + 1}</Text>
+                                              </View>
+
+                                              <View style={{ flexDirection: "row", gap: 6 }}>
+                                                <TouchableOpacity
+                                                  disabled={isUploadingThisQ}
+                                                  onPress={() => handleUploadQuestionImage(idx)}
+                                                  style={{ flexDirection: "row", alignItems: "center", backgroundColor: isUploadingThisQ ? "#f57c00" : (hasQuestionImage ? "#2e7d32" : "#7b1fa2"), paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, gap: 4 }}
+                                                >
+                                                  {isUploadingThisQ ? (
+                                                    <>
+                                                      <ActivityIndicator size="small" color="#ffffff" />
+                                                      <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "bold" }}>Uploading...</Text>
+                                                    </>
+                                                  ) : (
+                                                    <>
+                                                      <Ionicons name={hasQuestionImage ? "image" : "image-outline"} size={14} color="#ffffff" />
+                                                      <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "bold" }}>
+                                                        {hasQuestionImage ? "Image Attached" : "Add Image"}
+                                                      </Text>
+                                                    </>
+                                                  )}
+                                                </TouchableOpacity>
+
+                                                <TouchableOpacity
+                                                  onPress={() => {
+                                                    setEditingQIdx(idx);
+                                                    setEditingQData(JSON.parse(JSON.stringify(q)));
+                                                  }}
+                                                  style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#1976d2", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, gap: 4 }}
+                                                >
+                                                  <Ionicons name="create-outline" size={14} color="#ffffff" />
+                                                  <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "bold" }}>Edit</Text>
+                                                </TouchableOpacity>
+
+                                                <TouchableOpacity
+                                                  onPress={() => {
+                                                    Alert.alert(
+                                                      "Delete Question",
+                                                      `Are you sure you want to delete Question #${idx + 1}?`,
+                                                      [
+                                                        { text: "Cancel", style: "cancel" },
+                                                        {
+                                                          text: "Delete",
+                                                          style: "destructive",
+                                                          onPress: () => {
+                                                            const updated = extractedQuestions.filter((_, i) => i !== idx);
+                                                            const reindexed = updated.map((item, i) => ({ ...item, questionNo: i + 1 }));
+                                                            setExtractedQuestions(reindexed);
+                                                          }
+                                                        }
+                                                      ]
+                                                    );
+                                                  }}
+                                                  style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#c62828", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, gap: 4 }}
+                                                >
+                                                  <Ionicons name="trash-outline" size={14} color="#ffffff" />
+                                                  <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "bold" }}>Delete</Text>
+                                                </TouchableOpacity>
+                                              </View>
+                                            </View>
+
+                                            <Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#212121", fontSize: 12 }}>{q.questionEn || q.question}</Text>
+                                            {q.questionTa && <Text style={{ color: darkMode ? "#aaa" : "#555", fontSize: 11, marginTop: 2, fontStyle: "italic" }}>{q.questionTa}</Text>}
+                                            {q.questionMl && <Text style={{ color: darkMode ? "#80deea" : "#00838f", fontSize: 11, marginTop: 2, fontStyle: "italic" }}>[Malayalam] {q.questionMl}</Text>}
+                                            {q.questionTe && <Text style={{ color: darkMode ? "#ffe082" : "#f57f17", fontSize: 11, marginTop: 2, fontStyle: "italic" }}>[Telugu] {q.questionTe}</Text>}
+                                            {q.formula && <Text style={{ color: darkMode ? "#b39ddb" : "#512da8", fontSize: 11, marginTop: 4, fontWeight: "bold" }}>Formula: {q.formula}</Text>}
+
+                                            {/* Inline Uploading Indicator Banner */}
+                                            {isUploadingThisQ && (
+                                              <View style={{ marginTop: 8, marginBottom: 8, flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#fff3e0", padding: 10, borderRadius: 8, borderWidth: 1, borderColor: "#ffe0b2" }}>
+                                                <ActivityIndicator size="small" color="#e65100" />
+                                                <Text style={{ fontSize: 12, color: "#e65100", fontWeight: "bold" }}>Uploading Question #{idx + 1} Image to Google Drive...</Text>
+                                              </View>
+                                            )}
+
+                                            {/* Question Image Attachment Preview & Actions */}
+                                            {hasQuestionImage && (
+                                              <View style={{ marginTop: 8, marginBottom: 8, flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: darkMode ? "#1a2433" : "#f4f8fb", padding: 8, borderRadius: 8, borderWidth: 1, borderColor: "#e0e0e0" }}>
+                                                <TouchableOpacity
+                                                  onPress={() => {
+                                                    setPreviewImageUri(q.imageUrl || q.questionImage);
+                                                    setPreviewImageTitle(`Question #${q.questionNo || idx + 1} Image`);
+                                                  }}
+                                                >
+                                                  <Image
+                                                    source={{ uri: q.imageUrl || q.questionImage }}
+                                                    style={{ width: 130, height: 85, borderRadius: 6, resizeMode: "contain", backgroundColor: "#ffffff", borderWidth: 1, borderColor: "#e0e0e0" }}
+                                                  />
+                                                </TouchableOpacity>
+                                                <View style={{ gap: 6 }}>
+                                                  <TouchableOpacity
+                                                    onPress={() => {
+                                                      setPreviewImageUri(q.imageUrl || q.questionImage);
+                                                      setPreviewImageTitle(`Question #${q.questionNo || idx + 1} Image`);
+                                                    }}
+                                                    style={{ backgroundColor: "#e3f2fd", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, flexDirection: "row", alignItems: "center", gap: 4 }}
+                                                  >
+                                                    <Ionicons name="eye-outline" size={12} color="#1565c0" />
+                                                    <Text style={{ fontSize: 10, color: "#1565c0", fontWeight: "bold" }}>View Fullscreen</Text>
+                                                  </TouchableOpacity>
+
+                                                  <TouchableOpacity
+                                                    disabled={isUploadingThisQ}
+                                                    onPress={() => handleUploadQuestionImage(idx)}
+                                                    style={{ backgroundColor: "#ffffff", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, borderWidth: 1, borderColor: "#0288d1", flexDirection: "row", alignItems: "center", gap: 4 }}
+                                                  >
+                                                    {isUploadingThisQ ? (
+                                                      <>
+                                                        <ActivityIndicator size="small" color="#0288d1" />
+                                                        <Text style={{ fontSize: 10, color: "#0288d1", fontWeight: "bold" }}>Uploading...</Text>
+                                                      </>
+                                                    ) : (
+                                                      <>
+                                                        <Ionicons name="image-outline" size={12} color="#0288d1" />
+                                                        <Text style={{ fontSize: 10, color: "#0288d1", fontWeight: "bold" }}>Change Image</Text>
+                                                      </>
+                                                    )}
+                                                  </TouchableOpacity>
+
+                                                  <TouchableOpacity
+                                                    onPress={() => {
+                                                      const updated = [...extractedQuestions];
+                                                      delete updated[idx].imageUrl;
+                                                      delete updated[idx].questionImage;
+                                                      setExtractedQuestions(updated);
+                                                    }}
+                                                    style={{ backgroundColor: "#ffebee", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, flexDirection: "row", alignItems: "center", gap: 4 }}
+                                                  >
+                                                    <Ionicons name="trash-outline" size={12} color="#c62828" />
+                                                    <Text style={{ fontSize: 10, color: "#c62828", fontWeight: "bold" }}>Remove Image</Text>
+                                                  </TouchableOpacity>
+                                                </View>
+                                              </View>
+                                            )}
+
+                                            {/* Options */}
+                                            <View style={{ marginTop: 8, gap: 4 }}>
+                                              {["A", "B", "C", "D"].map(opt => {
+                                                const optionData = q.options?.[opt];
+                                                const hasEn = !!optionData?.en;
+                                                const hasTa = !!optionData?.ta;
+                                                if (!hasEn && !hasTa) return null;
+                                                return (
+                                                  <View
+                                                    key={opt}
+                                                    style={{
+                                                      flexDirection: "row",
+                                                      padding: 6,
+                                                      borderRadius: 6,
+                                                      borderWidth: 1,
+                                                      borderColor: isCorrect(opt) ? "#2e7d32" : (darkMode ? "#333" : "#f0f0f0"),
+                                                      backgroundColor: isCorrect(opt) ? (darkMode ? "#1b2e1b" : "#e8f5e9") : (darkMode ? "#121212" : "#fafafa")
+                                                    }}
+                                                  >
+                                                    <Text style={{ fontWeight: "bold", fontSize: 11, color: isCorrect(opt) ? "#2e7d32" : (darkMode ? "#9e9e9e" : "#555"), marginRight: 6 }}>{opt}.</Text>
+                                                    <View style={{ flex: 1 }}>
+                                                      {hasEn && <Text style={{ fontSize: 11, color: darkMode ? "#fff" : "#212121", fontWeight: isCorrect(opt) ? "bold" : "normal" }}>{optionData.en}</Text>}
+                                                      {hasTa && <Text style={{ fontSize: 10, color: darkMode ? "#aaa" : "#666", fontStyle: "italic" }}>{optionData.ta}</Text>}
+                                                    </View>
+                                                    {isCorrect(opt) && <Ionicons name="checkmark-circle" size={14} color="#2e7d32" style={{ marginLeft: 4 }} />}
+                                                  </View>
+                                                );
+                                              })}
+                                            </View>
+
+                                            {/* Quick Answer Changer */}
+                                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10, borderTopWidth: 0.5, borderTopColor: darkMode ? "#333" : "#eee", paddingTop: 8 }}>
+                                              <Text style={{ fontSize: 10, color: darkMode ? "#9e9e9e" : "#757575", fontWeight: "bold" }}>Correct Ans:</Text>
+                                              <View style={{ flexDirection: "row", gap: 4 }}>
+                                                {["A", "B", "C", "D"].map(opt => (
+                                                  <TouchableOpacity
+                                                    key={opt}
+                                                    onPress={() => {
+                                                      const updated = [...extractedQuestions];
+                                                      updated[idx] = { ...updated[idx], correctAnswer: opt };
+                                                      setExtractedQuestions(updated);
+                                                    }}
+                                                    style={{
+                                                      width: 24,
+                                                      height: 24,
+                                                      borderRadius: 12,
+                                                      backgroundColor: isCorrect(opt) ? "#2e7d32" : (darkMode ? "#333" : "#e0e0e0"),
+                                                      alignItems: "center",
+                                                      justifyContent: "center"
+                                                    }}
+                                                  >
+                                                    <Text style={{ fontSize: 10, fontWeight: "bold", color: isCorrect(opt) ? "#ffffff" : (darkMode ? "#9e9e9e" : "#424242") }}>{opt}</Text>
+                                                  </TouchableOpacity>
+                                                ))}
+                                              </View>
+                                            </View>
+                                          </View>
+                                        );
+                                      })}
+                                    </ScrollView>
+                                  </View>
+                                )}
+
+                                {/* Step 4: Exam Settings (Schedule & Timing) */}
+                                <View style={[styles.card, darkMode && styles.cardDark]}>
+                                  <Text style={[styles.sectionTitle, darkMode && styles.sectionTitleDark]}>4. Exam Settings (Schedule & Timing)</Text>
+
+                                  {/* SCHEDULE TEST (Image 2) */}
+                                  <View style={{ backgroundColor: darkMode ? "#1a1a1a" : "#f5f5f5", padding: 12, borderRadius: 10, marginBottom: 14, borderLeftWidth: 3, borderLeftColor: "#1565c0" }}>
+                                    <Text style={{ fontWeight: "bold", color: darkMode ? "#90caf9" : "#1565c0", fontSize: 12, marginBottom: 8 }}>SCHEDULE TEST (Mandatory)</Text>
+                                    <DateTimePickerSelect
+                                      label="Start Date & Time:"
+                                      value={specialMockStartTime}
+                                      onChange={(t: string) => {
+                                        setSpecialMockStartTime(t);
+                                        if (t && specialMockEndTime) {
+                                          const s = new Date(t).getTime();
+                                          const e = new Date(specialMockEndTime).getTime();
+                                          if (!isNaN(s) && !isNaN(e) && e > s) {
+                                            setSpecialMockDuration(String(Math.round((e - s) / 60000)));
+                                          }
+                                        }
+                                      }}
+                                      darkMode={darkMode}
+                                    />
+                                    <DateTimePickerSelect
+                                      label="End Date & Time:"
+                                      value={specialMockEndTime}
+                                      onChange={(t: string) => {
+                                        setSpecialMockEndTime(t);
+                                        if (specialMockStartTime && t) {
+                                          const s = new Date(specialMockStartTime).getTime();
+                                          const e = new Date(t).getTime();
+                                          if (!isNaN(s) && !isNaN(e) && e > s) {
+                                            setSpecialMockDuration(String(Math.round((e - s) / 60000)));
+                                          }
+                                        }
+                                      }}
+                                      darkMode={darkMode}
+                                    />
+                                  </View>
+
+                                  <View style={{ flexDirection: isMobile ? "column" : "row", gap: 12 }}>
+                                    <View style={{ flex: 1 }}>
+                                      <Text style={styles.label}>
+                                        Duration (Minutes)
+                                        <Text style={{ fontSize: 10, color: "#10b981", fontWeight: "600" }}> (Auto-calculated)</Text>
+                                      </Text>
+                                      <TextInput
+                                        style={[
+                                          styles.input,
+                                          darkMode && styles.inputDark,
+                                          { backgroundColor: darkMode ? "#222" : "#f1f5f9", color: darkMode ? "#90caf9" : "#1565c0", fontWeight: "bold" }
+                                        ]}
+                                        value={specialMockDuration}
+                                        editable={false}
+                                        placeholder="Auto from Start & End"
+                                      />
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                      <Text style={styles.label}>Marks per Question (+)</Text>
+                                      <TextInput
+                                        style={[styles.input, darkMode && styles.inputDark]}
+                                        value={specialMockMarksPerQ}
+                                        onChangeText={setSpecialMockMarksPerQ}
+                                        keyboardType="numeric"
+                                      />
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                      <Text style={styles.label}>Negative Marks (-)</Text>
+                                      <TextInput
+                                        style={[styles.input, darkMode && styles.inputDark]}
+                                        value={specialMockNegMarks}
+                                        onChangeText={setSpecialMockNegMarks}
+                                        keyboardType="numeric"
+                                      />
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                      <Text style={styles.label}>Unattended Marks</Text>
+                                      <TextInput
+                                        style={[styles.input, darkMode && styles.inputDark]}
+                                        value={specialMockUnattendedMarks}
+                                        onChangeText={setSpecialMockUnattendedMarks}
+                                        keyboardType="numeric"
+                                      />
+                                    </View>
+                                  </View>
+                                </View>
+
+                                {/* Step 5: Submit Button */}
+                                <View style={{ alignItems: "flex-end", marginTop: 5 }}>
+                                  <TouchableOpacity
+                                    disabled={isCreatingSpecialMock}
+                                    onPress={handleCreateSpecialMock}
+                                    style={[styles.primaryBtn, { backgroundColor: "#2e7d32", paddingHorizontal: 28, opacity: isCreatingSpecialMock ? 0.6 : 1 }]}
+                                  >
+                                    <Text style={styles.primaryBtnTxt}>
+                                      {isCreatingSpecialMock ? "Creating Special Mock..." : "Create Special Mock Exam"}
+                                    </Text>
+                                  </TouchableOpacity>
+                                </View>
+                              </View>
+                            )}
+
+                            {/* View 2: Manage All Special Mocks */}
+                            {specialMockSubTab === "manage" && (
+                              <View style={{ gap: 15 }}>
+                                {specialMockTestsList.length === 0 ? (
+                                  <View style={[styles.card, darkMode && styles.cardDark, { padding: 40, alignItems: "center" }]}>
+                                    <Ionicons name="medal-outline" size={48} color="#9e9e9e" />
+                                    <Text style={{ fontSize: 16, fontWeight: "bold", color: darkMode ? "#fff" : "#212121", marginTop: 10 }}>
+                                      No Special Mock Exams Yet
+                                    </Text>
+                                    <Text style={{ fontSize: 12, color: "#757575", marginTop: 4, textAlign: "center" }}>
+                                      Switch to the "Create Special Mock" tab to create your first multi-batch mock test with sequential roll numbers.
+                                    </Text>
+                                  </View>
+                                ) : (
+                                  <View style={{ gap: 12 }}>
+                                    {specialMockTestsList.map((mt: any) => {
+                                      const mockConfig = mt.mockConfig || {};
+                                      const startingRoll = mockConfig.startingRollNo || "182026";
+                                      const batchList = mockConfig.orderedBatches || (mt.targetBatch ? mt.targetBatch.split(",") : []);
+                                      const totalMockStudents = mockConfig.mockRollNumbers ? Object.keys(mockConfig.mockRollNumbers).length : 0;
+
+                                      return (
+                                        <View key={mt.id} style={[styles.card, darkMode && styles.cardDark, { gap: 10 }]}>
+                                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+                                            <View style={{ flex: 1 }}>
+                                              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                                                <Text style={{ fontSize: 15, fontWeight: "bold", color: darkMode ? "#fff" : "#1a237e" }}>
+                                                  {mt.title}
+                                                </Text>
+                                                <View style={{ backgroundColor: "#fee2e2", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                                                  <Text style={{ fontSize: 10, fontWeight: "bold", color: "#b91c1c" }}>SPECIAL MOCK</Text>
+                                                </View>
+                                              </View>
+                                              <Text style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>
+                                                Starting Roll No: <Text style={{ fontWeight: "bold", color: "#c62828" }}>{startingRoll}</Text> • Batches: <Text style={{ fontWeight: "600" }}>{batchList.join(", ") || "All"}</Text> • Enrolled: <Text style={{ fontWeight: "bold" }}>{totalMockStudents} candidates</Text>
+                                              </Text>
+                                            </View>
+
+                                            <TouchableOpacity
+                                              onPress={() => {
+                                                executeDelete("tests", mt.id, async () => {
+                                                  try {
+                                                    await api.delete(`/test-portal/test-creation/${mt.id}`);
+                                                    RNAlert.alert("Success", "Special Mock Test deleted successfully.");
+                                                    await loadTests();
+                                                  } catch (e: any) {
+                                                    RNAlert.alert("Error", e.message || "Failed to delete test.");
+                                                  }
+                                                });
+                                              }}
+                                              style={{ padding: 6 }}
+                                            >
+                                              <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                                            </TouchableOpacity>
+                                          </View>
+
+                                          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, borderTopWidth: 1, borderColor: darkMode ? "#333" : "#f1f5f9", paddingTop: 10, marginTop: 4 }}>
+                                            <TouchableOpacity
+                                              onPress={() => loadStudentLeaderboard(mt.id, mt)}
+                                              style={{
+                                                flexDirection: "row",
+                                                alignItems: "center",
+                                                gap: 6,
+                                                backgroundColor: "#2e7d32",
+                                                paddingHorizontal: 12,
+                                                paddingVertical: 7,
+                                                borderRadius: 6
+                                              }}
+                                            >
+                                              <Ionicons name="trophy-outline" size={14} color="#ffffff" />
+                                              <Text style={{ color: "#ffffff", fontSize: 12, fontWeight: "bold" }}>View Leaderboard</Text>
+                                            </TouchableOpacity>
+
+                                            <TouchableOpacity
+                                              onPress={() => {
+                                                setSelectedMonitorTestId(mt.id);
+                                                setMonitorActiveTab("leaderboard");
+                                              }}
+                                              style={{
+                                                flexDirection: "row",
+                                                alignItems: "center",
+                                                gap: 6,
+                                                backgroundColor: "#1565c0",
+                                                paddingHorizontal: 12,
+                                                paddingVertical: 7,
+                                                borderRadius: 6
+                                              }}
+                                            >
+                                              <Ionicons name="analytics-outline" size={14} color="#ffffff" />
+                                              <Text style={{ color: "#ffffff", fontSize: 12, fontWeight: "bold" }}>Monitor Live</Text>
+                                            </TouchableOpacity>
+
+                                            <TouchableOpacity
+                                              onPress={() => {
+                                                setSelectedMockForIdGen(mt.id);
+                                                setBulkTargetGroup("mock");
+                                                setActiveTab("erp");
+                                                setErpSub("id-card");
+                                                setGenerationMode("batch");
+                                              }}
+                                              style={{
+                                                flexDirection: "row",
+                                                alignItems: "center",
+                                                gap: 6,
+                                                backgroundColor: "#d97706",
+                                                paddingHorizontal: 12,
+                                                paddingVertical: 7,
+                                                borderRadius: 6
+                                              }}
+                                            >
+                                              <Ionicons name="id-card-outline" size={14} color="#ffffff" />
+                                              <Text style={{ color: "#ffffff", fontSize: 12, fontWeight: "bold" }}>Generate ID Cards</Text>
+                                            </TouchableOpacity>
+                                          </View>
+                                        </View>
+                                      );
+                                    })}
+                                  </View>
+                                )}
+                              </View>
+                            )}
+                          </View>
+                        );
+                      })()}
+
+
                       {testSub === "results" && (() => {
                         const now = nowTick;
                         // Tests whose endTime has passed — automatically show in results
@@ -26131,6 +30610,42 @@ SOURCE QUESTION PAPER:
                           const endMs = t.endTime ? new Date(t.endTime).getTime() : null;
                           const isClosed = endMs && now > endMs;
                           if (!isClosed) return false;
+
+                          // Student batch filtering (non-admin)
+                          const isAdminUser = user?.role === "super_admin" || user?.role === "developer" || user?.role === "admin";
+                          if (!isAdminUser) {
+                            const studentBatch = String(user?.batch || user?.batchId || user?.batchName || "").trim().toLowerCase();
+                            const testBatch = String(t.batch || t.batchId || t.targetBatch || t.batchName || "").trim().toLowerCase();
+                            if (testBatch && testBatch !== "all" && studentBatch && !testBatch.includes(studentBatch) && !studentBatch.includes(testBatch)) {
+                              return false;
+                            }
+                          }
+
+                          // Filter by keyword if provided
+                          if (resultsKeyword && resultsKeyword.trim()) {
+                            const kw = resultsKeyword.trim().toLowerCase();
+                            const titleMatch = String(t.title || "").toLowerCase().includes(kw);
+                            const subjMatch = String(t.subject || t.subjectName || t.subject_name || t.courseName || "").toLowerCase().includes(kw);
+                            if (!titleMatch && !subjMatch) return false;
+                          }
+
+                          // Filter by date if provided (YYYY-MM-DD format)
+                          if (resultsDateFilter && resultsDateFilter.trim()) {
+                            const dFilter = resultsDateFilter.trim();
+                            const getFormattedDate = (val: any) => {
+                              if (!val) return "";
+                              try {
+                                const d = val.toDate ? val.toDate() : new Date(val);
+                                return isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
+                              } catch {
+                                return "";
+                              }
+                            };
+                            const cDate = getFormattedDate(t.createdAt);
+                            const sDate = getFormattedDate(t.startTime);
+                            const eDate = getFormattedDate(t.endTime);
+                            if (cDate !== dFilter && sDate !== dFilter && eDate !== dFilter) return false;
+                          }
 
                           if (resultsCategoryFilter) {
                             let tType = t.testType || t.category || "";
@@ -26243,12 +30758,7 @@ SOURCE QUESTION PAPER:
                                       onPress={async () => {
                                         setResultsLoading(true);
                                         try {
-                                          loadTests();
-                                          const params = new URLSearchParams();
-                                          if (resultsKeyword.trim()) params.append("keyword", resultsKeyword.trim());
-                                          if (resultsDateFilter.trim()) params.append("date", resultsDateFilter.trim());
-                                          const res = await api.get(`/test-portal/review/results/all-tests?${params.toString()}`);
-                                          setAllTestResults(res || []);
+                                          await loadTests();
                                         } catch (e: any) {
                                           Alert.alert("Error", e.message || "Could not load results.");
                                         } finally {
@@ -26257,10 +30767,10 @@ SOURCE QUESTION PAPER:
                                       }}
                                       style={[styles.primaryBtn, { flex: 1, marginTop: 0, paddingVertical: 10 }]}
                                     >
-                                      <Text style={styles.primaryBtnTxt}>{resultsLoading ? "Loading..." : "Load Results"}</Text>
+                                      <Text style={styles.primaryBtnTxt}>{resultsLoading ? "Loading..." : "Search / Refresh"}</Text>
                                     </TouchableOpacity>
                                     <TouchableOpacity
-                                      onPress={() => { setResultsKeyword(""); setResultsDateFilter(""); setResultsSubjectFilter(""); setResultsTopicFilter(""); setResultsCategoryFilter(""); setAllTestResults([]); }}
+                                      onPress={() => { setResultsKeyword(""); setResultsDateFilter(""); setResultsSubjectFilter(""); setResultsTopicFilter(""); setResultsCategoryFilter(""); }}
                                       style={[styles.outlineBtn, { flex: 0.5, marginTop: 0, paddingVertical: 10 }]}
                                     >
                                       <Text style={styles.outlineBtnTxt}>Clear</Text>
@@ -26383,8 +30893,13 @@ SOURCE QUESTION PAPER:
                                   )}
                                 </View>
 
-                                {/* Closed Tests — auto-displayed, no button needed */}
-                                {closedTests.length > 0 && (
+                                {/* Closed Tests */}
+                                {closedTests.length === 0 ? (
+                                  <View style={styles.emptyContainer}>
+                                    <Ionicons name="trophy-outline" size={40} color="#757575" />
+                                    <Text style={styles.emptyText}>No closed tests found matching your search filter.</Text>
+                                  </View>
+                                ) : (
                                   <View style={styles.card}>
                                     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                                       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
@@ -26467,22 +30982,24 @@ SOURCE QUESTION PAPER:
                                               return null;
                                             }
 
-                                            if (isMobileBtn && hasSubjects) {
+                                            if (isMobileBtn) {
                                               return (
                                                 <View style={{ gap: 8, marginTop: 8 }}>
                                                   {/* Row 1: Analytics & Reports */}
                                                   <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
-                                                    <TouchableOpacity
-                                                      onPress={() => {
-                                                        const nextId = isDiagExpanded ? null : t.id;
-                                                        setExpandedClosedTestDiagId(nextId);
-                                                        if (nextId) fetchTestDiagnostics(t.id);
-                                                      }}
-                                                      style={{ flex: 1, backgroundColor: isDiagExpanded ? "#0369a1" : "#0284c7", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 5 }}
-                                                    >
-                                                      <Ionicons name="pie-chart-outline" size={14} color="#fff" />
-                                                      <Text style={{ color: "#fff", fontSize: 11, fontWeight: "700" }}>{isDiagExpanded ? "Hide Analytics" : "Analytics"}</Text>
-                                                    </TouchableOpacity>
+                                                    {hasSubjects && (
+                                                      <TouchableOpacity
+                                                        onPress={() => {
+                                                          const nextId = isDiagExpanded ? null : t.id;
+                                                          setExpandedClosedTestDiagId(nextId);
+                                                          if (nextId) fetchTestDiagnostics(t.id);
+                                                        }}
+                                                        style={{ flex: 1, backgroundColor: isDiagExpanded ? "#0369a1" : "#0284c7", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 5 }}
+                                                      >
+                                                        <Ionicons name="pie-chart-outline" size={14} color="#fff" />
+                                                        <Text style={{ color: "#fff", fontSize: 11, fontWeight: "700" }}>{isDiagExpanded ? "Hide Analytics" : "Analytics"}</Text>
+                                                      </TouchableOpacity>
+                                                    )}
                                                     <TouchableOpacity
                                                       onPress={() => {
                                                         setReportsModalTestId(t.id);
@@ -26497,7 +31014,7 @@ SOURCE QUESTION PAPER:
                                                     </TouchableOpacity>
                                                   </View>
 
-                                                  {/* Row 2: View Leaderboard & Trash */}
+                                                  {/* Row 2: View Leaderboard, Download & Trash */}
                                                   <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
                                                     <TouchableOpacity
                                                       onPress={() => monitorTest(t.id)}
@@ -26505,6 +31022,17 @@ SOURCE QUESTION PAPER:
                                                     >
                                                       <Ionicons name="trophy-outline" size={14} color="#fff" />
                                                       <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>View Leaderboard</Text>
+                                                    </TouchableOpacity>
+                                                    <TouchableOpacity
+                                                      onPress={() => downloadSingleTestLeaderboard(t)}
+                                                      disabled={downloadingTestId === t.id}
+                                                      style={{ width: 38, height: 38, borderRadius: 8, backgroundColor: "#c62828", justifyContent: "center", alignItems: "center" }}
+                                                    >
+                                                      {downloadingTestId === t.id ? (
+                                                        <ActivityIndicator size="small" color="#fff" />
+                                                      ) : (
+                                                        <Ionicons name="download-outline" size={18} color="#fff" />
+                                                      )}
                                                     </TouchableOpacity>
                                                     <TouchableOpacity
                                                       onPress={() => {
@@ -26560,6 +31088,20 @@ SOURCE QUESTION PAPER:
                                                 >
                                                   <Ionicons name="trophy-outline" size={14} color="#fff" />
                                                   <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>View Leaderboard</Text>
+                                                </TouchableOpacity>
+                                                <TouchableOpacity
+                                                  onPress={() => downloadSingleTestLeaderboard(t)}
+                                                  disabled={downloadingTestId === t.id}
+                                                  style={{ backgroundColor: "#c62828", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 5 }}
+                                                >
+                                                  {downloadingTestId === t.id ? (
+                                                    <ActivityIndicator size="small" color="#fff" />
+                                                  ) : (
+                                                    <>
+                                                      <Ionicons name="download-outline" size={14} color="#fff" />
+                                                      <Text style={{ color: "#fff", fontSize: 11, fontWeight: "700" }}>Download</Text>
+                                                    </>
+                                                  )}
                                                 </TouchableOpacity>
                                                 <TouchableOpacity
                                                   onPress={() => {
@@ -26639,267 +31181,6 @@ SOURCE QUESTION PAPER:
                                     })}
                                   </View>
                                 )}
-
-                                {/* Results List */}
-                                {filteredResults.length === 0 && !resultsLoading && (
-                                  <View style={styles.emptyContainer}>
-                                    <Ionicons name="trophy-outline" size={40} color="#757575" />
-                                    <Text style={styles.emptyText}>No results found. Use the filter above to load test results.</Text>
-                                  </View>
-                                )}
-
-                                {filteredResults.map((testLog: any) => (
-                                  <View key={testLog.testId} style={[styles.card, { padding: 0, overflow: "hidden" }]}>
-                                    {/* Test Header */}
-                                    <TouchableOpacity
-                                      onPress={() => {
-                                        const nextId = expandedTestId === testLog.testId ? null : testLog.testId;
-                                        setExpandedTestId(nextId);
-                                        if (nextId && isAdmin) {
-                                          fetchTestDiagnostics(testLog.testId);
-                                        }
-                                      }}
-                                      style={{ backgroundColor: "#c62828", padding: 14, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
-                                    >
-                                      <View style={{ flex: 1 }}>
-                                        <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 14 }}>{testLog.testTitle}</Text>
-                                        <Text style={{ color: "rgba(255,255,255,0.8)", fontSize: 11, marginTop: 2 }}>
-                                          {testLog.createdAt ? new Date(testLog.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : ""} · {testLog.totalParticipants} participants
-                                        </Text>
-
-                                        {/* Subject Section Pills */}
-                                        {(() => {
-                                          const resolvedTest = tests.find((t: any) => t.id === testLog.testId || t.id === testLog.id);
-                                          const secList = (resolvedTest?.subjectSections && resolvedTest.subjectSections.length > 0)
-                                            ? resolvedTest.subjectSections
-                                            : (testLog.subjectSections && testLog.subjectSections.length > 0)
-                                              ? testLog.subjectSections
-                                              : [];
-                                          if (secList.length === 0) return null;
-                                          return (
-                                            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
-                                              {secList.map((sec: any, secIdx: number) => (
-                                                <View key={secIdx} style={{ backgroundColor: "rgba(255,255,255,0.2)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
-                                                  <Text style={{ fontSize: 10, fontWeight: "600", color: "#ffffff" }}>
-                                                    📚 {sec.subject} ({sec.fromQ}–{sec.toQ})
-                                                  </Text>
-                                                </View>
-                                              ))}
-                                            </View>
-                                          );
-                                        })()}
-                                      </View>
-                                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                                        {/* PDF Export Button */}
-                                        <TouchableOpacity
-                                          onPress={() => {
-                                            // Build printable HTML table
-                                            const rows = (testLog.entries || []).map((e: any) => {
-                                              const displayRoll = (e.rollNumber && e.rollNumber !== "N/A" && e.rollNumber !== "Guest" && !String(e.rollNumber).startsWith("STU-")) ? e.rollNumber : (e.studentName || "Guest Student");
-                                              const perf = getPerformanceStatus(e.obtainedMarks ?? 0, e.totalMarks ?? 0, e.percentage);
-                                              return `<tr style="border-bottom:1px solid #eee">
-                                <td style="padding:6px 8px;text-align:center">${e.serialNo}</td>
-                                <td style="padding:6px 8px">${displayRoll}</td>
-                                <td style="padding:6px 8px">${e.studentName}</td>
-                                <td style="padding:6px 8px;text-align:center;color:#2e7d32;font-weight:bold">${e.correct}</td>
-                                <td style="padding:6px 8px;text-align:center;color:#c62828;font-weight:bold">${e.wrong}</td>
-                                <td style="padding:6px 8px;text-align:center">${e.skipped}</td>
-                                <td style="padding:6px 8px;text-align:center;font-weight:bold">${e.obtainedMarks} / ${e.totalMarks}</td>
-                                <td style="padding:6px 8px;text-align:center">${Math.round(e.percentage)}%</td>
-                                <td style="padding:6px 8px;text-align:center;color:${perf.color};font-weight:bold">${perf.label}</td>
-                              </tr>`;
-                                            }).join("");
-                                            const html = `<!DOCTYPE html><html><head><title>${testLog.testTitle} - Results</title>
-                              <style>body{font-family:Arial,sans-serif;padding:20px}h2{color:#c62828}table{width:100%;border-collapse:collapse}th{background:#c62828;color:white;padding:8px;text-align:left}td{border-bottom:1px solid #eee;padding:6px 8px}</style></head>
-                              <body><h2>${testLog.testTitle}</h2>
-                              <p>Date: ${testLog.createdAt ? new Date(testLog.createdAt).toLocaleDateString() : "N/A"} | Participants: ${testLog.totalParticipants} | Marks/Q: ${testLog.marksPerQuestion} | Negative: -${testLog.negativeMarks}</p>
-                              <table><thead><tr><th>#</th><th>Roll No</th><th>Name</th><th>Correct</th><th>Wrong</th><th>Skipped</th><th>Marks</th><th>%</th><th>Status</th></tr></thead>
-                              <tbody>${rows}</tbody></table></body></html>`;
-                                            downloadPdfDocument(html, `${testLog.testTitle}_Leaderboard.pdf`);
-                                          }}
-                                          style={{ backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 6, padding: 6 }}
-                                        >
-                                          <Ionicons name="download-outline" size={18} color="#fff" />
-                                        </TouchableOpacity>
-                                        {isAdmin && (
-                                          <TouchableOpacity
-                                            onPress={() => {
-                                              const targetId = testLog.testId || testLog.id;
-                                              executeDelete("tests", targetId, async () => {
-                                                try {
-                                                  await api.delete(`/test-portal/test-creation/${targetId}`);
-                                                  Alert.alert("Success", "Test deleted successfully.");
-                                                  setAllTestResults(prev => prev.filter((r: any) => r.testId !== targetId && r.id !== targetId));
-                                                  loadTests();
-                                                } catch (e: any) {
-                                                  Alert.alert("Error", e.message || "Failed to delete test.");
-                                                }
-                                              });
-                                            }}
-                                            style={{ backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 6, padding: 6 }}
-                                          >
-                                            <Ionicons name="trash-outline" size={18} color="#fff" />
-                                          </TouchableOpacity>
-                                        )}
-                                        <Ionicons name={expandedTestId === testLog.testId ? "chevron-up" : "chevron-down"} size={18} color="#fff" />
-                                      </View>
-                                    </TouchableOpacity>
-
-                                    {/* Expandable Section: Subject Analytics + Leaderboard Table */}
-                                    {expandedTestId === testLog.testId && (() => {
-                                      const resolvedTest = tests.find((t: any) => t.id === testLog.testId || t.id === testLog.id);
-                                      const tType = (resolvedTest?.testType || testLog.testType || testLog.category || "").toLowerCase();
-                                      const isWeeklyOrMock = tType === "weekly" || tType === "mock" || String(testLog.testTitle || "").toLowerCase().includes("weekly") || String(testLog.testTitle || "").toLowerCase().includes("mock");
-                                      const testSubjectSections = (resolvedTest?.subjectSections && resolvedTest.subjectSections.length > 0)
-                                        ? resolvedTest.subjectSections
-                                        : (testLog.subjectSections && testLog.subjectSections.length > 0)
-                                          ? testLog.subjectSections
-                                          : [];
-                                      const hasSubjects = isWeeklyOrMock && testSubjectSections.length > 0;
-
-                                      return (
-                                        <View>
-                                          {/* Subject Section Pie Chart & 30% Diagnostic Panel (Admin Only, Weekly & Mock Tests with Subjects) */}
-                                          {isAdmin && hasSubjects && (
-                                            renderSubjectAnalyticsDiagnosticPanel(testLog)
-                                          )}
-
-                                          {/* Section Header */}
-                                          <View style={{ paddingHorizontal: 14, paddingTop: 10, paddingBottom: 4, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                                            <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#1e293b" }}>
-                                              🏆 Student Rankings & Performance Ledger
-                                            </Text>
-                                            <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#64748b" }}>
-                                              {testLog.totalParticipants} Candidates Evaluated
-                                            </Text>
-                                          </View>
-
-                                          {isMobile ? (
-                                            <View style={{ padding: 8 }}>
-                                              {(testLog.entries || []).map((entry: any, idx: number) => {
-                                                const isGenericName = (name: string) => {
-                                                  if (!name) return true;
-                                                  const s = String(name).trim().toLowerCase();
-                                                  return s === "student" || s === "guest" || s === "guest user" || s === "n/a" || s.startsWith("guest:") || s.startsWith("guest ") || s.startsWith("student (") || s.startsWith("stu-");
-                                                };
-                                                let sName = (entry.studentName && !isGenericName(entry.studentName)) ? entry.studentName : "";
-                                                if (!sName && user && (user.id === entry.studentId || user.userId === entry.studentId || user.leadId === entry.studentId || user.email === entry.studentId)) {
-                                                  sName = user.name || user.email?.split("@")[0];
-                                                }
-                                                if (!sName) sName = entry.username || entry.name || "Guest User";
-                                                const displayRoll = (entry.rollNumber && !isGenericName(entry.rollNumber)) ? entry.rollNumber : sName;
-                                                const perf = getPerformanceStatus(entry.obtainedMarks ?? 0, entry.totalMarks ?? 0, entry.percentage);
-                                                const correct = entry.correct ?? 0;
-                                                const wrong = entry.wrong ?? 0;
-                                                const attended = correct + wrong;
-
-                                                return (
-                                                  <View
-                                                    key={entry.attemptId || idx}
-                                                    style={{
-                                                      padding: 10,
-                                                      borderRadius: 8,
-                                                      borderWidth: 1,
-                                                      borderColor: darkMode ? "#333" : "#e0e0e0",
-                                                      backgroundColor: idx % 2 === 0 ? (darkMode ? "#1e1e1e" : "#ffffff") : (darkMode ? "#252525" : "#fafafa"),
-                                                      marginBottom: 6
-                                                    }}
-                                                  >
-                                                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                                                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1, marginRight: 6 }}>
-                                                        <Text style={{ fontSize: 12, fontWeight: "bold", color: idx === 0 ? "#fbc02d" : (darkMode ? "#aaa" : "#757575") }}>
-                                                          #{entry.serialNo || idx + 1}
-                                                        </Text>
-                                                        <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: "700", color: darkMode ? "#fff" : "#212121", flex: 1 }}>
-                                                          {displayRoll}
-                                                        </Text>
-                                                      </View>
-                                                    </View>
-
-                                                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 8, paddingTop: 6, borderTopWidth: 1, borderTopColor: darkMode ? "#2a2a2a" : "#f0f0f0" }}>
-                                                      <Text style={{ fontSize: 11, color: "#1565c0", fontWeight: "600" }}>Attended: <Text style={{ fontWeight: "bold" }}>{attended}</Text></Text>
-                                                      <Text style={{ fontSize: 11, color: "#2e7d32", fontWeight: "600" }}>Correct: <Text style={{ fontWeight: "bold" }}>{correct}</Text></Text>
-                                                      <Text style={{ fontSize: 11, color: "#c62828", fontWeight: "600" }}>Wrong: <Text style={{ fontWeight: "bold" }}>{wrong}</Text></Text>
-                                                      <Text style={{ fontSize: 11, fontWeight: "bold", color: darkMode ? "#81c784" : "#1a237e" }}>{entry.obtainedMarks}/{entry.totalMarks}</Text>
-                                                    </View>
-                                                  </View>
-                                                );
-                                              })}
-                                            </View>
-                                          ) : (
-                                            <ScrollView horizontal showsHorizontalScrollIndicator={true}>
-                                              <View style={{ minWidth: isAdmin ? 840 : 650 }}>
-                                                {/* Table Header */}
-                                                <View style={{ flexDirection: "row", backgroundColor: darkMode ? "#2a2a2a" : "#f5f5f5", paddingVertical: 8, paddingHorizontal: 10, borderBottomWidth: 1, borderColor: darkMode ? "#333" : "#e0e0e0" }}>
-                                                  {(isAdmin
-                                                    ? ["#", "Roll No", "Name", "Correct", "Wrong", "Skipped", "Marks", "%", "Status"]
-                                                    : ["#", "Roll No", "Attended", "Not Attended", "Correct Ans", "Wrong Ans", "Total Marks"]
-                                                  ).map((h, i) => (
-                                                    <Text key={i} style={{
-                                                      fontWeight: "bold", fontSize: 11, color: darkMode ? "#fff" : "#555", textAlign: (!isAdmin && i >= 2 && i < 7) || (isAdmin && i >= 3 && i < 8) ? "center" : i === 8 ? "center" : "left",
-                                                      width: isAdmin
-                                                        ? (i === 0 ? 36 : i === 1 ? 90 : i === 2 ? 130 : i === 3 ? 64 : i === 4 ? 64 : i === 5 ? 64 : i === 6 ? 90 : i === 7 ? 50 : 130)
-                                                        : (i === 0 ? 45 : i === 1 ? 120 : i === 2 ? 85 : i === 3 ? 95 : i === 4 ? 85 : i === 5 ? 85 : 95)
-                                                    }}>{h}</Text>
-                                                  ))}
-                                                </View>
-                                                {/* Table Rows */}
-                                                {(testLog.entries || []).map((entry: any, idx: number) => {
-                                                  const isGenericName = (name: string) => {
-                                                    if (!name) return true;
-                                                    const s = String(name).trim().toLowerCase();
-                                                    return s === "student" || s === "guest" || s === "guest user" || s === "n/a" || s.startsWith("guest:") || s.startsWith("guest ") || s.startsWith("student (") || s.startsWith("stu-");
-                                                  };
-                                                  let sName = (entry.studentName && !isGenericName(entry.studentName)) ? entry.studentName : "";
-                                                  if (!sName && user && (user.id === entry.studentId || user.userId === entry.studentId || user.leadId === entry.studentId || user.email === entry.studentId)) {
-                                                    sName = user.name || user.email?.split("@")[0];
-                                                  }
-                                                  if (!sName) sName = entry.username || entry.name || "Guest User";
-                                                  const displayRoll = (entry.rollNumber && !isGenericName(entry.rollNumber)) ? entry.rollNumber : sName;
-                                                  const perf = getPerformanceStatus(entry.obtainedMarks ?? 0, entry.totalMarks ?? 0, entry.percentage);
-                                                  if (!isAdmin) {
-                                                    const correct = entry.correct ?? 0;
-                                                    const wrong = entry.wrong ?? 0;
-                                                    const skipped = entry.skipped ?? 0;
-                                                    const attended = correct + wrong;
-                                                    return (
-                                                      <View key={entry.attemptId || idx} style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 10, borderBottomWidth: 1, borderColor: darkMode ? "#333" : "#f0f0f0", backgroundColor: idx % 2 === 0 ? (darkMode ? "#1e1e1e" : "#ffffff") : (darkMode ? "#252525" : "#fafafa") }}>
-                                                        <Text style={{ width: 45, fontSize: 12, color: idx === 0 ? "#fbc02d" : (darkMode ? "#aaa" : "#757575"), fontWeight: "bold" }}>#{entry.serialNo || idx + 1}</Text>
-                                                        <Text style={{ width: 120, fontSize: 12, fontWeight: "600", color: darkMode ? "#fff" : "#212121" }}>{displayRoll}</Text>
-                                                        <Text style={{ width: 85, fontSize: 12, color: "#1565c0", fontWeight: "bold", textAlign: "center" }}>{attended}</Text>
-                                                        <Text style={{ width: 95, fontSize: 12, color: darkMode ? "#aaa" : "#757575", textAlign: "center" }}>{skipped}</Text>
-                                                        <Text style={{ width: 85, fontSize: 12, color: "#2e7d32", fontWeight: "bold", textAlign: "center" }}>{correct}</Text>
-                                                        <Text style={{ width: 85, fontSize: 12, color: "#c62828", fontWeight: "bold", textAlign: "center" }}>{wrong}</Text>
-                                                        <Text style={{ width: 95, fontSize: 12, fontWeight: "bold", color: darkMode ? "#81c784" : "#1a237e", textAlign: "center" }}>{entry.obtainedMarks} / {entry.totalMarks}</Text>
-                                                      </View>
-                                                    );
-                                                  }
-                                                  return (
-                                                    <View key={entry.attemptId || idx} style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 10, borderBottomWidth: 1, borderColor: darkMode ? "#333" : "#f0f0f0", backgroundColor: idx % 2 === 0 ? (darkMode ? "#1e1e1e" : "#ffffff") : (darkMode ? "#252525" : "#fafafa") }}>
-                                                      <Text style={{ width: 36, fontSize: 12, color: idx === 0 ? "#fbc02d" : "#757575", fontWeight: "bold" }}>#{entry.serialNo}</Text>
-                                                      <Text style={{ width: 90, fontSize: 12, color: darkMode ? "#fff" : "#212121" }}>{displayRoll}</Text>
-                                                      <Text style={{ width: 130, fontSize: 12, color: darkMode ? "#fff" : "#212121" }} numberOfLines={1}>{entry.studentName}</Text>
-                                                      <Text style={{ width: 64, fontSize: 12, color: "#2e7d32", fontWeight: "bold", textAlign: "center" }}>{entry.correct}</Text>
-                                                      <Text style={{ width: 64, fontSize: 12, color: "#c62828", fontWeight: "bold", textAlign: "center" }}>{entry.wrong}</Text>
-                                                      <Text style={{ width: 64, fontSize: 12, color: "#757575", textAlign: "center" }}>{entry.skipped}</Text>
-                                                      <Text style={{ width: 90, fontSize: 12, fontWeight: "bold", color: darkMode ? "#81c784" : "#1a237e" }}>{entry.obtainedMarks} / {entry.totalMarks}</Text>
-                                                      <Text style={{ width: 50, fontSize: 12, color: darkMode ? "#aaa" : "#555" }}>{Math.round(entry.percentage)}%</Text>
-                                                      <View style={{ width: 130, alignItems: "center", justifyContent: "center" }}>
-                                                        <View style={{ backgroundColor: perf.bgColor, borderColor: perf.borderColor, borderWidth: 1, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
-                                                          <Text style={{ fontSize: 10, fontWeight: "bold", color: perf.color, textAlign: "center" }}>{perf.label}</Text>
-                                                        </View>
-                                                      </View>
-                                                    </View>
-                                                  );
-                                                })}
-                                              </View>
-                                            </ScrollView>
-                                          )}
-                                        </View>
-                                      );
-                                    })()}
-                                  </View>
-                                ))}
                               </>
                             )}
                           </View>
@@ -27253,7 +31534,6 @@ SOURCE QUESTION PAPER:
 
                         {!erpSidebarCollapsed || isMobile ? <Text style={styles.categoryHeader}>REPORTS & STORAGE</Text> : null}
                         {renderSidebarItem("analytics", erpSub, "Analytics", "analytics-outline", () => changeErpSub("analytics"), "erp-analytics", undefined, erpSidebarCollapsed && !isMobile, "analytics")}
-                        {renderSidebarItem("marks", erpSub, "Marks Ledger", "checkbox-outline", () => { changeErpSub("marks"); if (tests.length > 0) { setSelectedErpTestId(tests[0].id); loadErpTestResults(tests[0].id); } }, "erp-marks", undefined, erpSidebarCollapsed && !isMobile, "marks_management")}
                         {(user.role === "super_admin" || user.role === "developer") && (
                           renderSidebarItem("drive", erpSub, "Drive and Storage", "cloud-upload-outline", () => { changeErpSub("drive"); loadDriveConfig(); }, "erp-drive", undefined, erpSidebarCollapsed && !isMobile)
                         )}
@@ -27263,7 +31543,6 @@ SOURCE QUESTION PAPER:
                         {!erpSidebarCollapsed || isMobile ? <Text style={styles.categoryHeader}>MY ACADEMICS</Text> : null}
                         {renderSidebarItem("my-profile", erpSub, "My Profile", "person-circle-outline", () => { changeErpSub("my-profile"); const myStudent = getLoggedInStudent(user, students); if (myStudent) loadMyProfileRequest(myStudent.id); }, undefined, undefined, erpSidebarCollapsed && !isMobile)}
                         {renderSidebarItem("analytics", erpSub, "My Analytics", "analytics-outline", () => changeErpSub("analytics"), "erp-analytics", undefined, erpSidebarCollapsed && !isMobile)}
-                        {renderSidebarItem("marks", erpSub, "My Marks", "checkbox-outline", () => { changeErpSub("marks"); if (tests.length > 0) { setSelectedErpTestId(tests[0].id); loadErpTestResults(tests[0].id); } }, "erp-marks", undefined, erpSidebarCollapsed && !isMobile)}
 
                         {!erpSidebarCollapsed || isMobile ? <Text style={styles.categoryHeader}>MY FINANCE & ID</Text> : null}
                         {renderSidebarItem("id-card", erpSub, "My ID & Hall Ticket", "card-outline", () => changeErpSub("id-card"), "erp-id-card", undefined, erpSidebarCollapsed && !isMobile)}
@@ -30143,7 +34422,7 @@ SOURCE QUESTION PAPER:
                                   {profileFormStep === 1 && (
                                     <View style={{ gap: 10 }}>
                                       <Text style={{ color: "#757575", fontSize: 12, marginBottom: 4, fontWeight: "bold" }}>🔑 Change Account Password *</Text>
-                                      
+
                                       <View style={{ position: "relative", justifyContent: "center", marginBottom: 12 }}>
                                         <TextInput
                                           style={[styles.input, { marginBottom: 0, paddingRight: 45 }, showValidationErrors && !studentOldPassword && { borderColor: "#c62828", borderWidth: 2 }]}
@@ -32793,11 +37072,12 @@ SOURCE QUESTION PAPER:
                                   <Text style={styles.sectionTitle}>Select Target Audience</Text>
                                   <Text style={{ fontSize: 12, color: "#757575", marginBottom: 10 }}>Credentials will be generated for all users matching the target criteria.</Text>
 
-                                  <View style={{ flexDirection: "row", gap: 8, marginBottom: 15 }}>
+                                  <View style={{ flexDirection: "row", gap: 8, marginBottom: 15, flexWrap: isMobile ? "wrap" : "nowrap" }}>
                                     {[
                                       { key: "all", label: "All Users\n(Guest & Enrolled)" },
                                       { key: "paid", label: "Enrolled Students\nOnly" },
-                                      { key: "free", label: "Free (Guest)\nUsers Only" }
+                                      { key: "free", label: "Free (Guest)\nUsers Only" },
+                                      { key: "mock", label: "MOCK Test\n(Special Batch)" }
                                     ].map(t => {
                                       const isSel = bulkTargetGroup === t.key;
                                       return (
@@ -32806,6 +37086,7 @@ SOURCE QUESTION PAPER:
                                           onPress={() => setBulkTargetGroup(t.key as any)}
                                           style={{
                                             flex: 1,
+                                            minWidth: isMobile ? 120 : undefined,
                                             paddingVertical: 10,
                                             borderRadius: 6,
                                             backgroundColor: isSel ? "#c62828" : "#ffffff",
@@ -32852,22 +37133,111 @@ SOURCE QUESTION PAPER:
                                       </ScrollView>
                                     </>
                                   )}
+
+                                  {bulkTargetGroup === "mock" && (() => {
+                                    const specialMocks = tests.filter((t: any) => t.isSpecialMock || t.mockConfig);
+                                    if (specialMocks.length === 0) {
+                                      return (
+                                        <View style={{ padding: 12, backgroundColor: "#fffbeb", borderRadius: 8, borderWidth: 1, borderColor: "#fde68a", marginTop: 4 }}>
+                                          <Text style={{ fontSize: 12, color: "#92400e", fontWeight: "bold", marginBottom: 4 }}>
+                                            No Special MOCK Tests Found
+                                          </Text>
+                                          <Text style={{ fontSize: 11, color: "#b45309", marginBottom: 8 }}>
+                                            Create a Special Mock Test with sequential roll numbers in Test Portal first.
+                                          </Text>
+                                          <TouchableOpacity
+                                            onPress={() => {
+                                              setActiveTab("test");
+                                              setTestSub("special-mock");
+                                            }}
+                                            style={{ alignSelf: "flex-start", backgroundColor: "#c62828", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 }}
+                                          >
+                                            <Text style={{ color: "#fff", fontSize: 11, fontWeight: "bold" }}>Go to Special MOCK Tests</Text>
+                                          </TouchableOpacity>
+                                        </View>
+                                      );
+                                    }
+
+                                    const currentMock = specialMocks.find((m: any) => m.id === selectedMockForIdGen) || specialMocks[0];
+
+                                    return (
+                                      <View style={{ marginTop: 4 }}>
+                                        <Text style={[styles.label, { marginBottom: 6 }]}>Select Special MOCK Test:</Text>
+                                        <ScrollView horizontal={true} showsHorizontalScrollIndicator={false} style={{ flexDirection: "row", gap: 8, marginVertical: 4 }}>
+                                          {specialMocks.map((sm: any) => {
+                                            const isSelected = (selectedMockForIdGen || specialMocks[0]?.id) === sm.id;
+                                            const bCount = sm.mockConfig?.orderedBatches?.length || 0;
+                                            const sRoll = sm.mockConfig?.startingRoll || sm.mockConfig?.startingRollNo || "182026";
+                                            return (
+                                              <TouchableOpacity
+                                                key={sm.id}
+                                                onPress={() => setSelectedMockForIdGen(sm.id)}
+                                                style={{
+                                                  paddingHorizontal: 14,
+                                                  paddingVertical: 8,
+                                                  borderRadius: 20,
+                                                  backgroundColor: isSelected ? "#c62828" : "#f5f5f5",
+                                                  borderWidth: 1,
+                                                  borderColor: isSelected ? "#c62828" : "#e0e0e0",
+                                                  marginRight: 8
+                                                }}
+                                              >
+                                                <Text style={{ color: isSelected ? "#fff" : "#424242", fontSize: 12, fontWeight: "bold" }}>
+                                                  {sm.title || "Untitled Mock"}
+                                                </Text>
+                                                <Text style={{ color: isSelected ? "#ffcdd2" : "#757575", fontSize: 10 }}>
+                                                  Rolls from: {sRoll} ({bCount} batches)
+                                                </Text>
+                                              </TouchableOpacity>
+                                            );
+                                          })}
+                                        </ScrollView>
+
+                                        {currentMock && (
+                                          <View style={{ marginTop: 8, padding: 10, backgroundColor: "#eff6ff", borderRadius: 8, borderWidth: 1, borderColor: "#bfdbfe" }}>
+                                            <Text style={{ fontSize: 11, color: "#1e40af", fontWeight: "bold" }}>
+                                              Active MOCK: {currentMock.title} (Starting Roll: {currentMock.mockConfig?.startingRoll || currentMock.mockConfig?.startingRollNo || "182026"})
+                                            </Text>
+                                            <Text style={{ fontSize: 10, color: "#3b82f6", marginTop: 2 }}>
+                                              Included Batches: {currentMock.mockConfig?.orderedBatches?.join(", ") || "All Batches"}
+                                            </Text>
+                                          </View>
+                                        )}
+                                      </View>
+                                    );
+                                  })()}
                                 </View>
                               )}
 
                               {((generationMode === "batch") || (generationMode === "individual" && selectedIdStudent)) && (() => {
+                                const activeMockObj = (bulkTargetGroup === "mock")
+                                  ? (tests.find((t: any) => t.id === selectedMockForIdGen && (t.isSpecialMock || t.mockConfig)) || tests.find((t: any) => t.isSpecialMock || t.mockConfig))
+                                  : null;
+
                                 const targetDisplayName = generationMode === "batch"
-                                  ? (bulkTargetGroup === "paid" ? `Batch: ${selectedBatchForGen}` : bulkTargetGroup === "free" ? "All Guest/Free Users" : "All App Users (Paid & Guest)")
+                                  ? (bulkTargetGroup === "mock"
+                                    ? `Special Mock: ${activeMockObj?.title || "MOCK Test"}`
+                                    : bulkTargetGroup === "paid" ? `Batch: ${selectedBatchForGen}` : bulkTargetGroup === "free" ? "All Guest/Free Users" : "All App Users (Paid & Guest)")
                                   : `${selectedIdStudent.firstName} ${selectedIdStudent.lastName}`;
 
                                 const sampleStudentForPreview = generationMode === "batch"
-                                  ? {
-                                    firstName: "Sample",
-                                    lastName: "Student",
-                                    rollNumber: "ROLL-2026-XYZ",
-                                    course: "UPSC Civil Services",
-                                    batch: bulkTargetGroup === "paid" ? (selectedBatchForGen === "All Batches" ? "General cohort" : selectedBatchForGen) : "Guest Cohort"
-                                  }
+                                  ? (activeMockObj
+                                    ? {
+                                      firstName: "Sample",
+                                      lastName: "Candidate",
+                                      rollNumber: "890001",
+                                      mockRollNumber: String(activeMockObj?.mockConfig?.startingRoll || activeMockObj?.mockConfig?.startingRollNo || "182026"),
+                                      course: "UPSC Special Mock",
+                                      batch: activeMockObj?.mockConfig?.orderedBatches?.[0] || "Mock Batch 1"
+                                    }
+                                    : {
+                                      firstName: "Sample",
+                                      lastName: "Student",
+                                      rollNumber: "ROLL-2026-XYZ",
+                                      course: "UPSC Civil Services",
+                                      batch: bulkTargetGroup === "paid" ? (selectedBatchForGen === "All Batches" ? "General cohort" : selectedBatchForGen) : "Guest Cohort"
+                                    }
+                                  )
                                   : selectedIdStudent;
 
                                 return (
@@ -33000,6 +37370,8 @@ SOURCE QUESTION PAPER:
                                                           batch: selectedBatchForGen,
                                                           targetGroup: bulkTargetGroup,
                                                           type: "idcard",
+                                                          mockTestId: selectedMockForIdGen || activeMockObj?.id,
+                                                          mockRollNumbers: activeMockObj?.mockConfig?.mockRollNumbers || {},
                                                           ...payload
                                                         });
                                                         Alert.alert("Success", res.message || "Batch ID Cards generated successfully!");
@@ -33046,6 +37418,8 @@ SOURCE QUESTION PAPER:
                                                             batch: selectedBatchForGen,
                                                             targetGroup: bulkTargetGroup,
                                                             type: "idcard",
+                                                            mockTestId: selectedMockForIdGen || activeMockObj?.id,
+                                                            mockRollNumbers: activeMockObj?.mockConfig?.mockRollNumbers || {},
                                                             ...payload
                                                           });
                                                           Alert.alert("Success", res.message || "Batch ID Cards revoked successfully.");
@@ -33176,6 +37550,8 @@ SOURCE QUESTION PAPER:
                                                           batch: selectedBatchForGen,
                                                           targetGroup: bulkTargetGroup,
                                                           type: "hallticket",
+                                                          mockTestId: selectedMockForIdGen || activeMockObj?.id,
+                                                          mockRollNumbers: activeMockObj?.mockConfig?.mockRollNumbers || {},
                                                           ...payload
                                                         });
                                                         Alert.alert("Success", res.message || "Batch Hall Tickets generated successfully!");
@@ -33222,6 +37598,8 @@ SOURCE QUESTION PAPER:
                                                             batch: selectedBatchForGen,
                                                             targetGroup: bulkTargetGroup,
                                                             type: "hallticket",
+                                                            mockTestId: selectedMockForIdGen || activeMockObj?.id,
+                                                            mockRollNumbers: activeMockObj?.mockConfig?.mockRollNumbers || {},
                                                             ...payload
                                                           });
                                                           Alert.alert("Success", res.message || "Batch Hall Tickets revoked successfully.");
@@ -33564,7 +37942,7 @@ SOURCE QUESTION PAPER:
             <div class="info-cell">
               <div class="label">CANDIDATE DETAILS</div>
               <div class="val" style="font-size: 18px; margin-bottom: 8px;">${getStudentName(myRecord)}</div>
-              <div style="font-size: 13px; color: #424242; margin-top: 4px;"><strong>Roll No:</strong> ${myRecord.rollNumber || "N/A"}</div>
+              <div style="font-size: 13px; color: #424242; margin-top: 4px;"><strong>Roll No:</strong> ${myRecord.mockRollNumber || myRecord.rollNumber || "N/A"}</div>
               <div style="font-size: 13px; color: #424242; margin-top: 4px;"><strong>Course:</strong> ${myRecord.course || "N/A"}</div>
               <div style="font-size: 13px; color: #424242; margin-top: 4px;"><strong>Batch:</strong> ${myRecord.batch || "General"}</div>
             </div>
@@ -33616,7 +37994,7 @@ SOURCE QUESTION PAPER:
   </div>
 </body>
 </html>`;
-                                          downloadPdfDocument(ticketHtml, `HallTicket_${myRecord.registerNumber || myRecord.rollNumber || 'Student'}.pdf`);
+                                          downloadPdfDocument(ticketHtml, `HallTicket_${myRecord.mockRollNumber || myRecord.registerNumber || myRecord.rollNumber || 'Student'}.pdf`);
                                         }}
                                         style={{ marginTop: 14, flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#c62828", paddingHorizontal: 22, paddingVertical: 11, borderRadius: 10, shadowColor: "#000", shadowOpacity: 0.12, shadowRadius: 6, elevation: 3 }}
                                       >
@@ -33946,389 +38324,7 @@ SOURCE QUESTION PAPER:
                         );
                       })()}
 
-                      {erpSub === "marks" && (
-                        <View style={{ gap: 15 }}>
-                          <View style={styles.card}>
-                            <Text style={styles.sectionTitle}>Select Mock Exam Registry</Text>
-                            {tests.length === 0 ? (
-                              <Text style={styles.emptyText}>No mock tests available.</Text>
-                            ) : (
-                              <View style={{ marginTop: 12, gap: 10 }}>
-                                {/* Test Type and Test Name Filters */}
-                                <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
-                                  {/* Test Type Filter */}
-                                  <View style={{ flex: 1, minWidth: 200 }}>
-                                    <Text style={{ fontSize: 12, fontWeight: "bold", color: darkMode ? "#aaa" : "#555", marginBottom: 5 }}>Filter by Test Type</Text>
-                                    {Platform.OS === 'web' ? (
-                                      <select
-                                        value={ledgerTestTypeFilter}
-                                        onChange={e => setLedgerTestTypeFilter((e.target as HTMLSelectElement).value)}
-                                        style={{
-                                          width: "100%",
-                                          height: 40,
-                                          borderRadius: 8,
-                                          paddingLeft: 12,
-                                          paddingRight: 12,
-                                          fontSize: 14,
-                                          fontWeight: "500",
-                                          backgroundColor: darkMode ? "#2a2a2a" : "#f5f5f5",
-                                          color: darkMode ? "#fff" : "#212121",
-                                          border: "1px solid " + (darkMode ? "#444" : "#e0e0e0"),
-                                          outline: "none"
-                                        } as any}
-                                      >
-                                        <option value="">-- All Test Types --</option>
-                                        <option value="daily">Daily Test</option>
-                                        <option value="weekly">Weekly Test</option>
-                                        <option value="mock">Mock Test</option>
-                                      </select>
-                                    ) : (
-                                      <TouchableOpacity
-                                        onPress={() => setShowLedgerTestTypeModal(true)}
-                                        style={[styles.input, { justifyContent: 'center', minHeight: 40 }]}
-                                      >
-                                        <Text style={{ color: ledgerTestTypeFilter ? (darkMode ? "#fff" : "#212121") : "#999", fontSize: 13 }}>
-                                          {ledgerTestTypeFilter === "daily" ? "Daily Test" : ledgerTestTypeFilter === "weekly" ? "Weekly Test" : ledgerTestTypeFilter === "mock" ? "Mock Test" : "-- All Test Types --"}
-                                        </Text>
-                                      </TouchableOpacity>
-                                    )}
-                                  </View>
-
-                                  {/* Custom Modal test type selector for mobile */}
-                                  {Platform.OS !== 'web' && showLedgerTestTypeModal && (
-                                    <Modal visible={true} transparent animationType="fade" onRequestClose={() => setShowLedgerTestTypeModal(false)}>
-                                      <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", alignItems: "center", padding: 20 }}>
-                                        <View style={{ width: "100%", maxHeight: "80%", backgroundColor: darkMode ? "#1e1e1e" : "#fff", borderRadius: 12, padding: 20 }}>
-                                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 }}>
-                                            <Text style={{ fontSize: 16, fontWeight: "bold", color: darkMode ? "#fff" : "#c62828" }}>Select Test Type</Text>
-                                            <TouchableOpacity onPress={() => setShowLedgerTestTypeModal(false)} style={{ padding: 4 }}>
-                                              <Ionicons name="close" size={24} color="#757575" />
-                                            </TouchableOpacity>
-                                          </View>
-                                          <ScrollView style={{ marginVertical: 10 }}>
-                                            {[
-                                              { value: "", label: "-- All Test Types --" },
-                                              { value: "daily", label: "Daily Test" },
-                                              { value: "weekly", label: "Weekly Test" },
-                                              { value: "mock", label: "Mock Test" }
-                                            ].map(item => {
-                                              const isSelected = ledgerTestTypeFilter === item.value;
-                                              return (
-                                                <TouchableOpacity
-                                                  key={item.value}
-                                                  onPress={() => {
-                                                    setLedgerTestTypeFilter(item.value);
-                                                    setShowLedgerTestTypeModal(false);
-                                                  }}
-                                                  style={{
-                                                    paddingVertical: 12,
-                                                    paddingHorizontal: 15,
-                                                    borderBottomWidth: 1,
-                                                    borderBottomColor: darkMode ? "#333" : "#f0f0f0",
-                                                    backgroundColor: isSelected ? (darkMode ? "#c62828" : "#ffebee") : "transparent",
-                                                    flexDirection: "row",
-                                                    justifyContent: "space-between",
-                                                    alignItems: "center"
-                                                  }}
-                                                >
-                                                  <Text style={{ color: isSelected ? "#c62828" : (darkMode ? "#fff" : "#333"), fontWeight: isSelected ? "bold" : "normal" }}>{item.label}</Text>
-                                                  {isSelected && <Ionicons name="checkmark" size={18} color="#c62828" />}
-                                                </TouchableOpacity>
-                                              );
-                                            })}
-                                          </ScrollView>
-                                        </View>
-                                      </View>
-                                    </Modal>
-                                  )}
-
-                                  {/* Test Name Filter */}
-                                  <View style={{ flex: 1, minWidth: 200 }}>
-                                    <Text style={{ fontSize: 12, fontWeight: "bold", color: darkMode ? "#aaa" : "#555", marginBottom: 5 }}>Filter by Test Name</Text>
-                                    <TextInput
-                                      value={ledgerTestNameFilter}
-                                      onChangeText={setLedgerTestNameFilter}
-                                      placeholder="Type test name to search..."
-                                      placeholderTextColor={darkMode ? "#666" : "#999"}
-                                      style={[
-                                        styles.input,
-                                        { minHeight: 40, fontSize: 14 },
-                                        darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444", color: "#fff" }
-                                      ]}
-                                    />
-                                  </View>
-                                </View>
-
-                                {/* Mock Exam Dropdown */}
-                                <View style={{ marginTop: 5 }}>
-                                  <Text style={{ fontSize: 12, fontWeight: "bold", color: darkMode ? "#aaa" : "#555", marginBottom: 5 }}>Select Mock Exam</Text>
-                                  {Platform.OS === 'web' ? (
-                                    <select
-                                      value={selectedErpTestId}
-                                      onChange={e => {
-                                        const testId = (e.target as HTMLSelectElement).value;
-                                        setSelectedErpTestId(testId);
-                                        loadErpTestResults(testId);
-                                      }}
-                                      style={{
-                                        width: "100%",
-                                        maxWidth: 410,
-                                        height: 40,
-                                        borderRadius: 8,
-                                        paddingLeft: 12,
-                                        paddingRight: 12,
-                                        fontSize: 14,
-                                        fontWeight: "500",
-                                        backgroundColor: darkMode ? "#2a2a2a" : "#f5f5f5",
-                                        color: darkMode ? "#fff" : "#212121",
-                                        border: "1px solid " + (darkMode ? "#444" : "#e0e0e0"),
-                                        outline: "none"
-                                      } as any}
-                                    >
-                                      {selectedErpTestId === "" && <option value="">-- Select a Mock Exam --</option>}
-                                      {tests
-                                        .filter((t: any) => {
-                                          let tType = t.testType || t.category || "";
-                                          if (!tType && t.title) {
-                                            const titleLower = t.title.toLowerCase();
-                                            if (titleLower.includes("daily")) tType = "daily";
-                                            else if (titleLower.includes("weekly")) tType = "weekly";
-                                            else tType = "mock";
-                                          }
-                                          if (!tType) tType = "mock";
-
-                                          if (ledgerTestTypeFilter) {
-                                            const tVal = tType.toLowerCase();
-                                            const fVal = ledgerTestTypeFilter.toLowerCase();
-                                            if (!tVal.includes(fVal) && !fVal.includes(tVal)) return false;
-                                          }
-                                          if (ledgerTestNameFilter.trim() !== "") {
-                                            const query = ledgerTestNameFilter.toLowerCase().trim();
-                                            const title = (t.title || "").toLowerCase();
-                                            if (!title.includes(query)) return false;
-                                          }
-                                          return true;
-                                        })
-                                        .map(t => (
-                                          <option key={t.id} value={t.id}>
-                                            {t.title} {t.startTime ? `(${new Date(t.startTime).toLocaleDateString("en-IN")})` : `(${t.id.substring(0, 5)})`}
-                                          </option>
-                                        ))}
-                                    </select>
-                                  ) : (
-                                    <TouchableOpacity
-                                      onPress={() => setShowLedgerExamModal(true)}
-                                      style={[styles.input, { justifyContent: 'center', minHeight: 40, maxWidth: 410 }]}
-                                    >
-                                      <Text style={{ color: selectedErpTestId ? (darkMode ? "#fff" : "#212121") : "#999", fontSize: 13 }}>
-                                        {tests.find(t => t.id === selectedErpTestId)?.title || "-- Select a Mock Exam --"}
-                                      </Text>
-                                    </TouchableOpacity>
-                                  )}
-                                </View>
-
-                                {/* Custom Modal exam selector for mobile */}
-                                {Platform.OS !== 'web' && showLedgerExamModal && (
-                                  <Modal visible={true} transparent animationType="fade" onRequestClose={() => setShowLedgerExamModal(false)}>
-                                    <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", alignItems: "center", padding: 20 }}>
-                                      <View style={{ width: "100%", maxHeight: "80%", backgroundColor: darkMode ? "#1e1e1e" : "#fff", borderRadius: 12, padding: 20 }}>
-                                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 }}>
-                                          <Text style={{ fontSize: 16, fontWeight: "bold", color: darkMode ? "#fff" : "#c62828" }}>Select Mock Exam</Text>
-                                          <TouchableOpacity onPress={() => setShowLedgerExamModal(false)} style={{ padding: 4 }}>
-                                            <Ionicons name="close" size={24} color="#757575" />
-                                          </TouchableOpacity>
-                                        </View>
-                                        <ScrollView style={{ marginVertical: 10 }}>
-                                          {tests
-                                            .filter((t: any) => {
-                                              let tType = t.testType || t.category || "";
-                                              if (!tType && t.title) {
-                                                const titleLower = t.title.toLowerCase();
-                                                if (titleLower.includes("daily")) tType = "daily";
-                                                else if (titleLower.includes("weekly")) tType = "weekly";
-                                                else tType = "mock";
-                                              }
-                                              if (!tType) tType = "mock";
-
-                                              if (ledgerTestTypeFilter) {
-                                                const tVal = tType.toLowerCase();
-                                                const fVal = ledgerTestTypeFilter.toLowerCase();
-                                                if (!tVal.includes(fVal) && !fVal.includes(tVal)) return false;
-                                              }
-                                              if (ledgerTestNameFilter.trim() !== "") {
-                                                const query = ledgerTestNameFilter.toLowerCase().trim();
-                                                const title = (t.title || "").toLowerCase();
-                                                if (!title.includes(query)) return false;
-                                              }
-                                              return true;
-                                            })
-                                            .map(t => {
-                                              const isSelected = selectedErpTestId === t.id;
-                                              return (
-                                                <TouchableOpacity
-                                                  key={t.id}
-                                                  onPress={() => {
-                                                    setSelectedErpTestId(t.id);
-                                                    loadErpTestResults(t.id);
-                                                    setShowLedgerExamModal(false);
-                                                  }}
-                                                  style={{
-                                                    paddingVertical: 12,
-                                                    paddingHorizontal: 15,
-                                                    borderBottomWidth: 1,
-                                                    borderBottomColor: darkMode ? "#333" : "#f0f0f0",
-                                                    backgroundColor: isSelected ? (darkMode ? "#c62828" : "#ffebee") : "transparent",
-                                                    flexDirection: "row",
-                                                    justifyContent: "space-between",
-                                                    alignItems: "center"
-                                                  }}
-                                                >
-                                                  <Text style={{ color: isSelected ? "#c62828" : (darkMode ? "#fff" : "#333"), fontWeight: isSelected ? "bold" : "normal" }}>
-                                                    {t.title} {t.startTime ? `(${new Date(t.startTime).toLocaleDateString("en-IN")})` : `(${t.id.substring(0, 5)})`}
-                                                  </Text>
-                                                  {isSelected && <Ionicons name="checkmark" size={18} color="#c62828" />}
-                                                </TouchableOpacity>
-                                              );
-                                            })}
-                                        </ScrollView>
-                                      </View>
-                                    </View>
-                                  </Modal>
-                                )}
-                              </View>
-                            )}
-                          </View>
-
-                          <View style={styles.card}>
-                            <Text style={styles.sectionTitle}>Student Performance Marks Registry</Text>
-                            {(() => {
-                              const myStudent = getLoggedInStudent(user, students);
-                              const myStudentUserIds = new Set<string>([
-                                user?.userId,
-                                user?.id,
-                                user?.username,
-                                myStudent?.id,
-                                myStudent?.userId,
-                                myStudent?.rollNumber,
-                                myStudent?.loginUsername
-                              ].filter(Boolean).map(s => String(s).toLowerCase()));
-
-                              const displayResults = user.role === "student"
-                                ? erpTestResults.filter((r: any) => {
-                                  const rStudentId = String(r.studentId || "").toLowerCase();
-                                  const rRollNumber = String(r.rollNumber || r.rollNo || "").toLowerCase();
-                                  const rStudentName = String(r.studentName || "").toLowerCase();
-                                  const userName = String(user.name || user.fullName || "").toLowerCase();
-                                  const myStudName = myStudent ? String(getStudentName(myStudent) || "").toLowerCase() : "";
-
-                                  if (myStudentUserIds.has(rStudentId) || myStudentUserIds.has(rRollNumber)) return true;
-                                  if (userName && rStudentName && (rStudentName.includes(userName) || userName.includes(rStudentName))) return true;
-                                  if (myStudName && rStudentName && (rStudentName.includes(myStudName) || myStudName.includes(rStudentName))) return true;
-                                  return false;
-                                })
-                                : erpTestResults;
-
-                              if (displayResults.length === 0) {
-                                return <Text style={styles.emptyText}>No evaluation submissions recorded for this mock test yet.</Text>;
-                              }
-
-                              return (
-                                <View style={{ gap: 5, marginTop: 10 }}>
-                                  {/* Table Header */}
-                                  <View style={[
-                                    styles.tableRow,
-                                    {
-                                      backgroundColor: darkMode ? "#252525" : "#f9f9f9",
-                                      paddingVertical: 10,
-                                      paddingHorizontal: 12,
-                                      borderTopWidth: 1,
-                                      borderTopColor: darkMode ? "#444" : "#e0e0e0",
-                                      borderBottomWidth: 2,
-                                      borderBottomColor: darkMode ? "#555" : "#bdbdbd",
-                                      borderTopLeftRadius: 8,
-                                      borderTopRightRadius: 8,
-                                    }
-                                  ]}>
-                                    <Text style={[styles.th, { flex: 2.5, color: darkMode ? "#ff8a80" : "#c62828" }]}>Student Name</Text>
-                                    <Text style={[styles.th, { flex: 1, textAlign: "center", color: darkMode ? "#ff8a80" : "#c62828" }]}>Score</Text>
-                                    {user.role !== "student" && (
-                                      <Text style={[styles.th, { flex: 1.2, textAlign: "center", color: darkMode ? "#ff8a80" : "#c62828" }]}>Tab Exits</Text>
-                                    )}
-                                    <Text style={[styles.th, { flex: 0.8, textAlign: "center", color: darkMode ? "#ff8a80" : "#c62828" }]}>Rank</Text>
-                                    {user.role !== "student" && (
-                                      <Text style={[styles.th, { flex: 1, textAlign: "right", color: darkMode ? "#ff8a80" : "#c62828" }]}>Status</Text>
-                                    )}
-                                  </View>
-
-                                  {/* Table Body */}
-                                  {displayResults.map((r, idx) => {
-                                    const stud = students.find((s) => s.id === r.studentId || s.userId === r.studentId || s.loginUsername === r.rollNumber || s.rollNumber === r.rollNumber);
-                                    const lead = leads.find((ld) => ld.id === r.studentId || ld.userId === r.studentId);
-                                    const resolvedName = r.studentName || (stud ? getStudentName(stud) : (lead ? lead.name : (r.studentId ? `Student (${String(r.studentId).substring(0, 8)})` : "Student")));
-                                    const resolvedRoll = (r.rollNumber && r.rollNumber !== "N/A") ? r.rollNumber : (stud ? (stud.rollNumber || stud.loginUsername) : "");
-                                    const rollLabel = resolvedRoll ? ` (${resolvedRoll})` : "";
-                                    const name = user.role === "student" ? `My Score${rollLabel}` : `${resolvedName}${rollLabel}`;
-                                    const isPass = r.status === "pass" && (r.obtainedMarks || 0) > 0;
-                                    const isLast = idx === displayResults.length - 1;
-                                    return (
-                                      <View
-                                        key={r.id}
-                                        style={[
-                                          styles.tableRow,
-                                          {
-                                            paddingVertical: 12,
-                                            paddingHorizontal: 12,
-                                            borderColor: darkMode ? "#444" : "#e0e0e0",
-                                            borderBottomWidth: isLast ? 0 : 1,
-                                            backgroundColor: darkMode ? "#1e1e1e" : "#ffffff",
-                                            borderBottomLeftRadius: isLast ? 8 : 0,
-                                            borderBottomRightRadius: isLast ? 8 : 0,
-                                          }
-                                        ]}
-                                      >
-                                        <Text style={{ flex: 2.5, color: darkMode ? "#e0e0e0" : "#212121", fontSize: 13, fontWeight: "500" }} numberOfLines={1} ellipsizeMode="tail">
-                                          {name}
-                                        </Text>
-                                        <Text style={{ flex: 1, textAlign: "center", color: darkMode ? "#e0e0e0" : "#212121", fontSize: 13 }}>
-                                          {r.obtainedMarks} / {r.totalMarks}
-                                        </Text>
-                                        {user.role !== "student" && (
-                                          <Text style={{
-                                            flex: 1.2,
-                                            textAlign: "center",
-                                            color: (r.tabLeaveCount || 0) > 0 ? "#e53935" : (darkMode ? "#e0e0e0" : "#212121"),
-                                            fontWeight: (r.tabLeaveCount || 0) > 0 ? "bold" : "normal",
-                                            fontSize: 13
-                                          }}>
-                                            {r.tabLeaveCount || 0}
-                                          </Text>
-                                        )}
-                                        <Text style={{ flex: 0.8, textAlign: "center", color: darkMode ? "#b0bec5" : "#616161", fontSize: 13, fontWeight: "bold" }}>
-                                          #{r.rank || 1}
-                                        </Text>
-                                        {user.role !== "student" && (
-                                          <Text style={{ flex: 1, textAlign: "right" }}>
-                                            {(() => {
-                                              const perf = getPerformanceStatus(r.obtainedMarks || 0, r.totalMarks || 0, r.percentage);
-                                              return (
-                                                <Text style={{ color: perf.color, fontWeight: "bold", fontSize: 11 }}>
-                                                  {perf.label}
-                                                </Text>
-                                              );
-                                            })()}
-                                          </Text>
-                                        )}
-                                      </View>
-                                    );
-                                  })}
-                                </View>
-                              );
-                            })()}
-                          </View>
-                        </View>
-                      )}
-
-                      {/* ========== OFFLINE ATTENDANCE PANEL ========== */}
+                                            {/* ========== OFFLINE ATTENDANCE PANEL ========== */}
                       {erpSub === "offline-attendance" && isAdmin && (() => {
                         // Only offline students
                         const offlineStudents = students.filter((s: any) => (s.type || "").toLowerCase() === "offline");
@@ -34338,29 +38334,34 @@ SOURCE QUESTION PAPER:
                           if (s.batch && !offlineBatchNames.includes(s.batch)) offlineBatchNames.push(s.batch);
                         });
 
+                        const activeMonthlyBatch = offlineAttendanceMonthlyBatch || (offlineBatchNames.length > 0 ? offlineBatchNames[0] : "");
+
                         const studentsInBatch = offlineAttendanceBatch
                           ? offlineStudents.filter((s: any) => s.batch === offlineAttendanceBatch)
                           : [];
 
+                        // Daily Marking function
                         const markAttendance = async (student: any, status: "present" | "absent") => {
                           const prev = offlineAttendanceMarks[student.id];
                           if (prev === status) return; // toggle off — set null
                           setOfflineAttendanceMarks(m => ({ ...m, [student.id]: status }));
                           setOfflineAttendanceSaving(s => ({ ...s, [student.id]: true }));
                           try {
-                            // Update attendedDays: increment if marking present, decrement if previously present
                             const attended = Number(student.attendedDays || 0);
-                            const total = Number(student.totalDays || 0);
                             let newAttended = attended;
                             if (status === "present" && prev !== "present") newAttended = attended + 1;
                             else if (status === "absent" && prev === "present") newAttended = Math.max(0, attended - 1);
+
+                            const updatedLog = { ...(student.attendanceLog || {}), [offlineAttendanceDate]: status };
+
                             await api.put(`/erp/student/${student.id}`, {
                               attendedDays: newAttended,
                               lastAttendanceDate: offlineAttendanceDate,
                               lastAttendanceStatus: status,
+                              attendanceLog: updatedLog,
                             });
                             // Update local student list
-                            setStudents((prev: any[]) => prev.map((s: any) => s.id === student.id ? { ...s, attendedDays: newAttended } : s));
+                            setStudents((prevList: any[]) => prevList.map((s: any) => s.id === student.id ? { ...s, attendedDays: newAttended, attendanceLog: updatedLog } : s));
                           } catch (e) {
                             Alert.alert("Error", "Failed to save attendance. Please try again.");
                             setOfflineAttendanceMarks(m => ({ ...m, [student.id]: prev || null }));
@@ -34369,286 +38370,1083 @@ SOURCE QUESTION PAPER:
                           }
                         };
 
+                        // Helper for Monthly calculation
+                        const [currYear, currMonthNum] = (offlineAttendanceMonth || new Date().toISOString().slice(0, 7)).split("-").map(Number);
+                        const daysInMonthCount = new Date(currYear, currMonthNum, 0).getDate();
+                        const daysArray = Array.from({ length: daysInMonthCount }, (_, i) => i + 1);
+
+                        const formatMonthTitle = (ym: string) => {
+                          try {
+                            const [y, m] = ym.split("-").map(Number);
+                            const d = new Date(y, m - 1, 1);
+                            return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+                          } catch {
+                            return ym;
+                          }
+                        };
+
+                        const changeMonthlyMonth = (offset: number) => {
+                          const [y, m] = (offlineAttendanceMonth || new Date().toISOString().slice(0, 7)).split("-").map(Number);
+                          const d = new Date(y, m - 1 + offset, 1);
+                          const newY = d.getFullYear();
+                          const newM = String(d.getMonth() + 1).padStart(2, "0");
+                          setOfflineAttendanceMonth(`${newY}-${newM}`);
+                        };
+
+                        // Monthly students in selected batch
+                        const monthlyStudents = offlineStudents.filter((s: any) => s.batch === activeMonthlyBatch);
+
+                        // Batch statistics for monthly register
+                        let totalBatchMonthlyPresent = 0;
+                        let totalBatchMonthlyMarks = 0;
+                        let monthlyDefaultersCount = 0;
+                        const recordedDaysSet = new Set<number>();
+
+                        monthlyStudents.forEach((st: any) => {
+                          const log = st.attendanceLog || {};
+                          let stP = 0;
+                          let stTotal = 0;
+                          daysArray.forEach(d => {
+                            const dateKey = `${offlineAttendanceMonth}-${String(d).padStart(2, "0")}`;
+                            const val = log[dateKey];
+                            if (val === "present") {
+                              stP++;
+                              stTotal++;
+                              recordedDaysSet.add(d);
+                            } else if (val === "absent") {
+                              stTotal++;
+                              recordedDaysSet.add(d);
+                            }
+                          });
+                          totalBatchMonthlyPresent += stP;
+                          totalBatchMonthlyMarks += stTotal;
+                          const pct = stTotal > 0 ? (stP / stTotal) * 100 : 0;
+                          if (stTotal > 0 && pct < 75) monthlyDefaultersCount++;
+                        });
+
+                        const batchAvgAttendanceRate = totalBatchMonthlyMarks > 0 ? Math.round((totalBatchMonthlyPresent / totalBatchMonthlyMarks) * 100) : 0;
+                        const totalWorkingDaysRecorded = recordedDaysSet.size;
+
+                        // Toggle a cell in Monthly table
+                        const toggleCellAttendance = async (student: any, dateStr: string, currentStatus?: string) => {
+                          const cellKey = `${student.id}_${dateStr}`;
+                          if (offlineAttendanceCellSaving[cellKey]) return;
+
+                          setOfflineAttendanceCellSaving(prev => ({ ...prev, [cellKey]: true }));
+
+                          let nextStatus: "present" | "absent" | undefined;
+                          if (!currentStatus) {
+                            nextStatus = "present";
+                          } else if (currentStatus === "present") {
+                            nextStatus = "absent";
+                          } else if (currentStatus === "absent") {
+                            nextStatus = undefined; // clear
+                          }
+
+                          const currentLog = { ...(student.attendanceLog || {}) };
+                          if (nextStatus) {
+                            currentLog[dateStr] = nextStatus;
+                          } else {
+                            delete currentLog[dateStr];
+                          }
+
+                          const attended = Number(student.attendedDays || 0);
+                          let newAttended = attended;
+                          if (nextStatus === "present" && currentStatus !== "present") {
+                            newAttended = attended + 1;
+                          } else if (currentStatus === "present" && nextStatus !== "present") {
+                            newAttended = Math.max(0, attended - 1);
+                          }
+
+                          // Optimistic update
+                          setStudents((prevList: any[]) =>
+                            prevList.map((s: any) =>
+                              s.id === student.id
+                                ? {
+                                  ...s,
+                                  attendanceLog: currentLog,
+                                  attendedDays: newAttended,
+                                  lastAttendanceDate: dateStr,
+                                  lastAttendanceStatus: nextStatus || s.lastAttendanceStatus,
+                                }
+                                : s
+                            )
+                          );
+
+                          try {
+                            await api.put(`/erp/student/${student.id}`, {
+                              attendanceLog: currentLog,
+                              attendedDays: newAttended,
+                              lastAttendanceDate: dateStr,
+                              lastAttendanceStatus: nextStatus || "absent",
+                            });
+                          } catch (e) {
+                            console.error("Failed to update attendance cell:", e);
+                            Alert.alert("Error", "Failed to update attendance record.");
+                            setStudents((prevList: any[]) =>
+                              prevList.map((s: any) => (s.id === student.id ? student : s))
+                            );
+                          } finally {
+                            setOfflineAttendanceCellSaving(prev => ({ ...prev, [cellKey]: false }));
+                          }
+                        };
+
+                        // Export to Excel function
+                        const handleExportMonthlyExcel = () => {
+                          try {
+                            const [y, m] = (offlineAttendanceMonth || new Date().toISOString().slice(0, 7)).split("-");
+                            const daysCount = new Date(parseInt(y), parseInt(m), 0).getDate();
+
+                            const headers = ["Roll / Reg No", "Student Name", "Batch"];
+                            for (let d = 1; d <= daysCount; d++) {
+                              headers.push(String(d));
+                            }
+                            headers.push("Total Present (P)", "Total Absent (A)", "Attendance %");
+
+                            const dataRows = monthlyStudents.map((st: any, idx: number) => {
+                              const roll = st.rollNumber || st.admissionNumber || `S${idx + 1}`;
+                              const name = getStudentName(st);
+                              const log = st.attendanceLog || {};
+
+                              let pCount = 0;
+                              let aCount = 0;
+                              const dayValues: string[] = [];
+
+                              for (let d = 1; d <= daysCount; d++) {
+                                const dateKey = `${offlineAttendanceMonth}-${String(d).padStart(2, "0")}`;
+                                const dayOfWeek = new Date(parseInt(y), parseInt(m) - 1, d).getDay();
+                                const status = log[dateKey];
+                                if (status === "present") {
+                                  pCount++;
+                                  dayValues.push("P");
+                                } else if (status === "absent") {
+                                  aCount++;
+                                  dayValues.push("A");
+                                } else if (dayOfWeek === 0) {
+                                  dayValues.push("Sun");
+                                } else {
+                                  dayValues.push("-");
+                                }
+                              }
+                              const totalMarked = pCount + aCount;
+                              const pct = totalMarked > 0 ? `${Math.round((pCount / totalMarked) * 100)}%` : "0%";
+
+                              return [roll, name, st.batch || activeMonthlyBatch, ...dayValues, pCount, aCount, pct];
+                            });
+
+                            const worksheetData = [headers, ...dataRows];
+                            const ws = XLSX.utils.aoa_to_sheet(worksheetData);
+                            const wb = XLSX.utils.book_new();
+                            XLSX.utils.book_append_sheet(wb, ws, "Monthly Register");
+                            XLSX.writeFile(wb, `Attendance_${activeMonthlyBatch || "Batch"}_${offlineAttendanceMonth}.xlsx`);
+                          } catch (err) {
+                            console.error("Excel export error:", err);
+                            Alert.alert("Export Error", "Failed to generate Excel export file.");
+                          }
+                        };
+
                         if (isInitialLoading) return <RNTableSkeleton rows={5} darkMode={darkMode} />;
+
                         return (
                           <View style={{ gap: 16 }}>
-                            {/* Header */}
-                            <View style={[styles.card, { borderLeftWidth: 4, borderLeftColor: "#c62828", gap: 8 }]}>
-                              <Text style={styles.sectionTitle}>Offline Attendance</Text>
-                              <Text style={{ color: "#757575", fontSize: 13 }}>Mark daily attendance for offline batch students.</Text>
-                              {/* Date Selector */}
-                              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 6 }}>
-                                <Ionicons name="calendar-outline" size={18} color="#c62828" />
-                                <TextInput
-                                  style={[styles.input, { flex: 1, marginBottom: 0 }]}
-                                  value={offlineAttendanceDate}
-                                  onChangeText={setOfflineAttendanceDate}
-                                  placeholder="YYYY-MM-DD"
-                                  placeholderTextColor="#999"
-                                />
+                            {/* Navigation Header Card */}
+                            <View style={[styles.card, { borderLeftWidth: 4, borderLeftColor: "#c62828", gap: 10 }]}>
+                              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                                <View>
+                                  <Text style={styles.sectionTitle}>Offline Attendance Registry</Text>
+                                  <Text style={{ color: "#757575", fontSize: 13, marginTop: 2 }}>
+                                    Record daily attendance and review comprehensive monthly registers.
+                                  </Text>
+                                </View>
+                                {offlineAttendanceViewMode === "monthly" && (
+                                  <TouchableOpacity
+                                    onPress={handleExportMonthlyExcel}
+                                    style={{
+                                      flexDirection: "row",
+                                      alignItems: "center",
+                                      gap: 6,
+                                      backgroundColor: "#e8f5e9",
+                                      borderColor: "#2e7d32",
+                                      borderWidth: 1,
+                                      borderRadius: 8,
+                                      paddingHorizontal: 12,
+                                      paddingVertical: 7,
+                                    }}
+                                  >
+                                    <Ionicons name="download-outline" size={16} color="#2e7d32" />
+                                    <Text style={{ color: "#2e7d32", fontWeight: "bold", fontSize: 12 }}>Export Excel</Text>
+                                  </TouchableOpacity>
+                                )}
+                              </View>
+
+                              {/* Segmented Tab Switcher */}
+                              <View style={{ flexDirection: "row", backgroundColor: darkMode ? "#2a2a2a" : "#f1f3f4", borderRadius: 10, padding: 4, marginTop: 4 }}>
                                 <TouchableOpacity
-                                  onPress={() => setOfflineAttendanceDate(new Date().toISOString().slice(0, 10))}
-                                  style={{ backgroundColor: "#ffebee", borderRadius: 6, padding: 8 }}
+                                  onPress={() => setOfflineAttendanceViewMode("daily")}
+                                  style={{
+                                    flex: 1,
+                                    paddingVertical: 9,
+                                    borderRadius: 8,
+                                    backgroundColor: offlineAttendanceViewMode === "daily" ? (darkMode ? "#1e1e1e" : "#fff") : "transparent",
+                                    alignItems: "center",
+                                    shadowColor: "#000",
+                                    shadowOpacity: offlineAttendanceViewMode === "daily" ? 0.08 : 0,
+                                    shadowRadius: 3,
+                                    elevation: offlineAttendanceViewMode === "daily" ? 2 : 0,
+                                  }}
                                 >
-                                  <Text style={{ color: "#c62828", fontSize: 12, fontWeight: "bold" }}>Today</Text>
+                                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                                    <Ionicons name="create-outline" size={16} color={offlineAttendanceViewMode === "daily" ? "#c62828" : "#757575"} />
+                                    <Text style={{ fontWeight: "bold", fontSize: 13, color: offlineAttendanceViewMode === "daily" ? "#c62828" : "#757575" }}>
+                                      Daily Marking
+                                    </Text>
+                                  </View>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                  onPress={() => setOfflineAttendanceViewMode("monthly")}
+                                  style={{
+                                    flex: 1,
+                                    paddingVertical: 9,
+                                    borderRadius: 8,
+                                    backgroundColor: offlineAttendanceViewMode === "monthly" ? (darkMode ? "#1e1e1e" : "#fff") : "transparent",
+                                    alignItems: "center",
+                                    shadowColor: "#000",
+                                    shadowOpacity: offlineAttendanceViewMode === "monthly" ? 0.08 : 0,
+                                    shadowRadius: 3,
+                                    elevation: offlineAttendanceViewMode === "monthly" ? 2 : 0,
+                                  }}
+                                >
+                                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                                    <Ionicons name="calendar" size={16} color={offlineAttendanceViewMode === "monthly" ? "#c62828" : "#757575"} />
+                                    <Text style={{ fontWeight: "bold", fontSize: 13, color: offlineAttendanceViewMode === "monthly" ? "#c62828" : "#757575" }}>
+                                      Monthly Register & History
+                                    </Text>
+                                  </View>
                                 </TouchableOpacity>
                               </View>
                             </View>
 
-                            {offlineBatchNames.length === 0 ? (
-                              <View style={[styles.card, styles.emptyContainer]}>
-                                <Ionicons name="people-outline" size={48} color="#bdbdbd" />
-                                <Text style={styles.emptyText}>No offline students registered yet.</Text>
-                                <Text style={{ color: "#999", fontSize: 12, textAlign: "center" }}>Register students with enrollment type"Offline"to use this panel.</Text>
-                              </View>
-                            ) : !offlineAttendanceBatch ? (
-                              // Show batch list
-                              <View style={{ gap: 10 }}>
-                                <Text style={{ fontWeight: "bold", color: "#212121", fontSize: 14, marginBottom: 4 }}>Select a Batch</Text>
-                                {offlineBatchNames.map((batchName: string) => {
-                                  const count = offlineStudents.filter((s: any) => s.batch === batchName).length;
-                                  const batchInfo = batches.find((b: any) => b.batchName === batchName);
-                                  return (
-                                    <TouchableOpacity
-                                      key={batchName}
-                                      onPress={() => {
-                                        setOfflineAttendanceBatch(batchName);
-                                        setOfflineAttendanceMarks({});
-                                      }}
-                                      style={[styles.card, {
-                                        flexDirection: "row",
-                                        alignItems: "center",
-                                        justifyContent: "space-between",
-                                        borderLeftWidth: 4,
-                                        borderLeftColor: "#c62828",
-                                        paddingVertical: 16,
-                                        gap: 10
-                                      }]}
-                                    >
-                                      <View style={{ flex: 1 }}>
-                                        <Text style={{ fontWeight: "bold", color: "#212121", fontSize: 15 }}> {batchName}</Text>
-                                        {batchInfo?.course && (
-                                          <Text style={{ color: "#757575", fontSize: 12, marginTop: 2 }}>{batchInfo.course}</Text>
-                                        )}
-                                        <Text style={{ color: "#c62828", fontSize: 12, marginTop: 4, fontWeight: "600" }}>{count} offline student{count !== 1 ? "s" : ""}</Text>
-                                      </View>
-                                      <View style={{ backgroundColor: "#ffebee", borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8, flexDirection: "row", alignItems: "center", gap: 6 }}>
-                                        <Text style={{ color: "#c62828", fontWeight: "bold", fontSize: 13 }}>Mark</Text>
-                                        <Ionicons name="arrow-forward-outline" size={16} color="#c62828" />
-                                      </View>
-                                    </TouchableOpacity>
-                                  );
-                                })}
-                              </View>
-                            ) : (
-                              // Show students in selected batch
-                              <View style={{ gap: 12 }}>
-                                {/* Back button + batch header */}
-                                <View style={[styles.card, { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12 }]}>
-                                  <TouchableOpacity
-                                    onPress={() => { setOfflineAttendanceBatch(null); setOfflineAttendanceMarks({}); }}
-                                    style={{ backgroundColor: "#ffebee", borderRadius: 8, padding: 8 }}
-                                  >
-                                    <Ionicons name="arrow-back-outline" size={18} color="#c62828" />
-                                  </TouchableOpacity>
-                                  <View style={{ flex: 1 }}>
-                                    <Text style={{ fontWeight: "bold", color: "#c62828", fontSize: 15 }}> {offlineAttendanceBatch}</Text>
-                                    <Text style={{ color: "#757575", fontSize: 12 }}>Date: {offlineAttendanceDate} · {studentsInBatch.length} student{studentsInBatch.length !== 1 ? "s" : ""}</Text>
-                                  </View>
-                                </View>
-
-                                {/* Summary pills */}
-                                <View style={{ flexDirection: "row", gap: 10 }}>
-                                  <View style={{ flex: 1, backgroundColor: "#e8f5e9", borderRadius: 10, padding: 12, alignItems: "center" }}>
-                                    <Text style={{ color: "#2e7d32", fontWeight: "bold", fontSize: 20 }}>
-                                      {Object.values(offlineAttendanceMarks).filter(v => v === "present").length}
-                                    </Text>
-                                    <Text style={{ color: "#2e7d32", fontSize: 12, fontWeight: "600", marginTop: 2 }}>Present</Text>
-                                  </View>
-                                  <View style={{ flex: 1, backgroundColor: "#ffebee", borderRadius: 10, padding: 12, alignItems: "center" }}>
-                                    <Text style={{ color: "#c62828", fontWeight: "bold", fontSize: 20 }}>
-                                      {Object.values(offlineAttendanceMarks).filter(v => v === "absent").length}
-                                    </Text>
-                                    <Text style={{ color: "#c62828", fontSize: 12, fontWeight: "600", marginTop: 2 }}>Absent</Text>
-                                  </View>
-                                  <View style={{ flex: 1, backgroundColor: "#f5f5f5", borderRadius: 10, padding: 12, alignItems: "center" }}>
-                                    <Text style={{ color: "#757575", fontWeight: "bold", fontSize: 20 }}>
-                                      {studentsInBatch.length - Object.values(offlineAttendanceMarks).filter(v => v !== null).length}
-                                    </Text>
-                                    <Text style={{ color: "#757575", fontSize: 12, fontWeight: "600", marginTop: 2 }}>Unmarked</Text>
-                                  </View>
-                                </View>
-
-                                {/* Mark All row */}
-                                <View style={{ flexDirection: "row", gap: 10 }}>
-                                  <TouchableOpacity
-                                    style={{ flex: 1, backgroundColor: "#e8f5e9", borderRadius: 10, padding: 12, alignItems: "center", borderWidth: 1.5, borderColor: "#2e7d32" }}
-                                    onPress={() => {
-                                      const newMarks: Record<string, "present" | "absent" | null> = {};
-                                      studentsInBatch.forEach((s: any) => { newMarks[s.id] = "present"; });
-                                      setOfflineAttendanceMarks(newMarks);
-                                    }}
-                                  >
-                                    <Text style={{ color: "#2e7d32", fontWeight: "bold", fontSize: 13 }}>Mark All Present</Text>
-                                  </TouchableOpacity>
-                                  <TouchableOpacity
-                                    style={{ flex: 1, backgroundColor: "#ffebee", borderRadius: 10, padding: 12, alignItems: "center", borderWidth: 1.5, borderColor: "#c62828" }}
-                                    onPress={() => {
-                                      const newMarks: Record<string, "present" | "absent" | null> = {};
-                                      studentsInBatch.forEach((s: any) => { newMarks[s.id] = "absent"; });
-                                      setOfflineAttendanceMarks(newMarks);
-                                    }}
-                                  >
-                                    <Text style={{ color: "#c62828", fontWeight: "bold", fontSize: 13 }}>Mark All Absent</Text>
-                                  </TouchableOpacity>
-                                </View>
-
-                                {/* Student list */}
-                                {studentsInBatch.length === 0 ? (
-                                  <View style={[styles.card, styles.emptyContainer]}>
-                                    <Text style={styles.emptyText}>No offline students in this batch.</Text>
-                                  </View>
-                                ) : (
-                                  studentsInBatch.map((student: any) => {
-                                    const mark = offlineAttendanceMarks[student.id] || null;
-                                    const isSaving = offlineAttendanceSaving[student.id] || false;
-                                    const rollNo = student.rollNumber || student.admissionNumber || student.id.substring(0, 6);
-                                    const name = getStudentName(student);
-                                    const attended = Number(student.attendedDays || 0);
-                                    const total = Number(student.totalDays || 0);
-                                    const pct = total > 0 ? Math.round((attended / total) * 100) : 0;
-
-                                    return (
-                                      <View
-                                        key={student.id}
-                                        style={[
-                                          styles.card,
-                                          {
-                                            borderLeftWidth: 4,
-                                            borderLeftColor: mark === "present" ? "#2e7d32" : mark === "absent" ? "#c62828" : "#e0e0e0",
-                                            paddingVertical: 12,
-                                            gap: 10
+                            {/* ==================== VIEW 1: DAILY MARKING ==================== */}
+                            {offlineAttendanceViewMode === "daily" && (
+                              <View style={{ gap: 14 }}>
+                                {/* Date Selector Card */}
+                                <View style={[styles.card, { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 12 }]}>
+                                  <Ionicons name="calendar-outline" size={18} color="#c62828" />
+                                  <Text style={{ fontWeight: "bold", color: "#424242", fontSize: 13 }}>Marking Date:</Text>
+                                  <TextInput
+                                    style={[styles.input, { flex: 1, marginBottom: 0, paddingVertical: 6, fontSize: 13 }]}
+                                    value={offlineAttendanceDate}
+                                    onChangeText={d => {
+                                      setOfflineAttendanceDate(d);
+                                      if (offlineAttendanceBatch) {
+                                        const initialMarks: Record<string, "present" | "absent" | null> = {};
+                                        const batchStuds = offlineStudents.filter((s: any) => s.batch === offlineAttendanceBatch);
+                                        batchStuds.forEach((s: any) => {
+                                          if (s.attendanceLog && s.attendanceLog[d]) {
+                                            initialMarks[s.id] = s.attendanceLog[d];
                                           }
-                                        ]}
-                                      >
-                                        {/* Student info row */}
-                                        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-                                          {/* Avatar */}
-                                          <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: mark === "present" ? "#e8f5e9" : mark === "absent" ? "#ffebee" : "#f5f5f5", alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: mark === "present" ? "#2e7d32" : mark === "absent" ? "#c62828" : "#e0e0e0" }}>
-                                            <Text style={{ fontWeight: "bold", color: mark === "present" ? "#2e7d32" : mark === "absent" ? "#c62828" : "#757575", fontSize: 14 }}>
-                                              {name ? name.charAt(0).toUpperCase() : "?"}
+                                        });
+                                        setOfflineAttendanceMarks(initialMarks);
+                                      }
+                                    }}
+                                    placeholder="YYYY-MM-DD"
+                                    placeholderTextColor="#999"
+                                  />
+                                  <TouchableOpacity
+                                    onPress={() => {
+                                      const todayStr = new Date().toISOString().slice(0, 10);
+                                      setOfflineAttendanceDate(todayStr);
+                                      if (offlineAttendanceBatch) {
+                                        const initialMarks: Record<string, "present" | "absent" | null> = {};
+                                        const batchStuds = offlineStudents.filter((s: any) => s.batch === offlineAttendanceBatch);
+                                        batchStuds.forEach((s: any) => {
+                                          if (s.attendanceLog && s.attendanceLog[todayStr]) {
+                                            initialMarks[s.id] = s.attendanceLog[todayStr];
+                                          }
+                                        });
+                                        setOfflineAttendanceMarks(initialMarks);
+                                      }
+                                    }}
+                                    style={{ backgroundColor: "#ffebee", borderRadius: 6, paddingHorizontal: 12, paddingVertical: 8 }}
+                                  >
+                                    <Text style={{ color: "#c62828", fontSize: 12, fontWeight: "bold" }}>Today</Text>
+                                  </TouchableOpacity>
+                                </View>
+
+                                {offlineBatchNames.length === 0 ? (
+                                  <View style={[styles.card, styles.emptyContainer]}>
+                                    <Ionicons name="people-outline" size={48} color="#bdbdbd" />
+                                    <Text style={styles.emptyText}>No offline students registered yet.</Text>
+                                    <Text style={{ color: "#999", fontSize: 12, textAlign: "center" }}>
+                                      Register students with enrollment type "Offline" to use this panel.
+                                    </Text>
+                                  </View>
+                                ) : !offlineAttendanceBatch ? (
+                                  // Show batch list
+                                  <View style={{ gap: 10 }}>
+                                    <Text style={{ fontWeight: "bold", color: "#212121", fontSize: 14, marginBottom: 4 }}>Select a Batch to Mark</Text>
+                                    {offlineBatchNames.map((batchName: string) => {
+                                      const count = offlineStudents.filter((s: any) => s.batch === batchName).length;
+                                      const batchInfo = batches.find((b: any) => b.batchName === batchName);
+                                      return (
+                                        <TouchableOpacity
+                                          key={batchName}
+                                          onPress={() => {
+                                            setOfflineAttendanceBatch(batchName);
+                                            const initialMarks: Record<string, "present" | "absent" | null> = {};
+                                            const batchStuds = offlineStudents.filter((s: any) => s.batch === batchName);
+                                            batchStuds.forEach((s: any) => {
+                                              if (s.attendanceLog && s.attendanceLog[offlineAttendanceDate]) {
+                                                initialMarks[s.id] = s.attendanceLog[offlineAttendanceDate];
+                                              }
+                                            });
+                                            setOfflineAttendanceMarks(initialMarks);
+                                          }}
+                                          style={[styles.card, {
+                                            flexDirection: "row",
+                                            alignItems: "center",
+                                            justifyContent: "space-between",
+                                            borderLeftWidth: 4,
+                                            borderLeftColor: "#c62828",
+                                            paddingVertical: 16,
+                                            gap: 10
+                                          }]}
+                                        >
+                                          <View style={{ flex: 1 }}>
+                                            <Text style={{ fontWeight: "bold", color: "#212121", fontSize: 15 }}> {batchName}</Text>
+                                            {batchInfo?.course && (
+                                              <Text style={{ color: "#757575", fontSize: 12, marginTop: 2 }}>{batchInfo.course}</Text>
+                                            )}
+                                            <Text style={{ color: "#c62828", fontSize: 12, marginTop: 4, fontWeight: "600" }}>
+                                              {count} offline student{count !== 1 ? "s" : ""}
                                             </Text>
                                           </View>
-                                          <View style={{ flex: 1 }}>
-                                            <Text style={{ fontWeight: "bold", color: "#212121", fontSize: 14 }} numberOfLines={1}>{name || "Unnamed"}</Text>
-                                            <Text style={{ color: "#757575", fontSize: 12 }}>Roll: {rollNo}</Text>
-                                            {total > 0 && (
-                                              <Text style={{ color: pct >= 75 ? "#2e7d32" : pct >= 50 ? "#f57c00" : "#c62828", fontSize: 11, marginTop: 1, fontWeight: "600" }}>
-                                                Overall: {attended}/{total} days ({pct}%)
-                                              </Text>
+                                          <View style={{ backgroundColor: "#ffebee", borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8, flexDirection: "row", alignItems: "center", gap: 6 }}>
+                                            <Text style={{ color: "#c62828", fontWeight: "bold", fontSize: 13 }}>Mark</Text>
+                                            <Ionicons name="arrow-forward-outline" size={16} color="#c62828" />
+                                          </View>
+                                        </TouchableOpacity>
+                                      );
+                                    })}
+                                  </View>
+                                ) : (
+                                  // Show students in selected batch
+                                  <View style={{ gap: 12 }}>
+                                    {/* Back button + batch header */}
+                                    <View style={[styles.card, { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12 }]}>
+                                      <TouchableOpacity
+                                        onPress={() => { setOfflineAttendanceBatch(null); setOfflineAttendanceMarks({}); }}
+                                        style={{ backgroundColor: "#ffebee", borderRadius: 8, padding: 8 }}
+                                      >
+                                        <Ionicons name="arrow-back-outline" size={18} color="#c62828" />
+                                      </TouchableOpacity>
+                                      <View style={{ flex: 1 }}>
+                                        <Text style={{ fontWeight: "bold", color: "#c62828", fontSize: 15 }}> {offlineAttendanceBatch}</Text>
+                                        <Text style={{ color: "#757575", fontSize: 12 }}>Date: {offlineAttendanceDate} · {studentsInBatch.length} student{studentsInBatch.length !== 1 ? "s" : ""}</Text>
+                                      </View>
+                                    </View>
+
+                                    {/* Summary pills */}
+                                    <View style={{ flexDirection: "row", gap: 10 }}>
+                                      <View style={{ flex: 1, backgroundColor: "#e8f5e9", borderRadius: 10, padding: 12, alignItems: "center" }}>
+                                        <Text style={{ color: "#2e7d32", fontWeight: "bold", fontSize: 20 }}>
+                                          {Object.values(offlineAttendanceMarks).filter(v => v === "present").length}
+                                        </Text>
+                                        <Text style={{ color: "#2e7d32", fontSize: 12, fontWeight: "600", marginTop: 2 }}>Present</Text>
+                                      </View>
+                                      <View style={{ flex: 1, backgroundColor: "#ffebee", borderRadius: 10, padding: 12, alignItems: "center" }}>
+                                        <Text style={{ color: "#c62828", fontWeight: "bold", fontSize: 20 }}>
+                                          {Object.values(offlineAttendanceMarks).filter(v => v === "absent").length}
+                                        </Text>
+                                        <Text style={{ color: "#c62828", fontSize: 12, fontWeight: "600", marginTop: 2 }}>Absent</Text>
+                                      </View>
+                                      <View style={{ flex: 1, backgroundColor: "#f5f5f5", borderRadius: 10, padding: 12, alignItems: "center" }}>
+                                        <Text style={{ color: "#757575", fontWeight: "bold", fontSize: 20 }}>
+                                          {studentsInBatch.length - Object.values(offlineAttendanceMarks).filter(v => v !== null && v !== undefined).length}
+                                        </Text>
+                                        <Text style={{ color: "#757575", fontSize: 12, fontWeight: "600", marginTop: 2 }}>Unmarked</Text>
+                                      </View>
+                                    </View>
+
+                                    {/* Mark All row */}
+                                    <View style={{ flexDirection: "row", gap: 10 }}>
+                                      <TouchableOpacity
+                                        style={{ flex: 1, backgroundColor: "#e8f5e9", borderRadius: 10, padding: 12, alignItems: "center", borderWidth: 1.5, borderColor: "#2e7d32" }}
+                                        onPress={() => {
+                                          const newMarks: Record<string, "present" | "absent" | null> = {};
+                                          studentsInBatch.forEach((s: any) => { newMarks[s.id] = "present"; });
+                                          setOfflineAttendanceMarks(newMarks);
+                                        }}
+                                      >
+                                        <Text style={{ color: "#2e7d32", fontWeight: "bold", fontSize: 13 }}>Mark All Present</Text>
+                                      </TouchableOpacity>
+                                      <TouchableOpacity
+                                        style={{ flex: 1, backgroundColor: "#ffebee", borderRadius: 10, padding: 12, alignItems: "center", borderWidth: 1.5, borderColor: "#c62828" }}
+                                        onPress={() => {
+                                          const newMarks: Record<string, "present" | "absent" | null> = {};
+                                          studentsInBatch.forEach((s: any) => { newMarks[s.id] = "absent"; });
+                                          setOfflineAttendanceMarks(newMarks);
+                                        }}
+                                      >
+                                        <Text style={{ color: "#c62828", fontWeight: "bold", fontSize: 13 }}>Mark All Absent</Text>
+                                      </TouchableOpacity>
+                                    </View>
+
+                                    {/* Student list */}
+                                    {studentsInBatch.length === 0 ? (
+                                      <View style={[styles.card, styles.emptyContainer]}>
+                                        <Text style={styles.emptyText}>No offline students in this batch.</Text>
+                                      </View>
+                                    ) : (
+                                      studentsInBatch.map((student: any) => {
+                                        const mark = offlineAttendanceMarks[student.id] || null;
+                                        const isSaving = offlineAttendanceSaving[student.id] || false;
+                                        const rollNo = student.rollNumber || student.admissionNumber || student.id.substring(0, 6);
+                                        const name = getStudentName(student);
+                                        const attended = Number(student.attendedDays || 0);
+                                        const total = Number(student.totalDays || 0);
+                                        const pct = total > 0 ? Math.round((attended / total) * 100) : 0;
+
+                                        return (
+                                          <View
+                                            key={student.id}
+                                            style={[
+                                              styles.card,
+                                              {
+                                                borderLeftWidth: 4,
+                                                borderLeftColor: mark === "present" ? "#2e7d32" : mark === "absent" ? "#c62828" : "#e0e0e0",
+                                                paddingVertical: 12,
+                                                gap: 10
+                                              }
+                                            ]}
+                                          >
+                                            {/* Student info row */}
+                                            <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                                              {/* Avatar */}
+                                              <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: mark === "present" ? "#e8f5e9" : mark === "absent" ? "#ffebee" : "#f5f5f5", alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: mark === "present" ? "#2e7d32" : mark === "absent" ? "#c62828" : "#e0e0e0" }}>
+                                                <Text style={{ fontWeight: "bold", color: mark === "present" ? "#2e7d32" : mark === "absent" ? "#c62828" : "#757575", fontSize: 14 }}>
+                                                  {name ? name.charAt(0).toUpperCase() : "?"}
+                                                </Text>
+                                              </View>
+                                              <View style={{ flex: 1 }}>
+                                                <Text style={{ fontWeight: "bold", color: "#212121", fontSize: 14 }} numberOfLines={1}>{name || "Unnamed"}</Text>
+                                                <Text style={{ color: "#757575", fontSize: 12 }}>Roll: {rollNo}</Text>
+                                                {total > 0 && (
+                                                  <Text style={{ color: pct >= 75 ? "#2e7d32" : pct >= 50 ? "#f57c00" : "#c62828", fontSize: 11, marginTop: 1, fontWeight: "600" }}>
+                                                    Overall: {attended}/{total} days ({pct}%)
+                                                  </Text>
+                                                )}
+                                              </View>
+                                              {/* Status badge */}
+                                              {mark && (
+                                                <View style={{ backgroundColor: mark === "present" ? "#e8f5e9" : "#ffebee", borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4 }}>
+                                                  <Text style={{ color: mark === "present" ? "#2e7d32" : "#c62828", fontWeight: "bold", fontSize: 12 }}>
+                                                    {mark === "present" ? "Present" : "Absent"}
+                                                  </Text>
+                                                </View>
+                                              )}
+                                            </View>
+
+                                            {/* Present / Absent buttons */}
+                                            {isSaving ? (
+                                              <View style={{ alignItems: "center", paddingVertical: 4 }}>
+                                                <ActivityIndicator size="small" color="#c62828" />
+                                              </View>
+                                            ) : (
+                                              <View style={{ flexDirection: "row", gap: 10 }}>
+                                                <TouchableOpacity
+                                                  onPress={() => markAttendance(student, "present")}
+                                                  style={{
+                                                    flex: 1,
+                                                    paddingVertical: 10,
+                                                    borderRadius: 10,
+                                                    alignItems: "center",
+                                                    backgroundColor: mark === "present" ? "#2e7d32" : "#f9f9f9",
+                                                    borderWidth: 2,
+                                                    borderColor: mark === "present" ? "#2e7d32" : "#e0e0e0"
+                                                  }}
+                                                >
+                                                  <Text style={{ color: mark === "present" ? "#fff" : "#2e7d32", fontWeight: "bold", fontSize: 14 }}>Present</Text>
+                                                </TouchableOpacity>
+                                                <TouchableOpacity
+                                                  onPress={() => markAttendance(student, "absent")}
+                                                  style={{
+                                                    flex: 1,
+                                                    paddingVertical: 10,
+                                                    borderRadius: 10,
+                                                    alignItems: "center",
+                                                    backgroundColor: mark === "absent" ? "#c62828" : "#f9f9f9",
+                                                    borderWidth: 2,
+                                                    borderColor: mark === "absent" ? "#c62828" : "#e0e0e0"
+                                                  }}
+                                                >
+                                                  <Text style={{ color: mark === "absent" ? "#fff" : "#c62828", fontWeight: "bold", fontSize: 14 }}>Absent</Text>
+                                                </TouchableOpacity>
+                                              </View>
                                             )}
                                           </View>
-                                          {/* Status badge */}
-                                          {mark && (
-                                            <View style={{ backgroundColor: mark === "present" ? "#e8f5e9" : "#ffebee", borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4 }}>
-                                              <Text style={{ color: mark === "present" ? "#2e7d32" : "#c62828", fontWeight: "bold", fontSize: 12 }}>
-                                                {mark === "present" ? "Present" : "Absent"}
-                                              </Text>
-                                            </View>
-                                          )}
-                                        </View>
+                                        );
+                                      })
+                                    )}
 
-                                        {/* Present / Absent buttons */}
-                                        {isSaving ? (
-                                          <View style={{ alignItems: "center", paddingVertical: 4 }}>
-                                            <ActivityIndicator size="small" color="#c62828" />
-                                          </View>
-                                        ) : (
-                                          <View style={{ flexDirection: "row", gap: 10 }}>
-                                            <TouchableOpacity
-                                              onPress={() => markAttendance(student, "present")}
-                                              style={{
-                                                flex: 1,
-                                                paddingVertical: 10,
-                                                borderRadius: 10,
-                                                alignItems: "center",
-                                                backgroundColor: mark === "present" ? "#2e7d32" : "#f9f9f9",
-                                                borderWidth: 2,
-                                                borderColor: mark === "present" ? "#2e7d32" : "#e0e0e0"
-                                              }}
-                                            >
-                                              <Text style={{ color: mark === "present" ? "#fff" : "#2e7d32", fontWeight: "bold", fontSize: 14 }}>Present</Text>
-                                            </TouchableOpacity>
-                                            <TouchableOpacity
-                                              onPress={() => markAttendance(student, "absent")}
-                                              style={{
-                                                flex: 1,
-                                                paddingVertical: 10,
-                                                borderRadius: 10,
-                                                alignItems: "center",
-                                                backgroundColor: mark === "absent" ? "#c62828" : "#f9f9f9",
-                                                borderWidth: 2,
-                                                borderColor: mark === "absent" ? "#c62828" : "#e0e0e0"
-                                              }}
-                                            >
-                                              <Text style={{ color: mark === "absent" ? "#fff" : "#c62828", fontWeight: "bold", fontSize: 14 }}>Absent</Text>
-                                            </TouchableOpacity>
-                                          </View>
-                                        )}
-                                      </View>
-                                    );
-                                  })
-                                )}
-
-                                {/* Save all button */}
-                                <TouchableOpacity
-                                  style={[styles.primaryBtn, { marginTop: 4 }]}
-                                  onPress={async () => {
-                                    const unmarked = studentsInBatch.filter((s: any) => !offlineAttendanceMarks[s.id]);
-                                    if (unmarked.length > 0) {
-                                      Alert.alert("Incomplete", `${unmarked.length} student(s) not yet marked. Please mark all students before saving.`);
-                                      return;
-                                    }
-                                    Alert.alert(
-                                      "Save Attendance",
-                                      `Save attendance for ${offlineAttendanceBatch} on ${offlineAttendanceDate}?`,
-                                      [
-                                        { text: "Cancel", style: "cancel" },
-                                        {
-                                          text: "Save All",
-                                          onPress: async () => {
-                                            let saved = 0;
-                                            let failed = 0;
-                                            for (const student of studentsInBatch) {
-                                              const status = offlineAttendanceMarks[student.id];
-                                              if (!status) continue;
-                                              try {
-                                                const attended = Number(student.attendedDays || 0);
-                                                const newAttended = status === "present" ? attended + 1 : attended;
-                                                await api.put(`/erp/student/${student.id}`, {
-                                                  attendedDays: newAttended,
-                                                  lastAttendanceDate: offlineAttendanceDate,
-                                                  lastAttendanceStatus: status,
-                                                });
-                                                setStudents((prev: any[]) => prev.map((s: any) => s.id === student.id ? { ...s, attendedDays: newAttended } : s));
-                                                saved++;
-                                              } catch {
-                                                failed++;
+                                    {/* Save all button */}
+                                    <TouchableOpacity
+                                      style={[styles.primaryBtn, { marginTop: 4 }]}
+                                      onPress={async () => {
+                                        const unmarked = studentsInBatch.filter((s: any) => !offlineAttendanceMarks[s.id]);
+                                        if (unmarked.length > 0) {
+                                          Alert.alert("Incomplete", `${unmarked.length} student(s) not yet marked. Please mark all students before saving.`);
+                                          return;
+                                        }
+                                        Alert.alert(
+                                          "Save Attendance",
+                                          `Save attendance for ${offlineAttendanceBatch} on ${offlineAttendanceDate}?`,
+                                          [
+                                            { text: "Cancel", style: "cancel" },
+                                            {
+                                              text: "Save All",
+                                              onPress: async () => {
+                                                let saved = 0;
+                                                let failed = 0;
+                                                for (const student of studentsInBatch) {
+                                                  const status = offlineAttendanceMarks[student.id];
+                                                  if (!status) continue;
+                                                  try {
+                                                    const attended = Number(student.attendedDays || 0);
+                                                    const newAttended = status === "present" ? attended + 1 : attended;
+                                                    const updatedLog = { ...(student.attendanceLog || {}), [offlineAttendanceDate]: status };
+                                                    await api.put(`/erp/student/${student.id}`, {
+                                                      attendedDays: newAttended,
+                                                      lastAttendanceDate: offlineAttendanceDate,
+                                                      lastAttendanceStatus: status,
+                                                      attendanceLog: updatedLog,
+                                                    });
+                                                    setStudents((prevList: any[]) => prevList.map((s: any) => s.id === student.id ? { ...s, attendedDays: newAttended, attendanceLog: updatedLog } : s));
+                                                    saved++;
+                                                  } catch {
+                                                    failed++;
+                                                  }
+                                                }
+                                                Alert.alert("Done", `Attendance saved for ${saved} student(s)${failed > 0 ? `, ${failed} failed.` : "."}`);
+                                                setOfflineAttendanceBatch(null);
+                                                setOfflineAttendanceMarks({});
                                               }
                                             }
-                                            Alert.alert("Done", `Attendance saved for ${saved} student(s)${failed > 0 ? `, ${failed} failed.` : "."}`);
-                                            setOfflineAttendanceBatch(null);
-                                            setOfflineAttendanceMarks({});
-                                          }
-                                        }
-                                      ]
-                                    );
-                                  }}
-                                >
-                                  <Text style={styles.primaryBtnTxt}>Save Attendance</Text>
-                                </TouchableOpacity>
+                                          ]
+                                        );
+                                      }}
+                                    >
+                                      <Text style={styles.primaryBtnTxt}>Save Attendance</Text>
+                                    </TouchableOpacity>
+                                  </View>
+                                )}
                               </View>
                             )}
+
+                            {/* ==================== VIEW 2: MONTHLY REGISTER & HISTORY ==================== */}
+                            {offlineAttendanceViewMode === "monthly" && (
+                              <View style={{ gap: 14 }}>
+                                {/* Filter Bar: Month Navigator & Batch Picker */}
+                                <View style={[styles.card, { gap: 12, paddingVertical: 14 }]}>
+                                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+                                    {/* Month Selector */}
+                                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: darkMode ? "#2a2a2a" : "#f5f5f5", borderRadius: 8, paddingHorizontal: 6, paddingVertical: 4 }}>
+                                      <TouchableOpacity
+                                        onPress={() => changeMonthlyMonth(-1)}
+                                        style={{ padding: 6, borderRadius: 6, backgroundColor: darkMode ? "#333" : "#fff" }}
+                                      >
+                                        <Ionicons name="chevron-back" size={16} color="#c62828" />
+                                      </TouchableOpacity>
+                                      <View style={{ paddingHorizontal: 8, alignItems: "center" }}>
+                                        <Text style={{ fontWeight: "bold", fontSize: 14, color: "#212121" }}>
+                                          {formatMonthTitle(offlineAttendanceMonth)}
+                                        </Text>
+                                      </View>
+                                      <TouchableOpacity
+                                        onPress={() => changeMonthlyMonth(1)}
+                                        style={{ padding: 6, borderRadius: 6, backgroundColor: darkMode ? "#333" : "#fff" }}
+                                      >
+                                        <Ionicons name="chevron-forward" size={16} color="#c62828" />
+                                      </TouchableOpacity>
+                                      <TouchableOpacity
+                                        onPress={() => setOfflineAttendanceMonth(new Date().toISOString().slice(0, 7))}
+                                        style={{ paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, backgroundColor: "#ffebee" }}
+                                      >
+                                        <Text style={{ fontSize: 11, fontWeight: "bold", color: "#c62828" }}>Current</Text>
+                                      </TouchableOpacity>
+                                    </View>
+
+                                    {/* Legend Indicators */}
+                                    <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                                      <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                                        <View style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: "#2e7d32" }} />
+                                        <Text style={{ fontSize: 11, color: "#555" }}>P = Present</Text>
+                                      </View>
+                                      <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                                        <View style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: "#c62828" }} />
+                                        <Text style={{ fontSize: 11, color: "#555" }}>A = Absent</Text>
+                                      </View>
+                                      <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                                        <View style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: "#eeeeee" }} />
+                                        <Text style={{ fontSize: 11, color: "#555" }}>Sun = Weekend</Text>
+                                      </View>
+                                    </View>
+                                  </View>
+
+                                  {/* Batch Pills */}
+                                  <View style={{ gap: 6 }}>
+                                    <Text style={{ fontSize: 12, fontWeight: "bold", color: "#757575" }}>SELECT OFFLINE BATCH:</Text>
+                                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                                      {offlineBatchNames.map(batchName => {
+                                        const isSelected = activeMonthlyBatch === batchName;
+                                        const count = offlineStudents.filter((s: any) => s.batch === batchName).length;
+                                        return (
+                                          <TouchableOpacity
+                                            key={batchName}
+                                            onPress={() => setOfflineAttendanceMonthlyBatch(batchName)}
+                                            style={{
+                                              paddingHorizontal: 14,
+                                              paddingVertical: 7,
+                                              borderRadius: 20,
+                                              backgroundColor: isSelected ? "#c62828" : darkMode ? "#2a2a2a" : "#f1f3f4",
+                                              flexDirection: "row",
+                                              alignItems: "center",
+                                              gap: 6
+                                            }}
+                                          >
+                                            <Text style={{ fontSize: 12, fontWeight: isSelected ? "bold" : "600", color: isSelected ? "#fff" : "#424242" }}>
+                                              {batchName}
+                                            </Text>
+                                            <View style={{ backgroundColor: isSelected ? "rgba(255,255,255,0.25)" : "#e0e0e0", borderRadius: 10, paddingHorizontal: 6, paddingVertical: 1 }}>
+                                              <Text style={{ fontSize: 10, fontWeight: "bold", color: isSelected ? "#fff" : "#616161" }}>{count}</Text>
+                                            </View>
+                                          </TouchableOpacity>
+                                        );
+                                      })}
+                                    </ScrollView>
+                                  </View>
+                                </View>
+
+                                {/* KPI Metrics Cards */}
+                                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+                                  <View style={{ flex: 1, minWidth: 140, backgroundColor: "#e3f2fd", borderRadius: 10, padding: 12, borderWidth: 1, borderColor: "#bbdefb" }}>
+                                    <Text style={{ fontSize: 11, color: "#1565c0", fontWeight: "600" }}>Working Days Marked</Text>
+                                    <Text style={{ fontSize: 22, fontWeight: "bold", color: "#0d47a1", marginTop: 4 }}>{totalWorkingDaysRecorded}</Text>
+                                    <Text style={{ fontSize: 10, color: "#1976d2", marginTop: 2 }}>Days recorded this month</Text>
+                                  </View>
+
+                                  <View style={{ flex: 1, minWidth: 140, backgroundColor: "#e8f5e9", borderRadius: 10, padding: 12, borderWidth: 1, borderColor: "#c8e6c9" }}>
+                                    <Text style={{ fontSize: 11, color: "#2e7d32", fontWeight: "600" }}>Batch Average</Text>
+                                    <Text style={{ fontSize: 22, fontWeight: "bold", color: "#1b5e20", marginTop: 4 }}>{batchAvgAttendanceRate}%</Text>
+                                    <Text style={{ fontSize: 10, color: "#388e3c", marginTop: 2 }}>{monthlyStudents.length} enrolled students</Text>
+                                  </View>
+
+                                  <View style={{ flex: 1, minWidth: 140, backgroundColor: "#fff3e0", borderRadius: 10, padding: 12, borderWidth: 1, borderColor: "#ffe0b2" }}>
+                                    <Text style={{ fontSize: 11, color: "#e65100", fontWeight: "600" }}>Total Present Logs</Text>
+                                    <Text style={{ fontSize: 22, fontWeight: "bold", color: "#bf360c", marginTop: 4 }}>{totalBatchMonthlyPresent}</Text>
+                                    <Text style={{ fontSize: 10, color: "#f57c00", marginTop: 2 }}>Accumulated attendances</Text>
+                                  </View>
+
+                                  <View style={{ flex: 1, minWidth: 140, backgroundColor: monthlyDefaultersCount > 0 ? "#ffebee" : "#f5f5f5", borderRadius: 10, padding: 12, borderWidth: 1, borderColor: monthlyDefaultersCount > 0 ? "#ffcdd2" : "#e0e0e0" }}>
+                                    <Text style={{ fontSize: 11, color: monthlyDefaultersCount > 0 ? "#c62828" : "#757575", fontWeight: "600" }}>Below 75% Attendance</Text>
+                                    <Text style={{ fontSize: 22, fontWeight: "bold", color: monthlyDefaultersCount > 0 ? "#b71c1c" : "#616161", marginTop: 4 }}>{monthlyDefaultersCount}</Text>
+                                    <Text style={{ fontSize: 10, color: monthlyDefaultersCount > 0 ? "#c62828" : "#9e9e9e", marginTop: 2 }}>Require regular follow-up</Text>
+                                  </View>
+                                </View>
+
+                                {/* Day-by-day Register Matrix Table */}
+                                <View style={[styles.card, { padding: 0, overflow: "hidden" }]}>
+                                  <View style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: "#eeeeee", flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                                    <View>
+                                      <Text style={{ fontWeight: "bold", fontSize: 14, color: "#212121" }}>
+                                        {activeMonthlyBatch || "Batch"} · Monthly Attendance Sheet
+                                      </Text>
+                                      <Text style={{ fontSize: 11, color: "#757575", marginTop: 2 }}>
+                                        Click any day cell to instantly toggle Present (P) / Absent (A) / Clear. Click student name for full calendar breakdown.
+                                      </Text>
+                                    </View>
+                                  </View>
+
+                                  {monthlyStudents.length === 0 ? (
+                                    <View style={{ padding: 30, alignItems: "center", justifyContent: "center" }}>
+                                      <Ionicons name="people-outline" size={40} color="#bdbdbd" />
+                                      <Text style={{ color: "#757575", fontSize: 13, marginTop: 8 }}>No students enrolled in this batch.</Text>
+                                    </View>
+                                  ) : (
+                                    <ScrollView horizontal showsHorizontalScrollIndicator={true}>
+                                      <View>
+                                        {/* Table Header */}
+                                        <View style={{ flexDirection: "row", backgroundColor: darkMode ? "#2a2a2a" : "#fafafa", borderBottomWidth: 1, borderBottomColor: "#e0e0e0", alignItems: "center" }}>
+                                          <View style={{ width: 45, paddingVertical: 10, paddingHorizontal: 6, alignItems: "center" }}>
+                                            <Text style={{ fontWeight: "bold", fontSize: 11, color: "#616161" }}>#</Text>
+                                          </View>
+                                          <View style={{ width: 85, paddingVertical: 10, paddingHorizontal: 6 }}>
+                                            <Text style={{ fontWeight: "bold", fontSize: 11, color: "#616161" }}>Roll No</Text>
+                                          </View>
+                                          <View style={{ width: 170, paddingVertical: 10, paddingHorizontal: 8 }}>
+                                            <Text style={{ fontWeight: "bold", fontSize: 11, color: "#616161" }}>Student Name</Text>
+                                          </View>
+
+                                          {/* Day columns 1 to N */}
+                                          {daysArray.map(dayNum => {
+                                            const dayDate = new Date(currYear, currMonthNum - 1, dayNum);
+                                            const dayOfWeek = dayDate.getDay(); // 0 = Sun
+                                            const isSun = dayOfWeek === 0;
+                                            const dowStr = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"][dayOfWeek];
+                                            return (
+                                              <View
+                                                key={dayNum}
+                                                style={{
+                                                  width: 36,
+                                                  paddingVertical: 6,
+                                                  alignItems: "center",
+                                                  justifyContent: "center",
+                                                  backgroundColor: isSun ? (darkMode ? "#332222" : "#fdf2f2") : "transparent",
+                                                  borderLeftWidth: 1,
+                                                  borderLeftColor: "#eeeeee"
+                                                }}
+                                              >
+                                                <Text style={{ fontSize: 11, fontWeight: "bold", color: isSun ? "#c62828" : "#424242" }}>{dayNum}</Text>
+                                                <Text style={{ fontSize: 9, color: isSun ? "#c62828" : "#9e9e9e", marginTop: 1 }}>{dowStr}</Text>
+                                              </View>
+                                            );
+                                          })}
+
+                                          {/* Summary Columns */}
+                                          <View style={{ width: 45, paddingVertical: 10, alignItems: "center", borderLeftWidth: 1, borderLeftColor: "#e0e0e0", backgroundColor: "#e8f5e9" }}>
+                                            <Text style={{ fontWeight: "bold", fontSize: 11, color: "#2e7d32" }}>P</Text>
+                                          </View>
+                                          <View style={{ width: 45, paddingVertical: 10, alignItems: "center", borderLeftWidth: 1, borderLeftColor: "#e0e0e0", backgroundColor: "#ffebee" }}>
+                                            <Text style={{ fontWeight: "bold", fontSize: 11, color: "#c62828" }}>A</Text>
+                                          </View>
+                                          <View style={{ width: 60, paddingVertical: 10, alignItems: "center", borderLeftWidth: 1, borderLeftColor: "#e0e0e0" }}>
+                                            <Text style={{ fontWeight: "bold", fontSize: 11, color: "#424242" }}>%</Text>
+                                          </View>
+                                          <View style={{ width: 50, paddingVertical: 10, alignItems: "center", borderLeftWidth: 1, borderLeftColor: "#e0e0e0" }}>
+                                            <Text style={{ fontWeight: "bold", fontSize: 11, color: "#616161" }}>View</Text>
+                                          </View>
+                                        </View>
+
+                                        {/* Table Rows */}
+                                        {monthlyStudents.map((st: any, idx: number) => {
+                                          const roll = st.rollNumber || st.admissionNumber || st.id.substring(0, 6);
+                                          const name = getStudentName(st);
+                                          const log = st.attendanceLog || {};
+
+                                          let studentPresentCount = 0;
+                                          let studentAbsentCount = 0;
+
+                                          daysArray.forEach(d => {
+                                            const dateKey = `${offlineAttendanceMonth}-${String(d).padStart(2, "0")}`;
+                                            const status = log[dateKey];
+                                            if (status === "present") studentPresentCount++;
+                                            else if (status === "absent") studentAbsentCount++;
+                                          });
+
+                                          const totalMarkedDays = studentPresentCount + studentAbsentCount;
+                                          const studentMonthPct = totalMarkedDays > 0 ? Math.round((studentPresentCount / totalMarkedDays) * 100) : 0;
+
+                                          return (
+                                            <View
+                                              key={st.id}
+                                              style={{
+                                                flexDirection: "row",
+                                                borderBottomWidth: 1,
+                                                borderBottomColor: "#eeeeee",
+                                                alignItems: "center",
+                                                backgroundColor: idx % 2 === 0 ? "transparent" : (darkMode ? "#1f1f1f" : "#fafafa")
+                                              }}
+                                            >
+                                              {/* Index */}
+                                              <View style={{ width: 45, paddingVertical: 8, paddingHorizontal: 6, alignItems: "center" }}>
+                                                <Text style={{ fontSize: 11, color: "#9e9e9e" }}>{idx + 1}</Text>
+                                              </View>
+
+                                              {/* Roll */}
+                                              <View style={{ width: 85, paddingVertical: 8, paddingHorizontal: 6 }}>
+                                                <Text style={{ fontSize: 12, fontWeight: "600", color: "#424242" }} numberOfLines={1}>{roll}</Text>
+                                              </View>
+
+                                              {/* Name */}
+                                              <TouchableOpacity
+                                                onPress={() => setSelectedMonthlyCalendarStudent(st)}
+                                                style={{ width: 170, paddingVertical: 8, paddingHorizontal: 8, flexDirection: "row", alignItems: "center", gap: 6 }}
+                                              >
+                                                <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: "#ffebee", alignItems: "center", justifyContent: "center" }}>
+                                                  <Text style={{ fontSize: 10, fontWeight: "bold", color: "#c62828" }}>
+                                                    {name ? name.charAt(0).toUpperCase() : "?"}
+                                                  </Text>
+                                                </View>
+                                                <Text style={{ fontSize: 12, fontWeight: "bold", color: "#212121", flex: 1 }} numberOfLines={1}>
+                                                  {name || "Unnamed"}
+                                                </Text>
+                                              </TouchableOpacity>
+
+                                              {/* Day Cells */}
+                                              {daysArray.map(dayNum => {
+                                                const dateKey = `${offlineAttendanceMonth}-${String(dayNum).padStart(2, "0")}`;
+                                                const dayDate = new Date(currYear, currMonthNum - 1, dayNum);
+                                                const dayOfWeek = dayDate.getDay();
+                                                const isSun = dayOfWeek === 0;
+                                                const status = log[dateKey];
+                                                const isCellSaving = offlineAttendanceCellSaving[`${st.id}_${dateKey}`] || false;
+
+                                                return (
+                                                  <TouchableOpacity
+                                                    key={dayNum}
+                                                    onPress={() => toggleCellAttendance(st, dateKey, status)}
+                                                    style={{
+                                                      width: 36,
+                                                      height: 38,
+                                                      alignItems: "center",
+                                                      justifyContent: "center",
+                                                      borderLeftWidth: 1,
+                                                      borderLeftColor: "#eeeeee",
+                                                      backgroundColor: isSun ? (darkMode ? "#2f1f1f" : "#fff8f8") : "transparent"
+                                                    }}
+                                                  >
+                                                    {isCellSaving ? (
+                                                      <ActivityIndicator size="small" color="#c62828" style={{ transform: [{ scale: 0.6 }] }} />
+                                                    ) : status === "present" ? (
+                                                      <View style={{ width: 24, height: 24, borderRadius: 5, backgroundColor: "#2e7d32", alignItems: "center", justifyContent: "center" }}>
+                                                        <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 11 }}>P</Text>
+                                                      </View>
+                                                    ) : status === "absent" ? (
+                                                      <View style={{ width: 24, height: 24, borderRadius: 5, backgroundColor: "#c62828", alignItems: "center", justifyContent: "center" }}>
+                                                        <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 11 }}>A</Text>
+                                                      </View>
+                                                    ) : isSun ? (
+                                                      <Text style={{ fontSize: 9, color: "#bdbdbd", fontWeight: "600" }}>Sun</Text>
+                                                    ) : (
+                                                      <Text style={{ fontSize: 14, color: "#d6d6d6" }}>-</Text>
+                                                    )}
+                                                  </TouchableOpacity>
+                                                );
+                                              })}
+
+                                              {/* Present Count */}
+                                              <View style={{ width: 45, paddingVertical: 8, alignItems: "center", borderLeftWidth: 1, borderLeftColor: "#e0e0e0" }}>
+                                                <Text style={{ fontSize: 12, fontWeight: "bold", color: "#2e7d32" }}>{studentPresentCount}</Text>
+                                              </View>
+
+                                              {/* Absent Count */}
+                                              <View style={{ width: 45, paddingVertical: 8, alignItems: "center", borderLeftWidth: 1, borderLeftColor: "#e0e0e0" }}>
+                                                <Text style={{ fontSize: 12, fontWeight: "bold", color: studentAbsentCount > 0 ? "#c62828" : "#9e9e9e" }}>{studentAbsentCount}</Text>
+                                              </View>
+
+                                              {/* Percentage Badge */}
+                                              <View style={{ width: 60, paddingVertical: 8, alignItems: "center", borderLeftWidth: 1, borderLeftColor: "#e0e0e0" }}>
+                                                <View style={{
+                                                  paddingHorizontal: 6,
+                                                  paddingVertical: 2,
+                                                  borderRadius: 4,
+                                                  backgroundColor: studentMonthPct >= 75 ? "#e8f5e9" : studentMonthPct >= 50 ? "#fff3e0" : "#ffebee"
+                                                }}>
+                                                  <Text style={{
+                                                    fontSize: 10,
+                                                    fontWeight: "bold",
+                                                    color: studentMonthPct >= 75 ? "#2e7d32" : studentMonthPct >= 50 ? "#e65100" : "#c62828"
+                                                  }}>
+                                                    {studentMonthPct}%
+                                                  </Text>
+                                                </View>
+                                              </View>
+
+                                              {/* View Student Modal Button */}
+                                              <View style={{ width: 50, paddingVertical: 8, alignItems: "center", borderLeftWidth: 1, borderLeftColor: "#e0e0e0" }}>
+                                                <TouchableOpacity
+                                                  onPress={() => setSelectedMonthlyCalendarStudent(st)}
+                                                  style={{ padding: 6, borderRadius: 6, backgroundColor: "#ffebee" }}
+                                                >
+                                                  <Ionicons name="calendar-outline" size={14} color="#c62828" />
+                                                </TouchableOpacity>
+                                              </View>
+                                            </View>
+                                          );
+                                        })}
+                                      </View>
+                                    </ScrollView>
+                                  )}
+                                </View>
+                              </View>
+                            )}
+
+                            {/* ==================== INDIVIDUAL STUDENT MONTHLY CALENDAR MODAL ==================== */}
+                            {selectedMonthlyCalendarStudent && (() => {
+                              const st = selectedMonthlyCalendarStudent;
+                              const roll = st.rollNumber || st.admissionNumber || st.id.substring(0, 6);
+                              const name = getStudentName(st);
+                              const log = st.attendanceLog || {};
+
+                              let pCount = 0;
+                              let aCount = 0;
+                              daysArray.forEach(d => {
+                                const dateKey = `${offlineAttendanceMonth}-${String(d).padStart(2, "0")}`;
+                                if (log[dateKey] === "present") pCount++;
+                                else if (log[dateKey] === "absent") aCount++;
+                              });
+                              const totalMarked = pCount + aCount;
+                              const pct = totalMarked > 0 ? Math.round((pCount / totalMarked) * 100) : 0;
+
+                              const firstDayOfMonth = new Date(currYear, currMonthNum - 1, 1).getDay(); // 0 = Sun
+                              const calendarSlots: (number | null)[] = [];
+                              for (let i = 0; i < firstDayOfMonth; i++) {
+                                calendarSlots.push(null);
+                              }
+                              daysArray.forEach(d => calendarSlots.push(d));
+
+                              return (
+                                <Modal
+                                  visible={true}
+                                  transparent={true}
+                                  animationType="fade"
+                                  onRequestClose={() => setSelectedMonthlyCalendarStudent(null)}
+                                >
+                                  <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "center", alignItems: "center", padding: 16 }}>
+                                    <View style={{ width: "100%", maxWidth: 580, maxHeight: "90%", backgroundColor: darkMode ? "#1e1e1e" : "#fff", borderRadius: 16, overflow: "hidden", shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 10, elevation: 10 }}>
+                                      {/* Header */}
+                                      <View style={{ backgroundColor: "#c62828", paddingHorizontal: 18, paddingVertical: 14, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                                        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                                          <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: "#fff", alignItems: "center", justifyContent: "center" }}>
+                                            <Text style={{ fontWeight: "bold", fontSize: 16, color: "#c62828" }}>
+                                              {name ? name.charAt(0).toUpperCase() : "S"}
+                                            </Text>
+                                          </View>
+                                          <View>
+                                            <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 16 }}>{name}</Text>
+                                            <Text style={{ color: "rgba(255,255,255,0.85)", fontSize: 12 }}>Roll: {roll} · {st.batch || activeMonthlyBatch}</Text>
+                                          </View>
+                                        </View>
+                                        <TouchableOpacity
+                                          onPress={() => setSelectedMonthlyCalendarStudent(null)}
+                                          style={{ padding: 6, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.2)" }}
+                                        >
+                                          <Ionicons name="close" size={20} color="#fff" />
+                                        </TouchableOpacity>
+                                      </View>
+
+                                      <ScrollView contentContainerStyle={{ padding: 18, gap: 14 }}>
+                                        {/* Month Title & Navigation */}
+                                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                                          <Text style={{ fontWeight: "bold", fontSize: 15, color: "#212121" }}>
+                                            Attendance Calendar · {formatMonthTitle(offlineAttendanceMonth)}
+                                          </Text>
+                                          <View style={{ flexDirection: "row", gap: 6 }}>
+                                            <TouchableOpacity
+                                              onPress={() => changeMonthlyMonth(-1)}
+                                              style={{ padding: 6, borderRadius: 6, backgroundColor: "#f5f5f5" }}
+                                            >
+                                              <Ionicons name="chevron-back" size={16} color="#c62828" />
+                                            </TouchableOpacity>
+                                            <TouchableOpacity
+                                              onPress={() => changeMonthlyMonth(1)}
+                                              style={{ padding: 6, borderRadius: 6, backgroundColor: "#f5f5f5" }}
+                                            >
+                                              <Ionicons name="chevron-forward" size={16} color="#c62828" />
+                                            </TouchableOpacity>
+                                          </View>
+                                        </View>
+
+                                        {/* Monthly Metrics Summary */}
+                                        <View style={{ flexDirection: "row", gap: 8 }}>
+                                          <View style={{ flex: 1, backgroundColor: "#e8f5e9", borderRadius: 8, padding: 10, alignItems: "center" }}>
+                                            <Text style={{ fontSize: 18, fontWeight: "bold", color: "#2e7d32" }}>{pCount}</Text>
+                                            <Text style={{ fontSize: 11, color: "#2e7d32", fontWeight: "600", marginTop: 2 }}>Present Days</Text>
+                                          </View>
+                                          <View style={{ flex: 1, backgroundColor: "#ffebee", borderRadius: 8, padding: 10, alignItems: "center" }}>
+                                            <Text style={{ fontSize: 18, fontWeight: "bold", color: "#c62828" }}>{aCount}</Text>
+                                            <Text style={{ fontSize: 11, color: "#c62828", fontWeight: "600", marginTop: 2 }}>Absent Days</Text>
+                                          </View>
+                                          <View style={{ flex: 1, backgroundColor: pct >= 75 ? "#e8f5e9" : "#fff3e0", borderRadius: 8, padding: 10, alignItems: "center" }}>
+                                            <Text style={{ fontSize: 18, fontWeight: "bold", color: pct >= 75 ? "#2e7d32" : "#e65100" }}>{pct}%</Text>
+                                            <Text style={{ fontSize: 11, color: pct >= 75 ? "#2e7d32" : "#e65100", fontWeight: "600", marginTop: 2 }}>Monthly Rate</Text>
+                                          </View>
+                                        </View>
+
+                                        {/* 7-Day Calendar Grid */}
+                                        <View style={{ borderWidth: 1, borderColor: "#eeeeee", borderRadius: 10, overflow: "hidden" }}>
+                                          {/* Weekday Headers */}
+                                          <View style={{ flexDirection: "row", backgroundColor: "#f5f5f5", borderBottomWidth: 1, borderBottomColor: "#eeeeee" }}>
+                                            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((dayName, dIdx) => (
+                                              <View key={dayName} style={{ flex: 1, paddingVertical: 8, alignItems: "center" }}>
+                                                <Text style={{ fontSize: 11, fontWeight: "bold", color: dIdx === 0 ? "#c62828" : "#616161" }}>
+                                                  {dayName}
+                                                </Text>
+                                              </View>
+                                            ))}
+                                          </View>
+
+                                          {/* Days in Month */}
+                                          <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+                                            {calendarSlots.map((d, slotIdx) => {
+                                              if (d === null) {
+                                                return (
+                                                  <View key={`empty_${slotIdx}`} style={{ width: "14.285%", height: 50, borderRightWidth: (slotIdx + 1) % 7 === 0 ? 0 : 1, borderBottomWidth: 1, borderColor: "#eeeeee", backgroundColor: "#fafafa" }} />
+                                                );
+                                              }
+                                              const dateKey = `${offlineAttendanceMonth}-${String(d).padStart(2, "0")}`;
+                                              const status = log[dateKey];
+                                              const dayDate = new Date(currYear, currMonthNum - 1, d);
+                                              const isSun = dayDate.getDay() === 0;
+
+                                              return (
+                                                <TouchableOpacity
+                                                  key={`day_${d}`}
+                                                  onPress={() => toggleCellAttendance(st, dateKey, status)}
+                                                  style={{
+                                                    width: "14.285%",
+                                                    height: 50,
+                                                    borderRightWidth: (slotIdx + 1) % 7 === 0 ? 0 : 1,
+                                                    borderBottomWidth: 1,
+                                                    borderColor: "#eeeeee",
+                                                    alignItems: "center",
+                                                    justifyContent: "center",
+                                                    padding: 2,
+                                                    backgroundColor: status === "present" ? "#e8f5e9" : status === "absent" ? "#ffebee" : isSun ? "#fafafa" : "transparent"
+                                                  }}
+                                                >
+                                                  <Text style={{ fontSize: 11, fontWeight: "bold", color: isSun ? "#c62828" : "#424242" }}>{d}</Text>
+                                                  {status === "present" ? (
+                                                    <View style={{ backgroundColor: "#2e7d32", borderRadius: 3, paddingHorizontal: 4, paddingVertical: 1, marginTop: 2 }}>
+                                                      <Text style={{ fontSize: 9, fontWeight: "bold", color: "#fff" }}>Present</Text>
+                                                    </View>
+                                                  ) : status === "absent" ? (
+                                                    <View style={{ backgroundColor: "#c62828", borderRadius: 3, paddingHorizontal: 4, paddingVertical: 1, marginTop: 2 }}>
+                                                      <Text style={{ fontSize: 9, fontWeight: "bold", color: "#fff" }}>Absent</Text>
+                                                    </View>
+                                                  ) : isSun ? (
+                                                    <Text style={{ fontSize: 8, color: "#9e9e9e", marginTop: 2 }}>Sunday</Text>
+                                                  ) : (
+                                                    <Text style={{ fontSize: 8, color: "#bdbdbd", marginTop: 2 }}>-</Text>
+                                                  )}
+                                                </TouchableOpacity>
+                                              );
+                                            })}
+                                          </View>
+                                        </View>
+
+                                        {/* Cumulative Record info */}
+                                        <View style={{ backgroundColor: "#f5f5f5", borderRadius: 8, padding: 12, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                                          <Text style={{ fontSize: 12, color: "#616161" }}>Overall Cumulative Record:</Text>
+                                          <Text style={{ fontSize: 12, fontWeight: "bold", color: "#212121" }}>
+                                            {st.attendedDays || 0} / {st.totalDays || 0} Days
+                                          </Text>
+                                        </View>
+
+                                        {/* Close Button */}
+                                        <TouchableOpacity
+                                          onPress={() => setSelectedMonthlyCalendarStudent(null)}
+                                          style={[styles.outlineBtn, { marginTop: 4, alignSelf: "center", paddingHorizontal: 24 }]}
+                                        >
+                                          <Text style={styles.outlineBtnTxt}>Close</Text>
+                                        </TouchableOpacity>
+                                      </ScrollView>
+                                    </View>
+                                  </View>
+                                </Modal>
+                              );
+                            })()}
                           </View>
                         );
                       })()}
@@ -35835,7 +40633,7 @@ SOURCE QUESTION PAPER:
                     contentContainerStyle={{ alignItems: lmsTabsCollapsed && !isMobile ? "center" : "stretch", gap: 6, paddingBottom: 60 }}
                     showsVerticalScrollIndicator={false}
                   >
-                    {isAdmin && renderSidebarItem("lms-access", lmsSub, "Access Control", "shield-checkmark-outline", () => changeLmsSub("lms-access"), "lms-admin-access", undefined, lmsTabsCollapsed && !isMobile, "lms_sacs_access")}
+                    {isAdmin && renderSidebarItem("lms-access", lmsSub, "Access Control", "shield-checkmark-outline", () => changeLmsSub("lms-access"), "lms-admin-access", (sacsRequests || []).length || undefined, lmsTabsCollapsed && !isMobile, "lms_sacs_access")}
 
                     {!lmsTabsCollapsed || isMobile ? <Text style={styles.categoryHeader}>LEARNING</Text> : null}
                     {isAdmin && renderSidebarItem("live-classes", lmsSub, "Live", "videocam-outline", () => changeLmsSub("live-classes"), "lms-live-classes", (lmsLiveSessions || []).filter((s: any) => s.status === "live").length || undefined, lmsTabsCollapsed && !isMobile, "lms_live_classes")}
@@ -35843,7 +40641,7 @@ SOURCE QUESTION PAPER:
                     {renderSidebarItem("quiz", (lmsSub === "quiz" || lmsSub === "all-quizzes" || lmsSub === "create-quiz") ? "quiz" : lmsSub, "Quiz", "help-circle-outline", () => changeLmsSub("quiz"), "lms-quiz", undefined, lmsTabsCollapsed && !isMobile, "lms_quiz_posting")}
                     {renderSidebarItem("recorded", lmsSub, "Recorded", "play-circle-outline", () => changeLmsSub("recorded"), "lms-recorded", undefined, lmsTabsCollapsed && !isMobile, "lms_recorded_videos")}
                     {/* Student: My Courses & Live page */}
-                    {!isAdmin && renderSidebarItem("my-courses", lmsSub, "My Courses", "school-outline", () => changeLmsSub("my-courses"), "lms-my-courses", undefined, lmsTabsCollapsed && !isMobile)}
+                    {/* {!isAdmin && renderSidebarItem("my-courses", lmsSub, "My Courses", "school-outline", () => changeLmsSub("my-courses"), "lms-my-courses", undefined, lmsTabsCollapsed && !isMobile)} */}
                     {!isAdmin && renderSidebarItem("my-live", lmsSub, "Live Classes", "radio-outline", () => changeLmsSub("my-live"), "lms-my-live", undefined, lmsTabsCollapsed && !isMobile)}
 
                     {!lmsTabsCollapsed || isMobile ? <Text style={styles.categoryHeader}>MATERIALS</Text> : null}
@@ -35861,8 +40659,8 @@ SOURCE QUESTION PAPER:
                     {/* Remaining LMS management items at the bottom */}
                     {isAdmin && renderSidebarItem("lms-zoom-accounts", lmsSub, "Zoom Accounts", "videocam-outline", () => changeLmsSub("lms-zoom-accounts"), "lms-admin-zoom-accounts", undefined, lmsTabsCollapsed && !isMobile, "lms_zoom_accounts")}
 
-                    {isAdmin && (!lmsTabsCollapsed || isMobile) && <Text style={styles.categoryHeader}>AI STUDIO</Text>}
-                    {isAdmin && renderSidebarItem("lms-chatbot", lmsSub, "NERMAI AI Studio", "chatbubbles-outline", () => changeLmsSub("lms-chatbot"), "lms-admin-chatbot", undefined, lmsTabsCollapsed && !isMobile, "lms_chatbot_cms")}
+                    {/* {isAdmin && (!lmsTabsCollapsed || isMobile) && <Text style={styles.categoryHeader}>AI STUDIO</Text>} */}
+                    {/* {isAdmin && renderSidebarItem("lms-chatbot", lmsSub, "NERMAI AI Studio", "chatbubbles-outline", () => changeLmsSub("lms-chatbot"), "lms-admin-chatbot", undefined, lmsTabsCollapsed && !isMobile, "lms_chatbot_cms")} */}
                   </ScrollView>
                 </View>
               )}
@@ -36397,11 +41195,22 @@ SOURCE QUESTION PAPER:
                     {lmsSub === "live-classes" && (
                       <View style={{ gap: 16 }}>
                         {/* Header + Refresh */}
-                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                          <Text style={{ fontSize: 16, fontWeight: "bold", color: darkMode ? "#fff" : "#212121" }}>
-                            Live & Scheduled Classes
-                          </Text>
-                          <View style={{ flexDirection: "row", gap: 10 }}>
+                        <View style={isMobile ? { gap: 12 } : { flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                            <Text style={{ fontSize: isMobile ? 18 : 16, fontWeight: "bold", color: darkMode ? "#fff" : "#212121" }}>
+                              Live & Scheduled Classes
+                            </Text>
+                            {isMobile && (
+                              <TouchableOpacity
+                                onPress={loadLiveSessions}
+                                style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: "#c62828" }}
+                              >
+                                <Ionicons name="refresh-outline" size={14} color="#fff" />
+                                <Text style={{ color: "#fff", fontSize: 12, fontWeight: "bold" }}>Refresh</Text>
+                              </TouchableOpacity>
+                            )}
+                          </View>
+                          <View style={isMobile ? { flexDirection: "row", width: "100%" } : { flexDirection: "row", gap: 10 }}>
                             {isAdmin && (
                               <TouchableOpacity
                                 onPress={() => {
@@ -36433,19 +41242,31 @@ SOURCE QUESTION PAPER:
                                   setShowLiveClassModal(true);
                                   loadLmsLookups();
                                 }}
-                                style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, backgroundColor: "#2e7d32" }}
+                                style={{
+                                  flexDirection: "row",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  gap: 6,
+                                  paddingHorizontal: 12,
+                                  paddingVertical: isMobile ? 10 : 7,
+                                  borderRadius: 8,
+                                  backgroundColor: "#2e7d32",
+                                  flex: isMobile ? 1 : undefined
+                                }}
                               >
                                 <Ionicons name="calendar-outline" size={14} color="#fff" />
-                                <Text style={{ color: "#fff", fontSize: 12, fontWeight: "bold" }}>Schedule Live Class</Text>
+                                <Text style={{ color: "#fff", fontSize: isMobile ? 13 : 12, fontWeight: "bold" }}>Schedule Live Class</Text>
                               </TouchableOpacity>
                             )}
-                            <TouchableOpacity
-                              onPress={loadLiveSessions}
-                              style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, backgroundColor: "#c62828" }}
-                            >
-                              <Ionicons name="refresh-outline" size={14} color="#fff" />
-                              <Text style={{ color: "#fff", fontSize: 12, fontWeight: "bold" }}>Refresh</Text>
-                            </TouchableOpacity>
+                            {!isMobile && (
+                              <TouchableOpacity
+                                onPress={loadLiveSessions}
+                                style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, backgroundColor: "#c62828" }}
+                              >
+                                <Ionicons name="refresh-outline" size={14} color="#fff" />
+                                <Text style={{ color: "#fff", fontSize: 12, fontWeight: "bold" }}>Refresh</Text>
+                              </TouchableOpacity>
+                            )}
                           </View>
                         </View>
 
@@ -36621,10 +41442,10 @@ SOURCE QUESTION PAPER:
                                                         const apiBase = getBaseUrl().replace(/\/api$/, "");
                                                         const popupUrl = `${baseOrigin}/meeting-hosts/zoom-client-launch.html?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(sessionId)}&apiUrl=${encodeURIComponent(apiBase)}`;
                                                         if (Platform.OS === 'web' && typeof window !== "undefined") {
-    window.open(popupUrl, "nermai-meeting", "width=1280,height=760,menubar=no,toolbar=no,location=no,status=no,resizable=yes");
-  } else {
-    Linking.openURL(popupUrl).catch(() => Alert.alert("Notice", "Unable to open meeting link."));
-  }
+                                                          window.open(popupUrl, "nermai-meeting", "width=1280,height=760,menubar=no,toolbar=no,location=no,status=no,resizable=yes");
+                                                        } else {
+                                                          Linking.openURL(popupUrl).catch(() => Alert.alert("Notice", "Unable to open meeting link."));
+                                                        }
                                                         launched = true;
                                                       }
                                                     } catch (tokErr) {
@@ -36638,10 +41459,10 @@ SOURCE QUESTION PAPER:
 
                                                     if (launchUrl) {
                                                       if (Platform.OS === 'web' && typeof window !== "undefined") {
-    window.open(launchUrl, "_blank");
-  } else {
-    Linking.openURL(launchUrl).catch(() => Alert.alert("Notice", "Unable to open launch link."));
-  }
+                                                        window.open(launchUrl, "_blank");
+                                                      } else {
+                                                        Linking.openURL(launchUrl).catch(() => Alert.alert("Notice", "Unable to open launch link."));
+                                                      }
                                                     }
                                                   }
                                                   loadLiveSessions();
@@ -36674,35 +41495,21 @@ SOURCE QUESTION PAPER:
                                                         const res = await api.get(`/live-sessions/${sessionId}/attendance`);
                                                         const list = Array.isArray(res) ? res : (res?.records || res?.data || []);
                                                         setAttendanceList(list);
-                                                      } catch (attErr) {}
+                                                      } catch (attErr) { }
                                                     })
                                                     .catch((err: any) => {
                                                       Alert.alert('Error', err?.response?.data?.message || 'Failed to end session');
                                                     });
                                                 };
 
-                                                if (Platform.OS === 'web' && typeof window !== 'undefined') {
-                                                  const choice = window.confirm(
-                                                    `End "${sessionTitle}"?\n\nPress OK to end class only.\nPress Cancel to stay.`
-                                                  );
-                                                  if (!choice) return;
-
-                                                  // Ask about YouTube conversion
-                                                  const convertYt = window.confirm('Convert to YouTube Recorded Class?\n\nOK = Yes (you will enter a URL)\nCancel = No, just end it.');
-                                                  const ytUrl = convertYt
-                                                    ? window.prompt('Paste the YouTube recording URL:', 'https://www.youtube.com/watch?v=')
-                                                    : null;
-                                                  doEnd(convertYt && !!ytUrl, ytUrl || undefined);
-                                                } else {
-                                                  Alert.alert(
-                                                    "End Class",
-                                                    `Are you sure you want to end "${sessionTitle}"?`,
-                                                    [
-                                                      { text: "Cancel", style: "cancel" },
-                                                      { text: "End Class", style: "destructive", onPress: () => doEnd(false) }
-                                                    ]
-                                                  );
-                                                }
+                                                setEndClassYtOption('none');
+                                                setEndClassYtUrl('');
+                                                setEndClassTarget({
+                                                  sessionTitle,
+                                                  onConfirm: async (convertToYoutube, youtubeUrl) => {
+                                                    await doEnd(convertToYoutube, youtubeUrl);
+                                                  }
+                                                });
                                               }}
                                               style={{ backgroundColor: "#c62828", paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8, flexDirection: "row", alignItems: "center", gap: 6 }}
                                             >
@@ -36805,10 +41612,10 @@ SOURCE QUESTION PAPER:
                                                     const apiBase = getBaseUrl().replace(/\/api$/, "");
                                                     const popupUrl = `${baseOrigin}/meeting-hosts/zoom-client-launch.html?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(sessionId)}&apiUrl=${encodeURIComponent(apiBase)}`;
                                                     if (Platform.OS === 'web' && typeof window !== "undefined") {
-    window.open(popupUrl, "nermai-meeting", "width=1280,height=760,menubar=no,toolbar=no,location=no,status=no,resizable=yes");
-  } else {
-    Linking.openURL(popupUrl).catch(() => Alert.alert("Notice", "Unable to open meeting link."));
-  }
+                                                      window.open(popupUrl, "nermai-meeting", "width=1280,height=760,menubar=no,toolbar=no,location=no,status=no,resizable=yes");
+                                                    } else {
+                                                      Linking.openURL(popupUrl).catch(() => Alert.alert("Notice", "Unable to open meeting link."));
+                                                    }
                                                     launched = true;
                                                   }
                                                 } catch (tokErr) {
@@ -36831,9 +41638,9 @@ SOURCE QUESTION PAPER:
 
                                               if (launchUrl) {
                                                 if (Platform.OS === 'web' && typeof window !== "undefined") {
-    window.open(launchUrl, "_blank");
-  } else {
-    Linking.openURL(launchUrl).catch(() => Alert.alert("Notice", "Unable to open launch link."));
+                                                  window.open(launchUrl, "_blank");
+                                                } else {
+                                                  Linking.openURL(launchUrl).catch(() => Alert.alert("Notice", "Unable to open launch link."));
                                                 }
                                               } else {
                                                 Alert.alert("Notice", "The live meeting link is pending. Please wait for the instructor to start.");
@@ -36908,25 +41715,33 @@ SOURCE QUESTION PAPER:
                               return (
                                 <View style={{ width: "100%", gap: 20 }}>
                                   {/* Tab Bar */}
-                                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 20 }}>
-                                    <View style={{ flexDirection: "row", gap: 30, borderBottomWidth: 1, borderBottomColor: darkMode ? "#333" : "#ddd", paddingBottom: 0 }}>
-                                      <TouchableOpacity onPress={() => setLiveClassesTab('upcoming')} style={{ paddingBottom: 10 }}>
-                                        <Text style={{ fontSize: 15, fontWeight: "bold", color: liveClassesTab === 'upcoming' ? (darkMode ? "#fff" : "#000") : (darkMode ? "#888" : "#666") }}>
-                                          Upcoming Classes ({upcomingSessions.length})
+                                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: isMobile ? 10 : 20, width: isMobile ? "100%" : undefined }}>
+                                    <View style={{
+                                      flexDirection: "row",
+                                      justifyContent: isMobile ? "space-between" : "flex-start",
+                                      gap: isMobile ? 16 : 30,
+                                      borderBottomWidth: 1,
+                                      borderBottomColor: darkMode ? "#333" : "#ddd",
+                                      paddingBottom: 0,
+                                      width: isMobile ? "100%" : undefined
+                                    }}>
+                                      <TouchableOpacity onPress={() => setLiveClassesTab('upcoming')} style={{ paddingBottom: 10, flex: isMobile ? 1 : undefined, alignItems: isMobile ? "center" : "flex-start" }}>
+                                        <Text style={{ fontSize: isMobile ? 13 : 15, fontWeight: "bold", color: liveClassesTab === 'upcoming' ? (darkMode ? "#fff" : "#000") : (darkMode ? "#888" : "#666") }}>
+                                          {isMobile ? `Upcoming (${upcomingSessions.length})` : `Upcoming Classes (${upcomingSessions.length})`}
                                         </Text>
                                         {liveClassesTab === 'upcoming' && <View style={{ height: 3, backgroundColor: "#f59e0b", position: "absolute", bottom: -1.5, left: 0, right: 0, borderRadius: 2 }} />}
                                       </TouchableOpacity>
 
-                                      <TouchableOpacity onPress={() => setLiveClassesTab('live')} style={{ paddingBottom: 10 }}>
-                                        <Text style={{ fontSize: 15, fontWeight: "bold", color: liveClassesTab === 'live' ? (darkMode ? "#fff" : "#000") : (darkMode ? "#888" : "#666") }}>
-                                          Live Now ({onLiveSessions.length})
+                                      <TouchableOpacity onPress={() => setLiveClassesTab('live')} style={{ paddingBottom: 10, flex: isMobile ? 1 : undefined, alignItems: isMobile ? "center" : "flex-start" }}>
+                                        <Text style={{ fontSize: isMobile ? 13 : 15, fontWeight: "bold", color: liveClassesTab === 'live' ? (darkMode ? "#fff" : "#000") : (darkMode ? "#888" : "#666") }}>
+                                          {isMobile ? `Live (${onLiveSessions.length})` : `Live Now (${onLiveSessions.length})`}
                                         </Text>
                                         {liveClassesTab === 'live' && <View style={{ height: 3, backgroundColor: "#00e676", position: "absolute", bottom: -1.5, left: 0, right: 0, borderRadius: 2 }} />}
                                       </TouchableOpacity>
 
-                                      <TouchableOpacity onPress={() => setLiveClassesTab('ended')} style={{ paddingBottom: 10 }}>
-                                        <Text style={{ fontSize: 15, fontWeight: "bold", color: liveClassesTab === 'ended' ? (darkMode ? "#fff" : "#000") : (darkMode ? "#888" : "#666") }}>
-                                          Ended Classes ({endedSessions.length})
+                                      <TouchableOpacity onPress={() => setLiveClassesTab('ended')} style={{ paddingBottom: 10, flex: isMobile ? 1 : undefined, alignItems: isMobile ? "center" : "flex-start" }}>
+                                        <Text style={{ fontSize: isMobile ? 13 : 15, fontWeight: "bold", color: liveClassesTab === 'ended' ? (darkMode ? "#fff" : "#000") : (darkMode ? "#888" : "#666") }}>
+                                          {isMobile ? `Ended (${endedSessions.length})` : `Ended Classes (${endedSessions.length})`}
                                         </Text>
                                         {liveClassesTab === 'ended' && <View style={{ height: 3, backgroundColor: "#c62828", position: "absolute", bottom: -1.5, left: 0, right: 0, borderRadius: 2 }} />}
                                       </TouchableOpacity>
@@ -37037,9 +41852,9 @@ SOURCE QUESTION PAPER:
                     {/* ── LMS Recorded Classes Tab                {/* ── LMS Recorded Classes Tab (Real API Data) ───────────────────── */}
                     {lmsSub === "recorded" && (
                       <View style={{ gap: 16 }}>
-                        <View style={{ 
-                          flexDirection: isMobile ? "column" : "row", 
-                          justifyContent: "space-between", 
+                        <View style={{
+                          flexDirection: isMobile ? "column" : "row",
+                          justifyContent: "space-between",
                           alignItems: isMobile ? "flex-start" : "center",
                           gap: isMobile ? 12 : 10,
                           flexWrap: "wrap"
@@ -37568,11 +42383,17 @@ SOURCE QUESTION PAPER:
                                   </Text>
                                   <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
                                     {batches.map((b: any) => {
-                                      const isSelected = selectedBatches.includes(b.batchName);
+                                      const bName = String(b.batchName || b.name || b.id || "").trim();
+                                      if (!bName) return null;
+                                      const isSelected = selectedBatches.includes(bName) ||
+                                        (Boolean(b.batchName) && selectedBatches.includes(String(b.batchName).trim())) ||
+                                        (Boolean(b.name) && selectedBatches.includes(String(b.name).trim())) ||
+                                        (Boolean(b.id) && selectedBatches.includes(String(b.id).trim()));
+
                                       return (
                                         <TouchableOpacity
-                                          key={b.id || b.batchName}
-                                          onPress={() => toggleDailyContentBatchSelection(b.batchName)}
+                                          key={b.id || bName}
+                                          onPress={() => toggleDailyContentBatchSelection(bName)}
                                           style={{
                                             paddingHorizontal: 12,
                                             paddingVertical: 8,
@@ -37881,7 +42702,7 @@ SOURCE QUESTION PAPER:
                         {/* Filter by Audience if Admin */}
                         {(() => {
                           const myStudent = getLoggedInStudent(user, students) || user;
-                          const isPaid = (Number(myStudent?.feesPaid) > 0) || myStudent?.type === "paid" || user?.type === "paid" || (Number(myStudent?.totalFees) > 0 && Number(myStudent?.feesPaid) >= Number(myStudent?.totalFees));
+                          const isPaid = (Number(myStudent?.feesPaid) > 0) || myStudent?.type === "paid" || user?.type === "paid" || myStudent?.status === "active" || myStudent?.status === "enrolled" || user?.status === "active" || user?.status === "enrolled" || (Number(myStudent?.totalFees) > 0 && Number(myStudent?.feesPaid) >= Number(myStudent?.totalFees)) || Boolean(myStudent?.batch || myStudent?.batchName || user?.batch || user?.batchName);
 
                           const studentBatchesList: string[] = [];
                           if (myStudent?.batch) studentBatchesList.push(myStudent.batch);
@@ -37917,7 +42738,9 @@ SOURCE QUESTION PAPER:
                             return true;
                           });
 
-                          if (filteredContent.length === 0) {
+                          const sortedFilteredContent = [...filteredContent].sort(sortDailyContentDesc);
+
+                          if (sortedFilteredContent.length === 0) {
                             return (
                               <View style={styles.emptyContainer}>
                                 <Ionicons name="calendar-outline" size={48} color={darkMode ? "#555" : "#bdbdbd"} />
@@ -37933,9 +42756,9 @@ SOURCE QUESTION PAPER:
 
                           return (
                             <View style={{ gap: 12 }}>
-                              {filteredContent.map((content: any, i: number) => {
+                              {sortedFilteredContent.map((content: any, i: number) => {
                                 const contentTitle = content.title || "Untitled Content";
-                                const contentDate = content.date || (content.createdAt ? new Date(content.createdAt._seconds ? content.createdAt._seconds * 1000 : content.createdAt).toLocaleDateString("en-IN") : "");
+                                const contentDate = content.date || (content.createdAt ? (typeof content.createdAt === "object" && (content.createdAt.seconds || content.createdAt._seconds) ? new Date((content.createdAt.seconds || content.createdAt._seconds) * 1000).toLocaleDateString("en-IN") : new Date(content.createdAt).toLocaleDateString("en-IN")) : "");
                                 const contentType = content.type || "pdf";
                                 const isImage = contentType === "image";
                                 const aud = content.targetAudience || "all";
@@ -38118,6 +42941,152 @@ SOURCE QUESTION PAPER:
           )
         )}
 
+        {/* 🔴 Custom UI End Live Class Dialog Modal */}
+        {endClassTarget && (
+          <View style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.75)',
+            zIndex: 999999,
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: 16
+          }}>
+            <View style={{
+              backgroundColor: darkMode ? '#181824' : '#ffffff',
+              borderRadius: 16,
+              padding: 24,
+              maxWidth: 440,
+              width: '100%',
+              borderWidth: 1,
+              borderColor: darkMode ? 'rgba(239,68,68,0.4)' : '#fee2e2',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 8 },
+              shadowOpacity: 0.3,
+              shadowRadius: 16,
+              elevation: 12
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                <Ionicons name="stop-circle" size={24} color="#ef4444" />
+                <Text style={{ fontSize: 18, fontWeight: 'bold', color: darkMode ? '#ffffff' : '#111827' }}>End Live Class</Text>
+              </View>
+              <Text style={{ fontSize: 14, color: darkMode ? '#9ca3af' : '#4b5563', marginBottom: 16 }}>
+                Are you sure you want to end <Text style={{ fontWeight: 'bold', color: darkMode ? '#ffffff' : '#111827' }}>"{endClassTarget.sessionTitle}"</Text>?
+              </Text>
+
+              <View style={{ gap: 10, marginBottom: 20 }}>
+                <TouchableOpacity
+                  onPress={() => setEndClassYtOption('none')}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: 12,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: endClassYtOption === 'none' ? '#ef4444' : (darkMode ? 'rgba(255,255,255,0.1)' : '#e5e7eb'),
+                    backgroundColor: endClassYtOption === 'none' ? (darkMode ? 'rgba(239,68,68,0.15)' : '#fef2f2') : 'transparent'
+                  }}
+                >
+                  <Ionicons name={endClassYtOption === 'none' ? "radio-button-on" : "radio-button-off"} size={18} color="#ef4444" />
+                  <View>
+                    <Text style={{ fontSize: 13, fontWeight: 'bold', color: darkMode ? '#ffffff' : '#111827' }}>End Class Only</Text>
+                    <Text style={{ fontSize: 11, color: darkMode ? '#9ca3af' : '#6b7280' }}>Move session to history without conversion.</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => setEndClassYtOption('youtube')}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: 12,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: endClassYtOption === 'youtube' ? '#ef4444' : (darkMode ? 'rgba(255,255,255,0.1)' : '#e5e7eb'),
+                    backgroundColor: endClassYtOption === 'youtube' ? (darkMode ? 'rgba(239,68,68,0.15)' : '#fef2f2') : 'transparent'
+                  }}
+                >
+                  <Ionicons name={endClassYtOption === 'youtube' ? "radio-button-on" : "radio-button-off"} size={18} color="#ef4444" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: 'bold', color: darkMode ? '#ffffff' : '#111827' }}>Convert to Recorded Class (YouTube)</Text>
+                    <Text style={{ fontSize: 11, color: darkMode ? '#9ca3af' : '#6b7280' }}>Add a YouTube recording link for students.</Text>
+                  </View>
+                </TouchableOpacity>
+
+                {endClassYtOption === 'youtube' && (
+                  <TextInput
+                    value={endClassYtUrl}
+                    onChangeText={setEndClassYtUrl}
+                    placeholder="https://www.youtube.com/watch?v=..."
+                    placeholderTextColor={darkMode ? '#6b7280' : '#9ca3af'}
+                    style={{
+                      backgroundColor: darkMode ? 'rgba(255,255,255,0.05)' : '#f3f4f6',
+                      borderWidth: 1,
+                      borderColor: darkMode ? 'rgba(255,255,255,0.15)' : '#d1d5db',
+                      borderRadius: 8,
+                      paddingHorizontal: 12,
+                      paddingVertical: 10,
+                      fontSize: 13,
+                      color: darkMode ? '#ffffff' : '#111827',
+                      marginTop: 4
+                    }}
+                  />
+                )}
+              </View>
+
+              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10 }}>
+                <TouchableOpacity
+                  disabled={endClassSubmitting}
+                  onPress={() => {
+                    setEndClassTarget(null);
+                    setEndClassYtOption('none');
+                    setEndClassYtUrl('');
+                  }}
+                  style={{
+                    paddingHorizontal: 16,
+                    paddingVertical: 10,
+                    borderRadius: 8,
+                    backgroundColor: darkMode ? 'rgba(255,255,255,0.1)' : '#e5e7eb'
+                  }}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: 'bold', color: darkMode ? '#ffffff' : '#374151' }}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  disabled={endClassSubmitting || (endClassYtOption === 'youtube' && !endClassYtUrl.trim())}
+                  onPress={async () => {
+                    setEndClassSubmitting(true);
+                    try {
+                      await endClassTarget.onConfirm(endClassYtOption === 'youtube', endClassYtUrl.trim() || undefined);
+                    } finally {
+                      setEndClassSubmitting(false);
+                      setEndClassTarget(null);
+                      setEndClassYtOption('none');
+                      setEndClassYtUrl('');
+                    }
+                  }}
+                  style={{
+                    paddingHorizontal: 16,
+                    paddingVertical: 10,
+                    borderRadius: 8,
+                    backgroundColor: '#dc2626',
+                    opacity: (endClassSubmitting || (endClassYtOption === 'youtube' && !endClassYtUrl.trim())) ? 0.5 : 1
+                  }}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: 'bold', color: '#ffffff' }}>
+                    {endClassSubmitting ? 'Ending...' : 'End Class'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
+
 
 
 
@@ -38232,10 +43201,10 @@ SOURCE QUESTION PAPER:
                     showsVerticalScrollIndicator={false}
                   >
                     {!crmSidebarCollapsed || isMobile ? <Text style={styles.categoryHeader}>ADMISSIONS & LEADS</Text> : null}
-                    {renderSidebarItem("merged-leads", crmSub, "Applications & Leads (New)", "people-outline", () => changeCrmSub("merged-leads"), "crm-leads", (((admissions || []).filter((a: any) => a.status === "pending" || a.status === "new" || !a.status).length) + ((enquiries || []).filter((e: any) => e.status === "pending" || e.status === "new").length)) || undefined, crmSidebarCollapsed && !isMobile, "leads")}
+                    {renderSidebarItem("merged-leads", crmSub, "Applications & Leads (New)", "people-outline", () => changeCrmSub("merged-leads"), "crm-leads", (((admissions || []).filter((a: any) => a.status === "pending" || a.status === "new" || !a.status).length) + ((enquiries || []).filter((e: any) => e.status === "pending" || e.status === "new").length) + ((customLeads || []).filter((l: any) => l.status === "new" || !l.status).length)) || undefined, crmSidebarCollapsed && !isMobile, "leads")}
                     {renderSidebarItem("admissions", crmSub, "Admission Application", "mail-outline", () => changeCrmSub("admissions"), "crm-admissions", (admissions || []).filter((a: any) => a.status === "pending" || a.status === "new" || !a.status).length || undefined, crmSidebarCollapsed && !isMobile, "admissions")}
                     {renderSidebarItem("leads", crmSub, "Leads", "funnel-outline", () => changeCrmSub("leads"), "crm-leads", undefined, crmSidebarCollapsed && !isMobile, "leads")}
-                    {renderSidebarItem("custom-leads", crmSub, "Custom Leads", "clipboard-outline", () => changeCrmSub("custom-leads"), "crm-leads", undefined, crmSidebarCollapsed && !isMobile, "leads")}
+                    {renderSidebarItem("custom-leads", crmSub, "Custom Leads", "clipboard-outline", () => changeCrmSub("custom-leads"), "crm-leads", (customLeads || []).filter((l: any) => l.status === "new" || !l.status).length || undefined, crmSidebarCollapsed && !isMobile, "leads")}
                     {renderSidebarItem("inquiries", crmSub, "Inquiries", "chatbubble-ellipses-outline", () => changeCrmSub("inquiries"), "crm-inquiries", (enquiries || []).filter((e: any) => e.status === "pending" || e.status === "new").length || undefined, crmSidebarCollapsed && !isMobile, "admissions")}
 
                     {!crmSidebarCollapsed || isMobile ? <Text style={styles.categoryHeader}>FORM BUILDER</Text> : null}
@@ -38496,14 +43465,14 @@ SOURCE QUESTION PAPER:
 
                         const convertLead = async (id: string) => {
                           try {
-                            await api.patch(`/crm/leads/${id}`, { status: "converted", updatedBy: "admin" });
+                            await api.patch(`/crm/leads/${id}`, { status: "converted", joinStatus: "joined", updatedBy: "admin" });
                             loadLeads();
                           } catch { Alert.alert("Error", "Could not update lead status."); }
                         };
 
                         const revertLeadToPending = async (id: string) => {
                           try {
-                            await api.patch(`/crm/leads/${id}`, { status: "new", updatedBy: "admin" });
+                            await api.patch(`/crm/leads/${id}`, { status: "new", joinStatus: "new", updatedBy: "admin" });
                             loadLeads();
                           } catch { Alert.alert("Error", "Could not revert lead status."); }
                         };
@@ -38725,42 +43694,6 @@ SOURCE QUESTION PAPER:
                               ))}
                             </View>
 
-                            {/* Delivery Channels */}
-                            <Text style={[styles.label, { marginTop: 4, fontWeight: "bold" }]}>Delivery Settings</Text>
-
-                            {/* Show in Dashboard toggle */}
-                            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 10, borderBottomWidth: 1, borderColor: "#eeeeee" }}>
-                              <Text style={{ color: "#212121", fontSize: 13 }}>Show Ad Container in Dashboard</Text>
-                              <TouchableOpacity
-                                onPress={() => setNewCampaign({ ...newCampaign, showInDashboard: !newCampaign.showInDashboard })}
-                                style={[styles.toggleTrack, newCampaign.showInDashboard && styles.toggleTrackOn]}
-                              >
-                                <View style={[styles.toggleThumb, newCampaign.showInDashboard && styles.toggleThumbOn]} />
-                              </TouchableOpacity>
-                            </View>
-
-                            {newCampaign.showInDashboard && (
-                              <View style={{ marginTop: 10, paddingLeft: 10, borderLeftWidth: 2, borderLeftColor: "#c62828" }}>
-                                <Text style={styles.label}>Ad Container Placement Location:</Text>
-                                <View style={{ flexDirection: "row", gap: 8, marginVertical: 6 }}>
-                                  {[
-                                    { label: "Guest Home", value: "free_home" },
-                                    { label: "Student Dash", value: "paid_dashboard" },
-                                    { label: "Both Placement", value: "both" }
-                                  ].map(loc => (
-                                    <TouchableOpacity
-                                      key={loc.value}
-                                      onPress={() => setNewCampaign({ ...newCampaign, posterDisplay: loc.value })}
-                                      style={[styles.roleBtn, newCampaign.posterDisplay === loc.value && styles.roleBtnActive, { flex: 1 }]}
-                                    >
-                                      <Text style={[styles.roleBtnTxt, newCampaign.posterDisplay === loc.value && styles.roleBtnTxtActive, { fontSize: 10 }]}>
-                                        {loc.label}
-                                      </Text>
-                                    </TouchableOpacity>
-                                  ))}
-                                </View>
-                              </View>
-                            )}
 
                             {/* Send Notification toggle */}
                             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 10, marginTop: 4 }}>
@@ -38792,10 +43725,21 @@ SOURCE QUESTION PAPER:
                                   <Text style={styles.outlineBtnTxt}>Cancel</Text>
                                 </TouchableOpacity>
                               )}
-                              <TouchableOpacity onPress={saveCampaign} style={[styles.primaryBtn, { flex: 2, backgroundColor: editingCampaignId ? "#1565c0" : "#c62828" }]}>
-                                <Text style={styles.primaryBtnTxt}>
-                                  {editingCampaignId ? "Save Campaign Changes" : "Publish Campaign Broadcast"}
-                                </Text>
+                              <TouchableOpacity
+                                onPress={saveCampaign}
+                                disabled={savingCampaign}
+                                style={[styles.primaryBtn, { flex: 2, backgroundColor: editingCampaignId ? "#1565c0" : "#c62828", opacity: savingCampaign ? 0.7 : 1, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 8 }]}
+                              >
+                                {savingCampaign ? (
+                                  <>
+                                    <ActivityIndicator size="small" color="#ffffff" />
+                                    <Text style={styles.primaryBtnTxt}>Uploading & Publishing Campaign...</Text>
+                                  </>
+                                ) : (
+                                  <Text style={styles.primaryBtnTxt}>
+                                    {editingCampaignId ? "Save Campaign Changes" : "Publish Campaign Broadcast"}
+                                  </Text>
+                                )}
                               </TouchableOpacity>
                             </View>
                           </View>
@@ -38839,9 +43783,13 @@ SOURCE QUESTION PAPER:
                                     )}
                                   </View>
 
-                                  {cp.posterUrl ? (
+                                  {getCampaignPosterUri(cp) ? (
                                     <View style={{ marginTop: 8, borderRadius: 6, overflow: "hidden" }}>
-                                      <Image source={{ uri: getDirectImageUrl(cp.posterUrl) }} style={{ width: "100%", height: 80, resizeMode: "cover" }} />
+                                      {Platform.OS === "web" ? (
+                                        <img src={getCampaignPosterUri(cp)} alt={cp.title || "Campaign"} style={{ width: "100%", height: "80px", objectFit: "cover", display: "block" }} />
+                                      ) : (
+                                        <Image source={{ uri: getCampaignPosterUri(cp) }} style={{ width: "100%", height: 80, resizeMode: "cover" }} />
+                                      )}
                                     </View>
                                   ) : null}
 
@@ -38985,7 +43933,11 @@ SOURCE QUESTION PAPER:
                             {feedbacks.length === 0 ? (
                               <Text style={styles.emptyText}>No student feedbacks logged.</Text>
                             ) : (
-                              feedbacks.map(f => (
+                              [...feedbacks].sort((a, b) => {
+                                const tA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : (a.createdAt?._seconds ? a.createdAt._seconds * 1000 : new Date(a.createdAt || 0).getTime());
+                                const tB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : (b.createdAt?._seconds ? b.createdAt._seconds * 1000 : new Date(b.createdAt || 0).getTime());
+                                return tB - tA;
+                              }).map(f => (
                                 <View key={f.id} style={{ borderBottomWidth: 1, borderColor: "#eeeeee", paddingVertical: 10 }}>
                                   <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
                                     <View style={{ flex: 1, marginRight: 10 }}>
@@ -39393,10 +44345,19 @@ SOURCE QUESTION PAPER:
           ((enquiries || []).filter((e: any) => e.status === "pending" || e.status === "new").length)
         ) : 0;
         const hasLiveClass = (lmsLiveSessions || []).some((s: any) => s.status === "live");
+        const bottomLmsBadge = isAdmin ? (sacsRequests || []).length : 0;
         const bottomDashboardBadge = isAdmin ? (adminAlerts || []).length : 0;
+        const bottomInset = insets?.bottom || 0;
 
         return (
-          <View style={[styles.bottomTabBar, darkMode && styles.bottomTabBarDark]}>
+          <View style={[
+            styles.bottomTabBar,
+            darkMode && styles.bottomTabBarDark,
+            {
+              paddingBottom: Math.max(Platform.OS === "ios" ? 20 : 8, bottomInset + 4),
+              height: (Platform.OS === "ios" ? 82 : 68) + Math.max(0, bottomInset - 4)
+            }
+          ]}>
             <TouchableOpacity
               onPress={() => handleTabPress("dashboard", () => { setActiveTab("dashboard"); loadTodayQuiz(); loadLiveSessions(); })}
               style={[styles.bottomTab, activeTab === "dashboard" && styles.bottomTabSelected, activeTab === "dashboard" && darkMode && styles.sidebarTabActiveDark]}
@@ -39507,7 +44468,14 @@ SOURCE QUESTION PAPER:
                       <Ionicons name="lock-closed" size={8} color="#fff" />
                     </View>
                   )}
-                  {hasLiveClass && !isPageLocked("lms") && (
+                  {bottomLmsBadge > 0 && !isPageLocked("lms") && (
+                    <View style={{ position: "absolute", top: -4, right: -8, backgroundColor: "#c62828", borderRadius: 8, minWidth: 16, height: 16, alignItems: "center", justifyContent: "center", paddingHorizontal: 3 }}>
+                      <Text style={{ color: "#fff", fontSize: 9, fontWeight: "bold" }}>
+                        {bottomLmsBadge > 99 ? "99+" : bottomLmsBadge}
+                      </Text>
+                    </View>
+                  )}
+                  {hasLiveClass && !isPageLocked("lms") && bottomLmsBadge === 0 && (
                     <View style={{ position: "absolute", top: -2, right: -4, width: 8, height: 8, borderRadius: 4, backgroundColor: "#c62828" }} />
                   )}
                 </View>
@@ -39615,147 +44583,498 @@ SOURCE QUESTION PAPER:
       {/* Modal containers removed and handled via top-level returns */}
 
       {/* ────────────────── Admin Live Test Monitor & Leaderboard Modal ────────────────── */}
-      {selectedMonitorTestId && (
-        <Modal visible={true} animationType="slide">
-          <SafeAreaView style={styles.modalContainer}>
-            <View style={[styles.header, { backgroundColor: "#c62828" }]}>
-              <Text style={styles.headerTitle}>Live Proctoring & Leaderboard</Text>
-              <TouchableOpacity onPress={() => { setSelectedMonitorTestId(""); setLiveCount(null); setLeaderboard([]); }} style={{ padding: 8 }}>
-                <Ionicons name="close-circle-outline" size={26} color="#ffffff" />
-              </TouchableOpacity>
-            </View>
+      {selectedMonitorTestId && (() => {
+        const tObj = tests.find((t: any) => t.id === selectedMonitorTestId);
 
-            <View style={{ padding: 15, backgroundColor: "#ffebee", borderBottomWidth: 1, borderColor: "#ffcdd2" }}>
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                <View>
-                  <Text style={{ fontSize: 16, fontWeight: "bold", color: "#c62828" }}>
-                    Live Attending: {liveCount?.liveCount ?? 0} Students
-                  </Text>
-                  <Text style={{ fontSize: 12, color: "#555", marginTop: 2 }}>
-                    Completed: {liveCount?.submittedCount ?? 0} | Total Attempts: {liveCount?.totalAttempts ?? 0}
-                  </Text>
-                </View>
-                <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
-                  <TouchableOpacity
-                    onPress={() => {
-                      const tObj = tests.find((t: any) => t.id === selectedMonitorTestId);
-                      setReportsModalTestId(selectedMonitorTestId);
-                      setReportsModalTestTitle(tObj?.title || "Test Question Reports");
-                      fetchQuestionReports(selectedMonitorTestId);
-                      fetchDetailedQuestionReports(selectedMonitorTestId);
-                      setShowTopReportsModal(true);
-                    }}
-                    style={{ backgroundColor: "#d32f2f", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, flexDirection: "row", alignItems: "center", gap: 4 }}
-                  >
-                    <Ionicons name="warning-outline" size={14} color="#ffffff" />
-                    <Text style={{ color: "#ffffff", fontWeight: "bold", fontSize: 11 }}>Reports</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => monitorTest(selectedMonitorTestId)} style={{ backgroundColor: "#c62828", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }}>
-                    <Text style={{ color: "#ffffff", fontWeight: "bold", fontSize: 11 }}>Refresh</Text>
-                  </TouchableOpacity>
-                </View>
+        // Helper to extract all batch names a student belongs to
+        const getStudentBatches = (s: any): string[] => {
+          const list: string[] = [];
+          if (s?.batch && typeof s.batch === "string" && s.batch.trim()) list.push(s.batch.trim());
+          if (s?.batchName && typeof s.batchName === "string" && s.batchName.trim()) list.push(s.batchName.trim());
+          if (Array.isArray(s?.batches)) {
+            s.batches.forEach((b: any) => {
+              if (typeof b === "string" && b.trim()) list.push(b.trim());
+              else if (b && typeof b === "object" && b.batchName) list.push(String(b.batchName).trim());
+            });
+          }
+          return Array.from(new Set(list));
+        };
+
+        const normalizeBatch = (str: string) => String(str || "").trim().toLowerCase();
+
+        // Target batches assigned to this test
+        const rawTargetBatch = String(tObj?.targetBatch || "");
+        const targetBatchList = rawTargetBatch
+          .split(",")
+          .map((b: string) => b.trim())
+          .filter(Boolean);
+
+        const isBatchSpecific = (tObj?.targetAudience === "batch") || (targetBatchList.length > 0 && tObj?.targetAudience !== "all");
+
+        // Compute eligible students for this test
+        const eligibleStudents = (students || []).filter((s: any) => {
+          if (s.isDeleted === true) return false;
+          if (!isBatchSpecific) return true; // All enrolled students
+          const sBatches = getStudentBatches(s).map(normalizeBatch);
+          return targetBatchList.some(tb => {
+            const normTb = normalizeBatch(tb);
+            return sBatches.some(sb => sb === normTb || sb.startsWith(normTb + " ") || sb.startsWith(normTb + "("));
+          });
+        });
+
+        // Attended identifiers from leaderboard and active proctoring
+        const attendedStudentIds = new Set<string>();
+        const attendedRollNumbers = new Set<string>();
+        const attendedEmails = new Set<string>();
+
+        (leaderboard || []).forEach((e: any) => {
+          if (e.studentId) attendedStudentIds.add(String(e.studentId).trim().toLowerCase());
+          if (e.userId) attendedStudentIds.add(String(e.userId).trim().toLowerCase());
+          if (e.rollNumber) attendedRollNumbers.add(String(e.rollNumber).trim().toLowerCase());
+          if (e.loginUsername) attendedRollNumbers.add(String(e.loginUsername).trim().toLowerCase());
+          if (e.email) attendedEmails.add(String(e.email).trim().toLowerCase());
+        });
+
+        if (liveCount?.activeStudents && Array.isArray(liveCount.activeStudents)) {
+          liveCount.activeStudents.forEach((as: any) => {
+            if (as.studentId) attendedStudentIds.add(String(as.studentId).trim().toLowerCase());
+            if (as.userId) attendedStudentIds.add(String(as.userId).trim().toLowerCase());
+            if (as.rollNumber) attendedRollNumbers.add(String(as.rollNumber).trim().toLowerCase());
+            if (as.loginUsername) attendedRollNumbers.add(String(as.loginUsername).trim().toLowerCase());
+            if (as.email) attendedEmails.add(String(as.email).trim().toLowerCase());
+          });
+        }
+
+        const isAttended = (s: any) => {
+          const sId = String(s.id || s._id || "").trim().toLowerCase();
+          const sUserId = String(s.userId || "").trim().toLowerCase();
+          const sRoll = String(s.rollNumber || s.rollNo || "").trim().toLowerCase();
+          const sLogin = String(s.loginUsername || "").trim().toLowerCase();
+          const sEmail = String(s.email || "").trim().toLowerCase();
+          return (
+            (sId && attendedStudentIds.has(sId)) ||
+            (sUserId && attendedStudentIds.has(sUserId)) ||
+            (sRoll && attendedRollNumbers.has(sRoll)) ||
+            (sLogin && attendedRollNumbers.has(sLogin)) ||
+            (sEmail && attendedEmails.has(sEmail))
+          );
+        };
+
+        const absentStudents = eligibleStudents.filter(s => !isAttended(s));
+
+        // Distinct batches for filter chips
+        const distinctBatches: string[] = targetBatchList.length > 0
+          ? targetBatchList
+          : Array.from(new Set(absentStudents.flatMap(s => getStudentBatches(s)).filter(Boolean)));
+
+        const filteredAbsentStudents = absentStudents.filter((s: any) => {
+          if (monitorBatchFilter !== "all") {
+            const sBatches = getStudentBatches(s).map(normalizeBatch);
+            const normFilter = normalizeBatch(monitorBatchFilter);
+            const matchesBatch = sBatches.some(sb => sb === normFilter || sb.startsWith(normFilter + " ") || sb.startsWith(normFilter + "("));
+            if (!matchesBatch) return false;
+          }
+          if (monitorAbsentSearch.trim()) {
+            const q = monitorAbsentSearch.trim().toLowerCase();
+            const sName = String(s.name || `${s.firstName || ""} ${s.lastName || ""}` || s.loginUsername || "").toLowerCase();
+            const sRoll = String(s.rollNumber || s.rollNo || s.loginUsername || "").toLowerCase();
+            const sPhone = String(s.phone || s.mobile || "").toLowerCase();
+            return sName.includes(q) || sRoll.includes(q) || sPhone.includes(q);
+          }
+          return true;
+        });
+
+        const isTestEnded = tObj?.endTime ? (Date.now() > new Date(tObj.endTime).getTime()) : false;
+
+        return (
+          <Modal visible={true} animationType="slide">
+            <SafeAreaView style={styles.modalContainer}>
+              <View style={[styles.header, { backgroundColor: "#c62828" }]}>
+                <Text style={styles.headerTitle}>Live Proctoring & Leaderboard</Text>
+                <TouchableOpacity onPress={() => { setSelectedMonitorTestId(""); setLiveCount(null); setLeaderboard([]); setMonitorActiveTab("leaderboard"); setMonitorBatchFilter("all"); setMonitorAbsentSearch(""); }} style={{ padding: 8 }}>
+                  <Ionicons name="close-circle-outline" size={26} color="#ffffff" />
+                </TouchableOpacity>
               </View>
 
-              {/* Active Students Currently Writing Exam */}
-              {liveCount?.activeStudents?.length > 0 && (
-                <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderColor: "#ffcdd2" }}>
-                  <Text style={{ fontSize: 11, fontWeight: "800", color: "#c62828", marginBottom: 6 }}>CURRENTLY WRITING (LIVE):</Text>
-                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-                    {liveCount.activeStudents.map((as: any, idx: number) => (
-                      <View key={as.attemptId || idx} style={{ backgroundColor: "#fff", borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: "#ef9a9a", flexDirection: "row", alignItems: "center", gap: 4 }}>
-                        <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#2e7d32" }} />
-                        <Text style={{ fontSize: 11, fontWeight: "bold", color: "#212121" }}>{as.studentName}</Text>
-                        <Text style={{ fontSize: 10, color: "#757575" }}>({as.rollNumber})</Text>
-                      </View>
-                    ))}
+              <View style={{ padding: 15, backgroundColor: darkMode ? "#241414" : "#ffebee", borderBottomWidth: 1, borderColor: darkMode ? "#3f1e1e" : "#ffcdd2" }}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 16, fontWeight: "bold", color: "#c62828" }}>
+                      Live Attending: {liveCount?.liveCount ?? 0} Students
+                    </Text>
+                    <Text style={{ fontSize: 12, color: darkMode ? "#bbb" : "#555", marginTop: 2 }}>
+                      Completed: {liveCount?.submittedCount ?? 0} | Absent: <Text style={{ fontWeight: "700", color: "#c62828" }}>{absentStudents.length}</Text> | Eligible: {eligibleStudents.length}
+                    </Text>
+                  </View>
+                  <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setReportsModalTestId(selectedMonitorTestId);
+                        setReportsModalTestTitle(tObj?.title || "Test Question Reports");
+                        fetchQuestionReports(selectedMonitorTestId);
+                        fetchDetailedQuestionReports(selectedMonitorTestId);
+                        setShowTopReportsModal(true);
+                      }}
+                      style={{ backgroundColor: "#d32f2f", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, flexDirection: "row", alignItems: "center", gap: 4 }}
+                    >
+                      <Ionicons name="warning-outline" size={14} color="#ffffff" />
+                      <Text style={{ color: "#ffffff", fontWeight: "bold", fontSize: 11 }}>Reports</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => monitorTest(selectedMonitorTestId)} style={{ backgroundColor: "#c62828", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }}>
+                      <Text style={{ color: "#ffffff", fontWeight: "bold", fontSize: 11 }}>Refresh</Text>
+                    </TouchableOpacity>
                   </View>
                 </View>
-              )}
-            </View>
 
-            <ScrollView style={{ flex: 1, backgroundColor: "#ffffff" }} contentContainerStyle={{ padding: 15 }}>
-              <Text style={{ fontSize: 15, fontWeight: "bold", color: "#212121", marginBottom: 10 }}>
-                Test Leaderboard (Highest to Lowest)
-              </Text>
-
-              {leaderboard.length === 0 ? (
-                <View style={{ padding: 40, alignItems: "center" }}>
-                  <Ionicons name="trophy-outline" size={36} color="#757575" />
-                  <Text style={{ color: "#757575", marginTop: 10 }}>No completed attempts yet.</Text>
-                </View>
-              ) : (
-                <View style={{ borderTopWidth: 1, borderColor: "#eee" }}>
-                  {leaderboard.map((entry: any, index: number) => {
-                    const isGenericName = (name: string) => {
-                      if (!name) return true;
-                      const s = String(name).trim().toLowerCase();
-                      return s === "student" || s === "guest" || s === "guest user" || s === "n/a" || s.startsWith("guest:") || s.startsWith("guest ") || s.startsWith("student (") || s.startsWith("stu-");
-                    };
-
-                    const resolvedStudent = students.find((s: any) => s.id === entry.studentId || s.userId === entry.studentId);
-                    const resolvedLead = leads.find((ld: any) => ld.id === entry.studentId || ld.userId === entry.studentId);
-                    const resolvedUser = user && (user.id === entry.studentId || user.userId === entry.studentId || user.leadId === entry.studentId || user.email === entry.studentId) ? user : null;
-
-                    let studentName = "";
-                    if (resolvedStudent) {
-                      studentName = getStudentName(resolvedStudent) || resolvedStudent.loginUsername || resolvedStudent.firstName;
-                    } else if (resolvedLead) {
-                      studentName = resolvedLead.name || resolvedLead.username;
-                    } else if (resolvedUser) {
-                      studentName = resolvedUser.name || resolvedUser.username || resolvedUser.email?.split("@")[0];
-                    }
-
-                    if (isGenericName(studentName) && entry.studentName && !isGenericName(entry.studentName)) {
-                      studentName = entry.studentName;
-                    }
-
-                    if (isGenericName(studentName) && user) {
-                      if (user.id === entry.studentId || user.userId === entry.studentId || user.leadId === entry.studentId || user.email === entry.studentId) {
-                        studentName = user.name || user.email?.split("@")[0];
-                      }
-                    }
-
-                    if (isGenericName(studentName)) {
-                      studentName = entry.username || entry.name || (user?.name ? user.name : "Guest User");
-                    }
-
-                    const isPhoneNum = (val: string) => /^\d{7,15}$/.test(String(val || "").trim().replace(/[\s\-\+\(\)]/g, ""));
-                    let rollNo = (entry.rollNumber && !isGenericName(entry.rollNumber) && !isPhoneNum(entry.rollNumber)) ? entry.rollNumber : "";
-                    if (!rollNo && resolvedStudent) rollNo = resolvedStudent.rollNumber || resolvedStudent.rollNo || resolvedStudent.loginUsername;
-                    if (!rollNo || isGenericName(rollNo) || isPhoneNum(rollNo) || rollNo === studentName || resolvedLead) rollNo = "Guest";
-
-                    return (
-                      <View key={entry.id || index} style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        paddingVertical: 12,
-                        borderBottomWidth: 1,
-                        borderColor: "#eee"
-                      }}>
-                        <Text style={{ width: 32, fontWeight: "bold", color: index === 0 ? "#fbc02d" : index === 1 ? "#9e9e9e" : index === 2 ? "#b5651d" : "#757575", fontSize: 14 }}>
-                          #{index + 1}
-                        </Text>
-                        <View style={{ flex: 1 }}>
-                          <Text style={{ fontWeight: "bold", color: "#212121", fontSize: 13 }}>{studentName}</Text>
-                          <Text style={{ fontSize: 11, color: "#1565c0", marginTop: 1 }}>Roll No: {rollNo}</Text>
+                {/* Active Students Currently Writing Exam */}
+                {liveCount?.activeStudents?.length > 0 && (
+                  <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderColor: darkMode ? "#3f1e1e" : "#ffcdd2" }}>
+                    <Text style={{ fontSize: 11, fontWeight: "800", color: "#c62828", marginBottom: 6 }}>CURRENTLY WRITING (LIVE):</Text>
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                      {liveCount.activeStudents.map((as: any, idx: number) => (
+                        <View key={as.attemptId || idx} style={{ backgroundColor: darkMode ? "#1e1e1e" : "#fff", borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: darkMode ? "#3f1e1e" : "#ef9a9a", flexDirection: "row", alignItems: "center", gap: 4 }}>
+                          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#2e7d32" }} />
+                          <Text style={{ fontSize: 11, fontWeight: "bold", color: darkMode ? "#fff" : "#212121" }}>{as.studentName}</Text>
+                          <Text style={{ fontSize: 10, color: darkMode ? "#aaa" : "#757575" }}>({as.rollNumber})</Text>
                         </View>
-                        <View style={{ alignItems: "flex-end" }}>
-                          <Text style={{ fontWeight: "bold", color: "#2e7d32", fontSize: 14 }}>
-                            {entry.obtainedMarks} / {entry.totalMarks}
-                          </Text>
-                          <Text style={{ fontSize: 11, color: "#757575" }}>
-                            {Math.round(entry.percentage)}% · {getPerformanceStatus(entry.obtainedMarks || 0, entry.totalMarks || 0, entry.percentage).label}
-                          </Text>
-                        </View>
+                      ))}
+                    </View>
+                  </View>
+                )}
+              </View>
+
+              {/* Segmented Tab Switcher */}
+              <View style={{
+                flexDirection: "row",
+                backgroundColor: darkMode ? "#18181b" : "#ffffff",
+                borderBottomWidth: 1,
+                borderColor: darkMode ? "#27272a" : "#e2e8f0"
+              }}>
+                <TouchableOpacity
+                  onPress={() => setMonitorActiveTab("leaderboard")}
+                  style={{
+                    flex: 1,
+                    paddingVertical: 12,
+                    alignItems: "center",
+                    borderBottomWidth: 3,
+                    borderBottomColor: monitorActiveTab === "leaderboard" ? "#c62828" : "transparent"
+                  }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Ionicons
+                      name="trophy-outline"
+                      size={16}
+                      color={monitorActiveTab === "leaderboard" ? "#c62828" : (darkMode ? "#a1a1aa" : "#757575")}
+                    />
+                    <Text style={{
+                      fontSize: 13,
+                      fontWeight: "bold",
+                      color: monitorActiveTab === "leaderboard" ? "#c62828" : (darkMode ? "#a1a1aa" : "#757575")
+                    }}>
+                      Leaderboard ({leaderboard.length})
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => setMonitorActiveTab("absent")}
+                  style={{
+                    flex: 1,
+                    paddingVertical: 12,
+                    alignItems: "center",
+                    borderBottomWidth: 3,
+                    borderBottomColor: monitorActiveTab === "absent" ? "#c62828" : "transparent"
+                  }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Ionicons
+                      name="person-remove-outline"
+                      size={16}
+                      color={monitorActiveTab === "absent" ? "#c62828" : (darkMode ? "#a1a1aa" : "#757575")}
+                    />
+                    <Text style={{
+                      fontSize: 13,
+                      fontWeight: "bold",
+                      color: monitorActiveTab === "absent" ? "#c62828" : (darkMode ? "#a1a1aa" : "#757575")
+                    }}>
+                      Absent / Not Attended ({absentStudents.length})
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView style={{ flex: 1, backgroundColor: darkMode ? "#121212" : "#ffffff" }} contentContainerStyle={{ padding: 15 }}>
+                {monitorActiveTab === "leaderboard" ? (
+                  <>
+                    <Text style={{ fontSize: 15, fontWeight: "bold", color: darkMode ? "#fff" : "#212121", marginBottom: 10 }}>
+                      Test Leaderboard (Highest to Lowest)
+                    </Text>
+
+                    {leaderboard.length === 0 ? (
+                      <View style={{ padding: 40, alignItems: "center" }}>
+                        <Ionicons name="trophy-outline" size={36} color="#757575" />
+                        <Text style={{ color: "#757575", marginTop: 10 }}>No completed attempts yet.</Text>
                       </View>
-                    );
-                  })}
-                </View>
-              )}
-            </ScrollView>
-          </SafeAreaView>
-        </Modal>
-      )}
+                    ) : (
+                      <View style={{ borderTopWidth: 1, borderColor: darkMode ? "#27272a" : "#eee" }}>
+                        {leaderboard.map((entry: any, index: number) => {
+                          const isGenericName = (name: string) => {
+                            if (!name) return true;
+                            const s = String(name).trim().toLowerCase();
+                            return s === "student" || s === "guest" || s === "guest user" || s === "n/a" || s.startsWith("guest:") || s.startsWith("guest ") || s.startsWith("student (") || s.startsWith("stu-");
+                          };
+
+                          const resolvedStudent = students.find((s: any) => s.id === entry.studentId || s.userId === entry.studentId);
+                          const resolvedLead = leads.find((ld: any) => ld.id === entry.studentId || ld.userId === entry.studentId);
+                          const resolvedUser = user && (user.id === entry.studentId || user.userId === entry.studentId || user.leadId === entry.studentId || user.email === entry.studentId) ? user : null;
+
+                          let studentName = "";
+                          if (resolvedStudent) {
+                            studentName = getStudentName(resolvedStudent) || resolvedStudent.loginUsername || resolvedStudent.firstName;
+                          } else if (resolvedLead) {
+                            studentName = resolvedLead.name || resolvedLead.username;
+                          } else if (resolvedUser) {
+                            studentName = resolvedUser.name || resolvedUser.username || resolvedUser.email?.split("@")[0];
+                          }
+
+                          if (isGenericName(studentName) && entry.studentName && !isGenericName(entry.studentName)) {
+                            studentName = entry.studentName;
+                          }
+
+                          if (isGenericName(studentName) && user) {
+                            if (user.id === entry.studentId || user.userId === entry.studentId || user.leadId === entry.studentId || user.email === entry.studentId) {
+                              studentName = user.name || user.email?.split("@")[0];
+                            }
+                          }
+
+                          if (isGenericName(studentName)) {
+                            studentName = entry.username || entry.name || (user?.name ? user.name : "Guest User");
+                          }
+
+                          const isPhoneNum = (val: string) => /^\d{7,15}$/.test(String(val || "").trim().replace(/[\s\-\+\(\)]/g, ""));
+                          let rollNo = (entry.rollNumber && !isGenericName(entry.rollNumber) && !isPhoneNum(entry.rollNumber)) ? entry.rollNumber : "";
+                          if (!rollNo && resolvedStudent) rollNo = resolvedStudent.rollNumber || resolvedStudent.rollNo || resolvedStudent.loginUsername;
+                          if (!rollNo || isGenericName(rollNo) || isPhoneNum(rollNo) || rollNo === studentName || resolvedLead) rollNo = "Guest";
+
+                          return (
+                            <View key={entry.id || index} style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                              paddingVertical: 12,
+                              borderBottomWidth: 1,
+                              borderColor: darkMode ? "#27272a" : "#eee"
+                            }}>
+                              <Text style={{ width: 32, fontWeight: "bold", color: index === 0 ? "#fbc02d" : index === 1 ? "#9e9e9e" : index === 2 ? "#b5651d" : "#757575", fontSize: 14 }}>
+                                #{index + 1}
+                              </Text>
+                              <View style={{ flex: 1 }}>
+                                <Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#212121", fontSize: 13 }}>{studentName}</Text>
+                                <Text style={{ fontSize: 11, color: "#1565c0", marginTop: 1 }}>Roll No: {rollNo}</Text>
+                              </View>
+                              <View style={{ alignItems: "flex-end" }}>
+                                <Text style={{ fontWeight: "bold", color: "#2e7d32", fontSize: 14 }}>
+                                  {entry.obtainedMarks} / {entry.totalMarks}
+                                </Text>
+                                <Text style={{ fontSize: 11, color: darkMode ? "#a1a1aa" : "#757575" }}>
+                                  {Math.round(entry.percentage)}% · {getPerformanceStatus(entry.obtainedMarks || 0, entry.totalMarks || 0, entry.percentage).label}
+                                </Text>
+                              </View>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {/* Absent Students Section */}
+                    {/* Multiple Batches Filter Chips */}
+                    {distinctBatches.length > 1 && (
+                      <View style={{ marginBottom: 12 }}>
+                        <Text style={{ fontSize: 11, fontWeight: "700", color: darkMode ? "#a1a1aa" : "#64748b", marginBottom: 6, textTransform: "uppercase" }}>
+                          Filter by Assigned Batch ({distinctBatches.length} Batches):
+                        </Text>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexDirection: "row", gap: 8, paddingBottom: 4 }}>
+                          <TouchableOpacity
+                            onPress={() => setMonitorBatchFilter("all")}
+                            style={{
+                              paddingHorizontal: 12,
+                              paddingVertical: 6,
+                              borderRadius: 20,
+                              backgroundColor: monitorBatchFilter === "all" ? "#c62828" : (darkMode ? "#27272a" : "#f1f5f9"),
+                              borderWidth: 1,
+                              borderColor: monitorBatchFilter === "all" ? "#c62828" : (darkMode ? "#3f3f46" : "#cbd5e1")
+                            }}
+                          >
+                            <Text style={{
+                              fontSize: 12,
+                              fontWeight: "700",
+                              color: monitorBatchFilter === "all" ? "#ffffff" : (darkMode ? "#e4e4e7" : "#475569")
+                            }}>
+                              All Batches ({absentStudents.length})
+                            </Text>
+                          </TouchableOpacity>
+                          {distinctBatches.map(bName => {
+                            const count = absentStudents.filter(s => {
+                              const sB = getStudentBatches(s).map(normalizeBatch);
+                              const normB = normalizeBatch(bName);
+                              return sB.some(sb => sb === normB || sb.startsWith(normB + " ") || sb.startsWith(normB + "("));
+                            }).length;
+                            const isSelected = monitorBatchFilter.toLowerCase() === bName.toLowerCase();
+                            return (
+                              <TouchableOpacity
+                                key={bName}
+                                onPress={() => setMonitorBatchFilter(isSelected ? "all" : bName)}
+                                style={{
+                                  paddingHorizontal: 12,
+                                  paddingVertical: 6,
+                                  borderRadius: 20,
+                                  backgroundColor: isSelected ? "#c62828" : (darkMode ? "#27272a" : "#f1f5f9"),
+                                  borderWidth: 1,
+                                  borderColor: isSelected ? "#c62828" : (darkMode ? "#3f3f46" : "#cbd5e1")
+                                }}
+                              >
+                                <Text style={{
+                                  fontSize: 12,
+                                  fontWeight: "700",
+                                  color: isSelected ? "#ffffff" : (darkMode ? "#e4e4e7" : "#475569")
+                                }}>
+                                  {bName} ({count})
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </ScrollView>
+                      </View>
+                    )}
+
+                    {/* Search Absent Students Input */}
+                    <View style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      backgroundColor: darkMode ? "#27272a" : "#f8fafc",
+                      borderRadius: 8,
+                      paddingHorizontal: 10,
+                      borderWidth: 1,
+                      borderColor: darkMode ? "#3f3f46" : "#e2e8f0",
+                      marginBottom: 12
+                    }}>
+                      <Ionicons name="search" size={16} color={darkMode ? "#a1a1aa" : "#94a3b8"} />
+                      <TextInput
+                        placeholder="Search absent student by name, roll, phone..."
+                        placeholderTextColor={darkMode ? "#71717a" : "#94a3b8"}
+                        value={monitorAbsentSearch}
+                        onChangeText={setMonitorAbsentSearch}
+                        style={{ flex: 1, paddingVertical: 8, paddingHorizontal: 8, fontSize: 13, color: darkMode ? "#fff" : "#1e293b" }}
+                      />
+                      {monitorAbsentSearch.length > 0 && (
+                        <TouchableOpacity onPress={() => setMonitorAbsentSearch("")}>
+                          <Ionicons name="close-circle" size={16} color="#94a3b8" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+
+                    {/* Absent Students List */}
+                    {filteredAbsentStudents.length === 0 ? (
+                      <View style={{ padding: 40, alignItems: "center" }}>
+                        <Ionicons
+                          name={absentStudents.length === 0 ? "checkmark-circle-outline" : "search-outline"}
+                          size={36}
+                          color={absentStudents.length === 0 ? "#2e7d32" : "#757575"}
+                        />
+                        <Text style={{ color: darkMode ? "#a1a1aa" : "#757575", marginTop: 10, fontSize: 13, textAlign: "center" }}>
+                          {absentStudents.length === 0
+                            ? "All eligible students have attended this test!"
+                            : "No absent students match your filter or search."}
+                        </Text>
+                      </View>
+                    ) : (
+                      <View style={{ gap: 8 }}>
+                        {filteredAbsentStudents.map((s: any, idx: number) => {
+                          const sName = s.name || `${s.firstName || ""} ${s.lastName || ""}`.trim() || s.loginUsername || "Student";
+                          const sRoll = s.rollNumber || s.rollNo || s.loginUsername || "—";
+                          const sBatches = getStudentBatches(s);
+                          const matchingBatch = sBatches.find(sb => targetBatchList.some(tb => normalizeBatch(tb) === normalizeBatch(sb))) || s.batch || s.batchName || sBatches[0] || "General";
+                          const sPhone = s.phone || s.mobile || s.whatsappNumber || "";
+
+                          return (
+                            <View key={s.id || s.userId || idx} style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              paddingVertical: 10,
+                              paddingHorizontal: 12,
+                              backgroundColor: darkMode ? "#18181b" : "#ffffff",
+                              borderRadius: 8,
+                              borderWidth: 1,
+                              borderColor: darkMode ? "#27272a" : "#e2e8f0",
+                              gap: 10
+                            }}>
+                              <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: darkMode ? "#27272a" : "#f1f5f9", justifyContent: "center", alignItems: "center" }}>
+                                <Text style={{ fontSize: 11, fontWeight: "bold", color: darkMode ? "#a1a1aa" : "#64748b" }}>
+                                  #{idx + 1}
+                                </Text>
+                              </View>
+
+                              <View style={{ flex: 1 }}>
+                                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                  <Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#1e293b", fontSize: 13 }}>
+                                    {sName}
+                                  </Text>
+                                  <View style={{
+                                    backgroundColor: darkMode ? "#1e293b" : "#eff6ff",
+                                    borderColor: darkMode ? "#3b82f6" : "#bfdbfe",
+                                    borderWidth: 1,
+                                    paddingHorizontal: 6,
+                                    paddingVertical: 1,
+                                    borderRadius: 4
+                                  }}>
+                                    <Text style={{ fontSize: 10, fontWeight: "700", color: darkMode ? "#93c5fd" : "#1d4ed8" }}>
+                                      📚 {matchingBatch}
+                                    </Text>
+                                  </View>
+                                </View>
+
+                                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 3, flexWrap: "wrap" }}>
+                                  <Text style={{ fontSize: 11, color: darkMode ? "#94a3b8" : "#64748b" }}>
+                                    Roll: <Text style={{ fontWeight: "600", color: darkMode ? "#cbd5e1" : "#334155" }}>{sRoll}</Text>
+                                  </Text>
+                                  {sPhone ? (
+                                    <Text style={{ fontSize: 11, color: darkMode ? "#94a3b8" : "#64748b" }}>
+                                      📞 {sPhone}
+                                    </Text>
+                                  ) : null}
+                                </View>
+                              </View>
+
+                              <View style={{
+                                backgroundColor: isTestEnded ? "#fee2e2" : "#fef3c7",
+                                borderColor: isTestEnded ? "#fca5a5" : "#fcd34d",
+                                borderWidth: 1,
+                                paddingHorizontal: 8,
+                                paddingVertical: 3,
+                                borderRadius: 6
+                              }}>
+                                <Text style={{
+                                  fontSize: 10,
+                                  fontWeight: "700",
+                                  color: isTestEnded ? "#b91c1c" : "#b45309"
+                                }}>
+                                  {isTestEnded ? "Absent" : "Not Started"}
+                                </Text>
+                              </View>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
+                  </>
+                )}
+              </ScrollView>
+            </SafeAreaView>
+          </Modal>
+        );
+      })()}
 
       {/* ── TOP 5 REPORTED QUESTIONS POPUP MODAL ── */}
       {showTopReportsModal && (
@@ -40179,12 +45498,11 @@ SOURCE QUESTION PAPER:
                       totalFees: feeEditStudent.totalFees,
                       feesPaid: feeEditStudent.feesPaid,
                       modeOfPayment: feeEditModeOfPayment,
-                      transactionId: feeEditTransactionId
+                      transactionId: feeEditTransactionId,
+                      // Automatically unblock access and clear overdue alert upon any fee payment / installment update
+                      feeBlocked: false,
+                      feeAlertActive: false
                     };
-                    if (paid >= tot) {
-                      payload.feeBlocked = false;
-                      payload.feeAlertActive = false;
-                    }
                     executeEditOrApproval(
                       "fees_management",
                       "edit",
@@ -40192,10 +45510,24 @@ SOURCE QUESTION PAPER:
                       async () => {
                         try {
                           await api.put(`/erp/student/${feeEditStudent.id}`, payload);
+                          const targetStudentId = feeEditStudent.id;
                           setFeeEditStudent(null);
                           setFeeEditModeOfPayment("cash");
                           setFeeEditTransactionId("");
-                          loadStudents();
+
+                          // 1. Instantly update in-memory student state so phone view, APK, and desktop reflect immediately without refresh
+                          setStudents(prev => prev.map(s => (s.id === targetStudentId ? {
+                            ...s,
+                            ...payload,
+                            totalFees: Number(payload.totalFees),
+                            feesPaid: Number(payload.feesPaid),
+                            feeBlocked: false,
+                            feeAlertActive: false
+                          } : s)));
+
+                          // 2. Invalidate cache and force re-fetch from backend to guarantee persistent synchronization
+                          loadStudents(true);
+
                           Alert.alert("Success", "Student fee details updated successfully.");
                         } catch (err: any) {
                           Alert.alert("Error", err.message || "Failed to update fees.");
@@ -40602,8 +45934,12 @@ SOURCE QUESTION PAPER:
         const isBlocked = isStudentFeeBlocked(loggedStudent);
         if (!isBlocked) return null;
 
-        // If the student is currently on the pay-fees subpage, let them view and complete their fee payment
-        if (activeTab === "erp" && (erpSub === "pay-fees" || erpSub === "fees")) return null;
+        // Allow fee-pending / restricted students to access Fee Payment, Daily Content, and Resources
+        const isAllowedFeePage = activeTab === "erp" && (erpSub === "pay-fees" || erpSub === "fees");
+        const isAllowedDailyContent = activeTab === "lms" && lmsSub === "daily-content";
+        const isAllowedResources = activeTab === "lms" && lmsSub === "resources";
+
+        if (isAllowedFeePage || isAllowedDailyContent || isAllowedResources) return null;
 
         const tot = Number(loggedStudent.totalFees) || 0;
         const paid = Number(loggedStudent.feesPaid) || 0;
@@ -40614,11 +45950,12 @@ SOURCE QUESTION PAPER:
           <Modal visible={true} transparent={true} animationType="fade">
             <View style={{
               flex: 1,
+              width: "100%",
               backgroundColor: "rgba(0,0,0,0.85)",
               justifyContent: "center",
               alignItems: "center",
               padding: 16,
-              minHeight: "100vh" as any,
+              ...(Platform.OS === 'web' ? { minHeight: "100vh" as any } : { height: "100%" }),
               zIndex: 999999
             }}>
               <View style={{
@@ -40646,10 +45983,8 @@ SOURCE QUESTION PAPER:
 
                 <Text style={{ fontSize: 13, color: darkMode ? "#ccc" : "#424242", textAlign: "center", lineHeight: 18, marginBottom: 16 }}>
                   {isOverdue
-                    ? `Your academy account access has been placed on hold because your fee payment due date (${loggedStudent.feeAlertDueDate}) has passed. Please pay your pending fee to restore full access.`
-                    : loggedStudent.feeBlocked
-                      ? "Your academy account services have been temporarily restricted due to pending tuition dues. Please pay the pending fee to get access."
-                      : "Your portal access is restricted due to outstanding fee dues. Please pay the pending fee to get access."}
+                    ? `Your premium academy services (Exams, Live Classes & Recorded Lectures) are on hold because your fee payment due date (${loggedStudent.feeAlertDueDate}) has passed. You can still access Daily Content and Study Resources below, or pay your pending fees to restore full access.`
+                    : "Your premium academy services (Exams, Live Classes & Recorded Lectures) have been temporarily restricted due to pending tuition dues. You can still access Daily Content and Study Resources below, or complete your fee payment to restore full access."}
                 </Text>
 
                 {/* Outstanding Fee Summary Card */}
@@ -40702,7 +46037,7 @@ SOURCE QUESTION PAPER:
                 <TouchableOpacity
                   onPress={() => {
                     setActiveTab("erp");
-                    setErpSub("pay-fees");
+                    changeErpSub("pay-fees");
                   }}
                   style={{
                     width: "100%",
@@ -40713,7 +46048,7 @@ SOURCE QUESTION PAPER:
                     flexDirection: "row",
                     justifyContent: "center",
                     gap: 8,
-                    marginBottom: 10,
+                    marginBottom: 12,
                     shadowColor: "#c62828",
                     shadowOffset: { width: 0, height: 2 },
                     shadowOpacity: 0.3,
@@ -40724,6 +46059,60 @@ SOURCE QUESTION PAPER:
                   <Ionicons name="card-outline" size={18} color="#ffffff" />
                   <Text style={{ color: "#ffffff", fontWeight: "bold", fontSize: 14 }}>Pay Fees Online via QR Code / UPI</Text>
                 </TouchableOpacity>
+
+                {/* Accessible Learning Sections During Hold */}
+                <View style={{ width: "100%", marginBottom: 14, backgroundColor: darkMode ? "#262626" : "#f8fafc", borderRadius: 10, padding: 10, borderWidth: 1, borderColor: darkMode ? "#383838" : "#e2e8f0" }}>
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: darkMode ? "#94a3b8" : "#64748b", marginBottom: 8, textAlign: "center", letterSpacing: 0.5, textTransform: "uppercase" }}>
+                    Available Free Study Sections
+                  </Text>
+                  <View style={{ flexDirection: "row", gap: 8, width: "100%" }}>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setActiveTab("lms");
+                        changeLmsSub("daily-content");
+                      }}
+                      style={{
+                        flex: 1,
+                        backgroundColor: darkMode ? "#1e293b" : "#f0f9ff",
+                        borderColor: darkMode ? "#38bdf8" : "#bae6fd",
+                        borderWidth: 1,
+                        paddingVertical: 9,
+                        paddingHorizontal: 8,
+                        borderRadius: 8,
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 6
+                      }}
+                    >
+                      <Ionicons name="calendar-outline" size={15} color="#0284c7" />
+                      <Text style={{ color: darkMode ? "#38bdf8" : "#0284c7", fontWeight: "bold", fontSize: 12 }}>Daily Content</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={() => {
+                        setActiveTab("lms");
+                        changeLmsSub("resources");
+                      }}
+                      style={{
+                        flex: 1,
+                        backgroundColor: darkMode ? "#143026" : "#ecfdf5",
+                        borderColor: darkMode ? "#34d399" : "#a7f3d0",
+                        borderWidth: 1,
+                        paddingVertical: 9,
+                        paddingHorizontal: 8,
+                        borderRadius: 8,
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 6
+                      }}
+                    >
+                      <Ionicons name="folder-open-outline" size={15} color="#059669" />
+                      <Text style={{ color: darkMode ? "#34d399" : "#059669", fontWeight: "bold", fontSize: 12 }}>Resources</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
 
                 {/* Support Contact / Log Out */}
                 <View style={{ flexDirection: "row", justifyContent: "space-between", width: "100%", marginTop: 6, gap: 10 }}>
@@ -40796,6 +46185,7 @@ SOURCE QUESTION PAPER:
 
         return (
           <NativeDailyContentModal
+            user={user}
             content={selectedDailyContentPreview}
             displaySrc={displaySrc}
             onClose={() => setSelectedDailyContentPreview(null)}
@@ -40937,16 +46327,59 @@ SOURCE QUESTION PAPER:
               borderColor: darkMode ? "#333" : "#e0e0e0"
             }}>
               {/* Header */}
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15, borderBottomWidth: 1, borderBottomColor: darkMode ? "#333" : "#eee", paddingBottom: 10 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15, borderBottomWidth: 1, borderBottomColor: darkMode ? "#333" : "#eee", paddingBottom: 10, flexWrap: "wrap", gap: 10 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1, minWidth: 200 }}>
                   <Ionicons name="trophy" size={22} color="#fbc02d" />
-                  <Text style={{ fontSize: 16, fontWeight: "bold", color: darkMode ? "#fff" : "#212121" }}>
+                  <Text numberOfLines={1} style={{ fontSize: 16, fontWeight: "bold", color: darkMode ? "#fff" : "#212121", flex: 1 }}>
                     {studentLeaderboardTest?.title || "Test Leaderboard"}
                   </Text>
                 </View>
-                <TouchableOpacity onPress={() => setShowStudentLeaderboardModal(false)} style={{ padding: 4 }}>
-                  <Ionicons name="close-circle-outline" size={26} color={darkMode ? "#aaa" : "#757575"} />
-                </TouchableOpacity>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  {(!user || (user.role !== "student" && user.role !== "user")) && (
+                    <>
+                      <TouchableOpacity
+                        onPress={() => downloadOfflineExcelTemplate(studentLeaderboardTest)}
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 4,
+                          paddingVertical: 6,
+                          paddingHorizontal: 10,
+                          borderRadius: 6,
+                          backgroundColor: darkMode ? "#2a2a2a" : "#f0f0f0",
+                          borderWidth: 1,
+                          borderColor: darkMode ? "#444" : "#d0d0d0"
+                        }}
+                      >
+                        <Ionicons name="download-outline" size={14} color={darkMode ? "#e0e0e0" : "#333"} />
+                        <Text style={{ fontSize: 11, fontWeight: "600", color: darkMode ? "#e0e0e0" : "#333" }}>Template</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        disabled={offlineExcelUploading}
+                        onPress={() => handleUploadOfflineExcel(studentLeaderboardTest)}
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 4,
+                          paddingVertical: 6,
+                          paddingHorizontal: 12,
+                          borderRadius: 6,
+                          backgroundColor: "#1b5e20",
+                          opacity: offlineExcelUploading ? 0.6 : 1
+                        }}
+                      >
+                        <Ionicons name="cloud-upload-outline" size={14} color="#fff" />
+                        <Text style={{ fontSize: 11, fontWeight: "bold", color: "#fff" }}>
+                          {offlineExcelUploading ? "Uploading..." : "Upload Excel"}
+                        </Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
+                  <TouchableOpacity onPress={() => setShowStudentLeaderboardModal(false)} style={{ padding: 4 }}>
+                    <Ionicons name="close-circle-outline" size={26} color={darkMode ? "#aaa" : "#757575"} />
+                  </TouchableOpacity>
+                </View>
               </View>
 
               {/* Content */}
@@ -40973,9 +46406,12 @@ SOURCE QUESTION PAPER:
                           : (entry.studentName && entry.studentName !== "Student" && !entry.studentName.startsWith("Student (") ? entry.studentName : (entry.username || entry.name || "Guest User"));
 
                     const isPhoneNum = (val: string) => /^\d{7,15}$/.test(String(val || "").trim().replace(/[\s\-\+\(\)]/g, ""));
-                    const validRoll = (entry.rollNumber && entry.rollNumber !== "N/A" && entry.rollNumber !== "Guest" && entry.rollNumber !== "Student" && !isPhoneNum(entry.rollNumber))
-                      ? entry.rollNumber
-                      : (resolvedStudent?.rollNumber || resolvedStudent?.rollNo || resolvedStudent?.loginUsername);
+                    const assignedMockRoll = entry.mockRollNumber || studentLeaderboardTest?.mockConfig?.mockRollNumbers?.[entry.studentId];
+                    const validRoll = assignedMockRoll
+                      ? assignedMockRoll
+                      : (entry.rollNumber && entry.rollNumber !== "N/A" && entry.rollNumber !== "Guest" && entry.rollNumber !== "Student" && !isPhoneNum(entry.rollNumber))
+                        ? entry.rollNumber
+                        : (resolvedStudent?.rollNumber || resolvedStudent?.rollNo || resolvedStudent?.loginUsername);
 
                     const rollVal = (validRoll && !isPhoneNum(validRoll)) ? validRoll : "Guest";
                     const studentLabel = sName
@@ -41056,9 +46492,12 @@ SOURCE QUESTION PAPER:
                               : (entry.studentName && entry.studentName !== "Student" && !entry.studentName.startsWith("Student (") ? entry.studentName : (entry.username || entry.name || "Guest User"));
 
                         const isPhoneNum = (val: string) => /^\d{7,15}$/.test(String(val || "").trim().replace(/[\s\-\+\(\)]/g, ""));
-                        const validRoll = (entry.rollNumber && entry.rollNumber !== "N/A" && entry.rollNumber !== "Guest" && entry.rollNumber !== "Student" && !isPhoneNum(entry.rollNumber))
-                          ? entry.rollNumber
-                          : (resolvedStudent?.rollNumber || resolvedStudent?.rollNo || resolvedStudent?.loginUsername);
+                        const assignedMockRoll = entry.mockRollNumber || studentLeaderboardTest?.mockConfig?.mockRollNumbers?.[entry.studentId];
+                        const validRoll = assignedMockRoll
+                          ? assignedMockRoll
+                          : (entry.rollNumber && entry.rollNumber !== "N/A" && entry.rollNumber !== "Guest" && entry.rollNumber !== "Student" && !isPhoneNum(entry.rollNumber))
+                            ? entry.rollNumber
+                            : (resolvedStudent?.rollNumber || resolvedStudent?.rollNo || resolvedStudent?.loginUsername);
 
                         const rollVal = (validRoll && !isPhoneNum(validRoll)) ? validRoll : "Guest";
                         const studentLabel = sName
@@ -41135,7 +46574,7 @@ SOURCE QUESTION PAPER:
       {/* Secure PDF Container Modal */}
       {selectedResourceId && (Platform.OS === 'web' ? (
         <Suspense fallback={
-          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#0f1219', zIndex: 9999, justifyContent: 'center', alignItems: 'center' }}>
+          <View style={{ position: 'fixed' as any, top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#0f1219', zIndex: 99999, justifyContent: 'center', alignItems: 'center' }}>
             <RNSkeleton style={{ width: '90%', height: 44, marginBottom: 16 }} darkMode={darkMode} />
             <RNSkeleton style={{ width: '90%', height: '80%' }} darkMode={darkMode} />
           </View>
@@ -41150,6 +46589,9 @@ SOURCE QUESTION PAPER:
           resourceId={selectedResourceId}
           onClose={() => setSelectedResourceId(null)}
           darkMode={darkMode}
+          user={user}
+          api={api}
+          getBaseUrl={getBaseUrl}
         />
       ))}
 
@@ -41245,6 +46687,17 @@ SOURCE QUESTION PAPER:
                   onPress={() => {
                     handleCloseCampaignBanner();
                     if (user?.role === "guest" || !user) {
+                      const uName = user?.name || guestName || "";
+                      const uPhone = user?.phone || guestPhone || "";
+                      const uEmail = user?.email || guestEmail || "";
+                      const uCity = user?.city || "";
+                      setAdmissionForm(prev => ({
+                        ...prev,
+                        name: uName || prev.name,
+                        phone: uPhone || prev.phone,
+                        email: uEmail || prev.email,
+                        city: uCity || prev.city
+                      }));
                       setShowAdmissionForm(true);
                     } else {
                       Alert.alert("Enquiry Recorded", "Thank you for your interest! Our team has logged your response.");
@@ -41388,10 +46841,10 @@ SOURCE QUESTION PAPER:
                         {isDelete
                           ? "Target Record Details"
                           : isCreate
-                          ? `New Record Fields (${parsed.fields.length})`
-                          : approvalViewMode === "diff" && parsed.changedFields.length > 0
-                          ? `Requested Modifications (${parsed.changedFields.length})`
-                          : `Populated Record Fields (${parsed.allPopulatedFields.length})`}
+                            ? `New Record Fields (${parsed.fields.length})`
+                            : approvalViewMode === "diff" && parsed.changedFields.length > 0
+                              ? `Requested Modifications (${parsed.changedFields.length})`
+                              : `Populated Record Fields (${parsed.allPopulatedFields.length})`}
                       </Text>
 
                       {isDelete ? (
@@ -41498,9 +46951,6 @@ SOURCE QUESTION PAPER:
 }
 
 export default function App() {
-  const [splashDone, setSplashDone] = useState(() => Platform.OS === "web");
-  const [onboardDone, setOnboardDone] = useState(() => Platform.OS === "web");
-
   useEffect(() => {
     // Native mobile app launch guard: enable FLAG_SECURE on startup for APK
     if (Platform.OS !== "web") {
@@ -41508,39 +46958,7 @@ export default function App() {
         ScreenCapture.preventScreenCaptureAsync().catch(() => { });
       } catch (_) { }
     }
-
-    if (Platform.OS === "web" && typeof window !== "undefined") {
-      const handleHashChange = () => {
-        if (window.location.hash && window.location.hash.includes("onboarding")) {
-          setOnboardDone(false);
-        }
-      };
-      window.addEventListener("hashchange", handleHashChange);
-      return () => window.removeEventListener("hashchange", handleHashChange);
-    } else {
-      AsyncStorage.getItem(ONBOARDING_KEY).then(val => {
-        if (val === "true") {
-          setOnboardDone(true);
-        }
-      }).catch(() => { });
-    }
   }, []);
-
-  if (!splashDone) {
-    return (
-      <SafeAreaProvider initialMetrics={safeInitialMetrics} initialSafeAreaInsets={safeInitialInsets}>
-        <SplashScreen onDone={() => setSplashDone(true)} />
-      </SafeAreaProvider>
-    );
-  }
-
-  if (!onboardDone) {
-    return (
-      <SafeAreaProvider initialMetrics={safeInitialMetrics} initialSafeAreaInsets={safeInitialInsets}>
-        <OnboardingScreens onDone={() => setOnboardDone(true)} />
-      </SafeAreaProvider>
-    );
-  }
 
   if (Platform.OS !== "web") {
     return (

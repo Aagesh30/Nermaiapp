@@ -94,7 +94,7 @@ export const CommentInput = ({ liveSessionId, isAdmin }: CommentInputProps) => {
 const styles = StyleSheet.create({
   container: {
     backgroundColor: colors.surface,
-    padding: 12,
+    padding: 14,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.05)',
   },
@@ -106,8 +106,8 @@ const styles = StyleSheet.create({
   modeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 16,
     backgroundColor: '#2A2A2A',
   },
@@ -122,7 +122,7 @@ const styles = StyleSheet.create({
   },
   modeText: {
     color: colors.textSecondary,
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '600',
     marginLeft: 6,
   },
@@ -138,7 +138,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#1A1A1A',
     borderRadius: 20,
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
     paddingTop: 12,
     paddingBottom: 12,
     color: colors.textPrimary,

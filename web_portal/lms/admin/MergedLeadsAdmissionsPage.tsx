@@ -20,6 +20,8 @@ import { collection, onSnapshot } from 'firebase/firestore';
 
 export type NatureOfEnquiry = 'visit' | 'phone' | 'whatsapp' | 'Telegram' | 'W35' | 'FB' | 'Instagram' | 'portal';
 
+export type ClassMode = 'Offline' | 'Online' | 'Hybrid' | 'Recorded';
+
 export interface UnifiedRecord {
   id: string;
   sourceType: 'admission' | 'lead';
@@ -28,7 +30,7 @@ export interface UnifiedRecord {
   name: string;
   contact: string;
   email?: string;
-  mode: 'Offline' | 'Online' | 'Hybrid';
+  mode: ClassMode;
   joinStatus: 'new' | 'contacted' | 'follow_up' | 'joined' | 'not_interested';
   atten: string; // Staff who attended
   reminder1: string;
@@ -43,18 +45,34 @@ export interface UnifiedRecord {
   rawDetails?: Record<string, any>;
 }
 
-const NATURE_OPTIONS: { val: NatureOfEnquiry; label: string; bg: string; color: string }[] = [
-  { val: 'visit', label: 'visit', bg: '#fee2e2', color: '#b91c1c' },
-  { val: 'phone', label: 'phone', bg: '#dcfce7', color: '#15803d' },
-  { val: 'whatsapp', label: 'whatsapp', bg: '#065f46', color: '#ffffff' },
-  { val: 'Telegram', label: 'Telegram', bg: '#bae6fd', color: '#0369a1' },
-  { val: 'W35', label: 'W35', bg: '#1e3a8a', color: '#ffffff' },
-  { val: 'FB', label: 'FB', bg: '#ede9fe', color: '#6d28d9' },
-  { val: 'Instagram', label: 'Instagram', bg: '#fef3c7', color: '#b45309' },
-  { val: 'portal', label: 'portal', bg: '#f1f5f9', color: '#475569' }
+const NATURE_OPTIONS: { val: NatureOfEnquiry; label: string; bg: string; color: string; activeBg: string }[] = [
+  { val: 'visit', label: 'visit', bg: '#fee2e2', color: '#b91c1c', activeBg: '#dc2626' },
+  { val: 'phone', label: 'phone', bg: '#dcfce7', color: '#15803d', activeBg: '#16a34a' },
+  { val: 'whatsapp', label: 'whatsapp', bg: '#d1fae5', color: '#047857', activeBg: '#25D366' },
+  { val: 'Telegram', label: 'Telegram', bg: '#bae6fd', color: '#0369a1', activeBg: '#0284c7' },
+  { val: 'W35', label: 'W35', bg: '#e0e7ff', color: '#1e3a8a', activeBg: '#1e3a8a' },
+  { val: 'FB', label: 'FB', bg: '#ede9fe', color: '#6d28d9', activeBg: '#1877f2' },
+  { val: 'Instagram', label: 'Instagram', bg: '#fef3c7', color: '#b45309', activeBg: '#e1306c' },
+  { val: 'portal', label: 'portal', bg: '#f1f5f9', color: '#475569', activeBg: '#475569' }
 ];
 
-const MODE_OPTIONS: ('Offline' | 'Online' | 'Hybrid')[] = ['Offline', 'Online', 'Hybrid'];
+const COURSE_OPTIONS = [
+  'LDC',
+  'UDC',
+  'VAO',
+  'SSC',
+  'PC',
+  'SI',
+  'Banking',
+  'RRB',
+  'Puducherry Govt Exams',
+  'TNPSC 1 & 2',
+  'TNPSC 4',
+  'UPSC',
+  'Others'
+];
+
+const MODE_OPTIONS: ClassMode[] = ['Offline', 'Online', 'Hybrid', 'Recorded'];
 
 const JOIN_STATUS_OPTIONS: { val: UnifiedRecord['joinStatus']; label: string; bg: string; color: string }[] = [
   { val: 'new', label: 'New Enquiry', bg: '#f1f5f9', color: '#0f172a' },
@@ -93,6 +111,44 @@ export default function MergedLeadsAdmissionsPage() {
     return DEFAULT_STAFF_LIST;
   });
 
+  // Removed Staff List (Soft Delete for Dropdowns)
+  const [removedStaffList, setRemovedStaffList] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('crm_atten_removed_staff_list');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {}
+    return [];
+  });
+
+  const activeStaffList = staffList.filter(s => !removedStaffList.includes(s));
+
+  const handleRemoveStaff = (staffName: string) => {
+    if (staffName === 'Admin Staff') {
+      Alert.alert('Notice', 'Admin Staff cannot be removed.');
+      return;
+    }
+    setRemovedStaffList(prev => {
+      const updated = prev.includes(staffName) ? prev : [...prev, staffName];
+      try {
+        localStorage.setItem('crm_atten_removed_staff_list', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+  };
+
+  const handleRestoreStaff = (staffName: string) => {
+    setRemovedStaffList(prev => {
+      const updated = prev.filter(s => s !== staffName);
+      try {
+        localStorage.setItem('crm_atten_removed_staff_list', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+  };
+
   // Modal to Add New Staff Name
   const [showAddStaffModal, setShowAddStaffModal] = useState(false);
   const [newStaffInput, setNewStaffInput] = useState('');
@@ -119,7 +175,10 @@ export default function MergedLeadsAdmissionsPage() {
   const [editNature, setEditNature] = useState<NatureOfEnquiry>('phone');
   const [editJoinStatus, setEditJoinStatus] = useState<UnifiedRecord['joinStatus']>('new');
   const [editAtten, setEditAtten] = useState('Admin Staff');
-  const [editMode, setEditMode] = useState<'Offline' | 'Online' | 'Hybrid'>('Offline');
+  const [isCustomEditAtten, setIsCustomEditAtten] = useState(false);
+  const [showEditAttenPicker, setShowEditAttenPicker] = useState(false);
+  const [editMode, setEditMode] = useState<ClassMode>('Offline');
+  const [showEditModePicker, setShowEditModePicker] = useState(false);
   const [editReminder1, setEditReminder1] = useState('');
   const [editReminder2, setEditReminder2] = useState('');
   const [editReminder3, setEditReminder3] = useState('');
@@ -134,12 +193,32 @@ export default function MergedLeadsAdmissionsPage() {
   const [newContact, setNewContact] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newCourse, setNewCourse] = useState('');
+  const [isCustomCourse, setIsCustomCourse] = useState(false);
+  const [showCoursePicker, setShowCoursePicker] = useState(false);
   const [newNature, setNewNature] = useState<NatureOfEnquiry>('phone');
-  const [newMode, setNewMode] = useState<'Offline' | 'Online' | 'Hybrid'>('Offline');
+  const [newMode, setNewMode] = useState<ClassMode>('Offline');
+  const [showModePicker, setShowModePicker] = useState(false);
   const [newAtten, setNewAtten] = useState('Admin Staff');
+  const [isCustomAtten, setIsCustomAtten] = useState(false);
+  const [showAttenPicker, setShowAttenPicker] = useState(false);
   const [newReference, setNewReference] = useState('');
   const [newRemarks, setNewRemarks] = useState('');
   const [adding, setAdding] = useState(false);
+
+  // Horizontal Table Scroll Ref & Controls for mouse navigation
+  const tableScrollRef = useRef<any>(null);
+  const handleScrollTable = (direction: 'left' | 'right') => {
+    if (tableScrollRef.current) {
+      if (typeof tableScrollRef.current.scrollTo === 'function') {
+        tableScrollRef.current.scrollTo({
+          x: direction === 'left' ? 0 : 850,
+          animated: true
+        });
+      } else if (tableScrollRef.current.scrollBy) {
+        tableScrollRef.current.scrollBy({ left: direction === 'left' ? -450 : 450, behavior: 'smooth' });
+      }
+    }
+  };
 
   // Lead Broadcast Notice Modal
   const [showNotifyModal, setShowNotifyModal] = useState(false);
@@ -203,22 +282,53 @@ export default function MergedLeadsAdmissionsPage() {
   };
 
   // Convert raw API records into unified enquiry rows matching the official Excel layout
+  const safeFormatDate = (raw: any): string => {
+    if (!raw) return new Date().toLocaleDateString();
+    try {
+      let d: Date;
+      if (typeof raw === 'object' && raw._seconds !== undefined) {
+        d = new Date(raw._seconds * 1000);
+      } else if (typeof raw === 'object' && raw.seconds !== undefined) {
+        d = new Date(raw.seconds * 1000);
+      } else {
+        d = new Date(raw);
+      }
+      return isNaN(d.getTime()) ? new Date().toLocaleDateString() : d.toLocaleDateString();
+    } catch {
+      return new Date().toLocaleDateString();
+    }
+  };
+
+  const getRecordTimestamp = (item: any): number => {
+    const raw = item.rawDetails || item;
+    const target = raw.updatedAt || raw.lastActivityAt || raw.createdAt || raw.registeredAt || raw.appliedAt;
+    if (!target) return 0;
+    if (typeof target === 'number') return target;
+    if (typeof target === 'object' && target._seconds !== undefined) return target._seconds * 1000;
+    if (typeof target === 'object' && target.seconds !== undefined) return target.seconds * 1000;
+    const t = new Date(target).getTime();
+    return isNaN(t) ? 0 : t;
+  };
+
   const unifiedList = useMemo<UnifiedRecord[]>(() => {
     const list: UnifiedRecord[] = [];
 
     // Map Admissions
     admissions.forEach((item: any) => {
-      const dateVal = item.createdAt?._seconds
-        ? new Date(item.createdAt._seconds * 1000).toLocaleDateString()
-        : (item.createdAt ? new Date(item.createdAt).toLocaleDateString() : new Date().toLocaleDateString());
+      const dateVal = safeFormatDate(item.createdAt || item.appliedAt || item.submittedAt);
 
       let normNature: NatureOfEnquiry = item.natureOfEnquiry || (item.source?.toLowerCase().includes('walk') ? 'visit' : item.source?.toLowerCase().includes('what') ? 'whatsapp' : item.source?.toLowerCase().includes('tele') ? 'Telegram' : item.source?.toLowerCase().includes('fb') ? 'FB' : item.source?.toLowerCase().includes('insta') ? 'Instagram' : 'phone');
       
-      let normMode: 'Offline' | 'Online' | 'Hybrid' = 'Offline';
+      let normMode: ClassMode = 'Offline';
       if (item.preferredMode?.toLowerCase() === 'online') normMode = 'Online';
       else if (item.preferredMode?.toLowerCase() === 'hybrid') normMode = 'Hybrid';
+      else if (item.preferredMode?.toLowerCase() === 'recorded') normMode = 'Recorded';
 
-      let normJoinStatus: UnifiedRecord['joinStatus'] = item.status === 'converted' ? 'joined' : (item.joinStatus || 'new');
+      let normJoinStatus: UnifiedRecord['joinStatus'] = item.joinStatus || (item.status === 'converted' ? 'joined' : 'new');
+
+      const rawAtten = (item.atten || item.attendedBy || item.updatedByAdminName || item.createdBy || '').trim();
+      const isGuestStr = (s: string) => !s || s.includes('@') || s.toLowerCase().startsWith('guest') || s.toLowerCase() === 'user';
+      const cleanAtten = isGuestStr(rawAtten) ? 'Admin Staff' : rawAtten;
 
       list.push({
         id: item.id || item._id,
@@ -230,7 +340,7 @@ export default function MergedLeadsAdmissionsPage() {
         email: item.email || '',
         mode: normMode,
         joinStatus: normJoinStatus,
-        atten: item.atten || item.attendedBy || item.createdBy || 'Admin Staff',
+        atten: cleanAtten,
         reminder1: item.reminder1 || item.reminders?.[0] || '',
         reminder2: item.reminder2 || item.reminders?.[1] || '',
         reminder3: item.reminder3 || item.reminders?.[2] || '',
@@ -246,17 +356,20 @@ export default function MergedLeadsAdmissionsPage() {
 
     // Map Guest Leads
     leads.forEach((item: any) => {
-      const dateVal = item.registeredAt?._seconds
-        ? new Date(item.registeredAt._seconds * 1000).toLocaleDateString()
-        : (item.registeredAt ? new Date(item.registeredAt).toLocaleDateString() : new Date().toLocaleDateString());
+      const dateVal = safeFormatDate(item.registeredAt || item.createdAt);
 
       let normNature: NatureOfEnquiry = item.natureOfEnquiry || (item.source?.toLowerCase().includes('insta') ? 'Instagram' : item.source?.toLowerCase().includes('fb') ? 'FB' : item.source?.toLowerCase().includes('tele') ? 'Telegram' : item.source?.toLowerCase().includes('what') ? 'whatsapp' : 'portal');
 
-      let normMode: 'Offline' | 'Online' | 'Hybrid' = 'Offline';
+      let normMode: ClassMode = 'Offline';
       if (item.mode?.toLowerCase() === 'online') normMode = 'Online';
       else if (item.mode?.toLowerCase() === 'hybrid') normMode = 'Hybrid';
+      else if (item.mode?.toLowerCase() === 'recorded') normMode = 'Recorded';
 
-      let normJoinStatus: UnifiedRecord['joinStatus'] = item.status === 'converted' ? 'joined' : item.status === 'applied' ? 'follow_up' : (item.joinStatus || 'new');
+      let normJoinStatus: UnifiedRecord['joinStatus'] = item.joinStatus || (item.status === 'converted' ? 'joined' : item.status === 'applied' ? 'follow_up' : 'new');
+
+      const rawAtten = (item.atten || item.attendedBy || item.updatedByAdminName || '').trim();
+      const isGuestStr = (s: string) => !s || s.includes('@') || s.toLowerCase().startsWith('guest') || s.toLowerCase() === 'user';
+      const cleanAtten = isGuestStr(rawAtten) ? 'Admin Staff' : rawAtten;
 
       list.push({
         id: item.id || item._id,
@@ -268,7 +381,7 @@ export default function MergedLeadsAdmissionsPage() {
         email: item.email || '',
         mode: normMode,
         joinStatus: normJoinStatus,
-        atten: item.atten || item.attendedBy || 'Admin Staff',
+        atten: cleanAtten,
         reminder1: item.reminder1 || '',
         reminder2: item.reminder2 || '',
         reminder3: item.reminder3 || '',
@@ -282,28 +395,42 @@ export default function MergedLeadsAdmissionsPage() {
       });
     });
 
-    // Merge any custom staff names found in existing records into staffList
-    const customStaffs = new Set<string>();
-    list.forEach(r => {
-      if (r.atten && r.atten.trim()) customStaffs.add(r.atten.trim());
-    });
+    // Merge only valid staff names (filtering out guest emails/usernames) into staffList
+    const isGuestIdentifier = (str: string): boolean => {
+      if (!str || typeof str !== 'string') return true;
+      const s = str.trim().toLowerCase();
+      return s.includes('@') || s.startsWith('guest') || s === 'user' || s === 'unknown';
+    };
+
     setStaffList(prev => {
-      let changed = false;
-      const combined = [...prev];
+      // Filter existing staff list to purge any saved guest entries
+      const cleanExisting = prev.filter(s => !isGuestIdentifier(s));
+
+      const customStaffs = new Set<string>();
+      list.forEach(r => {
+        if (r.atten && !isGuestIdentifier(r.atten)) {
+          customStaffs.add(r.atten.trim());
+        }
+      });
+
+      const combined = [...cleanExisting];
       customStaffs.forEach(cs => {
         if (!combined.includes(cs)) {
           combined.push(cs);
-          changed = true;
         }
       });
-      return changed ? combined : prev;
+
+      // Clear out bad cached entries from localStorage
+      try {
+        localStorage.setItem('crm_atten_staff_list', JSON.stringify(combined));
+      } catch (e) {}
+
+      return combined;
     });
 
-    // Sort by Date Descending
+    // Sort by Latest Activity/Updated Timestamp Descending (Updated items immediately rise to top)
     return list.sort((a, b) => {
-      const timeA = a.createdAt?._seconds ? a.createdAt._seconds * 1000 : new Date(a.createdAt || 0).getTime();
-      const timeB = b.createdAt?._seconds ? b.createdAt._seconds * 1000 : new Date(b.createdAt || 0).getTime();
-      return timeB - timeA;
+      return getRecordTimestamp(b) - getRecordTimestamp(a);
     });
   }, [admissions, leads]);
 
@@ -385,6 +512,18 @@ export default function MergedLeadsAdmissionsPage() {
       );
     }
 
+    if (field === 'joinStatus' && value === 'joined' && statusFilter === 'pending') {
+      Alert.alert(
+        'Lead Moved to Joined',
+        `"${record.name}" has been marked as Joined! Since the filter is currently set to PENDING, this lead is now visible under the JOINED or ALL STATUS tab.`
+      );
+    } else if (field === 'joinStatus' && value !== 'joined' && statusFilter === 'joined') {
+      Alert.alert(
+        'Lead Moved to Pending',
+        `"${record.name}" status updated! Since the filter is currently set to JOINED, this lead is now visible under the PENDING or ALL STATUS tab.`
+      );
+    }
+
     try {
       if (record.sourceType === 'admission') {
         await api.patch(`/crm/admission/${record.id}`, payload);
@@ -458,7 +597,11 @@ export default function MergedLeadsAdmissionsPage() {
       }
 
       setSelectedRecord(null);
-      Alert.alert('Saved', 'Enquiry details updated successfully!');
+      if (editJoinStatus === 'joined' && statusFilter === 'pending') {
+        Alert.alert('Saved', 'Enquiry details updated! The lead is now marked as Joined and is visible under the JOINED or ALL STATUS filter.');
+      } else {
+        Alert.alert('Saved', 'Enquiry details updated successfully!');
+      }
     } catch (err) {
       console.error('Failed to update enquiry:', err);
       Alert.alert('Error', 'Failed to save changes.');
@@ -501,6 +644,13 @@ export default function MergedLeadsAdmissionsPage() {
       setNewContact('');
       setNewEmail('');
       setNewCourse('');
+      setIsCustomCourse(false);
+      setShowCoursePicker(false);
+      setShowModePicker(false);
+      setNewMode('Offline');
+      setNewAtten('Admin Staff');
+      setIsCustomAtten(false);
+      setShowAttenPicker(false);
       setNewReference('');
       setNewRemarks('');
       Alert.alert('Success', 'New Enquiry recorded successfully!');
@@ -720,20 +870,20 @@ export default function MergedLeadsAdmissionsPage() {
   };
 
   return (
-    <View style={[styles.container, isMobile && { padding: 12 }]}>
+    <View style={[styles.container, isMobile && { padding: 14 }]}>
       {/* Top Header */}
-      <View style={[styles.header, isMobile && { flexDirection: 'column', alignItems: 'stretch', gap: 12, padding: 14 }]}>
-        <View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+      <View style={[styles.header, isMobile && { flexDirection: 'column', alignItems: 'stretch', gap: 12, padding: 16 }]}>
+        <View style={{ flex: 1, minWidth: 260, paddingRight: 10 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <MaterialCommunityIcons name="book-account-outline" size={26} color="#b91c1c" />
-            <Text style={[styles.headerTitle, isMobile && { fontSize: 18 }]}>NERMAI IAS ACADEMY G ENQUIRY 2026</Text>
+            <Text style={[styles.headerTitle, isMobile && { fontSize: 20 }]}>NERMAI IAS ACADEMY G ENQUIRY 2026</Text>
           </View>
           <Text style={styles.headerSubtitle}>
             Consolidated management of Academy Admissions, Walk-in Enquiries, and Social Leads.
           </Text>
         </View>
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, justifyContent: isMobile ? 'space-between' : 'flex-end', flexWrap: 'wrap' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-start' }}>
           {/* Hidden File Input for Excel Upload */}
           {Platform.OS === 'web' && (
             <input
@@ -747,7 +897,16 @@ export default function MergedLeadsAdmissionsPage() {
 
           <TouchableOpacity
             style={[styles.addBtn, isMobile && { flex: 1, justifyContent: 'center' }]}
-            onPress={() => setShowAddModal(true)}
+            onPress={() => {
+              setNewCourse('');
+              setIsCustomCourse(false);
+              setShowCoursePicker(false);
+              setShowModePicker(false);
+              setNewAtten('Admin Staff');
+              setIsCustomAtten(false);
+              setShowAttenPicker(false);
+              setShowAddModal(true);
+            }}
           >
             <MaterialCommunityIcons name="plus-circle-outline" size={17} color="#fff" />
             <Text style={styles.addBtnText}>New Enquiry</Text>
@@ -799,26 +958,38 @@ export default function MergedLeadsAdmissionsPage() {
 
       {/* 4 Stat Metric Cards */}
       <View style={[styles.metricsRow, isMobile && { flexWrap: 'wrap', gap: 8 }]}>
-        <View style={[styles.metricCard, isMobile && { minWidth: '47%', flex: undefined, padding: 12 }]}>
-          <Text style={[styles.metricLabel, isMobile && { fontSize: 9 }]} numberOfLines={1}>TOTAL ENQUIRIES</Text>
-          <Text style={[styles.metricValue, { color: '#0f172a' }, isMobile && { fontSize: 20, marginTop: 2 }]}>{metrics.total}</Text>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => setStatusFilter('all')}
+          style={[styles.metricCard, isMobile && { minWidth: '47%', flex: undefined, padding: 14 }, statusFilter === 'all' && { borderColor: '#1d4ed8', borderWidth: 1.5 }]}
+        >
+          <Text style={[styles.metricLabel, isMobile && { fontSize: 11 }]} numberOfLines={1}>TOTAL ENQUIRIES</Text>
+          <Text style={[styles.metricValue, { color: '#0f172a' }, isMobile && { fontSize: 22, marginTop: 2 }]}>{metrics.total}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => setStatusFilter('pending')}
+          style={[styles.metricCard, isMobile && { minWidth: '47%', flex: undefined, padding: 14 }, statusFilter === 'pending' && { borderColor: '#d97706', borderWidth: 1.5 }]}
+        >
+          <Text style={[styles.metricLabel, isMobile && { fontSize: 11 }]} numberOfLines={1}>PENDING FOLLOW-UPS</Text>
+          <Text style={[styles.metricValue, { color: '#d97706' }, isMobile && { fontSize: 22, marginTop: 2 }]}>{metrics.pendingCount}</Text>
+        </TouchableOpacity>
+        <View style={[styles.metricCard, isMobile && { minWidth: '47%', flex: undefined, padding: 14 }]}>
+          <Text style={[styles.metricLabel, isMobile && { fontSize: 11 }]} numberOfLines={1}>DIRECT VISITS</Text>
+          <Text style={[styles.metricValue, { color: '#b91c1c' }, isMobile && { fontSize: 22, marginTop: 2 }]}>{metrics.visitCount}</Text>
         </View>
-        <View style={[styles.metricCard, isMobile && { minWidth: '47%', flex: undefined, padding: 12 }]}>
-          <Text style={[styles.metricLabel, isMobile && { fontSize: 9 }]} numberOfLines={1}>PENDING FOLLOW-UPS</Text>
-          <Text style={[styles.metricValue, { color: '#d97706' }, isMobile && { fontSize: 20, marginTop: 2 }]}>{metrics.pendingCount}</Text>
-        </View>
-        <View style={[styles.metricCard, isMobile && { minWidth: '47%', flex: undefined, padding: 12 }]}>
-          <Text style={[styles.metricLabel, isMobile && { fontSize: 9 }]} numberOfLines={1}>DIRECT VISITS</Text>
-          <Text style={[styles.metricValue, { color: '#b91c1c' }, isMobile && { fontSize: 20, marginTop: 2 }]}>{metrics.visitCount}</Text>
-        </View>
-        <View style={[styles.metricCard, isMobile && { minWidth: '47%', flex: undefined, padding: 12 }]}>
-          <Text style={[styles.metricLabel, isMobile && { fontSize: 9 }]} numberOfLines={1}>JOINED / ADMITTED</Text>
-          <Text style={[styles.metricValue, { color: '#16a34a' }, isMobile && { fontSize: 20, marginTop: 2 }]}>{metrics.joinedCount}</Text>
-        </View>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => setStatusFilter('joined')}
+          style={[styles.metricCard, isMobile && { minWidth: '47%', flex: undefined, padding: 14 }, statusFilter === 'joined' && { borderColor: '#16a34a', borderWidth: 1.5 }]}
+        >
+          <Text style={[styles.metricLabel, isMobile && { fontSize: 11 }]} numberOfLines={1}>JOINED / ADMITTED</Text>
+          <Text style={[styles.metricValue, { color: '#16a34a' }, isMobile && { fontSize: 22, marginTop: 2 }]}>{metrics.joinedCount}</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Clean Toolbar with Search & Nature Filter Pills */}
-      <View style={[styles.toolbar, isMobile && { flexDirection: 'column', alignItems: 'stretch', gap: 10, padding: 10 }]}>
+      <View style={[styles.toolbar, isMobile && { flexDirection: 'column', alignItems: 'stretch', gap: 10, padding: 12 }]}>
         <View style={[styles.searchBox, isMobile && { width: '100%' }]}>
           <MaterialCommunityIcons name="magnify" size={18} color="#94a3b8" />
           <TextInput
@@ -910,7 +1081,7 @@ export default function MergedLeadsAdmissionsPage() {
             const statusBadge = getJoinStatusBadge(record.joinStatus);
 
             return (
-              <View key={record.id + idx} style={{ backgroundColor: '#fff', borderRadius: 10, borderWidth: 1, borderColor: '#e2e8f0', padding: 14, marginBottom: 8 }}>
+              <View key={record.id + idx} style={{ backgroundColor: '#fff', borderRadius: 10, borderWidth: 1, borderColor: '#e2e8f0', padding: 16, marginBottom: 8 }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <View style={{ flex: 1, paddingRight: 8 }}>
                     {/* DROPDOWN 1: NATURE OF ENQUIRY (MOBILE) */}
@@ -922,17 +1093,17 @@ export default function MergedLeadsAdmissionsPage() {
                         <Text style={[styles.natureBadgeText, { color: natureBadge.color }]}>{natureBadge.label}</Text>
                         <MaterialCommunityIcons name="chevron-down" size={12} color={natureBadge.color} />
                       </TouchableOpacity>
-                      <Text style={{ fontSize: 11, color: '#94a3b8' }}>{record.dateStr}</Text>
+                      <Text style={{ fontSize: 13, color: '#94a3b8' }}>{record.dateStr}</Text>
                     </View>
-                    <Text style={{ fontSize: 15, fontWeight: '700', color: '#0f172a' }}>{record.name}</Text>
-                    {record.contact ? <Text style={{ fontSize: 13, color: '#1e293b', fontWeight: '600', marginTop: 2 }}>📞 {record.contact}</Text> : null}
+                    <Text style={{ fontSize: 17, fontWeight: '700', color: '#0f172a' }}>{record.name}</Text>
+                    {record.contact ? <Text style={{ fontSize: 15, color: '#1e293b', fontWeight: '600', marginTop: 2 }}>📞 {record.contact}</Text> : null}
                     
                     {/* DROPDOWN 4: ATTEN STAFF NAME (MOBILE) */}
                     <TouchableOpacity
                       style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}
                       onPress={() => setActivePicker({ recordId: record.id, field: 'atten', currentVal: record.atten })}
                     >
-                      <Text style={{ fontSize: 11, color: '#475569', fontWeight: '500' }}>👤 Atten: <Text style={{ color: '#1d4ed8', fontWeight: '700' }}>{record.atten || 'Admin Staff'}</Text></Text>
+                      <Text style={{ fontSize: 13, color: '#475569', fontWeight: '500' }}>👤 Atten: <Text style={{ color: '#1d4ed8', fontWeight: '700' }}>{record.atten || 'Admin Staff'}</Text></Text>
                       <MaterialCommunityIcons name="pencil-outline" size={12} color="#1d4ed8" />
                     </TouchableOpacity>
                   </View>
@@ -949,10 +1120,10 @@ export default function MergedLeadsAdmissionsPage() {
 
                 {/* Reminders / Reference snippet */}
                 {(record.reminder1 || record.reference || record.remarks1) && (
-                  <View style={{ backgroundColor: '#f8fafc', padding: 8, borderRadius: 6, marginTop: 8 }}>
-                    {record.reminder1 ? <Text style={{ fontSize: 11, color: '#b45309' }}>⏰ Rem: {record.reminder1}</Text> : null}
-                    {record.reference ? <Text style={{ fontSize: 11, color: '#475569' }}>🔗 Ref: {record.reference}</Text> : null}
-                    {record.remarks1 ? <Text style={{ fontSize: 11, color: '#334155' }} numberOfLines={2}>💬 {record.remarks1}</Text> : null}
+                  <View style={{ backgroundColor: '#f8fafc', padding: 10, borderRadius: 6, marginTop: 8 }}>
+                    {record.reminder1 ? <Text style={{ fontSize: 13, color: '#b45309' }}>⏰ Rem: {record.reminder1}</Text> : null}
+                    {record.reference ? <Text style={{ fontSize: 13, color: '#475569' }}>🔗 Ref: {record.reference}</Text> : null}
+                    {record.remarks1 ? <Text style={{ fontSize: 13, color: '#334155' }} numberOfLines={2}>💬 {record.remarks1}</Text> : null}
                   </View>
                 )}
 
@@ -1001,26 +1172,87 @@ export default function MergedLeadsAdmissionsPage() {
           })}
         </ScrollView>
       ) : (
-        <ScrollView style={styles.tableCard} horizontal showsHorizontalScrollIndicator={true}>
-          <View>
-            {/* Table Header matching the exact sheet columns */}
-            <View style={styles.tableHeaderRow}>
-              <Text style={[styles.thCell, { width: 50 }]}>SL. NO</Text>
-              <Text style={[styles.thCell, { width: 95 }]}>date</Text>
-              <Text style={[styles.thCell, { width: 140 }]}>nature of enquiry</Text>
-              <Text style={[styles.thCell, { width: 160 }]}>NAME</Text>
-              <Text style={[styles.thCell, { width: 120 }]}>CONTACT</Text>
-              <Text style={[styles.thCell, { width: 110 }]}>MODE</Text>
-              <Text style={[styles.thCell, { width: 135 }]}>join status</Text>
-              <Text style={[styles.thCell, { width: 145 }]}>ATTEN</Text>
-              <Text style={[styles.thCell, { width: 110 }]}>REMINDER 1</Text>
-              <Text style={[styles.thCell, { width: 110 }]}>REMINDER 2</Text>
-              <Text style={[styles.thCell, { width: 110 }]}>REMINDER 3</Text>
-              <Text style={[styles.thCell, { width: 150 }]}>REFERENCE / REMARKS</Text>
-              <Text style={[styles.thCell, { width: 150 }]}>REMARKS 1</Text>
-              <Text style={[styles.thCell, { width: 150 }]}>REMARKS 2</Text>
-              <Text style={[styles.thCell, { width: 80 }]}>ACTIONS</Text>
+        <>
+          {Platform.OS === 'web' && (
+            <style dangerouslySetInnerHTML={{ __html: `
+              /* Always visible horizontal scrollbar for CRM Table */
+              div[style*="overflow-x: auto"]::-webkit-scrollbar,
+              div[style*="overflow-x: scroll"]::-webkit-scrollbar {
+                height: 12px !important;
+                display: block !important;
+              }
+              div[style*="overflow-x: auto"]::-webkit-scrollbar-track,
+              div[style*="overflow-x: scroll"]::-webkit-scrollbar-track {
+                background: #f1f5f9 !important;
+                border-radius: 6px !important;
+              }
+              div[style*="overflow-x: auto"]::-webkit-scrollbar-thumb,
+              div[style*="overflow-x: scroll"]::-webkit-scrollbar-thumb {
+                background: #94a3b8 !important;
+                border-radius: 6px !important;
+                border: 2px solid #f1f5f9 !important;
+              }
+              div[style*="overflow-x: auto"]::-webkit-scrollbar-thumb:hover,
+              div[style*="overflow-x: scroll"]::-webkit-scrollbar-thumb:hover {
+                background: #64748b !important;
+              }
+            `}} />
+          )}
+
+          {/* Mouse-friendly Horizontal Scroll Controls */}
+          {!isMobile && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, paddingHorizontal: 2 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <MaterialCommunityIcons name="swap-horizontal" size={16} color="#64748b" />
+                <Text style={{ fontSize: 14, color: '#64748b', fontWeight: '600' }}>
+                  Horizontal Navigation (Reminders, Reference & Actions):
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <TouchableOpacity
+                  style={styles.tableScrollNavBtn}
+                  onPress={() => handleScrollTable('left')}
+                >
+                  <MaterialCommunityIcons name="chevron-left" size={18} color="#0f172a" />
+                  <Text style={styles.tableScrollNavBtnText}>Scroll Left</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.tableScrollNavBtn}
+                  onPress={() => handleScrollTable('right')}
+                >
+                  <Text style={styles.tableScrollNavBtnText}>Scroll Right</Text>
+                  <MaterialCommunityIcons name="chevron-right" size={18} color="#0f172a" />
+                </TouchableOpacity>
+              </View>
             </View>
+          )}
+
+          <ScrollView
+            ref={tableScrollRef}
+            style={styles.tableCard}
+            horizontal
+            showsHorizontalScrollIndicator={true}
+            persistentScrollbar={true}
+          >
+            <View>
+              {/* Table Header matching the exact sheet columns */}
+              <View style={styles.tableHeaderRow}>
+                <Text style={[styles.thCell, { width: 50 }]}>SL. NO</Text>
+                <Text style={[styles.thCell, { width: 95 }]}>date</Text>
+                <Text style={[styles.thCell, { width: 140 }]}>nature of enquiry</Text>
+                <Text style={[styles.thCell, { width: 160 }]}>NAME</Text>
+                <Text style={[styles.thCell, { width: 120 }]}>CONTACT</Text>
+                <Text style={[styles.thCell, { width: 110 }]}>MODE</Text>
+                <Text style={[styles.thCell, { width: 135 }]}>join status</Text>
+                <Text style={[styles.thCell, { width: 145 }]}>ATTENDED</Text>
+                <Text style={[styles.thCell, { width: 110 }]}>REMINDER 1</Text>
+                <Text style={[styles.thCell, { width: 110 }]}>REMINDER 2</Text>
+                <Text style={[styles.thCell, { width: 110 }]}>REMINDER 3</Text>
+                <Text style={[styles.thCell, { width: 150 }]}>REFERENCE / REMARKS</Text>
+                <Text style={[styles.thCell, { width: 150 }]}>REMARKS 1</Text>
+                <Text style={[styles.thCell, { width: 150 }]}>REMARKS 2</Text>
+                <Text style={[styles.thCell, { width: 80 }]}>ACTIONS</Text>
+              </View>
 
             {/* Table Body Rows */}
             <ScrollView style={{ maxHeight: 520 }} showsVerticalScrollIndicator={true}>
@@ -1034,7 +1266,7 @@ export default function MergedLeadsAdmissionsPage() {
                     <Text style={[styles.tdCell, { width: 50, color: '#94a3b8' }]}>{idx + 1}</Text>
 
                     {/* 2. date */}
-                    <Text style={[styles.tdCell, { width: 95, color: '#475569', fontSize: 12 }]}>{record.dateStr}</Text>
+                    <Text style={[styles.tdCell, { width: 95, color: '#475569', fontSize: 14 }]}>{record.dateStr}</Text>
 
                     {/* 3. nature of enquiry (INLINE DROPDOWN BOX) */}
                     <View style={{ width: 140, justifyContent: 'center' }}>
@@ -1046,7 +1278,7 @@ export default function MergedLeadsAdmissionsPage() {
                             backgroundColor: natureBadge.bg,
                             color: natureBadge.color,
                             fontWeight: '700',
-                            fontSize: '11px',
+                            fontSize: '13px',
                             border: '1px solid rgba(0,0,0,0.08)',
                             borderRadius: '14px',
                             padding: '4px 8px',
@@ -1075,7 +1307,7 @@ export default function MergedLeadsAdmissionsPage() {
                     {/* 4. NAME */}
                     <View style={{ width: 160, paddingRight: 6 }}>
                       <Text style={styles.nameText} numberOfLines={1}>{record.name}</Text>
-                      {record.preferredCourse ? <Text style={{ fontSize: 11, color: '#64748b' }} numberOfLines={1}>🎓 {record.preferredCourse}</Text> : null}
+                      {record.preferredCourse ? <Text style={{ fontSize: 13, color: '#64748b' }} numberOfLines={1}>🎓 {record.preferredCourse}</Text> : null}
                     </View>
 
                     {/* 5. CONTACT */}
@@ -1093,7 +1325,7 @@ export default function MergedLeadsAdmissionsPage() {
                             backgroundColor: '#f1f5f9',
                             color: '#475569',
                             fontWeight: '600',
-                            fontSize: '11px',
+                            fontSize: '13px',
                             border: '1px solid #cbd5e1',
                             borderRadius: '6px',
                             padding: '4px 6px',
@@ -1127,7 +1359,7 @@ export default function MergedLeadsAdmissionsPage() {
                             backgroundColor: statusBadge.bg,
                             color: statusBadge.color,
                             fontWeight: '700',
-                            fontSize: '11px',
+                            fontSize: '13px',
                             border: '1px solid rgba(0,0,0,0.08)',
                             borderRadius: '6px',
                             padding: '4px 8px',
@@ -1158,12 +1390,21 @@ export default function MergedLeadsAdmissionsPage() {
                       {Platform.OS === 'web' ? (
                         <select
                           value={record.atten || 'Admin Staff'}
-                          onChange={(e: any) => handleInlineUpdate(record, 'atten', e.target.value)}
+                          onChange={(e: any) => {
+                            const val = e.target.value;
+                            if (val === '__ADD_NEW__' || val === '__MANAGE_STAFF__') {
+                              setTargetRecordForStaff(val === '__ADD_NEW__' ? record : null);
+                              setNewStaffInput('');
+                              setShowAddStaffModal(true);
+                            } else {
+                              handleInlineUpdate(record, 'atten', val);
+                            }
+                          }}
                           style={{
                             backgroundColor: '#f8fafc',
                             color: '#0f172a',
                             fontWeight: '600',
-                            fontSize: '12px',
+                            fontSize: '14px',
                             border: '1px solid #cbd5e1',
                             borderRadius: '6px',
                             padding: '4px 6px',
@@ -1172,11 +1413,14 @@ export default function MergedLeadsAdmissionsPage() {
                             width: '135px'
                           }}
                         >
-                          {staffList.map(st => (
+                          {Array.from(new Set([...activeStaffList, record.atten])).filter(Boolean).map(st => (
                             <option key={st} value={st}>{st}</option>
                           ))}
                           <option value="__ADD_NEW__" style={{ fontWeight: 'bold', color: '#b91c1c' }}>
                             ➕ Add New Staff...
+                          </option>
+                          <option value="__MANAGE_STAFF__" style={{ fontWeight: 'bold', color: '#64748b' }}>
+                            🗑️ Remove / Manage Staff...
                           </option>
                         </select>
                       ) : (
@@ -1193,32 +1437,32 @@ export default function MergedLeadsAdmissionsPage() {
                     </View>
 
                     {/* 9. REMINDER 1 */}
-                    <Text style={[styles.tdCell, { width: 110, color: '#b45309', fontSize: 12 }]} numberOfLines={1}>
+                    <Text style={[styles.tdCell, { width: 110, color: '#b45309', fontSize: 14 }]} numberOfLines={1}>
                       {record.reminder1 || '-'}
                     </Text>
 
                     {/* 10. REMINDER 2 */}
-                    <Text style={[styles.tdCell, { width: 110, color: '#b45309', fontSize: 12 }]} numberOfLines={1}>
+                    <Text style={[styles.tdCell, { width: 110, color: '#b45309', fontSize: 14 }]} numberOfLines={1}>
                       {record.reminder2 || '-'}
                     </Text>
 
                     {/* 11. REMINDER 3 */}
-                    <Text style={[styles.tdCell, { width: 110, color: '#b45309', fontSize: 12 }]} numberOfLines={1}>
+                    <Text style={[styles.tdCell, { width: 110, color: '#b45309', fontSize: 14 }]} numberOfLines={1}>
                       {record.reminder3 || '-'}
                     </Text>
 
                     {/* 12. REFERENCE / REMARKS */}
-                    <Text style={[styles.tdCell, { width: 150, color: '#475569', fontSize: 12 }]} numberOfLines={1}>
+                    <Text style={[styles.tdCell, { width: 150, color: '#475569', fontSize: 14 }]} numberOfLines={1}>
                       {record.reference || '-'}
                     </Text>
 
                     {/* 13. REMARKS 1 */}
-                    <Text style={[styles.tdCell, { width: 150, color: '#475569', fontSize: 12 }]} numberOfLines={1}>
+                    <Text style={[styles.tdCell, { width: 150, color: '#475569', fontSize: 14 }]} numberOfLines={1}>
                       {record.remarks1 || '-'}
                     </Text>
 
                     {/* 14. REMARKS 2 */}
-                    <Text style={[styles.tdCell, { width: 150, color: '#475569', fontSize: 12 }]} numberOfLines={1}>
+                    <Text style={[styles.tdCell, { width: 150, color: '#475569', fontSize: 14 }]} numberOfLines={1}>
                       {record.remarks2 || '-'}
                     </Text>
 
@@ -1258,9 +1502,10 @@ export default function MergedLeadsAdmissionsPage() {
             </ScrollView>
           </View>
         </ScrollView>
+        </>
       )}
 
-      {/* QUICK ADD NEW STAFF MODAL */}
+      {/* QUICK ADD & MANAGE STAFF MODAL */}
       <Modal
         visible={showAddStaffModal}
         transparent={true}
@@ -1268,40 +1513,109 @@ export default function MergedLeadsAdmissionsPage() {
         onRequestClose={() => setShowAddStaffModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.dialogBox, { maxWidth: 420 }]}>
+          <View style={[styles.dialogBox, { maxWidth: 460 }]}>
             <View style={styles.dialogHeader}>
               <View>
-                <Text style={styles.dialogTitle}>Add New Attending Staff</Text>
-                <Text style={styles.dialogSubtitle}>Enter name of counselor, teacher, or receptionist.</Text>
+                <Text style={styles.dialogTitle}>Manage Attending Staff</Text>
+                <Text style={styles.dialogSubtitle}>Add new staff or remove inactive staff from drop-down list.</Text>
               </View>
               <TouchableOpacity onPress={() => setShowAddStaffModal(false)} style={{ padding: 4 }}>
                 <MaterialCommunityIcons name="close" size={22} color="#64748b" />
               </TouchableOpacity>
             </View>
 
-            <View style={{ padding: 20, gap: 12 }}>
-              <Text style={styles.sectionLabel}>STAFF / COUNSELOR NAME *</Text>
-              <TextInput
-                style={styles.dialogInput}
-                placeholder="e.g. Anand (Senior Counselor)"
-                value={newStaffInput}
-                onChangeText={setNewStaffInput}
-                autoFocus={true}
-              />
-            </View>
+            <ScrollView style={{ maxHeight: 420, paddingHorizontal: 22, paddingTop: 16 }}>
+              <View style={{ gap: 12 }}>
+                <Text style={styles.sectionLabel}>➕ ADD NEW STAFF / COUNSELOR *</Text>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <TextInput
+                    style={[styles.dialogInput, { flex: 1, height: 40 }]}
+                    placeholder="e.g. Anand (Senior Counselor)"
+                    value={newStaffInput}
+                    onChangeText={setNewStaffInput}
+                    autoFocus={true}
+                  />
+                  <TouchableOpacity
+                    style={[styles.dialogSaveBtn, { backgroundColor: '#b91c1c', height: 40, paddingHorizontal: 16, justifyContent: 'center' }]}
+                    onPress={handleAddNewStaffSubmit}
+                  >
+                    <Text style={styles.dialogSaveText}>Add</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={{ marginTop: 24, gap: 8, paddingBottom: 16 }}>
+                <Text style={styles.sectionLabel}>📋 CURRENT ACTIVE STAFF DROPDOWN LIST</Text>
+                <Text style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>
+                  Note: Removing a staff member hides them from future drop-down options, but keeps all previous record history untouched.
+                </Text>
+
+                {activeStaffList.map(st => (
+                  <View
+                    key={st}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justify: 'space-between',
+                      backgroundColor: '#f8fafc',
+                      borderWidth: 1,
+                      borderColor: '#e2e8f0',
+                      borderRadius: 8,
+                      paddingVertical: 8,
+                      paddingHorizontal: 12
+                    }}
+                  >
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: '#0f172a' }}>{st}</Text>
+                    {st !== 'Admin Staff' ? (
+                      <TouchableOpacity
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4, paddingHorizontal: 8, backgroundColor: '#fee2e2', borderRadius: 6 }}
+                        onPress={() => handleRemoveStaff(st)}
+                      >
+                        <MaterialCommunityIcons name="trash-can-outline" size={15} color="#b91c1c" />
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: '#b91c1c' }}>Remove</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={{ fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>Default</Text>
+                    )}
+                  </View>
+                ))}
+
+                {removedStaffList.length > 0 && (
+                  <View style={{ marginTop: 16, gap: 8, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#e2e8f0' }}>
+                    <Text style={[styles.sectionLabel, { color: '#94a3b8' }]}>↺ REMOVED STAFF (RESTORE IF NEEDED)</Text>
+                    {removedStaffList.map(rst => (
+                      <View
+                        key={rst}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justify: 'space-between',
+                          backgroundColor: '#f1f5f9',
+                          borderRadius: 8,
+                          paddingVertical: 6,
+                          paddingHorizontal: 12
+                        }}
+                      >
+                        <Text style={{ fontSize: 13, color: '#64748b', textDecorationLine: 'line-through' }}>{rst}</Text>
+                        <TouchableOpacity
+                          style={{ paddingVertical: 3, paddingHorizontal: 8, backgroundColor: '#dcfce7', borderRadius: 6 }}
+                          onPress={() => handleRestoreStaff(rst)}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: '#15803d' }}>Restore</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            </ScrollView>
 
             <View style={styles.dialogFooter}>
               <TouchableOpacity
-                style={styles.dialogCancelBtn}
+                style={[styles.dialogCancelBtn, { width: '100%', alignItems: 'center' }]}
                 onPress={() => setShowAddStaffModal(false)}
               >
-                <Text style={styles.dialogCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.dialogSaveBtn, { backgroundColor: '#b91c1c' }]}
-                onPress={handleAddNewStaffSubmit}
-              >
-                <Text style={styles.dialogSaveText}>Add Staff</Text>
+                <Text style={styles.dialogCancelText}>Done</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1320,7 +1634,7 @@ export default function MergedLeadsAdmissionsPage() {
           activeOpacity={1}
           onPress={() => setActivePicker(null)}
         >
-          <View style={[styles.dialogBox, { maxWidth: 360, padding: 16 }]} onStartShouldSetResponder={() => true}>
+          <View style={[styles.dialogBox, { maxWidth: 360, padding: 18 }]} onStartShouldSetResponder={() => true}>
             <Text style={[styles.dialogTitle, { marginBottom: 12 }]}>
               Select {activePicker?.field === 'nature' ? 'Nature of Enquiry' : activePicker?.field === 'mode' ? 'Class Mode' : activePicker?.field === 'joinStatus' ? 'Join Status' : 'Attending Staff'}
             </Text>
@@ -1337,7 +1651,7 @@ export default function MergedLeadsAdmissionsPage() {
                       setActivePicker(null);
                     }}
                   >
-                    <Text style={[styles.natureBadgeText, { color: opt.color, fontSize: 13 }]}>{opt.label}</Text>
+                    <Text style={[styles.natureBadgeText, { color: opt.color, fontSize: 15 }]}>{opt.label}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -1355,7 +1669,7 @@ export default function MergedLeadsAdmissionsPage() {
                       setActivePicker(null);
                     }}
                   >
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: '#0f172a' }}>{m}</Text>
+                    <Text style={{ fontSize: 15, fontWeight: '600', color: '#0f172a' }}>{m}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -1373,7 +1687,7 @@ export default function MergedLeadsAdmissionsPage() {
                       setActivePicker(null);
                     }}
                   >
-                    <Text style={[styles.statusBadgeText, { color: s.color, fontSize: 13 }]}>{s.label}</Text>
+                    <Text style={[styles.statusBadgeText, { color: s.color, fontSize: 15 }]}>{s.label}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -1381,7 +1695,7 @@ export default function MergedLeadsAdmissionsPage() {
 
             {activePicker?.field === 'atten' && (
               <View style={{ gap: 6 }}>
-                {staffList.map(st => (
+                {Array.from(new Set([...activeStaffList, activePicker.currentVal])).filter(Boolean).map(st => (
                   <TouchableOpacity
                     key={st}
                     style={styles.pickerItem}
@@ -1391,7 +1705,7 @@ export default function MergedLeadsAdmissionsPage() {
                       setActivePicker(null);
                     }}
                   >
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: '#0f172a' }}>{st}</Text>
+                    <Text style={{ fontSize: 15, fontWeight: '600', color: '#0f172a' }}>{st}</Text>
                   </TouchableOpacity>
                 ))}
 
@@ -1408,7 +1722,18 @@ export default function MergedLeadsAdmissionsPage() {
                     }
                   }}
                 >
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#b91c1c' }}>➕ Add New Staff...</Text>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: '#b91c1c' }}>➕ Add New Staff...</Text>
+                </TouchableOpacity>
+
+                {/* Manage Staff Button in Popover */}
+                <TouchableOpacity
+                  style={[styles.pickerItem, { backgroundColor: '#f1f5f9', borderColor: '#cbd5e1' }]}
+                  onPress={() => {
+                    setActivePicker(null);
+                    setShowAddStaffModal(true);
+                  }}
+                >
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#64748b' }}>🗑️ Remove / Manage Staff...</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -1432,12 +1757,18 @@ export default function MergedLeadsAdmissionsPage() {
                   Contact: {selectedRecord?.contact} • Date: {selectedRecord?.dateStr}
                 </Text>
               </View>
-              <TouchableOpacity onPress={() => setSelectedRecord(null)} style={{ padding: 4 }}>
+              <TouchableOpacity
+                onPress={() => {
+                  setSelectedRecord(null);
+                  setShowEditModePicker(false);
+                }}
+                style={{ padding: 4 }}
+              >
                 <MaterialCommunityIcons name="close" size={22} color="#64748b" />
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ maxHeight: 460 }} contentContainerStyle={{ padding: 20, gap: 14 }}>
+            <ScrollView style={{ maxHeight: 460 }} contentContainerStyle={{ padding: 22, gap: 14 }}>
               {/* Nature of Enquiry Pill Selection */}
               <View>
                 <Text style={styles.sectionLabel}>NATURE OF ENQUIRY</Text>
@@ -1449,12 +1780,13 @@ export default function MergedLeadsAdmissionsPage() {
                         key={opt.val}
                         style={[
                           styles.natureSelectPill,
-                          { backgroundColor: isSelected ? opt.color : opt.bg },
-                          isSelected && { borderColor: opt.color }
+                          isSelected
+                            ? { backgroundColor: opt.activeBg, borderColor: opt.activeBg }
+                            : { backgroundColor: '#ffffff', borderColor: '#cbd5e1' }
                         ]}
                         onPress={() => setEditNature(opt.val)}
                       >
-                        <Text style={[styles.natureBadgeText, { color: isSelected ? '#fff' : opt.color }]}>{opt.label}</Text>
+                        <Text style={[styles.natureBadgeText, { color: isSelected ? '#ffffff' : '#0f172a' }]}>{opt.label}</Text>
                       </TouchableOpacity>
                     );
                   })}
@@ -1490,30 +1822,190 @@ export default function MergedLeadsAdmissionsPage() {
               {/* Attended By & Mode */}
               <View style={{ flexDirection: 'row', gap: 12 }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.sectionLabel}>ATTEN (STAFF NAME)</Text>
-                  <TextInput
-                    style={styles.dialogInput}
-                    placeholder="Staff name..."
-                    value={editAtten}
-                    onChangeText={setEditAtten}
-                  />
+                  <Text style={styles.sectionLabel}>ATTENDED</Text>
+                  {Platform.OS === 'web' ? (
+                    <select
+                      value={isCustomEditAtten ? 'Others' : (editAtten || 'Admin Staff')}
+                      onChange={(e: any) => {
+                        const val = e.target.value;
+                        if (val === '__ADD_NEW__' || val === '__MANAGE_STAFF__') {
+                          setShowEditAttenPicker(false);
+                          setShowAddStaffModal(true);
+                        } else if (val === 'Others') {
+                          setIsCustomEditAtten(true);
+                          setEditAtten('');
+                        } else {
+                          setIsCustomEditAtten(false);
+                          setEditAtten(val);
+                        }
+                      }}
+                      style={{
+                        borderWidth: 1,
+                        borderColor: '#cbd5e1',
+                        borderRadius: 8,
+                        paddingHorizontal: 12,
+                        paddingVertical: 10,
+                        fontSize: 15,
+                        color: '#0f172a',
+                        backgroundColor: '#fff',
+                        width: '100%',
+                        outline: 'none',
+                        cursor: 'pointer',
+                        height: 38
+                      }}
+                    >
+                      {Array.from(new Set([...activeStaffList, editAtten])).filter(Boolean).map(st => (
+                        <option key={st} value={st}>{st}</option>
+                      ))}
+                      <option value="Others">Others / Custom...</option>
+                      <option value="__ADD_NEW__" style={{ fontWeight: 'bold', color: '#b91c1c' }}>➕ Add New Staff...</option>
+                      <option value="__MANAGE_STAFF__" style={{ fontWeight: 'bold', color: '#64748b' }}>🗑️ Remove / Manage Staff...</option>
+                    </select>
+                  ) : (
+                    <TouchableOpacity
+                      style={[styles.dialogInput, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 38 }]}
+                      onPress={() => setShowEditAttenPicker(!showEditAttenPicker)}
+                    >
+                      <Text style={{ fontSize: 15, color: '#0f172a' }} numberOfLines={1}>
+                        {isCustomEditAtten ? (editAtten ? `Other: ${editAtten}` : 'Others / Custom') : (editAtten || 'Admin Staff')}
+                      </Text>
+                      <MaterialCommunityIcons name={showEditAttenPicker ? 'chevron-up' : 'chevron-down'} size={18} color="#64748b" />
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Mobile Dropdown List (APK) */}
+                  {Platform.OS !== 'web' && showEditAttenPicker && (
+                    <View style={{
+                      marginTop: 4,
+                      backgroundColor: '#fff',
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: '#cbd5e1',
+                      overflow: 'hidden'
+                    }}>
+                      {Array.from(new Set([...activeStaffList, editAtten, 'Others'])).filter(Boolean).map(st => (
+                        <TouchableOpacity
+                          key={st}
+                          style={{
+                            paddingVertical: 11,
+                            paddingHorizontal: 14,
+                            borderBottomWidth: 1,
+                            borderBottomColor: '#f1f5f9',
+                            backgroundColor: (editAtten === st || (st === 'Others' && isCustomEditAtten)) ? '#f0fdf4' : '#fff'
+                          }}
+                          onPress={() => {
+                            if (st === 'Others') {
+                              setIsCustomEditAtten(true);
+                              setEditAtten('');
+                            } else {
+                              setIsCustomEditAtten(false);
+                              setEditAtten(st);
+                            }
+                            setShowEditAttenPicker(false);
+                          }}
+                        >
+                          <Text style={{ fontSize: 14, color: (editAtten === st || (st === 'Others' && isCustomEditAtten)) ? '#15803d' : '#0f172a', fontWeight: (editAtten === st || (st === 'Others' && isCustomEditAtten)) ? '700' : '500' }}>
+                            {st === 'Others' ? 'Others / Custom...' : st}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                      <TouchableOpacity
+                        style={{ paddingVertical: 11, paddingHorizontal: 14, backgroundColor: '#fee2e2', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' }}
+                        onPress={() => { setShowEditAttenPicker(false); setShowAddStaffModal(true); }}
+                      >
+                        <Text style={{ fontSize: 14, fontWeight: '700', color: '#b91c1c' }}>➕ Add New Staff...</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={{ paddingVertical: 11, paddingHorizontal: 14, backgroundColor: '#f1f5f9' }}
+                        onPress={() => { setShowEditAttenPicker(false); setShowAddStaffModal(true); }}
+                      >
+                        <Text style={{ fontSize: 14, fontWeight: '600', color: '#64748b' }}>🗑️ Remove / Manage Staff...</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
+                  {/* Custom Staff Input Field when 'Others' is selected */}
+                  {isCustomEditAtten && (
+                    <TextInput
+                      style={[styles.dialogInput, { marginTop: 6 }]}
+                      placeholder="Type staff name..."
+                      value={editAtten}
+                      onChangeText={setEditAtten}
+                      autoFocus
+                    />
+                  )}
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.sectionLabel}>CLASS MODE</Text>
-                  <View style={{ flexDirection: 'row', gap: 4 }}>
-                    {MODE_OPTIONS.map(m => (
-                      <TouchableOpacity
-                        key={m}
-                        style={[
-                          styles.modeSelectBtn,
-                          editMode === m && styles.modeSelectBtnActive
-                        ]}
-                        onPress={() => setEditMode(m)}
-                      >
-                        <Text style={[styles.modeSelectText, editMode === m && { color: '#b91c1c', fontWeight: '700' }]}>{m}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
+                  {Platform.OS === 'web' ? (
+                    <select
+                      value={editMode}
+                      onChange={(e: any) => setEditMode(e.target.value as ClassMode)}
+                      style={{
+                        borderWidth: 1,
+                        borderColor: '#cbd5e1',
+                        borderRadius: 8,
+                        paddingHorizontal: 12,
+                        paddingVertical: 10,
+                        fontSize: 15,
+                        color: '#0f172a',
+                        backgroundColor: '#fff',
+                        width: '100%',
+                        outline: 'none',
+                        cursor: 'pointer',
+                        height: 38
+                      }}
+                    >
+                      {MODE_OPTIONS.map(m => (
+                        <option key={m} value={m} style={{ color: '#0f172a', backgroundColor: '#fff' }}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <TouchableOpacity
+                      style={[styles.dialogInput, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 38 }]}
+                      onPress={() => setShowEditModePicker(!showEditModePicker)}
+                    >
+                      <Text style={{ fontSize: 15, color: '#0f172a' }} numberOfLines={1}>
+                        {editMode}
+                      </Text>
+                      <MaterialCommunityIcons name={showEditModePicker ? 'chevron-up' : 'chevron-down'} size={18} color="#64748b" />
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Mobile Dropdown List (APK) */}
+                  {Platform.OS !== 'web' && showEditModePicker && (
+                    <View style={{
+                      marginTop: 4,
+                      backgroundColor: '#fff',
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: '#cbd5e1',
+                      overflow: 'hidden'
+                    }}>
+                      {MODE_OPTIONS.map(m => (
+                        <TouchableOpacity
+                          key={m}
+                          style={{
+                            paddingVertical: 11,
+                            paddingHorizontal: 14,
+                            borderBottomWidth: 1,
+                            borderBottomColor: '#f1f5f9',
+                            backgroundColor: editMode === m ? '#f0fdf4' : '#fff'
+                          }}
+                          onPress={() => {
+                            setEditMode(m);
+                            setShowEditModePicker(false);
+                          }}
+                        >
+                          <Text style={{ fontSize: 14, color: editMode === m ? '#15803d' : '#0f172a', fontWeight: editMode === m ? '700' : '500' }}>
+                            {m}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
                 </View>
               </View>
 
@@ -1581,7 +2073,10 @@ export default function MergedLeadsAdmissionsPage() {
             <View style={styles.dialogFooter}>
               <TouchableOpacity
                 style={styles.dialogCancelBtn}
-                onPress={() => setSelectedRecord(null)}
+                onPress={() => {
+                  setSelectedRecord(null);
+                  setShowEditModePicker(false);
+                }}
               >
                 <Text style={styles.dialogCancelText}>Cancel</Text>
               </TouchableOpacity>
@@ -1615,12 +2110,20 @@ export default function MergedLeadsAdmissionsPage() {
                 <Text style={styles.dialogTitle}>Record New Candidate Enquiry</Text>
                 <Text style={styles.dialogSubtitle}>Add a new walk-in, phone call, or social enquiry.</Text>
               </View>
-              <TouchableOpacity onPress={() => setShowAddModal(false)} style={{ padding: 4 }}>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowAddModal(false);
+                  setIsCustomCourse(false);
+                  setShowCoursePicker(false);
+                  setShowModePicker(false);
+                }}
+                style={{ padding: 4 }}
+              >
                 <MaterialCommunityIcons name="close" size={22} color="#64748b" />
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ maxHeight: 460 }} contentContainerStyle={{ padding: 20, gap: 14 }}>
+            <ScrollView style={{ maxHeight: 460 }} contentContainerStyle={{ padding: 22, gap: 14 }}>
               <View style={{ flexDirection: 'row', gap: 10 }}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.sectionLabel}>CANDIDATE NAME *</Text>
@@ -1654,12 +2157,105 @@ export default function MergedLeadsAdmissionsPage() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.sectionLabel}>COURSE / TARGET EXAM</Text>
-                  <TextInput
-                    style={styles.dialogInput}
-                    placeholder="e.g. UPSC Mains / TNPSC Grp 1"
-                    value={newCourse}
-                    onChangeText={setNewCourse}
-                  />
+                  {Platform.OS === 'web' ? (
+                    <select
+                      value={COURSE_OPTIONS.includes(newCourse) ? newCourse : (isCustomCourse || newCourse ? 'Others' : '')}
+                      onChange={(e: any) => {
+                        const val = e.target.value;
+                        if (val === 'Others') {
+                          setIsCustomCourse(true);
+                          setNewCourse('');
+                        } else {
+                          setIsCustomCourse(false);
+                          setNewCourse(val);
+                        }
+                      }}
+                      style={{
+                        borderWidth: 1,
+                        borderColor: '#cbd5e1',
+                        borderRadius: 8,
+                        paddingHorizontal: 12,
+                        paddingVertical: 10,
+                        fontSize: 15,
+                        color: newCourse || isCustomCourse ? '#0f172a' : '#64748b',
+                        backgroundColor: '#fff',
+                        width: '100%',
+                        outline: 'none',
+                        cursor: 'pointer',
+                        height: 38
+                      }}
+                    >
+                      <option value="" disabled>-- Select Target Exam / Course --</option>
+                      {COURSE_OPTIONS.map(c => (
+                        <option key={c} value={c} style={{ color: '#0f172a', backgroundColor: '#fff' }}>
+                          {c === 'Others' ? 'Others / Custom...' : c}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <TouchableOpacity
+                      style={[styles.dialogInput, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 38 }]}
+                      onPress={() => setShowCoursePicker(!showCoursePicker)}
+                    >
+                      <Text style={{ fontSize: 15, color: newCourse || isCustomCourse ? '#0f172a' : '#94a3b8' }} numberOfLines={1}>
+                        {isCustomCourse ? (newCourse ? `Other: ${newCourse}` : 'Others / Custom') : (newCourse || '-- Select Course --')}
+                      </Text>
+                      <MaterialCommunityIcons name={showCoursePicker ? 'chevron-up' : 'chevron-down'} size={18} color="#64748b" />
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Mobile Dropdown List (APK / Touch devices) */}
+                  {Platform.OS !== 'web' && showCoursePicker && (
+                    <View style={{
+                      marginTop: 4,
+                      backgroundColor: '#fff',
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: '#cbd5e1',
+                      maxHeight: 180,
+                      overflow: 'hidden'
+                    }}>
+                      <ScrollView nestedScrollEnabled style={{ maxHeight: 180 }}>
+                        {COURSE_OPTIONS.map(c => (
+                          <TouchableOpacity
+                            key={c}
+                            style={{
+                              paddingVertical: 11,
+                              paddingHorizontal: 14,
+                              borderBottomWidth: 1,
+                              borderBottomColor: '#f1f5f9',
+                              backgroundColor: (newCourse === c || (c === 'Others' && isCustomCourse)) ? '#f0fdf4' : '#fff'
+                            }}
+                            onPress={() => {
+                              if (c === 'Others') {
+                                setIsCustomCourse(true);
+                                setNewCourse('');
+                              } else {
+                                setIsCustomCourse(false);
+                                setNewCourse(c);
+                              }
+                              setShowCoursePicker(false);
+                            }}
+                          >
+                            <Text style={{ fontSize: 14, color: (newCourse === c || (c === 'Others' && isCustomCourse)) ? '#15803d' : '#0f172a', fontWeight: (newCourse === c || (c === 'Others' && isCustomCourse)) ? '700' : '500' }}>
+                              {c === 'Others' ? 'Others / Custom...' : c}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  )}
+
+                  {/* Custom Course Text Input when 'Others' is selected */}
+                  {isCustomCourse && (
+                    <TextInput
+                      style={[styles.dialogInput, { marginTop: 6 }]}
+                      placeholder="Type custom course / exam name..."
+                      value={newCourse}
+                      onChangeText={setNewCourse}
+                      autoFocus
+                    />
+                  )}
                 </View>
               </View>
 
@@ -1673,12 +2269,13 @@ export default function MergedLeadsAdmissionsPage() {
                         key={opt.val}
                         style={[
                           styles.natureSelectPill,
-                          { backgroundColor: isSelected ? opt.color : opt.bg },
-                          isSelected && { borderColor: opt.color }
+                          isSelected
+                            ? { backgroundColor: opt.activeBg, borderColor: opt.activeBg }
+                            : { backgroundColor: '#ffffff', borderColor: '#cbd5e1' }
                         ]}
                         onPress={() => setNewNature(opt.val)}
                       >
-                        <Text style={[styles.natureBadgeText, { color: isSelected ? '#fff' : opt.color }]}>{opt.label}</Text>
+                        <Text style={[styles.natureBadgeText, { color: isSelected ? '#ffffff' : '#0f172a' }]}>{opt.label}</Text>
                       </TouchableOpacity>
                     );
                   })}
@@ -1687,30 +2284,190 @@ export default function MergedLeadsAdmissionsPage() {
 
               <View style={{ flexDirection: 'row', gap: 10 }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.sectionLabel}>ATTEN (STAFF NAME)</Text>
-                  <TextInput
-                    style={styles.dialogInput}
-                    placeholder="Staff name..."
-                    value={newAtten}
-                    onChangeText={setNewAtten}
-                  />
+                  <Text style={styles.sectionLabel}>ATTENDED</Text>
+                  {Platform.OS === 'web' ? (
+                    <select
+                      value={isCustomAtten ? 'Others' : (newAtten || 'Admin Staff')}
+                      onChange={(e: any) => {
+                        const val = e.target.value;
+                        if (val === '__ADD_NEW__' || val === '__MANAGE_STAFF__') {
+                          setShowAttenPicker(false);
+                          setShowAddStaffModal(true);
+                        } else if (val === 'Others') {
+                          setIsCustomAtten(true);
+                          setNewAtten('');
+                        } else {
+                          setIsCustomAtten(false);
+                          setNewAtten(val);
+                        }
+                      }}
+                      style={{
+                        borderWidth: 1,
+                        borderColor: '#cbd5e1',
+                        borderRadius: 8,
+                        paddingHorizontal: 12,
+                        paddingVertical: 10,
+                        fontSize: 15,
+                        color: '#0f172a',
+                        backgroundColor: '#fff',
+                        width: '100%',
+                        outline: 'none',
+                        cursor: 'pointer',
+                        height: 38
+                      }}
+                    >
+                      {activeStaffList.map(st => (
+                        <option key={st} value={st}>{st}</option>
+                      ))}
+                      <option value="Others">Others / Custom...</option>
+                      <option value="__ADD_NEW__" style={{ fontWeight: 'bold', color: '#b91c1c' }}>➕ Add New Staff...</option>
+                      <option value="__MANAGE_STAFF__" style={{ fontWeight: 'bold', color: '#64748b' }}>🗑️ Remove / Manage Staff...</option>
+                    </select>
+                  ) : (
+                    <TouchableOpacity
+                      style={[styles.dialogInput, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 38 }]}
+                      onPress={() => setShowAttenPicker(!showAttenPicker)}
+                    >
+                      <Text style={{ fontSize: 15, color: '#0f172a' }} numberOfLines={1}>
+                        {isCustomAtten ? (newAtten ? `Other: ${newAtten}` : 'Others / Custom') : (newAtten || 'Admin Staff')}
+                      </Text>
+                      <MaterialCommunityIcons name={showAttenPicker ? 'chevron-up' : 'chevron-down'} size={18} color="#64748b" />
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Mobile Dropdown List (APK) */}
+                  {Platform.OS !== 'web' && showAttenPicker && (
+                    <View style={{
+                      marginTop: 4,
+                      backgroundColor: '#fff',
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: '#cbd5e1',
+                      overflow: 'hidden'
+                    }}>
+                      {[...activeStaffList, 'Others'].map(st => (
+                        <TouchableOpacity
+                          key={st}
+                          style={{
+                            paddingVertical: 11,
+                            paddingHorizontal: 14,
+                            borderBottomWidth: 1,
+                            borderBottomColor: '#f1f5f9',
+                            backgroundColor: (newAtten === st || (st === 'Others' && isCustomAtten)) ? '#f0fdf4' : '#fff'
+                          }}
+                          onPress={() => {
+                            if (st === 'Others') {
+                              setIsCustomAtten(true);
+                              setNewAtten('');
+                            } else {
+                              setIsCustomAtten(false);
+                              setNewAtten(st);
+                            }
+                            setShowAttenPicker(false);
+                          }}
+                        >
+                          <Text style={{ fontSize: 14, color: (newAtten === st || (st === 'Others' && isCustomAtten)) ? '#15803d' : '#0f172a', fontWeight: (newAtten === st || (st === 'Others' && isCustomAtten)) ? '700' : '500' }}>
+                            {st === 'Others' ? 'Others / Custom...' : st}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                      <TouchableOpacity
+                        style={{ paddingVertical: 11, paddingHorizontal: 14, backgroundColor: '#fee2e2', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' }}
+                        onPress={() => { setShowAttenPicker(false); setShowAddStaffModal(true); }}
+                      >
+                        <Text style={{ fontSize: 14, fontWeight: '700', color: '#b91c1c' }}>➕ Add New Staff...</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={{ paddingVertical: 11, paddingHorizontal: 14, backgroundColor: '#f1f5f9' }}
+                        onPress={() => { setShowAttenPicker(false); setShowAddStaffModal(true); }}
+                      >
+                        <Text style={{ fontSize: 14, fontWeight: '600', color: '#64748b' }}>🗑️ Remove / Manage Staff...</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
+                  {/* Custom Staff Input Field when 'Others' is selected */}
+                  {isCustomAtten && (
+                    <TextInput
+                      style={[styles.dialogInput, { marginTop: 6 }]}
+                      placeholder="Type staff name..."
+                      value={newAtten}
+                      onChangeText={setNewAtten}
+                      autoFocus
+                    />
+                  )}
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.sectionLabel}>CLASS MODE</Text>
-                  <View style={{ flexDirection: 'row', gap: 4 }}>
-                    {MODE_OPTIONS.map(m => (
-                      <TouchableOpacity
-                        key={m}
-                        style={[
-                          styles.modeSelectBtn,
-                          newMode === m && styles.modeSelectBtnActive
-                        ]}
-                        onPress={() => setNewMode(m)}
-                      >
-                        <Text style={[styles.modeSelectText, newMode === m && { color: '#b91c1c', fontWeight: '700' }]}>{m}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
+                  {Platform.OS === 'web' ? (
+                    <select
+                      value={newMode}
+                      onChange={(e: any) => setNewMode(e.target.value as ClassMode)}
+                      style={{
+                        borderWidth: 1,
+                        borderColor: '#cbd5e1',
+                        borderRadius: 8,
+                        paddingHorizontal: 12,
+                        paddingVertical: 10,
+                        fontSize: 15,
+                        color: '#0f172a',
+                        backgroundColor: '#fff',
+                        width: '100%',
+                        outline: 'none',
+                        cursor: 'pointer',
+                        height: 38
+                      }}
+                    >
+                      {MODE_OPTIONS.map(m => (
+                        <option key={m} value={m} style={{ color: '#0f172a', backgroundColor: '#fff' }}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <TouchableOpacity
+                      style={[styles.dialogInput, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 38 }]}
+                      onPress={() => setShowModePicker(!showModePicker)}
+                    >
+                      <Text style={{ fontSize: 15, color: '#0f172a' }} numberOfLines={1}>
+                        {newMode}
+                      </Text>
+                      <MaterialCommunityIcons name={showModePicker ? 'chevron-up' : 'chevron-down'} size={18} color="#64748b" />
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Mobile Dropdown List (APK) */}
+                  {Platform.OS !== 'web' && showModePicker && (
+                    <View style={{
+                      marginTop: 4,
+                      backgroundColor: '#fff',
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: '#cbd5e1',
+                      overflow: 'hidden'
+                    }}>
+                      {MODE_OPTIONS.map(m => (
+                        <TouchableOpacity
+                          key={m}
+                          style={{
+                            paddingVertical: 11,
+                            paddingHorizontal: 14,
+                            borderBottomWidth: 1,
+                            borderBottomColor: '#f1f5f9',
+                            backgroundColor: newMode === m ? '#f0fdf4' : '#fff'
+                          }}
+                          onPress={() => {
+                            setNewMode(m);
+                            setShowModePicker(false);
+                          }}
+                        >
+                          <Text style={{ fontSize: 14, color: newMode === m ? '#15803d' : '#0f172a', fontWeight: newMode === m ? '700' : '500' }}>
+                            {m}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
                 </View>
               </View>
 
@@ -1739,7 +2496,12 @@ export default function MergedLeadsAdmissionsPage() {
             <View style={styles.dialogFooter}>
               <TouchableOpacity
                 style={styles.dialogCancelBtn}
-                onPress={() => setShowAddModal(false)}
+                onPress={() => {
+                  setShowAddModal(false);
+                  setIsCustomCourse(false);
+                  setShowCoursePicker(false);
+                  setShowModePicker(false);
+                }}
               >
                 <Text style={styles.dialogCancelText}>Cancel</Text>
               </TouchableOpacity>
@@ -1778,7 +2540,7 @@ export default function MergedLeadsAdmissionsPage() {
               </TouchableOpacity>
             </View>
 
-            <View style={{ padding: 20, gap: 14 }}>
+            <View style={{ padding: 22, gap: 14 }}>
               <View>
                 <Text style={styles.sectionLabel}>NOTIFICATION TITLE</Text>
                 <TextInput
@@ -1832,30 +2594,33 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8fafc',
-    padding: 24
+    padding: 26
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 16,
     marginBottom: 20,
     backgroundColor: '#fff',
-    padding: 20,
+    padding: 22,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e2e8f0',
     shadowColor: '#000',
     shadowOpacity: 0.03,
     shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 }
+    shadowOffset: { width: 0, height: 2 },
+    overflow: 'hidden'
   },
   headerTitle: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '700',
     color: '#0f172a'
   },
   headerSubtitle: {
-    fontSize: 13,
+    fontSize: 15,
     color: '#64748b',
     marginTop: 4
   },
@@ -1864,12 +2629,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     backgroundColor: '#b91c1c',
-    paddingHorizontal: 15,
-    paddingVertical: 9,
+    paddingHorizontal: 17,
+    paddingVertical: 11,
     borderRadius: 8
   },
   addBtnText: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '700',
     color: '#fff'
   },
@@ -1880,12 +2645,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#eff6ff',
     borderWidth: 1,
     borderColor: '#bfdbfe',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
     borderRadius: 8
   },
   uploadBtnText: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '700',
     color: '#1d4ed8'
   },
@@ -1896,12 +2661,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#eff6ff',
     borderWidth: 1,
     borderColor: '#bfdbfe',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
     borderRadius: 8
   },
   notifyBtnText: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '600',
     color: '#1d4ed8'
   },
@@ -1912,12 +2677,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fafc',
     borderWidth: 1,
     borderColor: '#cbd5e1',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
     borderRadius: 8
   },
   refreshBtnText: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '600',
     color: '#475569'
   },
@@ -1928,52 +2693,55 @@ const styles = StyleSheet.create({
     backgroundColor: '#f0fdf4',
     borderWidth: 1,
     borderColor: '#bbf7d0',
-    paddingHorizontal: 16,
-    paddingVertical: 9,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
     borderRadius: 8
   },
   exportBtnText: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '700',
     color: '#15803d'
   },
   metricsRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 16,
     marginBottom: 18
   },
   metricCard: {
     flex: 1,
+    minWidth: 180,
     backgroundColor: '#fff',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    padding: 18,
+    padding: 20,
     shadowColor: '#000',
     shadowOpacity: 0.02,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 1 }
   },
   metricLabel: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '700',
     color: '#64748b',
     letterSpacing: 0.5
   },
   metricValue: {
-    fontSize: 26,
+    fontSize: 28,
     fontWeight: '800',
     marginTop: 6
   },
   toolbar: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: '#fff',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    padding: 12,
+    padding: 14,
     marginBottom: 16,
     gap: 14
   },
@@ -1985,13 +2753,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e2e8f0',
     borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     gap: 8
   },
   searchInput: {
     flex: 1,
-    fontSize: 13,
+    fontSize: 15,
     color: '#0f172a'
   },
   filterPillsRow: {
@@ -2000,8 +2768,8 @@ const styles = StyleSheet.create({
     gap: 8
   },
   filterPill: {
-    paddingHorizontal: 13,
-    paddingVertical: 7,
+    paddingHorizontal: 15,
+    paddingVertical: 9,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#e2e8f0',
@@ -2012,7 +2780,7 @@ const styles = StyleSheet.create({
     borderColor: '#b91c1c'
   },
   filterPillText: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '600',
     color: '#64748b'
   },
@@ -2021,7 +2789,7 @@ const styles = StyleSheet.create({
     fontWeight: '800'
   },
   tableLoading: {
-    padding: 60,
+    padding: 62,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#fff',
@@ -2030,7 +2798,7 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0'
   },
   emptyTable: {
-    padding: 60,
+    padding: 62,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#fff',
@@ -2039,13 +2807,13 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0'
   },
   emptyTableTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '700',
     color: '#0f172a',
     marginTop: 12
   },
   emptyTableSubtitle: {
-    fontSize: 13,
+    fontSize: 15,
     color: '#64748b',
     marginTop: 4,
     textAlign: 'center',
@@ -2056,7 +2824,23 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    overflow: 'hidden'
+    paddingBottom: 4
+  },
+  tableScrollNavBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 6,
+    paddingVertical: 7,
+    paddingHorizontal: 12
+  },
+  tableScrollNavBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0f172a'
   },
   tableHeaderRow: {
     flexDirection: 'row',
@@ -2064,11 +2848,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#fae8e8',
     borderBottomWidth: 1,
     borderBottomColor: '#cbd5e1',
-    paddingVertical: 12,
-    paddingHorizontal: 16
+    paddingVertical: 14,
+    paddingHorizontal: 18
   },
   thCell: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '800',
     color: '#0f172a',
     letterSpacing: 0.5,
@@ -2079,44 +2863,45 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
-    paddingVertical: 10,
-    paddingHorizontal: 16
+    paddingVertical: 12,
+    paddingHorizontal: 18
   },
   tdCell: {
-    fontSize: 13,
+    fontSize: 15,
     color: '#0f172a'
   },
   nameText: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '700',
     color: '#0f172a'
   },
   natureBadgePill: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 16,
     alignSelf: 'flex-start'
   },
   natureSelectPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'transparent'
+    borderColor: '#cbd5e1',
+    backgroundColor: '#ffffff'
   },
   natureBadgeText: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '700'
   },
   modeBadge: {
     backgroundColor: '#f1f5f9',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 6,
     alignSelf: 'flex-start'
   },
   modeBadgeText: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '600',
     color: '#475569'
   },
@@ -2124,17 +2909,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     borderRadius: 6,
     width: 115
   },
   statusBadgeText: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '700'
   },
   actionBtn: {
-    padding: 7,
+    padding: 9,
     borderRadius: 6,
     backgroundColor: '#f1f5f9',
     alignItems: 'center',
@@ -2143,8 +2928,8 @@ const styles = StyleSheet.create({
 
   /* PICKER POPOVER ITEM */
   pickerItem: {
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     borderRadius: 8,
     backgroundColor: '#f8fafc',
     borderWidth: 1,
@@ -2159,7 +2944,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.65)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 16
+    padding: 18
   },
   dialogBox: {
     width: '100%',
@@ -2180,23 +2965,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 22,
+    paddingVertical: 18,
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9'
   },
   dialogTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '700',
     color: '#0f172a'
   },
   dialogSubtitle: {
-    fontSize: 12,
+    fontSize: 14,
     color: '#64748b',
     marginTop: 2
   },
   sectionLabel: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '700',
     color: '#475569',
     letterSpacing: 0.5,
@@ -2210,7 +2995,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#e2e8f0',
@@ -2221,7 +3006,7 @@ const styles = StyleSheet.create({
     borderColor: '#b91c1c'
   },
   statusSelectBtnText: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '600',
     color: '#64748b'
   },
@@ -2233,7 +3018,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#e2e8f0',
@@ -2244,7 +3029,7 @@ const styles = StyleSheet.create({
     borderColor: '#b91c1c'
   },
   modeSelectText: {
-    fontSize: 12,
+    fontSize: 14,
     color: '#475569',
     fontWeight: '500'
   },
@@ -2252,9 +3037,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#cbd5e1',
     borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 13,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 15,
     color: '#0f172a',
     backgroundColor: '#fff'
   },
@@ -2262,8 +3047,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#cbd5e1',
     borderRadius: 8,
-    padding: 10,
-    fontSize: 13,
+    padding: 12,
+    fontSize: 15,
     color: '#0f172a',
     backgroundColor: '#fff',
     height: 80,
@@ -2273,15 +3058,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-end',
     gap: 10,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
+    paddingHorizontal: 22,
+    paddingVertical: 16,
     borderTopWidth: 1,
     borderTopColor: '#f1f5f9',
     backgroundColor: '#f8fafc'
   },
   dialogCancelBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 9,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#cbd5e1',
@@ -2289,18 +3074,18 @@ const styles = StyleSheet.create({
   },
   dialogCancelText: {
     color: '#475569',
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '600'
   },
   dialogSaveBtn: {
-    paddingHorizontal: 18,
-    paddingVertical: 9,
+    paddingHorizontal: 20,
+    paddingVertical: 11,
     borderRadius: 6,
     backgroundColor: '#b91c1c'
   },
   dialogSaveText: {
     color: '#fff',
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '700'
   }
 });

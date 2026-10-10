@@ -382,24 +382,32 @@ export default function ResourceForm({ onClose, onSuccess, initialData }: Resour
                       {batches.length === 0 ? (
                         <p className="text-xs text-gray-500 col-span-2">No batches available.</p>
                       ) : (
-                        batches.map(b => (
-                          <label key={b.id} className="flex items-center gap-2 cursor-pointer hover:bg-white/5 p-1.5 rounded transition-colors">
-                            <input 
-                              type="checkbox" 
-                              checked={targetBatchIds.split(',').includes(b.id)}
-                              onChange={(e) => {
-                                const current = targetBatchIds ? targetBatchIds.split(',') : [];
-                                if (e.target.checked) {
-                                  setTargetBatchIds([...current, b.id].join(','));
-                                } else {
-                                  setTargetBatchIds(current.filter(id => id !== b.id).join(','));
-                                }
-                              }}
-                              className="w-4 h-4 rounded border-gray-700 text-red-600 focus:ring-red-600 bg-gray-900 shrink-0" 
-                            />
-                            <span className="text-sm text-gray-300 truncate" title={b.name}>{b.name}</span>
-                          </label>
-                        ))
+                        batches.map(b => {
+                          const bId = String(b.id || '').trim();
+                          const bName = String(b.name || b.batchName || '').trim();
+                          const currentList = targetBatchIds ? targetBatchIds.split(',').map(s => s.trim()).filter(Boolean) : [];
+                          const isChecked = (Boolean(bId) && currentList.includes(bId)) || (Boolean(bName) && currentList.includes(bName));
+
+                          return (
+                            <label key={b.id || bName} className="flex items-center gap-2 cursor-pointer hover:bg-white/5 p-1.5 rounded transition-colors">
+                              <input 
+                                type="checkbox" 
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    const next = Array.from(new Set([...currentList, bId || bName]));
+                                    setTargetBatchIds(next.join(','));
+                                  } else {
+                                    const next = currentList.filter(id => id !== bId && id !== bName);
+                                    setTargetBatchIds(next.join(','));
+                                  }
+                                }}
+                                className="w-4 h-4 rounded border-gray-700 text-red-600 focus:ring-red-600 bg-gray-900 shrink-0" 
+                              />
+                              <span className="text-sm text-gray-300 truncate" title={b.name || b.batchName}>{b.name || b.batchName}</span>
+                            </label>
+                          );
+                        })
                       )}
                     </div>
                   </div>

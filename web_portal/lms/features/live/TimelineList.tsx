@@ -67,7 +67,7 @@ export const TimelineList: React.FC = () => {
           data={events}
           keyExtractor={item => item.id}
           renderItem={renderItem}
-          contentContainerStyle={{ padding: 16 }}
+          contentContainerStyle={{ padding: 18 }}
         />
       )}
     </View>
@@ -76,13 +76,13 @@ export const TimelineList: React.FC = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#121212' },
-  header: { padding: 16, borderBottomWidth: 1, borderBottomColor: '#222' },
-  title: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
+  header: { padding: 18, borderBottomWidth: 1, borderBottomColor: '#222' },
+  title: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
   empty: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyText: { color: '#777', marginTop: 12 },
   row: { flexDirection: 'row', marginBottom: 16 },
   iconBox: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(212, 175, 55, 0.1)', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
   info: { flex: 1 },
-  desc: { color: '#FFF', fontSize: 14, fontWeight: '500' },
-  time: { color: '#777', fontSize: 12, marginTop: 4 }
+  desc: { color: '#FFF', fontSize: 16, fontWeight: '500' },
+  time: { color: '#777', fontSize: 14, marginTop: 4 }
 });

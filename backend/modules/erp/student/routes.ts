@@ -42,19 +42,23 @@ router.put("/:id", (req, res, next) => {
   const idCardKeys = ["idCardGenerated", "idCardTheme", "idCardRole", "idCardExpiry"];
   const hallTicketKeys = ["hallTicketGenerated", "hallTicketExamName", "hallTicketExamDate", "hallTicketVenue", "hallTicketTime", "hallTicketInstructions"];
   const feesKeys = ["feesPaid", "totalFees", "modeOfPayment", "transactionId", "feeBlocked", "feeBlockedReason", "feeAlertActive", "feeAlertDueDate", "feeAlertSentAt", "feeAlertNote"];
+  const attendanceKeys = ["attendedDays", "totalDays", "lastAttendanceDate", "lastAttendanceStatus", "attendanceLog"];
   
   const hasIdCardKeys = bodyKeys.some(k => idCardKeys.includes(k));
   const hasHallTicketKeys = bodyKeys.some(k => hallTicketKeys.includes(k));
   const hasFeesKeys = bodyKeys.some(k => feesKeys.includes(k));
-  const hasOtherKeys = bodyKeys.some(k => !idCardKeys.includes(k) && !hallTicketKeys.includes(k) && !feesKeys.includes(k) && k !== "updatedBy");
+  const hasAttendanceKeys = bodyKeys.some(k => attendanceKeys.includes(k));
+  const hasOtherKeys = bodyKeys.some(k => !idCardKeys.includes(k) && !hallTicketKeys.includes(k) && !feesKeys.includes(k) && !attendanceKeys.includes(k) && k !== "updatedBy");
 
   if (!hasOtherKeys) {
-    if (hasIdCardKeys && !hasHallTicketKeys && !hasFeesKeys) {
+    if (hasIdCardKeys && !hasHallTicketKeys && !hasFeesKeys && !hasAttendanceKeys) {
       featureKey = "id_card";
-    } else if (hasHallTicketKeys && !hasIdCardKeys && !hasFeesKeys) {
+    } else if (hasHallTicketKeys && !hasIdCardKeys && !hasFeesKeys && !hasAttendanceKeys) {
       featureKey = "hall_ticket";
-    } else if (hasFeesKeys && !hasIdCardKeys && !hasHallTicketKeys) {
+    } else if (hasFeesKeys && !hasIdCardKeys && !hasHallTicketKeys && !hasAttendanceKeys) {
       featureKey = "fees_management";
+    } else if (hasAttendanceKeys && !hasIdCardKeys && !hasHallTicketKeys && !hasFeesKeys) {
+      featureKey = "offline_attendance";
     }
   }
   

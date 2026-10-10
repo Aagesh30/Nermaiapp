@@ -68,7 +68,7 @@ export function getRoleFromAuth(): string {
 /**
  * Get user info from Folder 1's auth store.
  */
-export function getUserFromAuth(): { userId: string; tenantId: string; role: string; name: string } | null {
+export function getUserFromAuth(): { userId: string; tenantId: string; role: string; name: string; batch?: string; course?: string; phone?: string; email?: string } | null {
   try {
     if ((globalThis as any).__NERMAI_USER__) {
       const u = (globalThis as any).__NERMAI_USER__;
@@ -77,6 +77,10 @@ export function getUserFromAuth(): { userId: string; tenantId: string; role: str
         tenantId: u.tenantId || u.tenant_id || 'default',
         role: u.role || 'student',
         name: u.name || u.fullName || '',
+        batch: u.batch || u.batchName || '',
+        course: u.course || u.courseName || u.preferredCourse || '',
+        phone: u.phone || u.mobile || '',
+        email: u.email || ''
       };
     }
     if (typeof localStorage === 'undefined') return null;
@@ -89,6 +93,10 @@ export function getUserFromAuth(): { userId: string; tenantId: string; role: str
       tenantId: parsed.tenantId || parsed.tenant_id || 'default',
       role: parsed.role || 'student',
       name: parsed.name || parsed.fullName || '',
+      batch: parsed.batch || parsed.batchName || '',
+      course: parsed.course || parsed.courseName || parsed.preferredCourse || '',
+      phone: parsed.phone || parsed.mobile || '',
+      email: parsed.email || ''
     };
   } catch {
     return null;

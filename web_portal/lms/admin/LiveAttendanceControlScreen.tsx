@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, ScrollView, Ale
 import { LiveAttendanceApi, LiveSessionApi } from '@nermai/api';
 import { colors } from '@nermai/theme';
 import { ChevronLeft, Users, Clock, LogOut, CheckCircle, AlertTriangle, Hand, ShieldAlert, UserCheck, UserX, Ban, RotateCcw, Video } from 'lucide-react-native';
-import { db, auth } from '../../core/firebaseConfig';
+import { db, auth } from '../../firebaseConfig';
 import { useLiveSessionRealtime } from '@nermai/shared/src/hooks/useLiveSessionRealtime';
 import { useLiveSessionModeration } from '@nermai/shared/src/hooks/useLiveSessionModeration';
 import { LiveConsoleFactory } from '../../student/streaming/LiveConsoleFactory';
@@ -436,63 +436,63 @@ export const LiveAttendanceControlScreen = ({ route, navigation }: any) => {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
-  header: { flexDirection: 'row', alignItems: 'center', padding: 20, paddingBottom: 10 },
+  header: { flexDirection: 'row', alignItems: 'center', padding: 22, paddingBottom: 10 },
   backButton: { marginRight: 12 },
-  pageTitle: { fontSize: 20, fontWeight: 'bold', color: colors.textPrimary },
-  headerSub: { fontSize: 12, color: colors.primary, marginTop: 2, letterSpacing: 1 },
+  pageTitle: { fontSize: 22, fontWeight: 'bold', color: colors.textPrimary },
+  headerSub: { fontSize: 14, color: colors.primary, marginTop: 2, letterSpacing: 1 },
   
-  centerStage: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30 },
-  stageTitle: { fontSize: 24, fontWeight: 'bold', color: colors.textPrimary, marginBottom: 12 },
-  stageSub: { fontSize: 16, color: colors.textSecondary, textAlign: 'center', marginBottom: 40 },
-  bigJoinBtn: { backgroundColor: colors.primary, paddingVertical: 18, paddingHorizontal: 40, borderRadius: 30, elevation: 4 },
-  bigJoinText: { color: colors.background, fontWeight: '900', fontSize: 16, letterSpacing: 1 },
+  centerStage: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
+  stageTitle: { fontSize: 26, fontWeight: 'bold', color: colors.textPrimary, marginBottom: 12 },
+  stageSub: { fontSize: 18, color: colors.textSecondary, textAlign: 'center', marginBottom: 40 },
+  bigJoinBtn: { backgroundColor: colors.primary, paddingVertical: 20, paddingHorizontal: 42, borderRadius: 30, elevation: 4 },
+  bigJoinText: { color: colors.background, fontWeight: '900', fontSize: 18, letterSpacing: 1 },
 
-  tabContainer: { flexDirection: 'row', paddingHorizontal: 20, marginBottom: 16 },
-  tabButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  tabContainer: { flexDirection: 'row', paddingHorizontal: 22, marginBottom: 16 },
+  tabButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderBottomWidth: 2, borderBottomColor: 'transparent' },
   tabButtonActive: { borderBottomColor: colors.primary },
-  tabText: { marginLeft: 8, fontSize: 14, fontWeight: '600', color: colors.textSecondary },
+  tabText: { marginLeft: 8, fontSize: 16, fontWeight: '600', color: colors.textSecondary },
   tabTextActive: { color: colors.background },
   badgeDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#FF4444', marginLeft: 4 },
   
-  content: { flex: 1, paddingHorizontal: 20 },
-  card: { backgroundColor: colors.surface, borderRadius: 16, padding: 20, marginBottom: 16 },
+  content: { flex: 1, paddingHorizontal: 22 },
+  card: { backgroundColor: colors.surface, borderRadius: 16, padding: 22, marginBottom: 16 },
   statusRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
   dot: { width: 12, height: 12, borderRadius: 6, marginRight: 10 },
-  statusText: { fontSize: 14, fontWeight: 'bold', color: colors.textPrimary, letterSpacing: 1 },
+  statusText: { fontSize: 16, fontWeight: 'bold', color: colors.textPrimary, letterSpacing: 1 },
   
-  timerBox: { flexDirection: 'row', alignItems: 'center', alignSelf: 'center', marginVertical: 20, backgroundColor: 'rgba(212,175,55,0.1)', paddingVertical: 12, paddingHorizontal: 24, borderRadius: 30 },
-  timerText: { fontSize: 32, fontWeight: '300', color: colors.primary, fontVariant: ['tabular-nums'] },
+  timerBox: { flexDirection: 'row', alignItems: 'center', alignSelf: 'center', marginVertical: 20, backgroundColor: 'rgba(212,175,55,0.1)', paddingVertical: 14, paddingHorizontal: 26, borderRadius: 30 },
+  timerText: { fontSize: 34, fontWeight: '300', color: colors.primary, fontVariant: ['tabular-nums'] },
   
-  startBtn: { backgroundColor: colors.primary, padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 10 },
-  startBtnText: { color: colors.background, fontWeight: 'bold', fontSize: 15, letterSpacing: 1 },
+  startBtn: { backgroundColor: colors.primary, padding: 18, borderRadius: 12, alignItems: 'center', marginTop: 10 },
+  startBtnText: { color: colors.background, fontWeight: 'bold', fontSize: 17, letterSpacing: 1 },
   
-  endBtn: { backgroundColor: '#FF4444', padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 10 },
-  endBtnText: { color: '#FFF', fontWeight: 'bold', fontSize: 15, letterSpacing: 1 },
+  endBtn: { backgroundColor: '#FF4444', padding: 18, borderRadius: 12, alignItems: 'center', marginTop: 10 },
+  endBtnText: { color: '#FFF', fontWeight: 'bold', fontSize: 17, letterSpacing: 1 },
   
-  endClassBtn: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 24, paddingVertical: 12, borderWidth: 1, borderColor: '#FF4444', borderRadius: 12 },
-  endClassBtnText: { color: '#FF4444', fontWeight: 'bold', fontSize: 13, letterSpacing: 1 },
+  endClassBtn: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 24, paddingVertical: 14, borderWidth: 1, borderColor: '#FF4444', borderRadius: 12 },
+  endClassBtnText: { color: '#FF4444', fontWeight: 'bold', fontSize: 15, letterSpacing: 1 },
   
-  feedCard: { backgroundColor: colors.surface, borderRadius: 16, padding: 20 },
-  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: colors.textPrimary, marginBottom: 16 },
+  feedCard: { backgroundColor: colors.surface, borderRadius: 16, padding: 22 },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: colors.textPrimary, marginBottom: 16 },
   statsRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
-  statBox: { flex: 1, backgroundColor: 'rgba(255,255,255,0.03)', padding: 12, borderRadius: 12, alignItems: 'center', marginHorizontal: 4 },
-  statNumber: { fontSize: 24, fontWeight: 'bold', color: colors.primary },
-  statLabel: { fontSize: 12, color: colors.textSecondary, marginTop: 4 },
+  statBox: { flex: 1, backgroundColor: 'rgba(255,255,255,0.03)', padding: 14, borderRadius: 12, alignItems: 'center', marginHorizontal: 4 },
+  statNumber: { fontSize: 26, fontWeight: 'bold', color: colors.primary },
+  statLabel: { fontSize: 14, color: colors.textSecondary, marginTop: 4 },
   
   logItem: { flexDirection: 'row', marginBottom: 16 },
   logIconBox: { width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(76,175,80,0.1)', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-  logText: { fontSize: 14, color: colors.textPrimary },
-  logTime: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
+  logText: { fontSize: 16, color: colors.textPrimary },
+  logTime: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
   emptyLogText: { color: colors.textSecondary, fontStyle: 'italic', textAlign: 'center', marginTop: 10 },
 
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  participantRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
-  participantName: { fontSize: 15, fontWeight: '600', color: colors.textPrimary },
-  participantSub: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-  handBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFC107', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, alignSelf: 'flex-start', marginTop: 4 },
-  handBadgeText: { fontSize: 10, fontWeight: 'bold', color: '#000', marginLeft: 4 },
+  participantRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
+  participantName: { fontSize: 17, fontWeight: '600', color: colors.textPrimary },
+  participantSub: { fontSize: 14, color: colors.textSecondary, marginTop: 2 },
+  handBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFC107', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, alignSelf: 'flex-start', marginTop: 4 },
+  handBadgeText: { fontSize: 12, fontWeight: 'bold', color: '#000', marginLeft: 4 },
   actionRow: { flexDirection: 'row' },
-  actionBtn: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginLeft: 8 },
-  outlineBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: colors.primary },
-  outlineBtnText: { color: colors.primary, fontSize: 12, fontWeight: '600', marginLeft: 4 },
+  actionBtn: { width: 32, height: 36, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginLeft: 8 },
+  outlineBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16, borderWidth: 1, borderColor: colors.primary },
+  outlineBtnText: { color: colors.primary, fontSize: 14, fontWeight: '600', marginLeft: 4 },
 });

@@ -301,6 +301,7 @@ export const loginStudent = async (req: Request, res: Response, next: NextFuncti
           name: adminData.name || adminData.username || '',
           username: adminData.username || '',
           email: adminData.email || '',
+          phone: adminData.phone || adminData.phoneNumber || adminData.mobile || '',
         },
       });
     }
@@ -394,6 +395,7 @@ export const loginStudent = async (req: Request, res: Response, next: NextFuncti
           role,
           name: userData.name || userData.username || '',
           email: userData.email || '',
+          phone: userData.phone || userData.phoneNumber || userData.mobile || '',
           studentId: userData.studentId || null,
           username: userData.username || '',
           batch: batchName,
@@ -496,6 +498,7 @@ export const loginStudent = async (req: Request, res: Response, next: NextFuncti
           role: 'student',
           name,
           email: studentData.email || '',
+          phone: studentData.phone || studentData.phoneNumber || studentData.mobile || '',
           studentId: studentDoc.id,
           username: studentData.loginUsername || studentData.rollNumber || '',
           batch: batchName,

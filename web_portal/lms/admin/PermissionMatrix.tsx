@@ -117,11 +117,11 @@ export const PermissionMatrix: React.FC = () => {
               
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Icon size={14} color={node.hasOverride ? C.gold : C.muted} />
-                <span style={{ fontSize: 13, fontWeight: node.level === 0 ? 800 : 600, color: node.hasOverride ? C.text : C.muted }}>
+                <span style={{ fontSize: 15, fontWeight: node.level === 0 ? 800 : 600, color: node.hasOverride ? C.text : C.muted }}>
                   {node.name}
                 </span>
                 {node.hasOverride && (
-                  <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 4, backgroundColor: `${C.gold}20`, color: C.gold, fontWeight: 700 }}>
+                  <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, backgroundColor: `${C.gold}20`, color: C.gold, fontWeight: 700 }}>
                     OVERRIDE
                   </span>
                 )}
@@ -166,8 +166,8 @@ export const PermissionMatrix: React.FC = () => {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 800, color: C.text, margin: 0 }}>Permission Matrix</h1>
-          <p style={{ color: C.muted, margin: '4px 0 0 0', fontSize: 14 }}>
+          <h1 style={{ fontSize: 26, fontWeight: 800, color: C.text, margin: 0 }}>Permission Matrix</h1>
+          <p style={{ color: C.muted, margin: '4px 0 0 0', fontSize: 16 }}>
             Bird's-eye view of effective permissions across the entire course tree.
           </p>
         </div>
@@ -188,7 +188,7 @@ export const PermissionMatrix: React.FC = () => {
           <div style={{ ...thStyle, flex: 2, paddingLeft: 48 }}>Content Entity</div>
           {MOCK_BATCHES.map(batch => (
             <div key={batch.id} style={{ ...thStyle, justifyContent: 'center', textAlign: 'center' }}>
-              <div style={{ fontSize: 12, fontWeight: 800, color: C.text }}>{batch.name}</div>
+              <div style={{ fontSize: 14, fontWeight: 800, color: C.text }}>{batch.name}</div>
             </div>
           ))}
         </div>
@@ -214,7 +214,7 @@ const headerRowStyle: React.CSSProperties = {
 };
 
 const thStyle: React.CSSProperties = {
-  flex: 1, padding: '16px', fontSize: 11, fontWeight: 800,
+  flex: 1, padding: '16px', fontSize: 13, fontWeight: 800,
   color: C.muted, textTransform: 'uppercase', letterSpacing: 1,
   display: 'flex', alignItems: 'center'
 };
@@ -235,7 +235,7 @@ const expandBtnStyle: React.CSSProperties = {
 };
 
 const selectStyle: React.CSSProperties = {
-  background: C.surface, border: `1px solid ${C.border}`, color: C.text, fontSize: 13,
+  background: C.surface, border: `1px solid ${C.border}`, color: C.text, fontSize: 15,
   outline: 'none', cursor: 'pointer', fontWeight: 600, padding: '8px 16px', borderRadius: 8,
   boxShadow: NM_FLAT
 };

@@ -27,6 +27,7 @@ router.post("/guest-login", LeadsController.guestLogin);
 // Admin: manage leads
 router.get("/", requireAuth, requireRole(adminRoles), LeadsController.getAll);
 router.patch("/:id", requireAuth, requireRole(adminRoles), LeadsController.updateStatus);
+router.delete("/:id", requireAuth, requireRole(adminRoles), LeadsController.delete);
 router.post("/:leadId/interest", requireAuth, requireRole(adminRoles), LeadsController.addCourseInterest);
 router.get("/:leadId/notifications", requireAuth, (req, res, next) => {
     if (!req.user) return res.status(403).json({ success: false, message: "Forbidden: Not authenticated" });

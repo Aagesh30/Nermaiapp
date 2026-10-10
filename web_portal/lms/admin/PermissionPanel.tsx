@@ -174,8 +174,8 @@ export const PermissionPanel: React.FC<PermissionPanelProps> = ({
             <ShieldCheck size={16} color={C.gold} />
           </div>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Visibility & Access</div>
-            <div style={{ fontSize: 11, color: C.muted, marginTop: 1 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>Visibility & Access</div>
+            <div style={{ fontSize: 13, color: C.muted, marginTop: 1 }}>
               {mode === 'inherit' ? 'Inheriting from parent' : `Override: ${vis}`}
             </div>
           </div>
@@ -192,7 +192,7 @@ export const PermissionPanel: React.FC<PermissionPanelProps> = ({
           {conflict && (
             <div style={conflictBannerStyle}>
               <AlertTriangle size={14} color={C.warn} style={{ flexShrink: 0 }} />
-              <div style={{ fontSize: 12, color: C.warn, lineHeight: 1.5 }}>{conflict}</div>
+              <div style={{ fontSize: 14, color: C.warn, lineHeight: 1.5 }}>{conflict}</div>
               <button style={conflictDismissStyle} onClick={() => setConflict(null)}>Dismiss</button>
             </div>
           )}
@@ -243,7 +243,7 @@ export const PermissionPanel: React.FC<PermissionPanelProps> = ({
                         color={C.gold}
                       />
                     ))}
-                    {dbBatches.length === 0 && <div style={{ fontSize: 12, color: C.muted }}>Loading batches...</div>}
+                    {dbBatches.length === 0 && <div style={{ fontSize: 14, color: C.muted }}>Loading batches...</div>}
                   </div>
                 </div>
               )}
@@ -284,9 +284,9 @@ export const PermissionPanel: React.FC<PermissionPanelProps> = ({
                           color='#667EEA'
                         />
                     ))}
-                    {dbStudents.length === 0 && <div style={{ fontSize: 12, color: C.muted }}>Loading students...</div>}
+                    {dbStudents.length === 0 && <div style={{ fontSize: 14, color: C.muted }}>Loading students...</div>}
                     {dbStudents.length > 0 && studentFilterMode === 'requested' && requestedStudentIds.size === 0 && (
-                      <div style={{ fontSize: 12, color: C.muted, padding: 8, textAlign: 'center' }}>No pending requests for this content.</div>
+                      <div style={{ fontSize: 14, color: C.muted, padding: 10, textAlign: 'center' }}>No pending requests for this content.</div>
                     )}
                   </div>
                 </div>
@@ -342,10 +342,10 @@ const CascadeModal: React.FC<{ onSelect: (c: CascadeMode) => void; onClose: () =
   return (
     <div style={overlayStyle} onClick={onClose}>
       <div style={modalStyle} onClick={e => e.stopPropagation()}>
-        <div style={{ fontSize: 15, fontWeight: 800, color: C.text, marginBottom: 4 }}>
+        <div style={{ fontSize: 17, fontWeight: 800, color: C.text, marginBottom: 4 }}>
           Apply to Children?
         </div>
-        <div style={{ fontSize: 12, color: C.muted, marginBottom: 20 }}>
+        <div style={{ fontSize: 14, color: C.muted, marginBottom: 20 }}>
           Choose how this permission change cascades down the hierarchy.
         </div>
         {CASCADES.map(c => (
@@ -367,10 +367,10 @@ const CascadeModal: React.FC<{ onSelect: (c: CascadeMode) => void; onClose: () =
                 {selected === c.key && <div style={{ width: 6, height: 6, borderRadius: 3, background: C.gold }} />}
               </div>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: selected === c.key ? C.gold : C.text }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: selected === c.key ? C.gold : C.text }}>
                   {c.label}
                 </div>
-                <div style={{ fontSize: 11, color: C.muted, marginTop: 3, lineHeight: 1.5 }}>{c.desc}</div>
+                <div style={{ fontSize: 13, color: C.muted, marginTop: 3, lineHeight: 1.5 }}>{c.desc}</div>
               </div>
             </div>
           </button>
@@ -389,7 +389,7 @@ const ModeBtn: React.FC<{ active: boolean; onClick: () => void; label: string }>
   active, onClick, label,
 }) => (
   <button onClick={onClick} style={{
-    flex: 1, padding: '9px 0', borderRadius: 10, border: 'none', cursor: 'pointer', fontSize: 12,
+    flex: 1, padding: '9px 0', borderRadius: 10, border: 'none', cursor: 'pointer', fontSize: 14,
     fontWeight: active ? 700 : 500,
     color:      active ? C.bg : C.muted,
     background: active ? `linear-gradient(135deg, ${C.gold}, #c9a732)` : C.surfH,
@@ -411,7 +411,7 @@ const VisCard: React.FC<{
     transition: 'all 0.2s',
   }}>
     <opt.Icon size={18} color={selected ? opt.color : C.muted} />
-    <span style={{ fontSize: 11, fontWeight: selected ? 700 : 500, color: selected ? opt.color : C.muted }}>
+    <span style={{ fontSize: 13, fontWeight: selected ? 700 : 500, color: selected ? opt.color : C.muted }}>
       {opt.label}
     </span>
   </button>
@@ -434,8 +434,8 @@ const CheckRow: React.FC<{
       {checked && <Check size={10} color="#000" strokeWidth={3} />}
     </div>
     <div>
-      <div style={{ fontSize: 13, fontWeight: 600, color: checked ? C.text : C.muted }}>{label}</div>
-      {sub && <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>{sub}</div>}
+      <div style={{ fontSize: 15, fontWeight: 600, color: checked ? C.text : C.muted }}>{label}</div>
+      {sub && <div style={{ fontSize: 12, color: C.muted, marginTop: 1 }}>{sub}</div>}
     </div>
   </button>
 );
@@ -466,13 +466,13 @@ const iconWrapStyle: React.CSSProperties = {
 
 const sectionStyle: React.CSSProperties = { marginBottom: 20 };
 const sectionLabelStyle: React.CSSProperties = {
-  fontSize: 10, fontWeight: 700, color: C.gold,
+  fontSize: 12, fontWeight: 700, color: C.gold,
   letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 10,
 };
 
 const toggleRowStyle: React.CSSProperties = {
   display: 'flex', gap: 10,
-  background: C.bg, borderRadius: 12, padding: 6,
+  background: C.bg, borderRadius: 12, padding: 8,
   boxShadow: NM_INSET,
 };
 
@@ -480,7 +480,7 @@ const inheritBadgeStyle: React.CSSProperties = {
   marginTop: 10, padding: '8px 12px', borderRadius: 8,
   background: `rgba(212,175,55,0.08)`,
   border: `1px solid rgba(212,175,55,0.2)`,
-  fontSize: 12, color: C.muted,
+  fontSize: 14, color: C.muted,
 };
 
 const visGridStyle: React.CSSProperties = {
@@ -496,7 +496,7 @@ const filterToggleBtnStyle = (active: boolean): React.CSSProperties => ({
   background: active ? C.surface : 'transparent',
   color: active ? C.text : C.muted,
   border: active ? `1px solid ${C.border}` : '1px solid transparent',
-  borderRadius: 6, fontSize: 11, fontWeight: active ? 700 : 500,
+  borderRadius: 6, fontSize: 13, fontWeight: active ? 700 : 500,
   padding: '4px 10px', cursor: 'pointer', boxShadow: active ? NM_FLAT : 'none',
   transition: 'all 0.2s'
 });
@@ -504,7 +504,7 @@ const filterToggleBtnStyle = (active: boolean): React.CSSProperties => ({
 const datetimeInputStyle: React.CSSProperties = {
   width: '100%', padding: '10px 14px', borderRadius: 10,
   background: C.bg, border: `1px solid ${C.border}`,
-  color: C.text, fontSize: 13,
+  color: C.text, fontSize: 15,
   boxShadow: NM_INSET, outline: 'none',
   boxSizing: 'border-box',
 };
@@ -512,7 +512,7 @@ const datetimeInputStyle: React.CSSProperties = {
 const saveButtonStyle = (saving: boolean): React.CSSProperties => ({
   width: '100%', padding: '12px', borderRadius: 12, border: 'none', cursor: saving ? 'not-allowed' : 'pointer',
   background: saving ? C.surfH : `linear-gradient(135deg, ${C.gold}, #c9a732)`,
-  color: saving ? C.muted : C.bg, fontSize: 14, fontWeight: 800, letterSpacing: 0.5,
+  color: saving ? C.muted : C.bg, fontSize: 16, fontWeight: 800, letterSpacing: 0.5,
   boxShadow: saving ? NM_INSET : `0 4px 16px rgba(212,175,55,0.35)`,
   display: 'flex', alignItems: 'center', justifyContent: 'center',
   transition: 'all 0.2s',
@@ -526,7 +526,7 @@ const conflictBannerStyle: React.CSSProperties = {
 
 const conflictDismissStyle: React.CSSProperties = {
   marginLeft: 'auto', background: 'none', border: 'none',
-  color: C.warn, cursor: 'pointer', fontSize: 11, fontWeight: 700, flexShrink: 0,
+  color: C.warn, cursor: 'pointer', fontSize: 13, fontWeight: 700, flexShrink: 0,
 };
 
 const overlayStyle: React.CSSProperties = {
@@ -540,17 +540,17 @@ const modalStyle: React.CSSProperties = {
 };
 
 const cascadeItemStyle: React.CSSProperties = {
-  width: '100%', padding: 16, borderRadius: 12, border: '1px solid',
+  width: '100%', padding: 18, borderRadius: 12, border: '1px solid',
   cursor: 'pointer', marginBottom: 10, textAlign: 'left', transition: 'all 0.18s',
 };
 
 const cancelBtnStyle: React.CSSProperties = {
-  flex: 1, padding: 12, borderRadius: 10, border: `1px solid ${C.border}`,
+  flex: 1, padding: 14, borderRadius: 10, border: `1px solid ${C.border}`,
   background: C.surfH, color: C.muted, cursor: 'pointer', fontWeight: 700, boxShadow: NM_FLAT,
 };
 
 const confirmBtnStyle: React.CSSProperties = {
-  flex: 2, padding: 12, borderRadius: 10, border: 'none',
+  flex: 2, padding: 14, borderRadius: 10, border: 'none',
   background: `linear-gradient(135deg, ${C.gold}, #c9a732)`,
   color: C.bg, cursor: 'pointer', fontWeight: 800, boxShadow: `0 4px 16px rgba(212,175,55,0.35)`,
 };

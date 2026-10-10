@@ -104,6 +104,189 @@ const ManualMarkModal = ({
   );
 };
 
+// ── Create Manual Attendance Modal ────────────────────────────────────────────
+const CreateManualAttendanceModal = ({
+  onClose,
+  onSave,
+}: {
+  onClose: () => void;
+  onSave: (data: any) => Promise<void>;
+}) => {
+  const [studentId, setStudentId] = useState('');
+  const [studentName, setStudentName] = useState('');
+  const [className, setClassName] = useState('');
+  const [batchName, setBatchName] = useState('');
+  const [mode, setMode] = useState<'online' | 'offline'>('online');
+  const [status, setStatus] = useState<'PRESENT' | 'ABSENT'>('PRESENT');
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!studentName.trim() && !studentId.trim()) return;
+    setSaving(true);
+    try {
+      await onSave({
+        studentId: studentId.trim() || `st_${Date.now()}`,
+        studentName: studentName.trim() || 'Student',
+        className: className.trim() || 'Manual Attendance Session',
+        batchName: batchName.trim(),
+        mode,
+        status,
+        date,
+        note: note.trim(),
+      });
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-white/10 rounded-2xl p-6 max-w-lg w-full shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between border-b border-gray-100 dark:border-white/5 pb-3">
+          <h3 className="text-lg font-bold text-gray-900 dark:text-white">Mark New Student Attendance</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 font-bold text-lg">✕</button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-1">
+              Student Name *
+            </label>
+            <input
+              type="text"
+              value={studentName}
+              onChange={(e) => setStudentName(e.target.value)}
+              placeholder="e.g. Rahul Sharma"
+              className="w-full rounded-xl border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 text-sm p-3 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-1">
+                Student ID / Roll No
+              </label>
+              <input
+                type="text"
+                value={studentId}
+                onChange={(e) => setStudentId(e.target.value)}
+                placeholder="e.g. REG-1029"
+                className="w-full rounded-xl border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 text-sm p-3 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-1">
+                Student Mode
+              </label>
+              <select
+                value={mode}
+                onChange={(e) => setMode(e.target.value as any)}
+                className="w-full rounded-xl border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 text-sm p-3 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="online">🌐 Online Student</option>
+                <option value="offline">🏢 Offline Student</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-1">
+                Class / Subject Name
+              </label>
+              <input
+                type="text"
+                value={className}
+                onChange={(e) => setClassName(e.target.value)}
+                placeholder="e.g. Polity GS Paper 2"
+                className="w-full rounded-xl border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 text-sm p-3 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-1">
+                Batch Name
+              </label>
+              <input
+                type="text"
+                value={batchName}
+                onChange={(e) => setBatchName(e.target.value)}
+                placeholder="e.g. IAS 2026 Batch A"
+                className="w-full rounded-xl border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 text-sm p-3 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-1">
+              Date
+            </label>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full rounded-xl border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 text-sm p-3 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-1">
+              Attendance Status
+            </label>
+            <div className="flex gap-3">
+              {(['PRESENT', 'ABSENT'] as const).map((s) => (
+                <button
+                  type="button"
+                  key={s}
+                  onClick={() => setStatus(s)}
+                  className={`flex-1 py-3 rounded-xl text-sm font-bold border-2 transition-all ${
+                    status === s
+                      ? s === 'PRESENT'
+                        ? 'bg-green-50 border-green-500 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                        : 'bg-red-50 border-red-500 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                      : 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400'
+                  }`}
+                >
+                  {s === 'PRESENT' ? '✅ Present' : '❌ Absent'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-1">
+              Admin Remark (optional)
+            </label>
+            <textarea
+              rows={2}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Reason / Admin note..."
+              className="w-full rounded-xl border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 text-sm p-3 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-3 pt-2">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">
+            Cancel
+          </button>
+          <button
+            disabled={saving || (!studentName.trim() && !studentId.trim())}
+            onClick={handleSubmit}
+            className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 disabled:opacity-50"
+          >
+            {saving ? 'Saving…' : 'Save Attendance'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export const AdminAttendancePage = () => {
   const qc = useQueryClient();
@@ -111,6 +294,7 @@ export const AdminAttendancePage = () => {
   const [filters, setFilters] = useState({ studentName: '', className: '', batchName: '', status: 'ALL', dateFrom: '', dateTo: '' });
   const [showFilters, setShowFilters] = useState(false);
   const [markModal, setMarkModal] = useState<any>(null);
+  const [createModal, setCreateModal] = useState(false);
   const [correctionNote, setCorrectionNote] = useState<Record<string, string>>({});
   const [closingClassId, setClosingClassId] = useState<string | null>(null);
 
@@ -125,7 +309,12 @@ export const AdminAttendancePage = () => {
       if (filters.status !== 'ALL') params.status = filters.status;
       if (filters.dateFrom) params.dateFrom = filters.dateFrom;
       if (filters.dateTo) params.dateTo = filters.dateTo;
-      const res = await NewAttendanceApi.getAdminRecords(params);
+      let res: any = null;
+      try {
+        res = await LmsAttendanceApi.adminGetRecords(params);
+      } catch (e) {
+        res = await NewAttendanceApi.getAdminRecords(params);
+      }
 
       return res?.data?.data || res?.data || [];
     },
@@ -146,6 +335,11 @@ export const AdminAttendancePage = () => {
 
   const handleManualMark = async (id: string, status: 'PRESENT' | 'ABSENT', note: string) => {
     await LmsAttendanceApi.adminMarkManual(id, status, note);
+    refetchRecords();
+  };
+
+  const handleCreateManualAttendance = async (data: any) => {
+    await LmsAttendanceApi.adminCreateManualRecord(data);
     refetchRecords();
   };
 
@@ -203,6 +397,12 @@ export const AdminAttendancePage = () => {
               {closingClassId ? 'Closing…' : 'Close Attendance'}
             </button>
           </div>
+          <button
+            onClick={() => setCreateModal(true)}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold shadow-md transition-all"
+          >
+            + Mark New Attendance
+          </button>
           <button
             onClick={() => { refetchRecords(); refetchCorrections(); }}
             className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
@@ -480,6 +680,14 @@ export const AdminAttendancePage = () => {
           record={markModal}
           onClose={() => setMarkModal(null)}
           onSave={(status, note) => handleManualMark(markModal.id, status, note)}
+        />
+      )}
+
+      {/* Create Manual Attendance Modal */}
+      {createModal && (
+        <CreateManualAttendanceModal
+          onClose={() => setCreateModal(false)}
+          onSave={(data) => handleCreateManualAttendance(data)}
         />
       )}
     </div>

@@ -183,7 +183,7 @@ export const CourseResources: React.FC<CourseResourcesProps> = ({ courseId }) =>
 
       {selectedResourceId && (
         <React.Suspense fallback={
-          <div className="fixed inset-0 z-50 bg-[#0f1219]/90 backdrop-blur-xl p-8 flex items-center justify-center">
+          <div className="fixed inset-0 z-[99999] bg-[#0f1219]/90 backdrop-blur-xl p-8 flex items-center justify-center">
             <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
           </div>
         }>

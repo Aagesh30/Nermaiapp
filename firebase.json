@@ -36,7 +36,7 @@
         ]
       },
       {
-        "source": "**/*.js",
+        "source": "**/*.@(js|mjs)",
         "headers": [
           { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },
           { "key": "Pragma", "value": "no-cache" }
@@ -59,9 +59,6 @@
   },
   "functions": {
     "source": "backend",
-    "runtime": "nodejs20",
-    "predeploy": [
-      "npm --prefix backend run build"
-    ]
+    "runtime": "nodejs20"
   }
 }

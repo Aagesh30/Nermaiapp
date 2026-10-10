@@ -30,15 +30,56 @@ export class CustomLeadsService {
       throw new Error("Student Name and Phone Number are required");
     }
 
+    const cleanPhone = payload.phone.trim();
+    const cleanName = payload.name.trim();
+    const targetFormId = payload.formId || "mock_test_app";
+
+    // Deduplication check: check if an identical or recent submission exists for this phone & form
+    try {
+      const recentSnapshot = await db.collection(CUSTOM_LEADS_COLLECTION)
+        .where("phone", "==", cleanPhone)
+        .get();
+
+      if (!recentSnapshot.empty) {
+        const nowMs = Date.now();
+        for (const doc of recentSnapshot.docs) {
+          const data = doc.data();
+          if (data.isDeleted) continue;
+          if (data.formId !== targetFormId) continue;
+
+          // Check if created within last 5 minutes or if name matches and status is still new
+          const createdMs = data.createdAt?._seconds
+            ? data.createdAt._seconds * 1000
+            : (data.createdAt ? new Date(data.createdAt).getTime() : 0);
+
+          if (!createdMs || (nowMs - createdMs < 5 * 60 * 1000) || (data.name === cleanName && data.status === "new")) {
+            console.log(`[CustomLeadsService] Duplicate lead prevented for phone ${cleanPhone} on form ${targetFormId}. Updating existing lead.`);
+            const updated = {
+              name: cleanName,
+              email: (payload.email || "").trim(),
+              city: (payload.city || "").trim(),
+              mode: payload.mode || "Offline",
+              customData: payload.customData || {},
+              updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            };
+            await doc.ref.update(updated);
+            return { id: doc.id, ...data, ...updated };
+          }
+        }
+      }
+    } catch (dedupErr) {
+      console.warn("[CustomLeadsService] Deduplication check warning:", dedupErr);
+    }
+
     const id = payload.id || randomUUID();
     const now = admin.firestore.FieldValue.serverTimestamp();
 
     const leadData = {
       id,
-      formId: payload.formId || "mock_test_app",
+      formId: targetFormId,
       formTitle: payload.formTitle || "Mock Test Application Form",
-      name: payload.name.trim(),
-      phone: payload.phone.trim(),
+      name: cleanName,
+      phone: cleanPhone,
       email: (payload.email || "").trim(),
       city: (payload.city || "").trim(),
       mode: payload.mode || "Offline",

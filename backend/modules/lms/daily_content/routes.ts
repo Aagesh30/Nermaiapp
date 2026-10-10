@@ -11,6 +11,7 @@ router.get("/", requireAuth, (req, res, next) => {
   }
   return requirePermission("lms_daily_content", "R")(req, res, next);
 }, DailyContentController.getDailyContent);
+router.get("/:id/stream", DailyContentController.streamDailyContent);
 router.delete("/:id", [requireAuth, requirePermission("lms_daily_content", "D")], DailyContentController.deleteDailyContent);
 
 export default router;
