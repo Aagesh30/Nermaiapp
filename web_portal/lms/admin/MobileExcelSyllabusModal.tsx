@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
+import * as FileSystemLegacy from 'expo-file-system/legacy';
 import * as XLSX from 'xlsx';
 import { parseSyllabusWorkbook, ParsedSyllabusResult } from '../utils/excelSyllabusParser';
 import { CourseApi } from '../core/services';
@@ -113,10 +114,30 @@ export const MobileExcelSyllabusModal: React.FC<MobileExcelSyllabusModalProps> =
         const arrayBuf = await res.arrayBuffer();
         workbook = XLSX.read(arrayBuf, { type: 'array' });
       } else {
-        // Native APK (Android/iOS): Read as Base64 string via FileSystem
-        const base64 = await FileSystem.readAsStringAsync(asset.uri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
+        // Native APK (Android/iOS): Read via legacy FileSystem or modern File
+        let base64 = '';
+        try {
+          if (FileSystemLegacy && typeof FileSystemLegacy.readAsStringAsync === 'function') {
+            base64 = await FileSystemLegacy.readAsStringAsync(asset.uri, {
+              encoding: FileSystemLegacy.EncodingType.Base64,
+            });
+          } else {
+            throw new Error('legacy readAsStringAsync unavailable');
+          }
+        } catch (legacyErr) {
+          try {
+            const fsFile = new (FileSystem as any).File(asset.uri);
+            if (typeof fsFile.base64 === 'function') {
+              base64 = await fsFile.base64();
+            } else {
+              throw new Error('File.base64 unavailable');
+            }
+          } catch {
+            base64 = await FileSystem.readAsStringAsync(asset.uri, {
+              encoding: (FileSystem as any).EncodingType?.Base64 || 'base64',
+            });
+          }
+        }
         workbook = XLSX.read(base64, { type: 'base64' });
       }
 

@@ -31,16 +31,24 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
       ? normalizedBody.targetBatchIds[0]
       : (normalizedBody.targetBatchIds || normalizedBody.batchId || null);
 
-    // Dispatch background push notification to target batch or all students
+    const isBatchSpecific = !!targetBatchVal && targetBatchVal !== 'all';
+    const resourceTitle = normalizedBody.title || (data as any)?.title || 'New study resource';
+    const resourceId = (data as any)?.id || '';
+
+    // Dispatch background push notification to target batch or all (students + guests included)
     sendPushNotification({
       title: "📚 New Study Material Added",
-      body: `${normalizedBody.title || (data as any)?.title || 'New study resource'} is now available in your LMS library.`,
-      targetRole: "student",
-      targetBatch: targetBatchVal,
+      body: `${resourceTitle} is now available in your LMS library.`,
+      targetRole: isBatchSpecific ? "student" : "all",
+      targetBatch: isBatchSpecific ? targetBatchVal : null,
+      excludeUserId: userId,
       data: {
         targetTab: "lms",
         targetSub: "resources",
-        resourceId: (data as any)?.id || ""
+        screen: "lms",
+        subTab: "resources",
+        resourceId,
+        dedupeId: `resource_${resourceId}`
       }
     }).catch(err => console.log("[Push] Resource creation push note:", err?.message));
 
@@ -156,7 +164,8 @@ export const uploadVersion = async (req: Request, res: Response, next: NextFunct
 
 export const getCourseHierarchy = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const data = await service.getCourseHierarchyResources(req.params.courseId as string, req.user!.tenantId);
+    const userContext = req.user ? { userId: req.user.userId, role: req.user.role, tenantId: req.user.tenantId } : undefined;
+    const data = await service.getCourseHierarchyResources(req.params.courseId as string, req.user!.tenantId, userContext);
     res.json({ success: true, data });
   } catch (error) {
     next(error);

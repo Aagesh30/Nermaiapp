@@ -286,6 +286,26 @@ export class ProfileRequestController {
                 console.error("Failed to delete profile alerts for student:", err);
             }
 
+            try {
+                const { sendPushNotification } = await import("../../../services/pushService");
+                const senderName = name || username || "A student";
+                sendPushNotification({
+                    title: "📝 New Profile Request Submitted",
+                    body: `${senderName} submitted a profile completion request for verification.`,
+                    targetRole: "admin",
+                    excludeUserId: studentId || username || null,
+                    data: {
+                        targetTab: "erp",
+                        targetSub: "profile-requests",
+                        screen: "erp",
+                        subTab: "profile-requests",
+                        requestId: id,
+                        studentId: studentId,
+                        dedupeId: `profile_req_${id}`
+                    }
+                }).catch(err => console.log("[Push] Profile submit push note:", err?.message));
+            } catch (_) {}
+
             return res.status(201).json({
                 success: true,
                 message: "Profile completion request submitted. Awaiting admin approval.",
@@ -529,6 +549,28 @@ export class ProfileRequestController {
                 await db.collection("admin_alerts").doc(alertId).delete();
             } catch (_) { /* non-critical: alert may not exist */ }
 
+            try {
+                const { sendPushNotification } = await import("../../../services/pushService");
+                if (data.studentId) {
+                    sendPushNotification({
+                        title: "✅ Profile Approved",
+                        body: "Your profile details have been approved and updated successfully.",
+                        targetUserId: data.studentId,
+                        excludeUserId: (req as any).user?.userId || null,
+                        data: {
+                            targetTab: "erp",
+                            targetSub: "my-profile",
+                            screen: "erp",
+                            subTab: "my-profile",
+                            requestId: id,
+                            studentId: data.studentId,
+                            status: "approved",
+                            dedupeId: `profile_appr_${id}`
+                        }
+                    }).catch(err => console.log("[Push] Profile approve push note:", err?.message));
+                }
+            } catch (_) {}
+
             return res.status(200).json({ success: true, message: "Profile request approved and student record updated." });
         } catch (error: any) {
             return res.status(500).json({ success: false, message: error.message || "Failed to approve profile request" });
@@ -579,6 +621,29 @@ export class ProfileRequestController {
                 const alertId = `profile_req_${id}`;
                 await db.collection("admin_alerts").doc(alertId).delete();
             } catch (_) { /* non-critical: alert may not exist */ }
+
+            try {
+                const { sendPushNotification } = await import("../../../services/pushService");
+                if (data.studentId) {
+                    const reasonText = rejectionReason || "Please review and resubmit with correct details.";
+                    sendPushNotification({
+                        title: "❌ Profile Request Rejected",
+                        body: `Your profile request was rejected: ${reasonText}`,
+                        targetUserId: data.studentId,
+                        excludeUserId: reviewedBy || (req as any).user?.userId || null,
+                        data: {
+                            targetTab: "erp",
+                            targetSub: "my-profile",
+                            screen: "erp",
+                            subTab: "my-profile",
+                            requestId: id,
+                            studentId: data.studentId,
+                            status: "rejected",
+                            dedupeId: `profile_rej_${id}`
+                        }
+                    }).catch(err => console.log("[Push] Profile reject push note:", err?.message));
+                }
+            } catch (_) {}
 
             return res.status(200).json({ success: true, message: "Profile request rejected." });
         } catch (error: any) {

@@ -273,6 +273,27 @@ export class StudentController {
                 await db.collection("users").doc(userId).set(userPayload);
             }
 
+            // Dispatch push notification to admin about new student addition
+            try {
+                const { sendPushNotification } = await import("../../../services/pushService");
+                const studentFullName = (firstName && lastName) ? `${firstName} ${lastName}` : (firstName || lastName || loginUsername || "New Student");
+                const studentIdentifier = loginUsername || admissionNumber || rollNumber || "";
+                sendPushNotification({
+                    title: "👨‍🎓 New Student Added",
+                    body: `${studentFullName}${studentIdentifier ? ` (${studentIdentifier})` : ""} has been enrolled.`,
+                    targetRole: "admin",
+                    excludeUserId: currentUserId || null,
+                    data: {
+                        targetTab: "erp",
+                        targetSub: "students",
+                        screen: "erp",
+                        subTab: "students",
+                        studentId: id,
+                        dedupeId: `student_added_${id}`
+                    }
+                }).catch(err => console.log("[Push] Student create push note:", err?.message));
+            } catch (_) {}
+
             return res.status(201).json({
                 success: true,
                 message: "Student created successfully",
@@ -998,6 +1019,69 @@ export class StudentController {
 
             await docRef.update(updateData);
 
+            // Trigger push notifications for ID Card, Hall Ticket, or Fee Alert
+            // Only fire when status transitions from false to true to prevent duplicate pushes on subsequent updates
+            try {
+                const { sendPushNotification } = await import("../../../services/pushService");
+                const prevData = doc.data() || {};
+                const prevIdCard = Boolean(prevData.idCardGenerated);
+                const prevHallTicket = Boolean(prevData.hallTicketGenerated);
+                const prevFeeAlert = Boolean(prevData.feeAlertActive);
+                const nowTs = Date.now();
+
+                if (!prevIdCard && idCardGenerated === true) {
+                    sendPushNotification({
+                        title: "🪪 ID Card Generated",
+                        body: "Your Student Identity Card has been generated and is ready to view.",
+                        targetUserId: id,
+                        excludeUserId: (req as any).user?.userId || null,
+                        data: {
+                            targetTab: "erp",
+                            targetSub: "id-card",
+                            screen: "erp",
+                            subTab: "id-card",
+                            studentId: id,
+                            dedupeId: `id_card_${id}_${nowTs}`
+                        }
+                    }).catch(err => console.log("[Push] ID card push note:", err?.message));
+                }
+
+                if (!prevHallTicket && hallTicketGenerated === true) {
+                    const examName = hallTicketExamName || prevData.hallTicketExamName || "Upcoming Examination";
+                    sendPushNotification({
+                        title: "🎟️ Hall Ticket Generated",
+                        body: `Your Hall Ticket for "${examName}" has been generated.`,
+                        targetUserId: id,
+                        excludeUserId: (req as any).user?.userId || null,
+                        data: {
+                            targetTab: "erp",
+                            targetSub: "hall-ticket",
+                            screen: "erp",
+                            subTab: "hall-ticket",
+                            studentId: id,
+                            dedupeId: `hall_ticket_${id}_${nowTs}`
+                        }
+                    }).catch(err => console.log("[Push] Hall ticket push note:", err?.message));
+                }
+
+                if (!prevFeeAlert && feeAlertActive === true) {
+                    sendPushNotification({
+                        title: "⚠️ Fee Payment Reminder",
+                        body: feeAlertNote || "You have a pending tuition fee payment. Please check your fee details.",
+                        targetUserId: id,
+                        excludeUserId: (req as any).user?.userId || null,
+                        data: {
+                            targetTab: "erp",
+                            targetSub: "pay-fees",
+                            screen: "erp",
+                            subTab: "pay-fees",
+                            studentId: id,
+                            dedupeId: `fee_alert_${id}_${nowTs}`
+                        }
+                    }).catch(err => console.log("[Push] Fee alert push note:", err?.message));
+                }
+            } catch (_) {}
+
             // If fee details are updated, delete existing fee alerts for this student
             if (totalFees !== undefined || feesPaid !== undefined) {
                 try {
@@ -1295,6 +1379,42 @@ export class StudentController {
                 }
             }
 
+            // Trigger push notifications if bulk ID Card or Hall Ticket generation was performed
+            try {
+                const { sendPushNotification } = await import("../../../services/pushService");
+                if (type === "idcard" && idCardGenerated === true && totalUpdated > 0) {
+                    sendPushNotification({
+                        title: "🪪 ID Card Generated",
+                        body: "Student Identity Cards have been generated and are now available.",
+                        targetRole: "student",
+                        targetBatch: batch || null,
+                        excludeUserId: (req as any).user?.userId || null,
+                        data: {
+                            targetTab: "erp",
+                            targetSub: "id-card",
+                            screen: "erp",
+                            subTab: "id-card",
+                            dedupeId: `id_card_bulk_${batch || 'all'}_${Date.now()}`
+                        }
+                    }).catch(err => console.log("[Push] Bulk ID card push note:", err?.message));
+                } else if (type === "hallticket" && hallTicketGenerated === true && totalUpdated > 0) {
+                    sendPushNotification({
+                        title: "🎟️ Hall Ticket Generated",
+                        body: `Hall Tickets for "${hallTicketExamName || 'Upcoming Examination'}" have been generated.`,
+                        targetRole: "student",
+                        targetBatch: batch || null,
+                        excludeUserId: (req as any).user?.userId || null,
+                        data: {
+                            targetTab: "erp",
+                            targetSub: "hall-ticket",
+                            screen: "erp",
+                            subTab: "hall-ticket",
+                            dedupeId: `hall_ticket_bulk_${batch || 'all'}_${Date.now()}`
+                        }
+                    }).catch(err => console.log("[Push] Bulk hall ticket push note:", err?.message));
+                }
+            } catch (_) {}
+
             return res.status(200).json({
                 success: true,
                 message: `Successfully updated ${totalUpdated} profiles`,
@@ -1508,4 +1628,284 @@ export class StudentController {
             });
         }
     }
+
+    /**
+     * GET /api/erp/student/mock-roll/config
+     * Fetches current locked Special Mock Roll configuration
+     */
+    static async getMockRollConfig(req: Request, res: Response) {
+        try {
+            const doc = await db.collection("settings").doc("special_mock_roll_config").get();
+            if (!doc.exists) {
+                return res.status(200).json({
+                    success: true,
+                    data: {
+                        isLocked: false,
+                        startingRollNo: "182026",
+                        lastAssignedRollNo: 182025,
+                        allocatedBatches: [],
+                        hallTicketDefaults: {
+                            examName: "UPSC Special Mock Examination",
+                            examDate: "",
+                            examTime: "10:00 AM - 12:00 PM",
+                            venue: "NERMAI IAS Academy Main Campus",
+                            instructions: "1. Bring printed copy of this Hall Ticket and original ID Proof.\n2. Standard blue/black ballpoint pen only.\n3. Electronic gadgets are strictly prohibited."
+                        }
+                    }
+                });
+            }
+
+            return res.status(200).json({
+                success: true,
+                data: doc.data()
+            });
+        } catch (error: any) {
+            return res.status(500).json({
+                success: false,
+                message: error.message || "Failed to fetch mock roll config"
+            });
+        }
+    }
+
+    /**
+     * POST /api/erp/student/mock-roll/generate
+     * Assigns constant sequential mock roll numbers & automatically issues hall tickets
+     */
+    static async generateMockRollNumbers(req: Request, res: Response) {
+        try {
+            const {
+                startingRollNo,
+                orderedBatches,
+                isAppendMode,
+                forceReassignAll,
+                hallTicketData
+            } = req.body;
+
+            if (!Array.isArray(orderedBatches) || orderedBatches.length === 0) {
+                return res.status(400).json({ success: false, message: "At least one batch must be selected." });
+            }
+
+            const configRef = db.collection("settings").doc("special_mock_roll_config");
+            const configDoc = await configRef.get();
+            const existingConfig = configDoc.exists ? configDoc.data() : null;
+
+            // Determine starting integer
+            let currentRollNum: number;
+            if (isAppendMode && existingConfig?.lastAssignedRollNo) {
+                currentRollNum = Number(existingConfig.lastAssignedRollNo) + 1;
+            } else {
+                currentRollNum = parseInt(String(startingRollNo || "182026").trim(), 10) || 182026;
+            }
+
+            const startOfRun = currentRollNum;
+            const norm = (s: string) => String(s || "").trim().toLowerCase();
+
+            // Fetch all active students
+            const studentsSnap = await db.collection("students")
+                .where("isDeleted", "==", false)
+                .get();
+
+            const allStudents: any[] = [];
+            studentsSnap.forEach(d => {
+                allStudents.push({ id: d.id, ...d.data() });
+            });
+
+            // Map each student to their batches
+            const newAllocations: { batchName: string; count: number; startRoll: number; endRoll: number }[] = [];
+            const studentUpdates: { id: string; mockRollNumber: string }[] = [];
+            const existingBatchAllocations = isAppendMode && Array.isArray(existingConfig?.allocatedBatches)
+                ? [...existingConfig.allocatedBatches]
+                : [];
+
+            for (const bName of orderedBatches) {
+                const normB = norm(bName);
+                const batchStudents = allStudents.filter(s => {
+                    // In append mode without forceReassignAll, skip students who already have a persistent mockRollNumber
+                    if (isAppendMode && !forceReassignAll && s.mockRollNumber) {
+                        return false;
+                    }
+                    const sBatches = [
+                        s.batch,
+                        s.batchName,
+                        ...(Array.isArray(s.batches) ? s.batches.map((b: any) => typeof b === 'string' ? b : b?.batchName) : [])
+                    ].filter(Boolean).map(norm);
+
+                    return sBatches.some(sb => sb === normB || sb.startsWith(normB + " ") || sb.startsWith(normB + "("));
+                });
+
+                const count = batchStudents.length;
+                const bStartRoll = currentRollNum;
+                const bEndRoll = count > 0 ? (currentRollNum + count - 1) : currentRollNum;
+
+                for (const st of batchStudents) {
+                    const sid = st.id;
+                    if (sid) {
+                        studentUpdates.push({
+                            id: sid,
+                            mockRollNumber: String(currentRollNum)
+                        });
+                        currentRollNum++;
+                    }
+                }
+
+                newAllocations.push({
+                    batchName: bName,
+                    count,
+                    startRoll: bStartRoll,
+                    endRoll: bEndRoll
+                });
+            }
+
+            // Hall ticket payload
+            const htExamName = hallTicketData?.examName || "UPSC Special Mock Examination";
+            const htExamDate = hallTicketData?.examDate || "";
+            const htExamTime = hallTicketData?.examTime || "10:00 AM - 12:00 PM";
+            const htVenue = hallTicketData?.venue || "NERMAI IAS Academy Main Campus";
+            const htInstructions = hallTicketData?.instructions || "1. Bring printed copy of this Hall Ticket and original ID Proof.\n2. Standard blue/black ballpoint pen only.\n3. Electronic gadgets are strictly prohibited.";
+
+            // Batch commit updates to students
+            if (studentUpdates.length > 0) {
+                for (let i = 0; i < studentUpdates.length; i += 400) {
+                    const chunk = studentUpdates.slice(i, i + 400);
+                    const batchWrite = db.batch();
+
+                    for (const u of chunk) {
+                        const sRef = db.collection("students").doc(u.id);
+                        batchWrite.set(sRef, {
+                            mockRollNumber: u.mockRollNumber,
+                            hallTicketGenerated: true,
+                            hallTicketExamName: htExamName,
+                            hallTicketExamDate: htExamDate,
+                            hallTicketTime: htExamTime,
+                            hallTicketVenue: htVenue,
+                            hallTicketInstructions: htInstructions,
+                            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                        }, { merge: true });
+                    }
+
+                    await batchWrite.commit();
+                }
+            }
+
+            // Save new config state
+            const finalAllocatedBatches = isAppendMode
+                ? [...existingBatchAllocations, ...newAllocations]
+                : newAllocations;
+
+            const finalConfig = {
+                isLocked: true,
+                startingRollNo: String(existingConfig?.startingRollNo || startingRollNo || "182026"),
+                lastAssignedRollNo: currentRollNum - 1,
+                allocatedBatches: finalAllocatedBatches,
+                hallTicketDefaults: {
+                    examName: htExamName,
+                    examDate: htExamDate,
+                    examTime: htExamTime,
+                    venue: htVenue,
+                    instructions: htInstructions
+                },
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                updatedBy: "admin"
+            };
+
+            await configRef.set(finalConfig, { merge: true });
+
+            // Notify students that constant mock roll numbers and hall tickets are issued
+            if (studentUpdates.length > 0) {
+                try {
+                    const { sendPushNotification } = await import("../../../services/pushService");
+                    sendPushNotification({
+                        title: "🎟️ Hall Ticket Generated",
+                        body: `Your Hall Ticket for "${htExamName || 'UPSC Special Mock Examination'}" has been issued.`,
+                        targetRole: "student",
+                        excludeUserId: (req as any).user?.userId || null,
+                        data: {
+                            targetTab: "erp",
+                            targetSub: "hall-ticket",
+                            screen: "erp",
+                            subTab: "hall-ticket",
+                            dedupeId: `mock_ht_gen_${Date.now()}`
+                        }
+                    }).catch(err => console.log("[Push] Mock hall ticket push note:", err?.message));
+                } catch (_) {}
+            }
+
+            return res.status(200).json({
+                success: true,
+                message: `Successfully assigned constant mock roll numbers and generated hall tickets for ${studentUpdates.length} candidates!`,
+                data: {
+                    assignedCount: studentUpdates.length,
+                    startRoll: startOfRun,
+                    endRoll: currentRollNum > startOfRun ? currentRollNum - 1 : startOfRun,
+                    config: finalConfig
+                }
+            });
+        } catch (error: any) {
+            console.error("Error generating mock roll numbers:", error);
+            return res.status(500).json({
+                success: false,
+                message: error.message || "Failed to generate mock roll numbers"
+            });
+        }
+    }
+
+    /**
+     * POST /api/erp/student/mock-roll/unlock
+     * Unlocks the mock roll configuration so base rolls and batches can be re-configured,
+     * and reverts the generated hall tickets & mock roll numbers.
+     */
+    static async unlockMockRollConfig(req: Request, res: Response) {
+        try {
+            const configRef = db.collection("settings").doc("special_mock_roll_config");
+            const configDoc = await configRef.get();
+            const configData = configDoc.exists ? configDoc.data() : null;
+
+            // Fetch students who currently have mockRollNumber assigned
+            const snap = await db.collection("students")
+                .where("mockRollNumber", "!=", null)
+                .get();
+
+            if (!snap.empty) {
+                const docs = snap.docs;
+                for (let i = 0; i < docs.length; i += 400) {
+                    const chunk = docs.slice(i, i + 400);
+                    const batchWrite = db.batch();
+                    for (const doc of chunk) {
+                        batchWrite.update(doc.ref, {
+                            mockRollNumber: admin.firestore.FieldValue.delete(),
+                            hallTicketGenerated: false,
+                            hallTicketExamName: admin.firestore.FieldValue.delete(),
+                            hallTicketExamDate: admin.firestore.FieldValue.delete(),
+                            hallTicketTime: admin.firestore.FieldValue.delete(),
+                            hallTicketVenue: admin.firestore.FieldValue.delete(),
+                            hallTicketInstructions: admin.firestore.FieldValue.delete(),
+                            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                        });
+                    }
+                    await batchWrite.commit();
+                }
+            }
+
+            // Reset config state
+            await configRef.set({
+                isLocked: false,
+                allocatedBatches: [],
+                lastAssignedRollNo: null,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                updatedBy: (req as any).user?.name || (req as any).user?.uid || "admin"
+            }, { merge: true });
+
+            return res.status(200).json({
+                success: true,
+                message: `Mock roll configuration unlocked and hall tickets reverted successfully for ${snap.size} candidate(s).`
+            });
+        } catch (error: any) {
+            console.error("Error unlocking mock roll config:", error);
+            return res.status(500).json({
+                success: false,
+                message: error.message || "Failed to unlock mock roll configuration"
+            });
+        }
+    }
 }
+

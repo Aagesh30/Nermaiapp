@@ -77,6 +77,49 @@ export class LmsAttendanceService {
     };
 
     await db.collection(ATTENDANCE_COL).doc(id).set(record);
+
+    // Sync to student's attendanceLog in students collection so ERP Attendance Registry reflects it automatically
+    try {
+      const dateStr = now.split('T')[0];
+      let targetStudentId = studentId;
+      let sDocRef = db.collection('students').doc(targetStudentId);
+      let sDoc = await sDocRef.get();
+      if (!sDoc.exists) {
+        try {
+          const uDoc = await db.collection('users').doc(studentId).get();
+          if (uDoc.exists && uDoc.data()?.studentId) {
+            targetStudentId = uDoc.data()!.studentId;
+            sDocRef = db.collection('students').doc(targetStudentId);
+            sDoc = await sDocRef.get();
+          }
+        } catch (uErr) {}
+      }
+      if (!sDoc.exists) {
+        const q = await db.collection('students').where('userId', '==', studentId).limit(1).get();
+        if (!q.empty) {
+          sDocRef = q.docs[0].ref;
+          sDoc = q.docs[0];
+          targetStudentId = sDoc.id;
+        }
+      }
+      if (sDoc.exists) {
+        const sData = sDoc.data() || {};
+        const log = sData.attendanceLog || {};
+        if (log[dateStr] !== 'present') {
+          const newAttended = (Number(sData.attendedDays || 0)) + 1;
+          await sDocRef.update({
+            [`attendanceLog.${dateStr}`]: 'present',
+            attendedDays: newAttended,
+            lastAttendanceDate: dateStr,
+            lastAttendanceStatus: 'present',
+            updatedAt: now,
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('[LMS-ATT-SVC] Failed to sync attendanceLog to students collection:', e);
+    }
+
     return record;
   }
 

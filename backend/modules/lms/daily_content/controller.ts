@@ -141,17 +141,38 @@ export class DailyContentController {
             await db.collection(CONTENT_COLLECTION).doc(contentId).set(payload);
 
             // Dispatch background push notification to target audience / batch
+            const nowTs = Date.now();
             sendPushNotification({
                 title: "📰 Daily Study Content Released",
                 body: `${title} (${date}) is now available in your LMS daily content.`,
                 targetRole: "student",
                 targetBatch: payload.targetBatch,
+                excludeUserId: (req as any).user?.userId || payload.createdBy || null,
                 data: {
                     targetTab: "lms",
                     targetSub: "daily-content",
-                    contentId
+                    screen: "lms",
+                    subTab: "daily-content",
+                    contentId,
+                    dedupeId: `daily_content_${contentId}_${nowTs}`
                 }
             }).catch(err => console.log("[Push] Daily content creation push note:", err?.message));
+
+            // Dispatch admin notification for new daily content
+            sendPushNotification({
+                title: "📰 New Daily Content Published",
+                body: `"${title}" (${date}) has been added to LMS daily content.`,
+                targetRole: "admin",
+                excludeUserId: (req as any).user?.userId || payload.createdBy || null,
+                data: {
+                    targetTab: "lms",
+                    targetSub: "daily-content",
+                    screen: "lms",
+                    subTab: "daily-content",
+                    contentId,
+                    dedupeId: `daily_content_admin_${contentId}_${nowTs}`
+                }
+            }).catch(err => console.log("[Push] Daily content admin push note:", err?.message));
 
             return res.status(200).json({
                 success: true,

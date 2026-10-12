@@ -170,11 +170,12 @@ export class ResourceService {
 
   async listResources(filters: any, userContext?: { userId: string; role: string; tenantId: string }): Promise<any[]> {
     const cacheKey = `resources_list_${JSON.stringify(filters)}`;
-    let list = generalCache.get<any>(cacheKey);
-    if (!list) {
-      list = await this.repo.list(filters);
-      generalCache.set(cacheKey, list, 300);
+    let cachedList = generalCache.get<any[]>(cacheKey);
+    if (!cachedList) {
+      cachedList = await this.repo.list(filters);
+      generalCache.set(cacheKey, cachedList, 300);
     }
+    let list = Array.isArray(cachedList) ? [...cachedList] : [];
 
     // Filter list for student accounts based on batch memberships
     const userRole = (userContext?.role || '').toLowerCase();
@@ -183,29 +184,29 @@ export class ResourceService {
     if (userContext && userContext.userId && !isAdminOrStaff) {
       try {
         const accessCtx = await getAccessContext(userContext.userId, userContext.tenantId || filters?.tenantId);
-        const studentBatchIds = (accessCtx?.batchIds || []).map(id => String(id).trim().toLowerCase());
+        const studentBatchIds = (accessCtx?.batchIds || []).map(id => String(id).trim().toLowerCase()).filter(Boolean);
         const isEnrolledInAnyBatch = (accessCtx?.accessProfiles || []).includes('batch') || studentBatchIds.length > 0;
 
         list = list.filter(res => {
-          const visibility = (res.visibility || 'public').toLowerCase();
-          if (visibility === 'public' || visibility === 'guest') return true;
+          const visibility = String(res.visibility || 'public').trim().toLowerCase();
+          const rawTargetBatchIds = res.targetBatchIds || [];
+          const targetBatchIds = (Array.isArray(rawTargetBatchIds)
+            ? rawTargetBatchIds.map(id => String(id).trim().toLowerCase())
+            : [String(rawTargetBatchIds).trim().toLowerCase()]).filter(Boolean);
 
-          if (visibility === 'premium') {
-            return isEnrolledInAnyBatch || (accessCtx?.role || '').toLowerCase() === 'student';
+          const actualSpecificBatches = targetBatchIds.filter(id => id !== 'all' && id !== 'all_paid' && id !== 'all_free');
+          const hasSpecificBatch = actualSpecificBatches.length > 0;
+
+          if (visibility === 'batch' || hasSpecificBatch) {
+            if (!isEnrolledInAnyBatch) return false;
+            if (actualSpecificBatches.length === 0) return false;
+            return studentBatchIds.some(id => actualSpecificBatches.includes(id));
           }
 
-          if (visibility === 'batch') {
-            const rawTargetBatchIds = res.targetBatchIds || [];
-            const targetBatchIds = (Array.isArray(rawTargetBatchIds)
-              ? rawTargetBatchIds.map(id => String(id).trim().toLowerCase())
-              : [String(rawTargetBatchIds).trim().toLowerCase()]).filter(Boolean);
+          if (visibility === 'public' || visibility === 'free') return true;
 
-            if (targetBatchIds.length === 0) return false;
-            if (targetBatchIds.includes('all')) return true;
-            if (targetBatchIds.includes('all_paid') && isEnrolledInAnyBatch) return true;
-            if (targetBatchIds.includes('all_free') && !isEnrolledInAnyBatch) return true;
-
-            return studentBatchIds.some(id => targetBatchIds.includes(id));
+          if (visibility === 'premium' || visibility === 'paid') {
+            return isEnrolledInAnyBatch || (accessCtx?.role || '').toLowerCase() === 'student';
           }
 
           if (visibility === 'selected') {
@@ -213,7 +214,7 @@ export class ResourceService {
             return Array.isArray(rawTargets) && rawTargets.includes(userContext.userId);
           }
 
-          return false;
+          return isEnrolledInAnyBatch;
         });
       } catch (err) {
         console.warn('[ResourceService] Batch filter fallback error:', err);
@@ -625,10 +626,54 @@ YES
     });
   }
 
-  async getCourseHierarchyResources(courseId: string, tenantId: string) {
+  async getCourseHierarchyResources(courseId: string, tenantId: string, userContext?: { userId: string; role: string; tenantId: string }) {
     // We fetch all resources for the tenant, then group them in memory.
     // This minimizes Firestore reads for LMS platforms since resources per tenant are typically < 10,000.
-    const allResources = await this.repo.list({ tenantId });
+    let allResources = await this.repo.list({ tenantId });
+
+    // Filter resources for student accounts based on batch memberships
+    const userRole = (userContext?.role || '').toLowerCase();
+    const isAdminOrStaff = ['super_admin', 'admin', 'teacher', 'staff', 'creator', 'management', 'developer'].includes(userRole);
+
+    if (userContext && userContext.userId && !isAdminOrStaff) {
+      try {
+        const accessCtx = await getAccessContext(userContext.userId, userContext.tenantId || tenantId);
+        const studentBatchIds = (accessCtx?.batchIds || []).map(id => String(id).trim().toLowerCase()).filter(Boolean);
+        const isEnrolledInAnyBatch = (accessCtx?.accessProfiles || []).includes('batch') || studentBatchIds.length > 0;
+
+        allResources = allResources.filter(res => {
+          const visibility = String(res.visibility || 'public').trim().toLowerCase();
+          const rawTargetBatchIds = res.targetBatchIds || [];
+          const targetBatchIds = (Array.isArray(rawTargetBatchIds)
+            ? rawTargetBatchIds.map(id => String(id).trim().toLowerCase())
+            : [String(rawTargetBatchIds).trim().toLowerCase()]).filter(Boolean);
+
+          const actualSpecificBatches = targetBatchIds.filter(id => id !== 'all' && id !== 'all_paid' && id !== 'all_free');
+          const hasSpecificBatch = actualSpecificBatches.length > 0;
+
+          if (visibility === 'batch' || hasSpecificBatch) {
+            if (!isEnrolledInAnyBatch) return false;
+            if (actualSpecificBatches.length === 0) return false;
+            return studentBatchIds.some(id => actualSpecificBatches.includes(id));
+          }
+
+          if (visibility === 'public' || visibility === 'free') return true;
+
+          if (visibility === 'premium' || visibility === 'paid') {
+            return isEnrolledInAnyBatch || (accessCtx?.role || '').toLowerCase() === 'student';
+          }
+
+          if (visibility === 'selected') {
+            const rawTargets = res.targetStudentIds || [];
+            return Array.isArray(rawTargets) && rawTargets.includes(userContext.userId);
+          }
+
+          return isEnrolledInAnyBatch;
+        });
+      } catch (err) {
+        console.warn('[ResourceService] Hierarchy batch filter fallback error:', err);
+      }
+    }
 
     // We also need the course syllabus tree to know which subjects/topics/classes belong to this course.
     const { CourseService } = require('../courses/service'); // Lazy load to avoid circular dependency

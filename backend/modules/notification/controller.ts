@@ -21,6 +21,7 @@ async function dispatchPushToExpo(targets: {
     targetGroup?: string;
     targetStudentId?: string | null;
     targetBatch?: string | null;
+    excludeUserId?: string | null;
     data?: Record<string, any>;
 }) {
     let targetRole: "all" | "student" | "guest" | "admin" | "staff" | "super_admin" = "all";
@@ -35,6 +36,7 @@ async function dispatchPushToExpo(targets: {
             targetRole,
             targetUserId: targets.targetStudentId || null,
             targetBatch: targets.targetBatch || null,
+            excludeUserId: targets.excludeUserId || null,
             data: targets.data
         });
     } catch (e: any) {
@@ -148,6 +150,7 @@ export class NotificationController {
                 targetGroup,
                 targetStudentId,
                 targetBatch,
+                excludeUserId: (req as any).user?.userId || (sentBy && sentBy !== "admin" ? sentBy : null) || null,
                 data: {
                     targetTab: isFeeAlert ? "erp" : (targetGroup === "guest" ? "home" : "dashboard"),
                     targetSub: isFeeAlert ? "pay-fees" : "notices",

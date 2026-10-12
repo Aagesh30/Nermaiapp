@@ -23,6 +23,29 @@ export class FeeRemindersController {
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 isDeleted: false
             });
+
+            if (studentId) {
+                try {
+                    const { sendPushNotification } = await import("../../../services/pushService");
+                    sendPushNotification({
+                        title: "⚠️ Fee Payment Reminder",
+                        body: message || "You have a pending tuition fee reminder. Please check your fee details.",
+                        targetUserId: studentId,
+                        excludeUserId: createdBy || (req as any).user?.userId || null,
+                        data: {
+                            targetTab: "erp",
+                            targetSub: "pay-fees",
+                            screen: "erp",
+                            subTab: "pay-fees",
+                            studentId: studentId,
+                            reminderId: id,
+                            dueDate: dueDate || "",
+                            dedupeId: `fee_reminder_${id}_${Date.now()}`
+                        }
+                    }).catch(err => console.log("[Push] Fee reminder push note:", err?.message));
+                } catch (_) {}
+            }
+
             return res.status(201).json({ success: true, message: "Reminder created", data: { id } });
         } catch (e: any) { return res.status(500).json({ success: false, message: e.message }); }
     }

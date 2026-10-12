@@ -108,4 +108,12 @@ router.get(
     ReviewController.getTestSubjectDiagnostics
 );
 
+/**
+ * Batch Academic Analytics (Health overview, Top improvers, At-risk list, Quality checks)
+ */
+router.get(
+    "/batch-analytics",
+    ReviewController.getBatchAcademicAnalytics
+);
+
 export default router;

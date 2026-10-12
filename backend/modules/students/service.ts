@@ -456,6 +456,27 @@ export class StudentService {
       qrCodeEnabledAt: null,
     };
     await db.collection('students').doc(resolvedStudentId).update(updatePayload);
+
+    try {
+      const { sendPushNotification } = await import('../../services/pushService');
+      const sData = doc.data() as any;
+      const studentName = sData?.displayName || `${sData?.firstName || ''} ${sData?.lastName || ''}`.trim() || sData?.loginUsername || sData?.rollNumber || 'A student';
+      sendPushNotification({
+        title: '📱 QR Page Permission Request',
+        body: `${studentName} requested QR page access permission.`,
+        targetRole: 'admin',
+        excludeUserId: resolvedStudentId,
+        data: {
+          targetTab: 'erp',
+          targetSub: 'qr-permissions',
+          screen: 'erp',
+          subTab: 'qr-permissions',
+          studentId: resolvedStudentId,
+          dedupeId: `qr_req_${resolvedStudentId}_${Date.now()}`
+        }
+      }).catch(err => console.log('[Push] QR permission request push note:', err?.message));
+    } catch (_) {}
+
     return { success: true };
   }
 

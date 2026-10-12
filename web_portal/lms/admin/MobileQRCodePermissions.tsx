@@ -1334,7 +1334,7 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
                     </Text>
                   </View>
 
-                  {/* Receipt Screenshot Preview & Actions */}
+                  {/* Receipt Screenshot Preview */}
                   <View
                     style={{
                       flexDirection: 'row',
@@ -1350,7 +1350,7 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
                           setPreviewImage(ack.screenshotUrl);
                           setPreviewAckData(ack);
                         }}
-                        style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
                       >
                         <Image
                           source={{ uri: ack.screenshotUrl }}
@@ -1365,57 +1365,57 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
                         No Image Attached
                       </Text>
                     )}
-
-                    {/* Approve & Record Fee / Reject Buttons (if pending) */}
-                    {ack.status === 'pending' && (
-                      <View style={{ gap: 8, marginTop: 10, width: '100%' }}>
-                        <TouchableOpacity
-                          onPress={() => {
-                            setFeeModalAck(ack);
-                            setFeeAmountInput(String(ack.amount || ''));
-                            setFeeTypeInput('Tuition Fee');
-                            setFeeRemarksInput(`QR Scan Payment (${ack.transactionId || 'UTR'})`);
-                          }}
-                          disabled={actionLoading === ack.id}
-                          style={{
-                            backgroundColor: '#16a34a',
-                            borderRadius: 8,
-                            paddingVertical: 10,
-                            paddingHorizontal: 12,
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: 6,
-                            width: '100%'
-                          }}
-                        >
-                          <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
-                          <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>Approve & Record Fee</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          onPress={() => handleUpdateAckStatus(ack.id, 'rejected')}
-                          disabled={actionLoading === ack.id}
-                          style={{
-                            backgroundColor: '#fee2e2',
-                            borderColor: '#fca5a5',
-                            borderWidth: 1,
-                            borderRadius: 8,
-                            paddingVertical: 8,
-                            paddingHorizontal: 12,
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: 6,
-                            width: '100%'
-                          }}
-                        >
-                          <Ionicons name="close-circle-outline" size={15} color="#dc2626" />
-                          <Text style={{ color: '#dc2626', fontSize: 13, fontWeight: '700' }}>Reject Request</Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
                   </View>
+
+                  {/* Approve & Record Fee / Reject Buttons (if pending) */}
+                  {ack.status === 'pending' && (
+                    <View style={{ gap: 8, marginTop: 10, width: '100%' }}>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setFeeModalAck(ack);
+                          setFeeAmountInput(String(ack.amount || ''));
+                          setFeeTypeInput('Tuition Fee');
+                          setFeeRemarksInput(`QR Scan Payment (${ack.transactionId || 'UTR'})`);
+                        }}
+                        disabled={actionLoading === ack.id}
+                        style={{
+                          backgroundColor: '#16a34a',
+                          borderRadius: 8,
+                          paddingVertical: 10,
+                          paddingHorizontal: 12,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 6,
+                          width: '100%'
+                        }}
+                      >
+                        <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
+                        <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>Approve & Record Fee</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        onPress={() => handleUpdateAckStatus(ack.id, 'rejected')}
+                        disabled={actionLoading === ack.id}
+                        style={{
+                          backgroundColor: '#fee2e2',
+                          borderColor: '#fca5a5',
+                          borderWidth: 1,
+                          borderRadius: 8,
+                          paddingVertical: 8,
+                          paddingHorizontal: 12,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 6,
+                          width: '100%'
+                        }}
+                      >
+                        <Ionicons name="close-circle-outline" size={15} color="#dc2626" />
+                        <Text style={{ color: '#dc2626', fontSize: 13, fontWeight: '700' }}>Reject Request</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
                 </View>
               );
             })

@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { AdminButton as Button } from '../components/admin-ui';
 import { Badge } from '../components/ui/Badge';
-import { AccessRulesApi } from '../core/services';
+import { AccessRulesApi, BatchApi } from '../core/services';
 import { db } from '../../firebaseConfig';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 
@@ -442,10 +442,6 @@ const FilterBar = ({
         <option value="">All Types</option>
         <option value="LIVE_SESSION">Live Class</option>
         <option value="CLASS">Recorded / Class</option>
-        <option value="COURSE">Course</option>
-        <option value="TOPIC">Topic</option>
-        <option value="SUBJECT">Subject</option>
-        <option value="RESOURCE">Resource</option>
       </select>
       <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
     </div>
@@ -574,6 +570,7 @@ const RequestsTab: React.FC = () => {
   const [filterBatch, setFilterBatch] = useState('');
   const [filterRequestType, setFilterRequestType] = useState('');
   const [filterTime, setFilterTime] = useState('');
+  const [allBatches, setAllBatches] = useState<string[]>([]);
 
   // Modal state
   const [approveModal, setApproveModal] = useState<any | null>(null);
@@ -584,8 +581,17 @@ const RequestsTab: React.FC = () => {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await AccessRulesApi.listAccessRequests();
+      const [res, batchRes] = await Promise.all([
+        AccessRulesApi.listAccessRequests(),
+        BatchApi.listBatches().catch(() => ({ data: { data: [] } })),
+      ]);
       setRequests(res.data?.data || res.data || []);
+      const fetchedBatches = (batchRes.data?.data || batchRes.data || [])
+        .map((b: any) => b.batchName || b.name || b.id)
+        .filter(Boolean);
+      if (fetchedBatches.length > 0) {
+        setAllBatches(fetchedBatches);
+      }
     } catch (err) {
       setError('Failed to load requests');
     } finally {
@@ -613,7 +619,10 @@ const RequestsTab: React.FC = () => {
     return () => { if (unsub) unsub(); };
   }, []);
 
-  const batches = [...new Set(requests.map(r => r.batchName || r.batchId).filter(Boolean))];
+  const batches = [...new Set([
+    ...allBatches,
+    ...requests.map(r => r.batchName || r.batchId).filter(Boolean)
+  ])].sort();
   const filtered = applyFilters(requests, search, filterBatch, filterRequestType, filterTime);
 
   const toggleSelect = (id: string) => {
@@ -858,6 +867,7 @@ const RequestsTab: React.FC = () => {
 /* ─── History Tab ─────────────────────────────────────────────────────────────── */
 const HistoryTab: React.FC = () => {
   const [history, setHistory] = useState<any[]>([]);
+  const [allBatches, setAllBatches] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [revertModal, setRevertModal] = useState<{ id: string; label: string } | null>(null);
@@ -873,8 +883,19 @@ const HistoryTab: React.FC = () => {
 
   const load = () => {
     setLoading(true);
-    AccessRulesApi.listAccessHistory()
-      .then(res => setHistory(res.data?.data || res.data || []))
+    Promise.all([
+      AccessRulesApi.listAccessHistory(),
+      BatchApi.listBatches().catch(() => ({ data: { data: [] } })),
+    ])
+      .then(([res, batchRes]) => {
+        setHistory(res.data?.data || res.data || []);
+        const fetchedBatches = (batchRes.data?.data || batchRes.data || [])
+          .map((b: any) => b.batchName || b.name || b.id)
+          .filter(Boolean);
+        if (fetchedBatches.length > 0) {
+          setAllBatches(fetchedBatches);
+        }
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
   };
@@ -896,7 +917,10 @@ const HistoryTab: React.FC = () => {
     return () => { if (unsub) unsub(); };
   }, []);
 
-  const batches = [...new Set(history.map(r => r.batchName || r.batchId).filter(Boolean))];
+  const batches = [...new Set([
+    ...allBatches,
+    ...history.map(r => r.batchName || r.batchId).filter(Boolean)
+  ])].sort();
 
   let filtered = applyFilters(history, search, filterBatch, filterRequestType, filterTime);
   if (filterStatus) filtered = filtered.filter(item => item.status === filterStatus);
@@ -908,12 +932,12 @@ const HistoryTab: React.FC = () => {
     setSelectedIds(selectedIds.size === filtered.length ? new Set() : new Set(filtered.map(r => r.id)));
   };
 
-  // Revert single
+  // Revert single: keep in history as REVOKED instead of deleting so audit trail is preserved
   const confirmRevert = async (grantId: string, reason: string) => {
     setProcessingIds(prev => new Set(prev).add(grantId));
     try {
       await AccessRulesApi.revokeGrant(grantId, reason);
-      setHistory(prev => prev.filter(h => h.id !== grantId));
+      setHistory(prev => prev.map(h => h.id === grantId ? { ...h, status: 'REVOKED', revocationReason: reason, updatedAt: new Date().toISOString() } : h));
       setSelectedIds(prev => { const n = new Set(prev); n.delete(grantId); return n; });
     } catch (e: any) {
       alert(e?.response?.data?.message || 'Revert failed');
@@ -922,11 +946,11 @@ const HistoryTab: React.FC = () => {
     }
   };
 
-  // Bulk revert
+  // Bulk revert: mark selected as REVOKED in history
   const confirmBulkRevert = async (reason: string) => {
     const ids = Array.from(selectedIds);
     await Promise.all(ids.map(id => AccessRulesApi.revokeGrant(id, reason).catch(() => {})));
-    setHistory(prev => prev.filter(h => !selectedIds.has(h.id)));
+    setHistory(prev => prev.map(h => selectedIds.has(h.id) ? { ...h, status: 'REVOKED', revocationReason: reason, updatedAt: new Date().toISOString() } : h));
     setSelectedIds(new Set());
   };
 
@@ -976,6 +1000,7 @@ const HistoryTab: React.FC = () => {
               <option value="">All Status</option>
               <option value="APPROVED">Approved</option>
               <option value="REJECTED">Rejected</option>
+              <option value="REVOKED">Reverted</option>
             </select>
             <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           </div>
@@ -991,9 +1016,16 @@ const HistoryTab: React.FC = () => {
       <div className="grid grid-cols-1 gap-3">
         {filtered.map((item, i) => {
           const isApproved = item.status === 'APPROVED';
+          const isRevoked = item.status === 'REVOKED';
           const isSelected = selectedIds.has(item.id);
           const isProcessing = processingIds.has(item.id);
           const reqType = (item.requestType || item.entityType || 'Resource').toUpperCase();
+
+          const borderLeftColor = isApproved
+            ? 'border-l-emerald-500'
+            : isRevoked
+            ? 'border-l-amber-500'
+            : 'border-l-rose-500';
 
           return (
             <div
@@ -1002,10 +1034,10 @@ const HistoryTab: React.FC = () => {
                 isSelected
                   ? 'border-y-[#8B0000]/50 border-r-[#8B0000]/50 dark:border-y-[#ff8a80]/40 dark:border-r-[#ff8a80]/40'
                   : 'border-y-gray-200 border-r-gray-200 dark:border-y-[#8B0000]/30 dark:border-r-[#8B0000]/30'
-              } ${isApproved ? 'border-l-emerald-500' : 'border-l-rose-500'}`}
+              } ${borderLeftColor}`}
             >
               <div className="p-5 flex items-start gap-4">
-                {/* Checkbox */}
+                {/* Checkbox (enabled for approved items) */}
                 <div
                   className={`mt-0.5 w-5 h-5 rounded border flex items-center justify-center shrink-0 cursor-pointer transition-colors ${isSelected ? 'bg-[#8B0000] dark:bg-[#ff8a80] border-[#8B0000] dark:border-[#ff8a80]' : 'border-gray-300 dark:border-gray-700 hover:border-[#8B0000]/60'}`}
                   onClick={() => toggleSelect(item.id)}
@@ -1014,10 +1046,13 @@ const HistoryTab: React.FC = () => {
                 </div>
 
                 {/* Status icon */}
-                {isApproved
-                  ? <CheckCircle2 className="text-emerald-500 shrink-0 mt-0.5" size={18} />
-                  : <XCircle className="text-rose-500 shrink-0 mt-0.5" size={18} />
-                }
+                {isApproved ? (
+                  <CheckCircle2 className="text-emerald-500 shrink-0 mt-0.5" size={18} />
+                ) : isRevoked ? (
+                  <RotateCcw className="text-amber-500 shrink-0 mt-0.5" size={18} />
+                ) : (
+                  <XCircle className="text-rose-500 shrink-0 mt-0.5" size={18} />
+                )}
 
                 {/* Info */}
                 <div className="flex-1">
@@ -1027,12 +1062,14 @@ const HistoryTab: React.FC = () => {
                   </div>
                   <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{item.contentName || item.entityName || 'General Access'}</div>
                   <div className="flex flex-wrap gap-2 mt-2.5 items-center">
-                    <Badge variant={isApproved ? 'success' : 'destructive'}>{item.status}</Badge>
+                    <Badge variant={isApproved ? 'success' : isRevoked ? 'warning' : 'destructive'}>
+                      {isRevoked ? 'REVERTED' : item.status}
+                    </Badge>
                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border ${reqType === 'LIVE_SESSION' ? 'border-green-500/40 bg-green-500/10 text-green-600 dark:text-green-400' : 'border-gray-300 dark:border-[#8B0000]/30 text-gray-600 dark:text-gray-300'}`}>
                       {reqType === 'LIVE_SESSION' ? <Radio size={10} /> : <Video size={10} />}
                       {reqType}
                     </span>
-                    {item.grantExpiresAt && (
+                    {item.grantExpiresAt && isApproved && (
                       <span className="text-xs text-amber-600 dark:text-amber-400 font-semibold">
                         Expires: {new Date(item.grantExpiresAt).toLocaleDateString()}
                       </span>
@@ -1040,10 +1077,15 @@ const HistoryTab: React.FC = () => {
                     <span className="text-xs text-gray-400 dark:text-gray-500">
                       {new Date(item.grantedAt || item.updatedAt || item.requestedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                     </span>
+                    {isRevoked && item.revocationReason && (
+                      <span className="text-xs font-medium text-amber-700 dark:text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-md">
+                        Reason: {item.revocationReason}
+                      </span>
+                    )}
                   </div>
                 </div>
 
-                {/* Revert button (only for approved) */}
+                {/* Revert button (only for active approved records) */}
                 {isApproved && (
                   <button
                     disabled={isProcessing}

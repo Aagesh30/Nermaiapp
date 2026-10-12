@@ -97,6 +97,7 @@ export class AdmissionController {
                 title: "🎓 New Admission Application",
                 body: `${name} (${phone}) submitted an application for ${preferredCourse || course || 'Academy Course'}.`,
                 targetRole: "admin",
+                excludeUserId: (req as any).user?.userId || null,
                 data: {
                     targetTab: "crm",
                     targetSub: "admissions",

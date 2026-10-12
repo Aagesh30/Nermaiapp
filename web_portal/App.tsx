@@ -16,17 +16,18 @@ import {
   Linking,
   Animated,
   Easing,
-  SafeAreaView,
+  StatusBar as RNStatusBar,
   AppState
 } from "react-native";
-import { SafeAreaProvider, initialWindowMetrics, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaProvider, SafeAreaView, initialWindowMetrics, useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ScreenCapture from 'expo-screen-capture';
 import * as XLSX from 'xlsx';
 
+const androidStatusBarHeight = Platform.OS === "android" ? (RNStatusBar.currentHeight || 28) : 0;
 const safeInitialMetrics = initialWindowMetrics || {
   frame: { x: 0, y: 0, width: 360, height: 800 },
-  insets: { top: 0, left: 0, right: 0, bottom: 0 },
+  insets: { top: androidStatusBarHeight, left: 0, right: 0, bottom: 0 },
 };
 const safeInitialInsets = safeInitialMetrics.insets;
 
@@ -60,12 +61,16 @@ const MobileLMSPages = React.lazy(() => import('./lms/admin/MobileLMSPages').the
 const StudentPayFeesPage = React.lazy(() => import('./lms/student/StudentPayFeesPage').then(m => ({ default: m.StudentPayFeesPage })));
 const TeacherDashboard = React.lazy(() => import('./lms/staff/TeacherDashboard').then(m => ({ default: m.TeacherDashboard })));
 const BulkStudentUploadModal = React.lazy(() => import('./lms/components/BulkStudentUploadModal').then(m => ({ default: m.BulkStudentUploadModal })));
+const MobileBulkStudentUploadModal = React.lazy(() => import('./lms/components/MobileBulkStudentUploadModal').then(m => ({ default: m.MobileBulkStudentUploadModal })));
 const CustomizeApplicationPage = React.lazy(() => import('./lms/admin/CustomizeApplicationPage'));
 const CustomLeadsPage = React.lazy(() => import('./lms/admin/CustomLeadsPage'));
 const MergedLeadsAdmissionsPage = React.lazy(() => import('./lms/admin/MergedLeadsAdmissionsPage'));
 const DynamicApplicationModal = React.lazy(() => import('./lms/components/DynamicApplicationModal'));
+const SpecialMockRollNumberPage = React.lazy(() => import('./lms/admin/SpecialMockRollNumberPage').then(m => ({ default: m.SpecialMockRollNumberPage })));
 import { RNSkeleton, RNDashboardSkeleton, RNTableSkeleton, RNCardGridSkeleton, RNProfileSkeleton, RNFormSkeleton, RNContainerSkeleton, RNNoticeCardSkeleton, RNNoticeSectionSkeleton, RNSystemAlertCardSkeleton, RNClosedTestCardSkeleton, RNClosedTestsSectionSkeleton } from './lms/components/ui/RNSkeleton';
 import { UniversalTime12Picker } from './lms/components/UniversalTime12Picker';
+import { StudentAnalyticsDashboard } from './lms/analytics/StudentAnalyticsDashboard';
+import { AdminAnalyticsDashboard } from './lms/analytics/AdminAnalyticsDashboard';
 
 const getDirectImageUrl = (url: string): string => {
   if (!url || typeof url !== "string") return "";
@@ -3663,6 +3668,112 @@ const ResponsivePosterItem: React.FC<{
   );
 };
 
+interface TabErrorBoundaryProps {
+  children: React.ReactNode;
+  onGoHome: () => void;
+  darkMode?: boolean;
+}
+
+interface TabErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class TabErrorBoundary extends React.Component<TabErrorBoundaryProps, TabErrorBoundaryState> {
+  constructor(props: TabErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): TabErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error("[TabErrorBoundary] Caught error:", error, errorInfo);
+  }
+
+  handleGoHome = () => {
+    this.setState({ hasError: false, error: null });
+    this.props.onGoHome();
+  };
+
+  render() {
+    if (this.state.hasError) {
+      const isDark = this.props.darkMode;
+      return (
+        <View style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          padding: 24,
+          backgroundColor: isDark ? "#121212" : "#f8f9fa",
+          minHeight: 320
+        }}>
+          <View style={{
+            maxWidth: 420,
+            width: "100%",
+            backgroundColor: isDark ? "#1e1e1e" : "#ffffff",
+            borderRadius: 16,
+            padding: 24,
+            alignItems: "center",
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.1,
+            shadowRadius: 10,
+            elevation: 5,
+            borderWidth: 1,
+            borderColor: isDark ? "#333" : "#e5e7eb"
+          }}>
+            <Ionicons name="alert-circle-outline" size={48} color="#c62828" style={{ marginBottom: 12 }} />
+            <Text style={{
+              fontSize: 18,
+              fontWeight: "700",
+              color: isDark ? "#f3f4f6" : "#111827",
+              marginBottom: 8,
+              textAlign: "center"
+            }}>
+              Something went wrong
+            </Text>
+            <Text style={{
+              fontSize: 13,
+              color: isDark ? "#9ca3af" : "#6b7280",
+              textAlign: "center",
+              marginBottom: 20,
+              lineHeight: 18
+            }}>
+              An unexpected error occurred while loading this section.
+            </Text>
+            <TouchableOpacity
+              onPress={this.handleGoHome}
+              style={{
+                backgroundColor: "#c62828",
+                paddingVertical: 12,
+                paddingHorizontal: 24,
+                borderRadius: 10,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 8,
+                shadowColor: "#c62828",
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.25,
+                shadowRadius: 4,
+                elevation: 3
+              }}
+            >
+              <Ionicons name="home-outline" size={18} color="#ffffff" />
+              <Text style={{ color: "#ffffff", fontWeight: "700", fontSize: 14 }}>
+                Go to Home
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function MainApp() {
   const initialNavRef = useRef(getSavedNav());
   const initialNav = initialNavRef.current;
@@ -3793,6 +3904,7 @@ function MainApp() {
       setGuestEmail("");
       setGuestEmailUnlocked(false);
       setUser(null);
+      registerForPushNotificationsAsync(null).catch(() => {});
       setActiveTab("lms");
       setLmsSub("home");
       if (typeof window !== "undefined") {
@@ -4115,8 +4227,16 @@ function MainApp() {
   const [registerForm, setRegisterForm] = useState({ username: "", password: "", name: "", email: "", role: "student" });
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [students, setStudents] = useState<any[]>([]);
+  const studentsRef = useRef<any[]>([]);
+  useEffect(() => {
+    studentsRef.current = students;
+  }, [students]);
   const [batches, setBatches] = useState<any[]>([]);
   const [profileRequests, setProfileRequests] = useState<any[]>([]);
+  const [profileBatchFilter, setProfileBatchFilter] = useState<string>("all");
+  const [profileDisplayLimit, setProfileDisplayLimit] = useState<number>(20);
+  const [editPermBatchFilter, setEditPermBatchFilter] = useState<string>("all");
+  const [editPermDisplayLimit, setEditPermDisplayLimit] = useState<number>(20);
   const [deviceAlerts, setDeviceAlerts] = useState<any[]>([]);
   const [deviceAlertsLoading, setDeviceAlertsLoading] = useState(false);
   const [myProfileRequest, setMyProfileRequest] = useState<any | null>(null);
@@ -5007,9 +5127,15 @@ function MainApp() {
   useEffect(() => {
     if (Platform.OS !== "web") {
       initNotifications();
-      requestNotificationPermission();
+      requestNotificationPermission().then(granted => {
+        if (granted) registerForPushNotificationsAsync(user || null).catch(() => {});
+      });
     }
-    if (user) {
+    if (Platform.OS === "web" && typeof window !== "undefined" && "Notification" in window) {
+      if (Notification.permission === "granted" || user) {
+        registerForPushNotificationsAsync(user || null).catch(() => {});
+      }
+    } else if (user) {
       registerForPushNotificationsAsync(user).catch(() => {});
       if (Platform.OS === "web" && typeof window !== "undefined" && "Notification" in window) {
         if (Notification.permission === "denied") {
@@ -5446,7 +5572,37 @@ function MainApp() {
         const fileAsset = result.assets[0];
         setOfflineExcelUploading(true);
 
-        const b64 = await FileSystem.readAsStringAsync(fileAsset.uri, { encoding: FileSystem.EncodingType.Base64 });
+        let b64 = "";
+        try {
+          if (FileSystem && typeof (FileSystem as any).readAsStringAsync === "function") {
+            b64 = await (FileSystem as any).readAsStringAsync(fileAsset.uri, {
+              encoding: (FileSystem as any).EncodingType?.Base64 || "base64"
+            });
+          } else {
+            throw new Error("readAsStringAsync unavailable");
+          }
+        } catch (fsErr) {
+          try {
+            const fsFile = new (FileSystem as any).File(fileAsset.uri);
+            if (typeof fsFile.base64 === "function") {
+              b64 = await fsFile.base64();
+            } else {
+              throw new Error("File.base64 unavailable");
+            }
+          } catch {
+            const res = await fetch(fileAsset.uri);
+            const blob = await res.blob();
+            b64 = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => {
+                const r = reader.result as string;
+                resolve(r.split(",")[1] || r);
+              };
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            });
+          }
+        }
         const workbook = XLSX.read(b64, { type: "base64" });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
@@ -5595,6 +5751,10 @@ function MainApp() {
     }
     setLmsSub(sub);
     if (isMobile) setLmsTabsCollapsed(true);
+    if (sub === "quiz" || sub === "all-quizzes") {
+      loadTodayQuiz();
+      loadAllQuizzes();
+    }
   };
   const changeCrmSub = (sub: string) => {
     const lockKey = "crm-" + sub;
@@ -5907,6 +6067,7 @@ function MainApp() {
   const [diagnosticSubTabMap, setDiagnosticSubTabMap] = useState<Record<string, "wrong" | "skipped" | "all">>({});
   const [expandedQuestionMap, setExpandedQuestionMap] = useState<Record<string, boolean>>({});
   const [expandedClosedTestDiagId, setExpandedClosedTestDiagId] = useState<string | null>(null);
+  const [mobileSubjectAnalyticsModalTest, setMobileSubjectAnalyticsModalTest] = useState<any | null>(null);
 
   useEffect(() => {
     try {
@@ -6001,7 +6162,8 @@ function MainApp() {
   const [guestEmailGatePendingTab, setGuestEmailGatePendingTab] = useState<string | null>("");
   const [guestEmailUnlocked, setGuestEmailUnlocked] = useState(false);
   const [showGuestHallTicketModal, setShowGuestHallTicketModal] = useState(false);
-  // Offline Attendance state
+  // Attendance Registry state
+  const [attendanceModeFilter, setAttendanceModeFilter] = useState<"all" | "online" | "offline">("all");
   const [offlineAttendanceBatch, setOfflineAttendanceBatch] = useState<string | null>(null);
   const [offlineAttendanceDate, setOfflineAttendanceDate] = useState<string>(new Date().toISOString().slice(0, 10));
   const [offlineAttendanceMarks, setOfflineAttendanceMarks] = useState<Record<string, "present" | "absent" | null>>({});
@@ -6057,7 +6219,8 @@ function MainApp() {
         }
       } catch (storageErr) { }
 
-      if (Platform.OS !== "web" && !isFirstSnapshot) {
+      // Keep UI state synced; status bar push notifications are delivered by backend push
+      if (Platform.OS === "web" && !isFirstSnapshot) {
         snapshot.docChanges().forEach((change) => {
           if (change.type === "modified" || change.type === "added") {
             const data = change.doc.data() as any;
@@ -6254,7 +6417,8 @@ function MainApp() {
         list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
         setAdminAlerts(list);
 
-        if (Platform.OS !== "web" && !isFirstSnapshot) {
+        // Keep UI state synced; status bar push notifications are delivered by backend push
+        if (Platform.OS === "web" && !isFirstSnapshot) {
           snapshot.docChanges().forEach((change) => {
             if (change.type === "added") {
               const alert = change.doc.data() as any;
@@ -8462,6 +8626,7 @@ function MainApp() {
     setShowFeedbackModal(false);
     setTestFeedbackModal({ visible: false, testId: "", testTitle: "", rating: 5, comments: "" });
     setUser(null);
+    registerForPushNotificationsAsync(null).catch(() => {});
     setAuthGate("unauthenticated");
     setGuestTab("home");
     setActiveTab("dashboard");
@@ -8840,7 +9005,7 @@ function MainApp() {
           if (data.status === "approved") {
             const reloaders = getFeatureReloaders();
             reloaders[data.feature]?.();
-            if (Platform.OS !== "web") {
+            if (Platform.OS === "web") {
               showPhoneNotification(
                 "✅ Submission Approved",
                 `Your submission for ${data.feature?.replace(/_/g, " ") || "item"} was approved!`,
@@ -8848,7 +9013,7 @@ function MainApp() {
               );
             }
           } else if (data.status === "rejected") {
-            if (Platform.OS !== "web") {
+            if (Platform.OS === "web") {
               showPhoneNotification(
                 "❌ Submission Update",
                 `Your submission for ${data.feature?.replace(/_/g, " ") || "item"} was rejected.`,
@@ -10050,7 +10215,8 @@ function MainApp() {
             if (!playedNoticeIdsRef.current.has(n.id)) {
               playedNoticeIdsRef.current.add(n.id);
               hasNewlyPlayed = true;
-              if (Platform.OS !== "web" && !isFirstAnnouncementsSnapshot) {
+              // Audio announcements stay in-app; remote push notifications are handled by backend FCM push
+              if (Platform.OS === "web" && !isFirstAnnouncementsSnapshot) {
                 const isFeeAlert = (n.title || "").includes("Fee Payment Alert") ||
                   (n.content || "").toLowerCase().includes("pay your pending") ||
                   (n.content || "").toLowerCase().includes("pending tuition fee");
@@ -10128,7 +10294,7 @@ function MainApp() {
               return [updatedStudent];
             });
 
-            if (Platform.OS !== "web" && !isFirstStudentSnapshot) {
+            if (Platform.OS === "web" && !isFirstStudentSnapshot) {
               if (data.idCardGenerated) {
                 showPhoneNotification(
                   "🪪 ID Card Released",
@@ -10178,7 +10344,7 @@ function MainApp() {
         });
         setProfileRequests(requests);
 
-        if (Platform.OS !== "web" && !isFirstProfileReqSnapshot) {
+        if (Platform.OS === "web" && !isFirstProfileReqSnapshot) {
           snapshot.docChanges().forEach((change) => {
             if (change.type === "added") {
               const data = change.doc.data() as any;
@@ -10243,7 +10409,7 @@ function MainApp() {
             return timeB - timeA;
           });
 
-          // Filter out enrolled-only resources for guest users in real-time
+          // Filter resources based on role and batch targeting in real-time
           if (user?.role === "guest") {
             list = list.filter((r: any) => {
               const vis = (r.visibility || "").toLowerCase();
@@ -10253,11 +10419,62 @@ function MainApp() {
               if (Array.isArray(r.targetBatchIds) && (r.targetBatchIds.includes("all_paid") || (vis === "batch" && r.targetBatchIds.length > 0))) return false;
               return vis === "public" || vis === "free" || vis === "guest" || aud === "all" || aud === "free" || aud === "guest";
             });
+          } else if (user?.role === "student") {
+            const myStudent = getLoggedInStudent(user, studentsRef.current);
+            const studentBatches: string[] = [];
+            const addBatchVal = (val: any) => {
+              if (!val) return;
+              const s = String(val).trim().toLowerCase();
+              if (s && !studentBatches.includes(s)) studentBatches.push(s);
+            };
+            if (myStudent?.batch) addBatchVal(myStudent.batch);
+            if (myStudent?.batchName) addBatchVal(myStudent.batchName);
+            if (myStudent?.batchId) addBatchVal(myStudent.batchId);
+            if (user?.batch) addBatchVal(user.batch);
+            if (user?.batchName) addBatchVal(user.batchName);
+            if (user?.batchId) addBatchVal(user.batchId);
+            const arrBatches = myStudent?.batches || user?.batches;
+            if (Array.isArray(arrBatches)) {
+              arrBatches.forEach((b: any) => addBatchVal(b));
+            }
+            const knownBatches = (erpBatches && erpBatches.length > 0) ? erpBatches : batches;
+            (knownBatches || []).forEach((b: any) => {
+              const bName = String(b.batchName || b.name || "").trim().toLowerCase();
+              const bId = String(b.id || b._id || "").trim().toLowerCase();
+              if (studentBatches.includes(bName) && bId) addBatchVal(bId);
+            });
+
+            list = list.filter((r: any) => {
+              const vis = String(r.visibility || "public").trim().toLowerCase();
+              if (vis === "guest") return false;
+              if (vis === "public" || vis === "free") return true;
+
+              const rawTargets = r.targetBatchIds || [];
+              const targetBatchIds = (Array.isArray(rawTargets)
+                ? rawTargets.map((id: any) => String(id).trim().toLowerCase())
+                : [String(rawTargets).trim().toLowerCase()]).filter(Boolean);
+
+              const hasSpecificBatch = targetBatchIds.length > 0 && !targetBatchIds.includes("all") && !targetBatchIds.includes("all_paid") && !targetBatchIds.includes("all_free");
+
+              if (vis === "batch" || hasSpecificBatch) {
+                if (targetBatchIds.includes("all") || targetBatchIds.includes("all_paid")) return true;
+                if (targetBatchIds.length === 0) return false;
+                return studentBatches.some((b: string) =>
+                  targetBatchIds.some((t: string) => t === b || t.includes(b) || b.includes(t))
+                );
+              }
+
+              if (vis === "premium" || vis === "paid") {
+                return studentBatches.length > 0 || user?.role === "student";
+              }
+
+              return true;
+            });
           }
 
           setLmsResources(list);
 
-          if (Platform.OS !== "web" && isInitialResourceLoadRef.current) {
+          if (Platform.OS === "web" && !isFirstResourceSnapshot) {
             snapshot.docChanges().forEach((change) => {
               if (change.type === "added") {
                 const data = change.doc.data() as any;
@@ -10272,6 +10489,30 @@ function MainApp() {
                   (Array.isArray(data.targetBatchIds) && (data.targetBatchIds.includes("all_paid") || (vis === "batch" && data.targetBatchIds.length > 0)));
                 if (user?.role === "guest" && isEnrolledOnly) {
                   return;
+                }
+                if (user?.role === "student") {
+                  const myStudent = getLoggedInStudent(user, studentsRef.current);
+                  const studentBatches: string[] = [];
+                  if (myStudent?.batch) studentBatches.push(String(myStudent.batch).trim().toLowerCase());
+                  if (myStudent?.batchName) studentBatches.push(String(myStudent.batchName).trim().toLowerCase());
+                  if (myStudent?.batchId) studentBatches.push(String(myStudent.batchId).trim().toLowerCase());
+                  if (user?.batch) studentBatches.push(String(user.batch).trim().toLowerCase());
+                  if (user?.batchName) studentBatches.push(String(user.batchName).trim().toLowerCase());
+                  if (user?.batchId) studentBatches.push(String(user.batchId).trim().toLowerCase());
+                  const arrBatches = myStudent?.batches || user?.batches;
+                  if (Array.isArray(arrBatches)) {
+                    arrBatches.forEach((b: any) => { if (b) studentBatches.push(String(b).trim().toLowerCase()); });
+                  }
+                  const rawTargets = data.targetBatchIds || [];
+                  const targetBatchIds = (Array.isArray(rawTargets)
+                    ? rawTargets.map((id: any) => String(id).trim().toLowerCase())
+                    : [String(rawTargets).trim().toLowerCase()]).filter(Boolean);
+                  const hasSpecificBatch = targetBatchIds.length > 0 && !targetBatchIds.includes("all") && !targetBatchIds.includes("all_paid") && !targetBatchIds.includes("all_free");
+                  if ((vis === "batch" || hasSpecificBatch) && !targetBatchIds.includes("all") && !targetBatchIds.includes("all_paid")) {
+                    if (targetBatchIds.length === 0 || !studentBatches.some((b: string) => targetBatchIds.includes(b))) {
+                      return;
+                    }
+                  }
                 }
                 const notifTitle = isAdmin ? "📚 New Resource Added" : (user?.role === "guest" ? "📚 Free Study Material Available" : "📚 New Study Material");
                 showPhoneNotification(notifTitle, data.title || "New study PDF uploaded", {
@@ -10304,7 +10545,7 @@ function MainApp() {
           list.sort(sortDailyContentDesc);
           setLmsDailyContent(list);
 
-          if (Platform.OS !== "web" && isInitialDailyContentLoadRef.current) {
+          if (Platform.OS === "web" && !isFirstDailySnapshot) {
             snapshot.docChanges().forEach((change) => {
               if (change.type === "added") {
                 const data = change.doc.data() as any;
@@ -10346,7 +10587,7 @@ function MainApp() {
           });
           setLmsRecordedClasses(list);
 
-          if (Platform.OS !== "web" && isInitialResourceLoadRef.current) {
+          if (Platform.OS === "web" && !isFirstRecordedSnapshot) {
             snapshot.docChanges().forEach((change) => {
               if (change.type === "added") {
                 const data = change.doc.data() as any;
@@ -10379,15 +10620,22 @@ function MainApp() {
       const unsubscribe = onSnapshot(
         quizzesQuery,
         (snapshot) => {
-          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          const list = snapshot.docs.map(d => {
+            const data = d.data();
+            return {
+              id: d.id,
+              ...data,
+              attemptCount: typeof data.attemptCount === "number" ? data.attemptCount : 0
+            };
+          });
           list.sort((a: any, b: any) => {
-            const dateA = a.date || a.createdAt || "";
-            const dateB = b.date || b.createdAt || "";
+            const dateA = a.quizDate || a.date || a.createdAt || "";
+            const dateB = b.quizDate || b.date || b.createdAt || "";
             return String(dateB).localeCompare(String(dateA));
           });
           setAllQuizzes(list);
 
-          if (Platform.OS !== "web" && isInitialQuizLoadRef.current) {
+          if (Platform.OS === "web" && !isFirstQuizSnapshot) {
             snapshot.docChanges().forEach((change) => {
               if (change.type === "added") {
                 const qData = change.doc.data() as any;
@@ -10431,7 +10679,7 @@ function MainApp() {
           });
           setAdmissions(list);
 
-          if (Platform.OS !== "web" && isInitialAdmissionLoadRef.current) {
+          if (Platform.OS === "web" && !isFirstAdmissionSnapshot) {
             snapshot.docChanges().forEach((change) => {
               if (change.type === "added") {
                 const data = change.doc.data() as any;
@@ -10475,7 +10723,7 @@ function MainApp() {
           });
           setLeads(list);
 
-          if (Platform.OS !== "web" && isInitialInquiryLoadRef.current) {
+          if (Platform.OS === "web" && !isFirstLeadSnapshot) {
             snapshot.docChanges().forEach((change) => {
               if (change.type === "added") {
                 const data = change.doc.data() as any;
@@ -10556,7 +10804,7 @@ function MainApp() {
           });
           setEnquiries(list);
 
-          if (Platform.OS !== "web" && isInitialInquiryLoadRef.current) {
+          if (Platform.OS === "web" && !isFirstInquirySnapshot) {
             snapshot.docChanges().forEach((change) => {
               if (change.type === "added") {
                 const data = change.doc.data() as any;
@@ -10604,7 +10852,7 @@ function MainApp() {
           // Role & audience based filtering matching loadTests()
           let filteredList: any[] = [];
           if (user?.role === "student") {
-            const myStudent = getLoggedInStudent(user, students);
+            const myStudent = getLoggedInStudent(user, studentsRef.current);
             const studentBatchName = myStudent?.batch || user?.batch || "";
             filteredList = rawList.filter((t: any) => {
               if (t.published === false) return false;
@@ -10655,7 +10903,7 @@ function MainApp() {
 
           setTests(filteredList);
 
-          if (Platform.OS !== "web" && isInitialTestLoadRef.current) {
+          if (Platform.OS === "web" && !isFirstTestSnapshot) {
             snapshot.docChanges().forEach((change) => {
               if (change.type === "added") {
                 const data = change.doc.data() as any;
@@ -10663,7 +10911,7 @@ function MainApp() {
 
                 // 1. Strict time cutoff: Do NOT fire for historical tests created prior to app launch
                 const createdMs = parseTestTimeMs(data.createdAt);
-                if (createdMs > 0 && createdMs < (appStartTimeRef.current - 60000)) {
+                if (createdMs <= 0 || createdMs < (appStartTimeRef.current - 60000)) {
                   return;
                 }
 
@@ -10697,7 +10945,7 @@ function MainApp() {
       );
       return () => unsubscribe();
     } catch (_) { }
-  }, [user, students]);
+  }, [user]);
 
   useEffect(() => {
     if (user) {
@@ -12255,9 +12503,27 @@ function MainApp() {
       } else if (finalVisibility === "batch") {
         if (targetBatchIds) {
           finalTargetBatchIds = typeof targetBatchIds === "string"
-            ? targetBatchIds.split(",").map((s: string) => s.trim()).filter(Boolean).filter((s: string) => s !== "all")
-            : (Array.isArray(targetBatchIds) ? targetBatchIds.filter((s: string) => s !== "all") : []);
+            ? targetBatchIds.split(",").map((s: string) => s.trim()).filter(Boolean).filter((s: string) => s !== "all" && s !== "all_paid")
+            : (Array.isArray(targetBatchIds) ? targetBatchIds.filter((s: string) => s !== "all" && s !== "all_paid") : []);
         }
+        // Expand batch targeting so it contains both batch ID and batch Name
+        const expandedBatches = new Set<string>();
+        finalTargetBatchIds.forEach((idOrName: string) => {
+          expandedBatches.add(idOrName);
+          const found = (erpBatches || []).find((b: any) =>
+            String(b.id || b._id || "").trim() === idOrName ||
+            String(b.batchName || b.name || "").trim().toLowerCase() === idOrName.toLowerCase()
+          );
+          if (found) {
+            const bId = String(found.id || found._id || "").trim();
+            const bName = String(found.batchName || found.name || "").trim();
+            if (bId) expandedBatches.add(bId);
+            if (bName) expandedBatches.add(bName);
+            if (found.batchName && String(found.batchName) !== bName) expandedBatches.add(String(found.batchName));
+          }
+        });
+        finalTargetBatchIds = Array.from(expandedBatches);
+
         if (finalTargetBatchIds.length === 0) {
           Alert.alert("Required", "Please select at least one target batch for Batch-Wise visibility.");
           setIsSavingResource(false);
@@ -13023,12 +13289,19 @@ function MainApp() {
 
   // Delete guest poster (admin CRM)
   const handleDeleteGuestPoster = async (id: string) => {
-    try {
-      await api.delete(`/crm/guest-posters/${id}`);
-      setGuestPosterList(prev => prev.filter(p => p.id !== id));
-    } catch (e: any) {
-      Alert.alert("Error", e.message || "Failed to delete poster.");
-    }
+    confirmAction(
+      "Confirm Delete Poster",
+      "Are you sure you want to delete this guest poster? This action cannot be undone.",
+      async () => {
+        try {
+          await api.delete(`/crm/guest-posters/${id}`);
+          setGuestPosterList(prev => prev.filter(p => p.id !== id));
+          Alert.alert("Success", "Guest poster deleted successfully.");
+        } catch (e: any) {
+          Alert.alert("Error", e.message || "Failed to delete poster.");
+        }
+      }
+    );
   };
 
   const loadEnquiries = async (fromDate?: string) => {
@@ -14934,6 +15207,20 @@ function MainApp() {
       }
 
       await api.post("/crm/campaigns", payload);
+
+      if (newCampaign.sendNotification) {
+        const pushTarget = (newCampaign.targetUsers === "free" || newCampaign.targetUsers === "guest")
+          ? "guest"
+          : newCampaign.targetUsers === "paid"
+          ? "student"
+          : "all";
+        sendRemotePushNotification({
+          title: newCampaign.title,
+          body: newCampaign.notificationMessage || newCampaign.description || newCampaign.title,
+          targetRole: pushTarget as any,
+          data: { screen: "dashboard", campaignId: payload.id }
+        }).catch(err => console.log("[CampaignPush] Push dispatch error:", err));
+      }
       Alert.alert("Success", editingCampaignId ? "Campaign updated successfully!" : "Campaign published successfully!");
       setEditingCampaignId(null);
       setNewCampaign({
@@ -15011,6 +15298,7 @@ function MainApp() {
       return;
     }
     const qPayload = {
+      title: newPdfTest.title?.trim() || `Daily Quiz - ${quizDateInput}`,
       quizDate: quizDateInput,
       questions: [{
         questionText: newQuizQ.questionText,
@@ -15025,6 +15313,7 @@ function MainApp() {
         await api.post("/lms/daily-quiz", qPayload);
         Alert.alert("Success", `Daily Quiz question published for ${quizDateInput}!`);
         setNewQuizQ({ questionText: "", opt0: "", opt1: "", opt2: "", opt3: "", correctIdx: 0 });
+        setNewPdfTest({ ...newPdfTest, title: "" });
         loadTodayQuiz();
         loadAllQuizzes();
         setLmsSub("quiz");
@@ -15294,52 +15583,44 @@ function MainApp() {
                         <option value="__NEW_CUSTOM__">➕ Add New / Custom Subject...</option>
                       </select>
                     ) : (
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
-                        {(uniqueSubjects.length > 0 ? uniqueSubjects : ["History", "Geography", "Polity", "Economy", "Current Affairs", "General Science", "Aptitude & CSAT"]).map((sName) => {
-                          const isSelected = !isCustom && sec.subject === sName;
-                          return (
-                            <TouchableOpacity
-                              key={sName}
-                              onPress={() => updateSection(idx, { isCustom: false, subject: sName, customSubject: "" })}
-                              style={{
-                                paddingHorizontal: 16,
-                                paddingVertical: 7,
-                                borderRadius: 20,
-                                borderWidth: 1.5,
-                                borderColor: isSelected ? "#c62828" : (darkMode ? "#475569" : "#cbd5e1"),
-                                backgroundColor: isSelected ? (darkMode ? "#3e2723" : "#fff5f5") : (darkMode ? "#242424" : "#ffffff")
-                              }}
-                            >
-                              <Text style={{
-                                fontSize: 12,
-                                fontWeight: "bold",
-                                color: isSelected ? "#c62828" : (darkMode ? "#cbd5e1" : "#475569")
-                              }}>
-                                {sName}
-                              </Text>
-                            </TouchableOpacity>
-                          );
-                        })}
+                      <View style={{ gap: 6 }}>
                         <TouchableOpacity
-                          onPress={() => updateSection(idx, { isCustom: true, subject: sec.customSubject || "" })}
+                          onPress={() => {
+                            const available = uniqueSubjects.length > 0 ? uniqueSubjects : ["History", "Geography", "Polity", "Economy", "Current Affairs", "General Science", "Aptitude & CSAT"];
+                            Alert.alert(
+                              "Select Subject",
+                              "Choose a subject or add a custom name:",
+                              [
+                                ...available.map((sName) => ({
+                                  text: sName,
+                                  onPress: () => updateSection(idx, { isCustom: false, subject: sName, customSubject: "" })
+                                })),
+                                {
+                                  text: "➕ Add Custom Subject...",
+                                  onPress: () => updateSection(idx, { isCustom: true, subject: sec.customSubject || "" })
+                                },
+                                { text: "Cancel", style: "cancel" }
+                              ]
+                            );
+                          }}
                           style={{
-                            paddingHorizontal: 14,
-                            paddingVertical: 7,
-                            borderRadius: 20,
+                            height: 40,
+                            borderRadius: 8,
+                            paddingHorizontal: 12,
                             borderWidth: 1.5,
-                            borderColor: isCustom ? "#c62828" : (darkMode ? "#475569" : "#cbd5e1"),
-                            backgroundColor: isCustom ? (darkMode ? "#3e2723" : "#fff5f5") : (darkMode ? "#242424" : "#ffffff")
+                            borderColor: darkMode ? "#475569" : "#cbd5e1",
+                            backgroundColor: darkMode ? "#2d2d2d" : "#f8fafc",
+                            flexDirection: "row",
+                            alignItems: "center",
+                            justifyContent: "space-between"
                           }}
                         >
-                          <Text style={{
-                            fontSize: 12,
-                            fontWeight: "bold",
-                            color: isCustom ? "#c62828" : (darkMode ? "#cbd5e1" : "#475569")
-                          }}>
-                            + Custom
+                          <Text style={{ fontSize: 13, fontWeight: "600", color: sec.subject ? (darkMode ? "#f1f5f9" : "#1e293b") : "#999" }}>
+                            {isCustom ? (sec.subject ? sec.subject + " (Custom)" : "+ Custom Subject...") : (sec.subject || "-- Tap to Choose Subject --")}
                           </Text>
+                          <Ionicons name="chevron-down" size={16} color={darkMode ? "#aaa" : "#64748b"} />
                         </TouchableOpacity>
-                      </ScrollView>
+                      </View>
                     )}
 
                     {isCustom && (
@@ -15508,8 +15789,8 @@ function MainApp() {
 
     return (
       <View style={{
-        margin: isMobilePanel ? 4 : 10,
-        padding: isMobilePanel ? 10 : 16,
+        margin: isMobilePanel ? 0 : 10,
+        padding: isMobilePanel ? 8 : 16,
         borderRadius: 12,
         backgroundColor: darkMode ? "#141414" : "#ffffff",
         borderWidth: 1,
@@ -15518,7 +15799,9 @@ function MainApp() {
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.06,
         shadowRadius: 8,
-        elevation: 2
+        elevation: 2,
+        overflow: "hidden",
+        width: "100%"
       }}>
         {/* Panel Header */}
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8, borderBottomWidth: 1, borderBottomColor: darkMode ? "#262626" : "#f1f5f9", paddingBottom: 12 }}>
@@ -15780,11 +16063,13 @@ function MainApp() {
                         <View
                           key={qKey}
                           style={{
-                            padding: 12,
+                            padding: (isMobile || Platform.OS !== "web") ? 8 : 12,
                             borderRadius: 8,
                             backgroundColor: darkMode ? "#18181b" : "#ffffff",
                             borderWidth: 1,
-                            borderColor: darkMode ? "#3f3f46" : "#e4e4e7"
+                            borderColor: darkMode ? "#3f3f46" : "#e4e4e7",
+                            overflow: "hidden",
+                            width: "100%"
                           }}
                         >
                           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
@@ -15935,11 +16220,13 @@ function MainApp() {
                         <View
                           key={qKey}
                           style={{
-                            padding: 12,
+                            padding: (isMobile || Platform.OS !== "web") ? 8 : 12,
                             borderRadius: 8,
                             backgroundColor: darkMode ? "#18181b" : "#ffffff",
                             borderWidth: 1,
-                            borderColor: darkMode ? "#3f3f46" : "#e4e4e7"
+                            borderColor: darkMode ? "#3f3f46" : "#e4e4e7",
+                            overflow: "hidden",
+                            width: "100%"
                           }}
                         >
                           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
@@ -18643,11 +18930,26 @@ function MainApp() {
                           { label: "Enroll Only (All Enrolled Students)", value: "premium" },
                           { label: "Enroll Batch Wise (Specific Batches)", value: "batch" }
                         ]}
-                        onSelect={val => setResourceForm({
-                          ...resourceForm,
-                          visibility: val,
-                          targetBatchIds: val === "premium" ? "all_paid" : (val === "public" || val === "guest" ? "" : resourceForm.targetBatchIds)
-                        })}
+                        onSelect={val => {
+                          let nextTargetBatchIds = resourceForm.targetBatchIds;
+                          if (val === "premium") {
+                            nextTargetBatchIds = "all_paid";
+                          } else if (val === "public" || val === "guest") {
+                            nextTargetBatchIds = "";
+                          } else if (val === "batch") {
+                            nextTargetBatchIds = (resourceForm.targetBatchIds || "")
+                              .split(",")
+                              .map((s: string) => s.trim())
+                              .filter(Boolean)
+                              .filter((s: string) => s !== "all" && s !== "all_paid")
+                              .join(",");
+                          }
+                          setResourceForm({
+                            ...resourceForm,
+                            visibility: val,
+                            targetBatchIds: nextTargetBatchIds
+                          });
+                        }}
                       />
                     </View>
                   </View>
@@ -18668,12 +18970,20 @@ function MainApp() {
                             .split(",")
                             .map((s: string) => s.trim())
                             .filter(Boolean)
-                            .filter((s: string) => s !== "all");
+                            .filter((s: string) => s !== "all" && s !== "all_paid");
+
+                          const distinctSelectedCount = (erpBatches && erpBatches.length > 0)
+                            ? erpBatches.filter((b: any) => {
+                                const bId = String(b.id || b._id || "").trim();
+                                const bName = String(b.batchName || b.name || "").trim().toLowerCase();
+                                return currentBatchList.some((c: string) => c === bId || c.toLowerCase() === bName);
+                              }).length
+                            : currentBatchList.length;
 
                           return (
-                            <Text style={{ color: currentBatchList.length > 0 ? (darkMode ? "#fff" : "#212121") : (darkMode ? "#666" : "#999") }}>
-                              {currentBatchList.length > 0
-                                ? `${currentBatchList.length} batch(es) selected`
+                            <Text style={{ color: distinctSelectedCount > 0 ? (darkMode ? "#fff" : "#212121") : (darkMode ? "#666" : "#999") }}>
+                              {distinctSelectedCount > 0
+                                ? `${distinctSelectedCount} batch(es) selected`
                                 : "Select Batches..."}
                             </Text>
                           );
@@ -18697,7 +19007,7 @@ function MainApp() {
                                   .split(",")
                                   .map((s: string) => s.trim())
                                   .filter(Boolean)
-                                  .filter((s: string) => s !== "all");
+                                  .filter((s: string) => s !== "all" && s !== "all_paid");
 
                                 const isSelected = currentBatchList.includes(batchId) ||
                                   (Boolean(b.batchName) && currentBatchList.includes(String(b.batchName).trim())) ||
@@ -21216,6 +21526,14 @@ function MainApp() {
             </View>
           )}
 
+          <TabErrorBoundary
+            darkMode={darkMode}
+            onGoHome={() => {
+              setGuestTab("home");
+              setGuestContentTab("home");
+              setActiveTab("dashboard");
+            }}
+          >
           {/* ── HOME TAB (GUEST DASHBOARD) ────────────────────────────────── */}
           {guestContentTab === "home" && (
             <View style={{ paddingHorizontal: isMobile ? 12 : 20, paddingTop: 16 }}>
@@ -21867,6 +22185,7 @@ function MainApp() {
               <View style={{ height: 10 }} />
             </View>
           )}
+          </TabErrorBoundary>
         </ScrollView>
 
         {/* Bottom Tab Navigation Bar */}
@@ -22296,56 +22615,83 @@ function MainApp() {
 
         {/* ── INSTRUCTIONS MODAL ──────────────────────────── */}
         <Modal transparent animationType="fade" visible={showInstructions} onRequestClose={() => setShowInstructions(false)}>
-          <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", alignItems: "center", padding: 20 }}>
-            <View style={{ backgroundColor: "#ffffff", borderRadius: 16, padding: 24, width: "100%", maxWidth: 480 }}>
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                <Text style={{ fontSize: 16, fontWeight: "900", color: "#c62828" }}>📋 Exam Instructions</Text>
-                <TouchableOpacity onPress={() => setShowInstructions(false)}>
-                  <Ionicons name="close-circle" size={26} color="#c62828" />
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={() => setShowInstructions(false)}
+            style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.65)", justifyContent: "center", alignItems: "center", padding: isMobile ? 12 : 20 }}
+          >
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={e => e.stopPropagation()}
+              style={{
+                backgroundColor: "#ffffff",
+                borderRadius: 16,
+                padding: isMobile ? 16 : 22,
+                width: "100%",
+                maxWidth: 480,
+                maxHeight: "85%",
+                display: "flex",
+                flexDirection: "column",
+                elevation: 10,
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.25,
+                shadowRadius: 8
+              }}
+            >
+              {/* Header Pinned */}
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: "#f1f5f9", marginBottom: 12 }}>
+                <Text style={{ fontSize: isMobile ? 15 : 16, fontWeight: "900", color: "#c62828" }}>📋 Exam Instructions</Text>
+                <TouchableOpacity onPress={() => setShowInstructions(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={{ padding: 4 }}>
+                  <Ionicons name="close-circle" size={24} color="#c62828" />
                 </TouchableOpacity>
               </View>
 
-              {/* Color Legend */}
-              <Text style={{ fontWeight: "800", fontSize: 12, color: "#555", marginBottom: 10, letterSpacing: 0.5 }}>QUESTION NAVIGATOR LEGEND</Text>
-              {[
-                { color: "#c62828", label: "Current Question", desc: "The question you are currently viewing" },
-                { color: "#2e7d32", label: "Answered", desc: "You have selected an answer" },
-                { color: "#f57c00", label: "Visited — No Answer", desc: "You viewed this but didn't answer" },
-                { color: "#e0e0e0", label: "Not Visited", desc: "You haven't opened this question yet" },
-              ].map(item => (
-                <View key={item.color} style={{ flexDirection: "row", alignItems: "center", marginBottom: 10, gap: 12 }}>
-                  <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: item.color }} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontWeight: "700", fontSize: 13, color: "#212121" }}>{item.label}</Text>
-                    <Text style={{ fontSize: 11, color: "#757575" }}>{item.desc}</Text>
+              {/* Scrollable Content */}
+              <ScrollView showsVerticalScrollIndicator={true} style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 10 }}>
+                {/* Color Legend */}
+                <Text style={{ fontWeight: "800", fontSize: 12, color: "#555", marginBottom: 10, letterSpacing: 0.5 }}>QUESTION NAVIGATOR LEGEND</Text>
+                {[
+                  { color: "#c62828", label: "Current Question", desc: "The question you are currently viewing" },
+                  { color: "#2e7d32", label: "Answered", desc: "You have selected an answer" },
+                  { color: "#f57c00", label: "Visited — No Answer", desc: "You viewed this but didn't answer" },
+                  { color: "#e0e0e0", label: "Not Visited", desc: "You haven't opened this question yet" },
+                ].map(item => (
+                  <View key={item.color} style={{ flexDirection: "row", alignItems: "center", marginBottom: 10, gap: 12 }}>
+                    <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: item.color }} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontWeight: "700", fontSize: 13, color: "#212121" }}>{item.label}</Text>
+                      <Text style={{ fontSize: 11, color: "#757575" }}>{item.desc}</Text>
+                    </View>
                   </View>
-                </View>
-              ))}
+                ))}
 
-              <View style={{ height: 1, backgroundColor: "#e0e0e0", marginVertical: 14 }} />
+                <View style={{ height: 1, backgroundColor: "#e0e0e0", marginVertical: 14 }} />
 
-              {/* General rules */}
-              <Text style={{ fontWeight: "800", fontSize: 12, color: "#555", marginBottom: 10, letterSpacing: 0.5 }}>EXAMINATION RULES & PROCTORING POLICY</Text>
-              {[
-                "📱 Phone Call & DND Warning: Answering or receiving phone calls puts the app in the background and triggers a cheating violation strike. Keep 'Do Not Disturb' (DND) ON.",
-                "⚠️ 4-Strike Proctoring Policy: You get 3 warning chances for tab switches / focus loss. On the 4th violation, your test AUTO-SUBMITS automatically.",
-                "📶 Offline Answer Persistence: If your internet drops, keep answering! Your responses save locally and will auto-submit & evaluate once reconnected.",
-                "🚫 No Tab Switch or Minimize: Tab switching, minimizing the browser, and DevTools are strictly monitored.",
-                "🔒 Copying & Shortcut Block: Right-click, Copy, Cut, and PrintScreen operations are blocked.",
-                "✅ Visit All Questions: You must visit ALL questions before the Submit button becomes active.",
-                "⏰ Auto-Submit on Time Expiry: The exam auto-submits when the timer reaches 00:00.",
-              ].map((rule, i) => (
-                <Text key={i} style={{ fontSize: 12, color: "#424242", marginBottom: 6, lineHeight: 18 }}>{rule}</Text>
-              ))}
+                {/* General rules */}
+                <Text style={{ fontWeight: "800", fontSize: 12, color: "#555", marginBottom: 10, letterSpacing: 0.5 }}>EXAMINATION RULES & PROCTORING POLICY</Text>
+                {[
+                  "📱 Phone Call & DND Warning: Answering or receiving phone calls puts the app in the background and triggers a cheating violation strike. Keep 'Do Not Disturb' (DND) ON.",
+                  "⚠️ 4-Strike Proctoring Policy: You get 3 warning chances for tab switches / focus loss. On the 4th violation, your test AUTO-SUBMITS automatically.",
+                  "📶 Offline Answer Persistence: If your internet drops, keep answering! Your responses save locally and will auto-submit & evaluate once reconnected.",
+                  "🚫 No Tab Switch or Minimize: Tab switching, minimizing the browser, and DevTools are strictly monitored.",
+                  "🔒 Copying & Shortcut Block: Right-click, Copy, Cut, and PrintScreen operations are blocked.",
+                  "✅ Visit All Questions: You must visit ALL questions before the Submit button becomes active.",
+                  "⏰ Auto-Submit on Time Expiry: The exam auto-submits when the timer reaches 00:00.",
+                ].map((rule, i) => (
+                  <Text key={i} style={{ fontSize: 12, color: "#424242", marginBottom: 6, lineHeight: 18 }}>{rule}</Text>
+                ))}
+              </ScrollView>
 
+              {/* Pinned Bottom Button */}
               <TouchableOpacity
                 onPress={() => setShowInstructions(false)}
-                style={{ marginTop: 16, backgroundColor: "#c62828", borderRadius: 10, paddingVertical: 12, alignItems: "center" }}
+                style={{ marginTop: 12, backgroundColor: "#c62828", borderRadius: 10, paddingVertical: 12, alignItems: "center" }}
               >
                 <Text style={{ color: "#ffffff", fontWeight: "800", fontSize: 14 }}>Got it — Back to Exam</Text>
               </TouchableOpacity>
-            </View>
-          </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
         </Modal>
 
         {attemptQuestions[currentQIdx] ? (
@@ -24519,7 +24865,11 @@ function MainApp() {
         </Modal>
       )}
 
-      <View style={[styles.header, darkMode && styles.headerDark]}>
+      <View style={[
+        styles.header,
+        darkMode && styles.headerDark,
+        Platform.OS === "android" && insets.top === 0 && { paddingTop: (RNStatusBar.currentHeight || 28) + 8 }
+      ]}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
           <View style={[styles.headerLogo, { backgroundColor: "transparent", borderWidth: 0 }]}>
             <Image source={require("./assets/logo.png")} style={{ width: 34, height: 34, borderRadius: 17 }} />
@@ -24539,7 +24889,16 @@ function MainApp() {
       </View>
 
       {/* Main Content Body */}
-      <View style={[styles.mainBody, darkMode && { backgroundColor: "#121212" }]}>{/* ================== 1. DASHBOARD ================== */}
+      <View style={[styles.mainBody, darkMode && { backgroundColor: "#121212" }]}>
+        <TabErrorBoundary
+          darkMode={darkMode}
+          onGoHome={() => {
+            setActiveTab("dashboard");
+            setGuestTab("home");
+            setGuestContentTab("home");
+          }}
+        >
+          {/* ================== 1. DASHBOARD ================== */}
         {activeTab === "dashboard" && (
           isPageLocked("dashboard") ? (
             <PageLockedBanner pageTitle="Dashboard" message={lockedPages["dashboard"]?.message} darkMode={darkMode} />
@@ -25144,7 +25503,7 @@ function MainApp() {
                               )}
                             </View>
                             <View>
-                              <Text style={{ fontWeight: "bold", fontSize: (isMobile || Platform.OS !== "web") ? 12.5 : 13, color: darkMode ? "#ce93d8" : "#6a1b9a" }}>Access Control</Text>
+                              <Text style={{ fontWeight: "bold", fontSize: (isMobile || Platform.OS !== "web") ? 12.5 : 13, color: darkMode ? "#ce93d8" : "#6a1b9a" }}>Resource/Class Request</Text>
                               <Text style={{ fontSize: (isMobile || Platform.OS !== "web") ? 10.5 : 11, color: darkMode ? "#ce93d8" : "#6a1b9a", marginTop: 2 }} numberOfLines={2}>
                                 {pendingCount > 0 ? `${pendingCount} request(s) awaiting review` : "SACS Security & Permissions"}
                               </Text>
@@ -25770,7 +26129,7 @@ function MainApp() {
                                 </View>
                                 {n.publishedAt && (
                                   <Text style={{ fontSize: 10, color: darkMode ? "#999" : "#757575" }}>
-                                    {new Date(n.publishedAt).toLocaleDateString()}
+                                    {(() => { const d = new Date(n.publishedAt); return isNaN(d.getTime()) ? '' : `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`; })()}
                                   </Text>
                                 )}
                               </View>
@@ -26182,14 +26541,19 @@ function MainApp() {
 
                     {isAdmin && (
                       <>
-                        {renderSidebarItem("pdf-create", testSub, "AI Create", "sparkles-outline", () => changeTestSub("pdf-create"), "test-pdf-create", undefined, testSidebarCollapsed && !isMobile, "test_creation")}
+                        {renderSidebarItem("pdf-create", testSub, "Create test", "sparkles-outline", () => changeTestSub("pdf-create"), "test-pdf-create", undefined, testSidebarCollapsed && !isMobile, "test_creation")}
                         {renderSidebarItem("special-mock", testSub, "Special Mock", "medal-outline", () => changeTestSub("special-mock"), "test-special-mock", undefined, testSidebarCollapsed && !isMobile, "test_creation")}
-                        {renderSidebarItem("feedback", testSub, "Exams Feedback", "chatbubbles-outline", () => changeTestSub("feedback"), "test-feedback", undefined, testSidebarCollapsed && !isMobile, "test_review")}
                       </>
                     )}
 
                     {!testSidebarCollapsed || isMobile ? <Text style={styles.categoryHeader}>PERFORMANCE</Text> : null}
                     {renderSidebarItem("results", testSub, "Results Log", "trophy-outline", () => changeTestSub("results"), "test-results", undefined, testSidebarCollapsed && !isMobile, "test_results")}
+
+                    {isAdmin && (
+                      <>
+                        {renderSidebarItem("feedback", testSub, "Exams Feedback", "chatbubbles-outline", () => changeTestSub("feedback"), "test-feedback", undefined, testSidebarCollapsed && !isMobile, "test_review")}
+                      </>
+                    )}
                   </ScrollView>
                 </View>
               )}
@@ -26233,10 +26597,10 @@ function MainApp() {
                         </TouchableOpacity>
                         <View style={{ flex: 1 }}>
                           <Text style={{ fontSize: 14, fontWeight: "bold", color: darkMode ? "#ffffff" : "#1a237e" }} numberOfLines={1}>
-                            {testSub === "available" ? "Available Exams" : testSub === "pdf-create" ? "AI Test Creation" : testSub === "special-mock" ? "Special Mock Tests" : testSub === "feedback" ? "Exams Feedback" : testSub === "results" ? "Results Log" : "Test Portal"}
+                            {testSub === "available" ? "Available Exams" : testSub === "pdf-create" ? "Create Test" : testSub === "special-mock" ? "Special Mock Tests" : testSub === "feedback" ? "Exams Feedback" : testSub === "results" ? "Results Log" : "Test Portal"}
                           </Text>
                           <Text style={{ fontSize: 10, color: "#888", fontWeight: "500" }} numberOfLines={1}>
-                            Test Portal • {testSub === "available" ? "Active Mock Tests" : testSub === "pdf-create" ? "Authoring & AI" : testSub === "special-mock" ? "Special Roll No & Batches" : testSub === "feedback" ? "Student Feedback" : "Rankings & Scores"}
+                            Test Portal • {testSub === "available" ? "Active Mock Tests" : testSub === "pdf-create" ? "Create & Author Tests" : testSub === "special-mock" ? "Special Roll No & Batches" : testSub === "feedback" ? "Student Feedback" : "Rankings & Scores"}
                           </Text>
                         </View>
                       </View>
@@ -27244,11 +27608,11 @@ function MainApp() {
                                     onPress={() => setShowAiPromptHelper(!showAiPromptHelper)}
                                     style={{ backgroundColor: darkMode ? "#1a2a1a" : "#e8f5e9", borderRadius: 10, padding: 12, marginBottom: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderColor: darkMode ? "#2d4a2d" : "#a5d6a7" }}
                                   >
-                                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1, paddingRight: 6 }}>
                                       <Text style={{ fontSize: 18 }}>🤖</Text>
-                                      <View>
+                                      <View style={{ flex: 1 }}>
                                         <Text style={{ fontWeight: "bold", color: darkMode ? "#81c784" : "#2e7d32", fontSize: 13 }}>AI Prompt Generator</Text>
-                                        <Text style={{ fontSize: 10, color: darkMode ? "#66bb6a" : "#388e3c" }}>Generate with ChatGPT · Gemini · Claude · Groq · DeepSeek · Perplexity</Text>
+                                        <Text style={{ fontSize: 10, color: darkMode ? "#66bb6a" : "#388e3c", flexWrap: "wrap", lineHeight: 14 }}>Generate with ChatGPT · Gemini · Claude · Groq · DeepSeek · Perplexity</Text>
                                       </View>
                                     </View>
                                     <Ionicons name={showAiPromptHelper ? "chevron-up" : "chevron-down"} size={16} color={darkMode ? "#81c784" : "#2e7d32"} />
@@ -29227,1381 +29591,18 @@ SOURCE QUESTION PAPER:
                       )}
 
 
-                      {testSub === "special-mock" && isAdmin && (() => {
-                        const allAvailableBatchNames = Array.from(new Set([
-                          ...(Array.isArray(batches) ? batches.map((b: any) => typeof b === 'string' ? b : b?.name || b?.batchName) : []),
-                          ...(Array.isArray(students) ? students.flatMap((s: any) => [
-                            s.batch,
-                            s.batchName,
-                            ...(Array.isArray(s.batches) ? s.batches.map((b: any) => typeof b === 'string' ? b : b?.batchName) : [])
-                          ]) : [])
-                        ].filter(Boolean))).sort();
-
-                        const { allocations, mockRollMap, nextStartRoll, totalAssigned } = computeSpecialMockAllocations(
-                          specialMockSelectedBatches,
-                          specialMockStartingRoll,
-                          students
-                        );
-
-                        const specialMockTestsList = (tests || []).filter((t: any) => t && (t.isSpecialMock || t.testType === "special_mock" || t.mockConfig));
-
-                        const handleCreateSpecialMock = async () => {
-                          if (!specialMockTitle.trim()) {
-                            Alert.alert("Required", "Please enter a title for the Special Mock Exam.");
-                            return;
-                          }
-                          if (specialMockSelectedBatches.length === 0) {
-                            Alert.alert("Required", "Please select at least one batch for this Special Mock Exam.");
-                            return;
-                          }
-
-                          if (totalAssigned === 0) {
-                            Alert.alert("Notice", "The selected batches have 0 enrolled candidates. Students will be assigned roll numbers when enrolled.");
-                          }
-
-                          setIsCreatingSpecialMock(true);
-                          try {
-                            const correctVal = parseFloat(specialMockMarksPerQ) || 2;
-                            const wrongVal = Math.abs(parseFloat(specialMockNegMarks) || 0.66);
-                            const unattendedVal = parseFloat(specialMockUnattendedMarks) || 0;
-                            const qCount = extractedQuestions.length > 0 ? extractedQuestions.length : 100;
-
-                            const payload = {
-                              title: specialMockTitle.trim(),
-                              testType: "special_mock",
-                              isSpecialMock: true,
-                              mockConfig: {
-                                startingRollNo: specialMockStartingRoll.trim() || "182026",
-                                orderedBatches: specialMockSelectedBatches,
-                                batchAllocations: allocations.map(a => ({
-                                  batchName: a.batchName,
-                                  count: a.count,
-                                  startRoll: a.startRoll,
-                                  endRoll: a.endRoll
-                                })),
-                                mockRollNumbers: mockRollMap
-                              },
-                              targetAudience: "special_mock",
-                              targetBatch: specialMockSelectedBatches.join(","),
-                              durationMinutes: Number(specialMockDuration) || 60,
-                              marksPerQuestion: correctVal,
-                              negativeMarks: wrongVal,
-                              unattendedMarks: unattendedVal,
-                              totalMarks: qCount * correctVal,
-                              totalQuestions: qCount,
-                              questions: extractedQuestions.length > 0 ? extractedQuestions : undefined,
-                              startTime: specialMockStartTime || new Date().toISOString(),
-                              endTime: specialMockEndTime || new Date(Date.now() + (Number(specialMockDuration) || 60) * 60 * 1000).toISOString(),
-                              createdBy: user?.name || "admin",
-                              published: true
-                            };
-
-                            const res = await api.post("/test-portal/test-creation", payload);
-                            Alert.alert("Success", res.message || "Special Mock Test created successfully with sequential roll numbers!");
-                            await loadTests();
-                            setExtractedQuestions([]);
-                            setPdfFilename("");
-                            setPdfBase64("");
-                            setAkFilename("");
-                            setAkBase64("");
-                            setJsonQuestionsInput("");
-                            setSpecialMockSubTab("manage");
-                          } catch (e: any) {
-                            console.error("Error creating special mock:", e);
-                            Alert.alert("Error", e.message || "Failed to create Special Mock Test");
-                          } finally {
-                            setIsCreatingSpecialMock(false);
-                          }
-                        };
-
-                        return (
-                          <View style={{ gap: 15 }}>
-                            {/* Page Header */}
-                            <View style={[styles.card, darkMode && styles.cardDark]}>
-                              <View style={{ flexDirection: isMobile ? "column" : "row", justifyContent: "space-between", alignItems: isMobile ? "flex-start" : "center", gap: 10, borderBottomWidth: 1, borderColor: darkMode ? "#333" : "#eee", paddingBottom: 12 }}>
-                                <View>
-                                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                                    <Ionicons name="medal" size={24} color="#c62828" />
-                                    <Text style={[styles.sectionTitle, darkMode && styles.sectionTitleDark, { marginBottom: 0 }]}>
-                                      Special Mock Test Management
-                                    </Text>
-                                  </View>
-                                  <Text style={{ color: darkMode ? "#9e9e9e" : "#666", fontSize: 12, marginTop: 4 }}>
-                                    Order batches freely (move up/down) and generate dedicated sequential roll numbers for mock exams and ID cards.
-                                  </Text>
-                                </View>
-
-                                {/* Sub Tabs */}
-                                <View style={{ flexDirection: "row", gap: 6, backgroundColor: darkMode ? "#222" : "#f1f5f9", padding: 4, borderRadius: 8 }}>
-                                  <TouchableOpacity
-                                    onPress={() => setSpecialMockSubTab("create")}
-                                    style={{
-                                      paddingHorizontal: 14,
-                                      paddingVertical: 7,
-                                      borderRadius: 6,
-                                      backgroundColor: specialMockSubTab === "create" ? "#c62828" : "transparent"
-                                    }}
-                                  >
-                                    <Text style={{ fontSize: 12, fontWeight: "bold", color: specialMockSubTab === "create" ? "#ffffff" : (darkMode ? "#ccc" : "#475569") }}>
-                                      + Create Special Mock
-                                    </Text>
-                                  </TouchableOpacity>
-                                  <TouchableOpacity
-                                    onPress={() => setSpecialMockSubTab("manage")}
-                                    style={{
-                                      paddingHorizontal: 14,
-                                      paddingVertical: 7,
-                                      borderRadius: 6,
-                                      backgroundColor: specialMockSubTab === "manage" ? "#c62828" : "transparent"
-                                    }}
-                                  >
-                                    <Text style={{ fontSize: 12, fontWeight: "bold", color: specialMockSubTab === "manage" ? "#ffffff" : (darkMode ? "#ccc" : "#475569") }}>
-                                      All Special Mocks ({specialMockTestsList.length})
-                                    </Text>
-                                  </TouchableOpacity>
-                                </View>
-                              </View>
-                            </View>
-
-                            {/* View 1: Create Special Mock */}
-                            {specialMockSubTab === "create" && (
-                              <View style={{ gap: 15 }}>
-                                {/* Step 1: Mock Test Details & Starting Roll Number */}
-                                <View style={[styles.card, darkMode && styles.cardDark]}>
-                                  <Text style={[styles.sectionTitle, darkMode && styles.sectionTitleDark]}>1. Mock Test Name & Starting Roll Number</Text>
-                                  <View style={{ flexDirection: isMobile ? "column" : "row", gap: 15 }}>
-                                    <View style={{ flex: 2 }}>
-                                      <Text style={styles.label}>Mock Test Name / Title *</Text>
-                                      <TextInput
-                                        style={[styles.input, darkMode && styles.inputDark]}
-                                        placeholder="e.g. UPSC Prelims Mega Mock 2026 - Test 1"
-                                        placeholderTextColor={darkMode ? "#777" : "#999"}
-                                        value={specialMockTitle}
-                                        onChangeText={setSpecialMockTitle}
-                                      />
-                                    </View>
-                                    <View style={{ flex: 1 }}>
-                                      <Text style={styles.label}>Starting Roll Number Box *</Text>
-                                      <TextInput
-                                        style={[styles.input, darkMode && styles.inputDark, { fontWeight: "bold", color: "#c62828" }]}
-                                        placeholder="e.g. 182026"
-                                        placeholderTextColor={darkMode ? "#777" : "#999"}
-                                        value={specialMockStartingRoll}
-                                        onChangeText={setSpecialMockStartingRoll}
-                                        keyboardType="numeric"
-                                      />
-                                      <Text style={{ fontSize: 10, color: darkMode ? "#888" : "#757575", marginTop: 3 }}>
-                                        Sequential roll numbers will begin from this value.
-                                      </Text>
-                                    </View>
-                                  </View>
-                                </View>
-
-                                {/* Step 2: Batches Selection & Priority Order */}
-                                <View style={[styles.card, darkMode && styles.cardDark]}>
-                                  <Text style={[styles.sectionTitle, darkMode && styles.sectionTitleDark]}>
-                                    2. Select & Order Batches ({specialMockSelectedBatches.length} Selected)
-                                  </Text>
-                                  <Text style={{ fontSize: 12, color: darkMode ? "#9e9e9e" : "#666", marginBottom: 10 }}>
-                                    Select multiple batches. All students (Online, Offline, or Recorded) in the chosen batches will receive sequential mock roll numbers in the exact order specified below.
-                                  </Text>
-
-                                  {/* Available Batch Chips */}
-                                  <Text style={[styles.label, { marginBottom: 6 }]}>Available Batches (Click to Add / Remove):</Text>
-                                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexDirection: "row", gap: 8, paddingBottom: 6 }}>
-                                    {allAvailableBatchNames.length === 0 ? (
-                                      <Text style={{ fontSize: 12, color: "#999", fontStyle: "italic" }}>No batches found in ERP.</Text>
-                                    ) : (
-                                      allAvailableBatchNames.map(bName => {
-                                        const isSel = specialMockSelectedBatches.includes(bName);
-                                        return (
-                                          <TouchableOpacity
-                                            key={bName}
-                                            onPress={() => toggleSpecialMockBatch(bName)}
-                                            style={{
-                                              paddingHorizontal: 12,
-                                              paddingVertical: 6,
-                                              borderRadius: 20,
-                                              backgroundColor: isSel ? "#c62828" : (darkMode ? "#2a2a2a" : "#f1f5f9"),
-                                              borderWidth: 1,
-                                              borderColor: isSel ? "#c62828" : (darkMode ? "#444" : "#cbd5e1"),
-                                              flexDirection: "row",
-                                              alignItems: "center",
-                                              gap: 6
-                                            }}
-                                          >
-                                            <Ionicons name={isSel ? "checkmark-circle" : "add-circle-outline"} size={14} color={isSel ? "#fff" : (darkMode ? "#aaa" : "#555")} />
-                                            <Text style={{ fontSize: 12, fontWeight: "600", color: isSel ? "#fff" : (darkMode ? "#e4e4e7" : "#334155") }}>
-                                              {bName}
-                                            </Text>
-                                          </TouchableOpacity>
-                                        );
-                                      })
-                                    )}
-                                  </ScrollView>
-
-                                  {/* Ordered Batches Queue */}
-                                  <View style={{ marginTop: 15, borderTopWidth: 1, borderColor: darkMode ? "#333" : "#eee", paddingTop: 12 }}>
-                                    <Text style={[styles.label, { marginBottom: 8 }]}>
-                                      Active Batch Queue (Arrange Priority with 🔼 Up / 🔽 Down):
-                                    </Text>
-
-                                    {specialMockSelectedBatches.length === 0 ? (
-                                      <View style={{ padding: 20, alignItems: "center", backgroundColor: darkMode ? "#222" : "#fafafa", borderRadius: 8, borderStyle: "dashed", borderWidth: 1, borderColor: darkMode ? "#444" : "#e0e0e0" }}>
-                                        <Ionicons name="list-outline" size={32} color="#9e9e9e" />
-                                        <Text style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
-                                          No batches added yet. Click on the batch chips above to add them to this Special Mock.
-                                        </Text>
-                                      </View>
-                                    ) : (
-                                      <View style={{ gap: 8 }}>
-                                        {specialMockSelectedBatches.map((bName, idx) => {
-                                          const bAlloc = allocations.find(a => a.batchName === bName);
-                                          const count = bAlloc ? bAlloc.count : 0;
-                                          const startR = bAlloc ? bAlloc.startRoll : specialMockStartingRoll;
-                                          const endR = bAlloc ? bAlloc.endRoll : specialMockStartingRoll;
-
-                                          return (
-                                            <View
-                                              key={bName}
-                                              style={{
-                                                flexDirection: "row",
-                                                alignItems: "center",
-                                                justifyContent: "space-between",
-                                                backgroundColor: darkMode ? "#27272a" : "#ffffff",
-                                                padding: 10,
-                                                borderRadius: 8,
-                                                borderWidth: 1,
-                                                borderColor: darkMode ? "#3f3f46" : "#e2e8f0"
-                                              }}
-                                            >
-                                              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
-                                                <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: "#c62828", justifyContent: "center", alignItems: "center" }}>
-                                                  <Text style={{ color: "#ffffff", fontWeight: "bold", fontSize: 11 }}>#{idx + 1}</Text>
-                                                </View>
-                                                <View style={{ flex: 1 }}>
-                                                  <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#1e293b" }}>{bName}</Text>
-                                                  <Text style={{ fontSize: 11, color: "#1565c0", fontWeight: "600" }}>
-                                                    {count} candidates • Roll No: {startR} {count > 1 ? `to ${endR}` : ""}
-                                                  </Text>
-                                                </View>
-                                              </View>
-
-                                              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                                                <TouchableOpacity
-                                                  disabled={idx === 0}
-                                                  onPress={() => moveSpecialMockBatchUp(idx)}
-                                                  style={{
-                                                    paddingHorizontal: 8,
-                                                    paddingVertical: 5,
-                                                    borderRadius: 6,
-                                                    backgroundColor: idx === 0 ? (darkMode ? "#333" : "#f1f5f9") : "#e0e7ff",
-                                                    opacity: idx === 0 ? 0.4 : 1
-                                                  }}
-                                                >
-                                                  <Text style={{ fontSize: 12, fontWeight: "bold", color: "#3730a3" }}>▲ Up</Text>
-                                                </TouchableOpacity>
-                                                <TouchableOpacity
-                                                  disabled={idx === specialMockSelectedBatches.length - 1}
-                                                  onPress={() => moveSpecialMockBatchDown(idx)}
-                                                  style={{
-                                                    paddingHorizontal: 8,
-                                                    paddingVertical: 5,
-                                                    borderRadius: 6,
-                                                    backgroundColor: idx === specialMockSelectedBatches.length - 1 ? (darkMode ? "#333" : "#f1f5f9") : "#e0e7ff",
-                                                    opacity: idx === specialMockSelectedBatches.length - 1 ? 0.4 : 1
-                                                  }}
-                                                >
-                                                  <Text style={{ fontSize: 12, fontWeight: "bold", color: "#3730a3" }}>▼ Down</Text>
-                                                </TouchableOpacity>
-                                                <TouchableOpacity
-                                                  onPress={() => toggleSpecialMockBatch(bName)}
-                                                  style={{ padding: 5 }}
-                                                >
-                                                  <Ionicons name="trash-outline" size={18} color="#ef4444" />
-                                                </TouchableOpacity>
-                                              </View>
-                                            </View>
-                                          );
-                                        })}
-                                      </View>
-                                    )}
-                                  </View>
-
-                                  {/* Live Calculation Preview Breakdown Table */}
-                                  {specialMockSelectedBatches.length > 0 && (
-                                    <View style={{ marginTop: 15, backgroundColor: darkMode ? "#1a251b" : "#f0fdf4", padding: 14, borderRadius: 10, borderWidth: 1, borderColor: darkMode ? "#22543d" : "#bbf7d0" }}>
-                                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                                        <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#86efac" : "#166534" }}>
-                                          Sequential Roll Number Allocation Preview:
-                                        </Text>
-                                        <Text style={{ fontSize: 12, fontWeight: "bold", color: darkMode ? "#86efac" : "#166534" }}>
-                                          Total: {totalAssigned} Students ({specialMockSelectedBatches.length} Batches)
-                                        </Text>
-                                      </View>
-
-                                      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                                        <View style={{ minWidth: 500 }}>
-                                          <View style={{ flexDirection: "row", borderBottomWidth: 1, borderColor: darkMode ? "#22543d" : "#86efac", paddingBottom: 6, marginBottom: 6 }}>
-                                            <Text style={{ width: 40, fontWeight: "bold", fontSize: 11, color: darkMode ? "#cbd5e1" : "#475569" }}>#</Text>
-                                            <Text style={{ flex: 1, minWidth: 150, fontWeight: "bold", fontSize: 11, color: darkMode ? "#cbd5e1" : "#475569" }}>Batch Name</Text>
-                                            <Text style={{ width: 90, textAlign: "center", fontWeight: "bold", fontSize: 11, color: darkMode ? "#cbd5e1" : "#475569" }}>Candidates</Text>
-                                            <Text style={{ width: 140, textAlign: "center", fontWeight: "bold", fontSize: 11, color: darkMode ? "#cbd5e1" : "#475569" }}>Assigned Roll Range</Text>
-                                          </View>
-                                          {allocations.map((a, i) => (
-                                            <View key={a.batchName} style={{ flexDirection: "row", paddingVertical: 4 }}>
-                                              <Text style={{ width: 40, fontSize: 12, fontWeight: "bold", color: darkMode ? "#fff" : "#1e293b" }}>#{i + 1}</Text>
-                                              <Text style={{ flex: 1, minWidth: 150, fontSize: 12, color: darkMode ? "#fff" : "#1e293b", fontWeight: "600" }}>{a.batchName}</Text>
-                                              <Text style={{ width: 90, textAlign: "center", fontSize: 12, color: "#1565c0", fontWeight: "bold" }}>{a.count}</Text>
-                                              <Text style={{ width: 140, textAlign: "center", fontSize: 12, color: "#2e7d32", fontWeight: "bold" }}>
-                                                {a.count > 0 ? `${a.startRoll} — ${a.endRoll}` : "No candidates"}
-                                              </Text>
-                                            </View>
-                                          ))}
-                                        </View>
-                                      </ScrollView>
-                                    </View>
-                                  )}
-                                </View>
-
-                                {/* Step 3: Question Paper & Answer Key (Upload / JSON) */}
-                                <View style={[styles.card, darkMode && styles.cardDark]}>
-                                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6, flexWrap: "wrap", gap: 8 }}>
-                                    <Text style={[styles.sectionTitle, darkMode && styles.sectionTitleDark, { marginBottom: 0 }]}>
-                                      3. Question Paper & Answer Key (Upload / JSON)
-                                    </Text>
-                                    {extractedQuestions.length > 0 && (
-                                      <View style={{ backgroundColor: "#dcfce7", borderColor: "#86efac", borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 4 }}>
-                                        <Ionicons name="checkmark-circle" size={14} color="#166534" />
-                                        <Text style={{ fontSize: 11, fontWeight: "bold", color: "#166534" }}>
-                                          ✓ {extractedQuestions.length} Questions Loaded
-                                        </Text>
-                                      </View>
-                                    )}
-                                  </View>
-                                  <Text style={{ fontSize: 11, color: darkMode ? "#9e9e9e" : "#757575", marginBottom: 12 }}>
-                                    Upload a Word document (.docx) to auto-extract questions and options using Local Regex or Gemini AI, or paste a structured JSON array.
-                                  </Text>
-
-                                  {/* Mode Tabs: Word File Upload vs Paste JSON Array (No copy-paste text tab) */}
-                                  <View style={{ flexDirection: "row", marginBottom: 14, borderRadius: 8, backgroundColor: darkMode ? "#222" : "#eee", padding: 4 }}>
-                                    <TouchableOpacity
-                                      onPress={() => setGenMode("file")}
-                                      style={{
-                                        flex: 1,
-                                        paddingVertical: 9,
-                                        borderRadius: 6,
-                                        backgroundColor: genMode !== "json" ? (darkMode ? "#333" : "#fff") : "transparent",
-                                        alignItems: "center"
-                                      }}
-                                    >
-                                      <Text style={{ fontWeight: "bold", color: genMode !== "json" ? "#c62828" : (darkMode ? "#aaa" : "#555"), fontSize: 12 }}>
-                                        📄 Word File Upload
-                                      </Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
-                                      onPress={() => setGenMode("json")}
-                                      style={{
-                                        flex: 1,
-                                        paddingVertical: 9,
-                                        borderRadius: 6,
-                                        backgroundColor: genMode === "json" ? (darkMode ? "#333" : "#fff") : "transparent",
-                                        alignItems: "center"
-                                      }}
-                                    >
-                                      <Text style={{ fontWeight: "bold", color: genMode === "json" ? "#c62828" : (darkMode ? "#aaa" : "#555"), fontSize: 12 }}>
-                                        📋 Paste JSON Array
-                                      </Text>
-                                    </TouchableOpacity>
-                                  </View>
-
-                                  {/* Hidden file inputs for Web */}
-                                  {Platform.OS === "web" && (
-                                    <>
-                                      <input
-                                        id="special-mock-qp-input"
-                                        type="file"
-                                        accept=".docx,.doc"
-                                        style={{ display: "none" }}
-                                        onChange={(e: any) => {
-                                          const file = e.target?.files?.[0];
-                                          if (file) {
-                                            setPdfFilename(file.name);
-                                            const reader = new FileReader();
-                                            reader.onload = (event: any) => {
-                                              try {
-                                                const dataUrl = event.target?.result as string;
-                                                setPdfBase64(dataUrl.split(",")[1]);
-                                                Alert.alert("Success", `Question Paper "${file.name}" loaded! Click "Extract Questions" below to process.`);
-                                              } catch (err: any) {
-                                                Alert.alert("Error", "Failed to process Question Paper: " + err.message);
-                                              }
-                                            };
-                                            reader.readAsDataURL(file);
-                                          }
-                                        }}
-                                      />
-                                      <input
-                                        id="special-mock-ak-input"
-                                        type="file"
-                                        accept=".docx,.doc,.csv"
-                                        style={{ display: "none" }}
-                                        onChange={(e: any) => {
-                                          const file = e.target?.files?.[0];
-                                          if (file) {
-                                            setAkFilename(file.name);
-                                            const reader = new FileReader();
-                                            reader.onload = (event: any) => {
-                                              try {
-                                                const dataUrl = event.target?.result as string;
-                                                setAkBase64(dataUrl.split(",")[1]);
-                                                Alert.alert("Success", `Answer Key "${file.name}" loaded successfully!`);
-                                              } catch (err: any) {
-                                                Alert.alert("Error", "Failed to process Answer Key: " + err.message);
-                                              }
-                                            };
-                                            reader.readAsDataURL(file);
-                                          }
-                                        }}
-                                      />
-                                    </>
-                                  )}
-
-                                  {genMode !== "json" ? (
-                                    <View>
-                                      {/* Extraction Mode Toggle: Local-Only vs AI-Only */}
-                                      <Text style={[styles.label, darkMode && styles.labelDark]}>Extraction Mode:</Text>
-                                      <View style={{ flexDirection: "row", marginBottom: 14, borderRadius: 8, backgroundColor: darkMode ? "#222" : "#eee", padding: 4 }}>
-                                        <TouchableOpacity
-                                          onPress={() => setExtractMode("local")}
-                                          style={{
-                                            flex: 1,
-                                            paddingVertical: 8,
-                                            borderRadius: 6,
-                                            backgroundColor: extractMode === "local" ? (darkMode ? "#333" : "#fff") : "transparent",
-                                            alignItems: "center"
-                                          }}
-                                        >
-                                          <Text style={{ fontWeight: "bold", color: extractMode === "local" ? "#c62828" : (darkMode ? "#aaa" : "#555"), fontSize: 11 }}>
-                                            ⚡ Local-Only (Free)
-                                          </Text>
-                                        </TouchableOpacity>
-                                        <TouchableOpacity
-                                          onPress={() => setExtractMode("ai")}
-                                          style={{
-                                            flex: 1,
-                                            paddingVertical: 8,
-                                            borderRadius: 6,
-                                            backgroundColor: extractMode === "ai" ? (darkMode ? "#333" : "#fff") : "transparent",
-                                            alignItems: "center"
-                                          }}
-                                        >
-                                          <Text style={{ fontWeight: "bold", color: extractMode === "ai" ? "#c62828" : (darkMode ? "#aaa" : "#555"), fontSize: 11 }}>
-                                            🤖 AI-Only (Gemini)
-                                          </Text>
-                                        </TouchableOpacity>
-                                      </View>
-
-                                      {/* Upload Boxes: Question Paper & Answer Key */}
-                                      <View style={{ flexDirection: isMobile ? "column" : "row", gap: 12, marginBottom: 12 }}>
-                                        {/* Question Paper Word File */}
-                                        <TouchableOpacity
-                                          onPress={() => {
-                                            setGenMode("file");
-                                            if (Platform.OS === "web") {
-                                              document.getElementById("special-mock-qp-input")?.click();
-                                            } else {
-                                              pickWordDocument("qp");
-                                            }
-                                          }}
-                                          style={{
-                                            flex: 1,
-                                            borderWidth: 2,
-                                            borderStyle: "dashed",
-                                            borderColor: "#c62828",
-                                            backgroundColor: darkMode ? "#2a1e1e" : "#fff8f8",
-                                            borderRadius: 12,
-                                            padding: 16,
-                                            alignItems: "center",
-                                            justifyContent: "center",
-                                            gap: 6
-                                          }}
-                                        >
-                                          <Ionicons name="document-text-outline" size={28} color="#c62828" />
-                                          <Text style={{ fontWeight: "bold", color: "#c62828", fontSize: 12, textAlign: "center" }}>
-                                            {pdfFilename ? "Replace Question Paper (.docx)" : "Upload Question Paper Word File (.docx)"}
-                                          </Text>
-                                          <Text style={{ fontSize: 10, color: darkMode ? "#9e9e9e" : "#757575", textAlign: "center" }}>
-                                            {pdfFilename ? `Selected: ${pdfFilename}` : "Extracts bilingual English & Tamil questions"}
-                                          </Text>
-                                        </TouchableOpacity>
-
-                                        {/* Answer Key File (Optional) */}
-                                        <TouchableOpacity
-                                          onPress={() => {
-                                            setGenMode("file");
-                                            if (Platform.OS === "web") {
-                                              document.getElementById("special-mock-ak-input")?.click();
-                                            } else {
-                                              pickWordDocument("ak");
-                                            }
-                                          }}
-                                          style={{
-                                            flex: 1,
-                                            borderWidth: 2,
-                                            borderStyle: "dashed",
-                                            borderColor: "#2e7d32",
-                                            backgroundColor: darkMode ? "#1e2a1e" : "#f4f9f4",
-                                            borderRadius: 12,
-                                            padding: 16,
-                                            alignItems: "center",
-                                            justifyContent: "center",
-                                            gap: 6
-                                          }}
-                                        >
-                                          <Ionicons name="key-outline" size={28} color="#2e7d32" />
-                                          <Text style={{ fontWeight: "bold", color: "#2e7d32", fontSize: 12, textAlign: "center" }}>
-                                            {akFilename ? "Replace Answer Key File" : "Upload Answer Key File (.docx / .csv)"}
-                                          </Text>
-                                          <Text style={{ fontSize: 10, color: darkMode ? "#9e9e9e" : "#757575", textAlign: "center" }}>
-                                            {akFilename ? `Selected: ${akFilename}` : "Optional: auto-matches correct answers"}
-                                          </Text>
-                                        </TouchableOpacity>
-                                      </View>
-
-                                      {/* Extract Questions Action Button */}
-                                      <View style={{ flexDirection: "row", gap: 10, marginTop: 4 }}>
-                                        <TouchableOpacity
-                                          disabled={isExtracting}
-                                          onPress={() => {
-                                            setGenMode("file");
-                                            extractQuestionsFromText();
-                                          }}
-                                          style={[styles.primaryBtn, { flex: 1, backgroundColor: "#c62828" }, isExtracting && { opacity: 0.6 }]}
-                                        >
-                                          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                                            {isExtracting && <ActivityIndicator size="small" color="#fff" />}
-                                            <Text style={styles.primaryBtnTxt}>
-                                              {isExtracting
-                                                ? "Extracting Questions..."
-                                                : extractMode === "local"
-                                                  ? "⚡ Extract Questions (Local Regex)"
-                                                  : "🤖 Extract Questions (Gemini AI)"}
-                                            </Text>
-                                          </View>
-                                        </TouchableOpacity>
-                                        {isExtracting && (
-                                          <TouchableOpacity
-                                            onPress={cancelExtraction}
-                                            style={[styles.primaryBtn, { backgroundColor: "#ef4444", minWidth: 80 }]}
-                                          >
-                                            <Ionicons name="close-circle-outline" size={16} color="#fff" />
-                                            <Text style={[styles.primaryBtnTxt, { marginLeft: 4 }]}>Cancel</Text>
-                                          </TouchableOpacity>
-                                        )}
-                                      </View>
-                                    </View>
-                                  ) : (
-                                    <View>
-                                      <Text style={[styles.label, darkMode && styles.labelDark]}>Paste Questions JSON Array *:</Text>
-                                      <TextInput
-                                        style={[
-                                          styles.input,
-                                          darkMode && styles.inputDark,
-                                          { minHeight: 180, maxHeight: 300, textAlignVertical: "top", padding: 12, fontFamily: "monospace", fontSize: 11 }
-                                        ]}
-                                        placeholder={`[\n  {\n    "question": "Question text...",\n    "option a": "Choice 1",\n    "option b": "Choice 2",\n    "option c": "Choice 3",\n    "option d": "Choice 4",\n    "correctAnswer": "A"\n  }\n]`}
-                                        placeholderTextColor="#999"
-                                        multiline
-                                        scrollEnabled={true}
-                                        value={jsonQuestionsInput}
-                                        onChangeText={setJsonQuestionsInput}
-                                      />
-                                      <TouchableOpacity
-                                        onPress={parseAndLoadJsonQuestions}
-                                        style={[styles.primaryBtn, { marginTop: 10, backgroundColor: "#1565c0" }]}
-                                      >
-                                        <Text style={styles.primaryBtnTxt}>Parse & Load JSON Questions</Text>
-                                      </TouchableOpacity>
-                                    </View>
-                                  )}
-
-                                  {/* Questions Loaded Badge & Clear Option */}
-                                  {extractedQuestions.length > 0 && (
-                                    <View style={{
-                                      marginTop: 14,
-                                      backgroundColor: darkMode ? "#1a2a1a" : "#f0fdf4",
-                                      padding: 12,
-                                      borderRadius: 10,
-                                      borderWidth: 1,
-                                      borderColor: darkMode ? "#22543d" : "#bbf7d0",
-                                      flexDirection: "row",
-                                      alignItems: "center",
-                                      justifyContent: "space-between"
-                                    }}>
-                                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1 }}>
-                                        <Ionicons name="checkmark-circle" size={22} color="#16a34a" />
-                                        <View style={{ flex: 1 }}>
-                                          <Text style={{ fontWeight: "bold", color: darkMode ? "#86efac" : "#166534", fontSize: 13 }}>
-                                            {extractedQuestions.length} Questions Loaded & Ready!
-                                          </Text>
-                                          <Text style={{ fontSize: 11, color: darkMode ? "#cbd5e1" : "#475569" }}>
-                                            Edit questions, attach images, or delete any question below before creating this Special Mock Exam.
-                                          </Text>
-                                        </View>
-                                      </View>
-                                      <TouchableOpacity
-                                        onPress={() => {
-                                          setExtractedQuestions([]);
-                                          setPdfFilename("");
-                                          setPdfBase64("");
-                                          setAkFilename("");
-                                          setAkBase64("");
-                                          setJsonQuestionsInput("");
-                                          Alert.alert("Cleared", "Question paper and loaded questions have been cleared.");
-                                        }}
-                                        style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: darkMode ? "#333" : "#fff", borderRadius: 6, borderWidth: 1, borderColor: "#ef4444" }}
-                                      >
-                                        <Text style={{ fontSize: 11, color: "#ef4444", fontWeight: "bold" }}>Clear</Text>
-                                      </TouchableOpacity>
-                                    </View>
-                                  )}
-                                </View>
-
-                                {/* Extracted Questions Workspace (Image 3) */}
-                                {extractedQuestions.length > 0 && (
-                                  <View style={[styles.card, darkMode && styles.cardDark]}>
-                                    <Text style={[styles.sectionTitle, darkMode && styles.sectionTitleDark]}>Extracted Questions Workspace</Text>
-
-                                    {/* Test Settings (Marking Scheme) */}
-                                    <View style={{ backgroundColor: darkMode ? "#222" : "#f9f9f9", padding: 15, borderRadius: 12, marginBottom: 15, borderLeftWidth: 4, borderLeftColor: "#2e7d32" }}>
-                                      <Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#212121", marginBottom: 10 }}>Test Settings (Marking Scheme)</Text>
-                                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12, alignItems: "flex-start" }}>
-
-                                        {/* Correct Answer Marks */}
-                                        <View style={{ flex: 1, minWidth: 140 }}>
-                                          <Text style={[styles.label, darkMode && styles.labelDark]}>Correct Answer Marks:</Text>
-                                          <TextInput
-                                            style={[styles.input, darkMode && styles.inputDark, { fontWeight: "bold", color: "#2e7d32" }]}
-                                            placeholder="+1"
-                                            placeholderTextColor="#999"
-                                            value={specialMockMarksPerQ}
-                                            onChangeText={v => {
-                                              let clean = v.replace(/[+]/g, "").trim();
-                                              let formatted = clean;
-                                              const parseFloatVal = parseFloat(clean);
-                                              if (!isNaN(parseFloatVal) && parseFloatVal > 0) {
-                                                formatted = "+" + clean;
-                                              } else if (clean === "0") {
-                                                formatted = "0";
-                                              }
-                                              setSpecialMockMarksPerQ(formatted);
-                                            }}
-                                          />
-                                        </View>
-
-                                        {/* Wrong Answer Marks */}
-                                        <View style={{ flex: 1.5, minWidth: 220 }}>
-                                          <Text style={[styles.label, darkMode && styles.labelDark]}>Wrong Answer Marks:</Text>
-                                          <TextInput
-                                            style={[styles.input, darkMode && styles.inputDark, { fontWeight: "bold", color: "#c62828" }]}
-                                            placeholder="-0.25"
-                                            placeholderTextColor="#999"
-                                            value={specialMockNegMarks}
-                                            onChangeText={v => {
-                                              let clean = v.replace(/[+]/g, "").trim();
-                                              let formatted = clean;
-                                              if (clean === "") {
-                                                formatted = "";
-                                              } else if (clean === "-") {
-                                                formatted = "-";
-                                              } else if (clean === "0") {
-                                                formatted = "0";
-                                              } else if (clean.startsWith("-")) {
-                                                formatted = clean;
-                                              } else {
-                                                formatted = "-" + clean;
-                                              }
-                                              setSpecialMockNegMarks(formatted);
-                                            }}
-                                          />
-                                          {/* Quick Presets for Wrong Answer Marks */}
-                                          <View style={{ flexDirection: "row", gap: 6, marginTop: 6, alignItems: "center" }}>
-                                            <Text style={{ fontSize: 11, color: "#757575", fontWeight: "600" }}>Presets:</Text>
-                                            {["-0.25", "-0.33", "-0.66"].map((preset) => {
-                                              const isSelected = specialMockNegMarks === preset;
-                                              return (
-                                                <TouchableOpacity
-                                                  key={preset}
-                                                  onPress={() => setSpecialMockNegMarks(preset)}
-                                                  style={{
-                                                    paddingHorizontal: 8,
-                                                    paddingVertical: 3,
-                                                    borderRadius: 6,
-                                                    backgroundColor: isSelected ? "#c62828" : (darkMode ? "#333" : "#e0e0e0"),
-                                                    borderWidth: 1,
-                                                    borderColor: isSelected ? "#b71c1c" : "#ccc"
-                                                  }}
-                                                >
-                                                  <Text style={{ fontSize: 11, fontWeight: "bold", color: isSelected ? "#fff" : (darkMode ? "#ccc" : "#333") }}>
-                                                    {preset}
-                                                  </Text>
-                                                </TouchableOpacity>
-                                              );
-                                            })}
-                                          </View>
-                                        </View>
-
-                                        {/* Unattended Marks */}
-                                        <View style={{ flex: 1, minWidth: 140 }}>
-                                          <Text style={[styles.label, darkMode && styles.labelDark]}>Unattended Marks:</Text>
-                                          <TextInput
-                                            style={[styles.input, darkMode && styles.inputDark]}
-                                            placeholder="0"
-                                            placeholderTextColor="#999"
-                                            value={specialMockUnattendedMarks}
-                                            onChangeText={v => {
-                                              let clean = v.replace(/[+]/g, "").trim();
-                                              let formatted = clean;
-                                              const parseFloatVal = parseFloat(clean);
-                                              if (clean === "0") {
-                                                formatted = "0";
-                                              } else if (!isNaN(parseFloatVal) && parseFloatVal > 0) {
-                                                formatted = "+" + clean;
-                                              }
-                                              setSpecialMockUnattendedMarks(formatted);
-                                            }}
-                                          />
-                                        </View>
-
-                                      </View>
-                                    </View>
-
-                                    {/* Question List Header */}
-                                    <Text style={{ fontWeight: "bold", fontSize: 13, color: darkMode ? "#ef9a9a" : "#c62828", marginBottom: 10 }}>
-                                      Questions List ({extractedQuestions.length} extracted):
-                                    </Text>
-
-                                    {/* Inline Question Editor */}
-                                    {editingQIdx !== null && editingQData !== null && (
-                                      <View style={{ backgroundColor: darkMode ? "#1a2a1a" : "#f1f8e9", borderWidth: 1, borderColor: "#2e7d32", borderRadius: 12, padding: 15, marginBottom: 15 }}>
-                                        <Text style={{ fontWeight: "bold", color: "#2e7d32", marginBottom: 10, fontSize: 13 }}>
-                                          Editing Question #{editingQIdx + 1}
-                                        </Text>
-
-                                        <Text style={[styles.label, darkMode && styles.labelDark]}>English Question Text:</Text>
-                                        <TextInput
-                                          style={[styles.input, darkMode && styles.inputDark, { height: 60 }]}
-                                          multiline
-                                          value={editingQData.questionEn}
-                                          onChangeText={text => setEditingQData({ ...editingQData, questionEn: text })}
-                                        />
-
-                                        <Text style={[styles.label, darkMode && styles.labelDark]}>Tamil Question Text:</Text>
-                                        <TextInput
-                                          style={[styles.input, darkMode && styles.inputDark, { height: 60 }]}
-                                          multiline
-                                          value={editingQData.questionTa}
-                                          onChangeText={text => setEditingQData({ ...editingQData, questionTa: text })}
-                                        />
-
-                                        {["A", "B", "C", "D"].map(opt => (
-                                          <View key={opt} style={{ marginBottom: 10, borderBottomWidth: 0.5, borderBottomColor: "#ccc", paddingBottom: 8 }}>
-                                            <Text style={{ fontWeight: "bold", fontSize: 11, color: "#2e7d32" }}>Option {opt}:</Text>
-                                            <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
-                                              <TextInput
-                                                style={[styles.input, darkMode && styles.inputDark, { flex: 1, marginBottom: 0, fontSize: 12 }]}
-                                                placeholder={`English Option ${opt}`}
-                                                value={editingQData.options?.[opt]?.en || ""}
-                                                onChangeText={text => {
-                                                  const updatedOptions = { ...editingQData.options };
-                                                  updatedOptions[opt] = { ...updatedOptions[opt], en: text };
-                                                  setEditingQData({ ...editingQData, options: updatedOptions });
-                                                }}
-                                              />
-                                              <TextInput
-                                                style={[styles.input, darkMode && styles.inputDark, { flex: 1, marginBottom: 0, fontSize: 12 }]}
-                                                placeholder={`Tamil Option ${opt}`}
-                                                value={editingQData.options?.[opt]?.ta || ""}
-                                                onChangeText={text => {
-                                                  const updatedOptions = { ...editingQData.options };
-                                                  updatedOptions[opt] = { ...updatedOptions[opt], ta: text };
-                                                  setEditingQData({ ...editingQData, options: updatedOptions });
-                                                }}
-                                              />
-                                            </View>
-                                          </View>
-                                        ))}
-
-                                        {/* Question Image Attachment */}
-                                        <Text style={[styles.label, darkMode && styles.labelDark]}>Question Image (Optional):</Text>
-                                        {(editingQData.imageUrl || editingQData.questionImage) ? (
-                                          <View style={{ gap: 8, marginBottom: 12, alignItems: "flex-start" }}>
-                                            <Image
-                                              source={{ uri: editingQData.imageUrl || editingQData.questionImage }}
-                                              style={{ width: 220, height: 130, borderRadius: 8, resizeMode: "contain", backgroundColor: "#ffffff", borderWidth: 1, borderColor: "#e0e0e0" }}
-                                            />
-                                            <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
-                                              <TouchableOpacity
-                                                disabled={uploadingImageQIdx === editingQIdx}
-                                                onPress={() => handleUploadQuestionImage(editingQIdx)}
-                                                style={{ backgroundColor: uploadingImageQIdx === editingQIdx ? "#0277bd" : "#0288d1", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 6 }}
-                                              >
-                                                {uploadingImageQIdx === editingQIdx ? (
-                                                  <>
-                                                    <ActivityIndicator size="small" color="#ffffff" />
-                                                    <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "bold" }}>Uploading...</Text>
-                                                  </>
-                                                ) : (
-                                                  <>
-                                                    <Ionicons name="image-outline" size={14} color="#ffffff" />
-                                                    <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "bold" }}>Change Image File</Text>
-                                                  </>
-                                                )}
-                                              </TouchableOpacity>
-                                              <TouchableOpacity
-                                                disabled={uploadingImageQIdx === editingQIdx}
-                                                onPress={() => setEditingQData({ ...editingQData, imageUrl: "", questionImage: "" })}
-                                                style={{ backgroundColor: "#c62828", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 4 }}
-                                              >
-                                                <Ionicons name="trash-outline" size={14} color="#ffffff" />
-                                                <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "bold" }}>Remove Image</Text>
-                                              </TouchableOpacity>
-                                            </View>
-                                            {uploadingImageQIdx === editingQIdx && (
-                                              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#e3f2fd", padding: 8, borderRadius: 6, borderWidth: 1, borderColor: "#90caf9", marginTop: 4 }}>
-                                                <ActivityIndicator size="small" color="#1976d2" />
-                                                <Text style={{ color: "#0d47a1", fontSize: 11, fontWeight: "bold" }}>Uploading image to Google Drive & compressing...</Text>
-                                              </View>
-                                            )}
-                                          </View>
-                                        ) : (
-                                          <View style={{ gap: 8, marginBottom: 12 }}>
-                                            <TouchableOpacity
-                                              disabled={uploadingImageQIdx === editingQIdx}
-                                              onPress={() => handleUploadQuestionImage(editingQIdx)}
-                                              style={{ backgroundColor: uploadingImageQIdx === editingQIdx ? "#1b5e20" : "#2e7d32", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start" }}
-                                            >
-                                              {uploadingImageQIdx === editingQIdx ? (
-                                                <>
-                                                  <ActivityIndicator size="small" color="#ffffff" />
-                                                  <Text style={{ color: "#ffffff", fontSize: 12, fontWeight: "bold" }}>Uploading Image...</Text>
-                                                </>
-                                              ) : (
-                                                <>
-                                                  <Ionicons name="image-outline" size={16} color="#ffffff" />
-                                                  <Text style={{ color: "#ffffff", fontSize: 12, fontWeight: "bold" }}>Upload Question Image File</Text>
-                                                </>
-                                              )}
-                                            </TouchableOpacity>
-                                            {uploadingImageQIdx === editingQIdx && (
-                                              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#e3f2fd", padding: 8, borderRadius: 6, borderWidth: 1, borderColor: "#90caf9" }}>
-                                                <ActivityIndicator size="small" color="#1976d2" />
-                                                <Text style={{ color: "#0d47a1", fontSize: 11, fontWeight: "bold" }}>Uploading image to Google Drive & compressing...</Text>
-                                              </View>
-                                            )}
-                                            <TextInput
-                                              style={[styles.input, darkMode && styles.inputDark, { fontSize: 12, marginBottom: 0 }]}
-                                              placeholder="Or paste Image URL (http://... or data:image/...)"
-                                              placeholderTextColor="#999"
-                                              value={editingQData.imageUrl || ""}
-                                              onChangeText={url => setEditingQData({ ...editingQData, imageUrl: url })}
-                                            />
-                                          </View>
-                                        )}
-
-                                        <Text style={[styles.label, darkMode && styles.labelDark]}>Correct Answer:</Text>
-                                        <View style={{ flexDirection: "row", gap: 10, marginBottom: 15 }}>
-                                          {["A", "B", "C", "D"].map(opt => (
-                                            <TouchableOpacity
-                                              key={opt}
-                                              onPress={() => setEditingQData({ ...editingQData, correctAnswer: opt })}
-                                              style={[
-                                                styles.roleBtn,
-                                                editingQData.correctAnswer === opt && { backgroundColor: "#2e7d32", borderColor: "#2e7d32" }
-                                              ]}
-                                            >
-                                              <Text style={[
-                                                styles.roleBtnTxt,
-                                                editingQData.correctAnswer === opt && { color: "#ffffff" }
-                                              ]}>
-                                                Option {opt}
-                                              </Text>
-                                            </TouchableOpacity>
-                                          ))}
-                                        </View>
-
-                                        <View style={{ flexDirection: "row", gap: 10 }}>
-                                          <TouchableOpacity
-                                            onPress={() => { setEditingQIdx(null); setEditingQData(null); }}
-                                            style={[styles.outlineBtn, { flex: 1, borderColor: "#757575" }]}
-                                          >
-                                            <Text style={[styles.outlineBtnTxt, { color: "#757575" }]}>Cancel</Text>
-                                          </TouchableOpacity>
-                                          <TouchableOpacity
-                                            onPress={() => {
-                                              const updated = [...extractedQuestions];
-                                              updated[editingQIdx] = editingQData;
-                                              setExtractedQuestions(updated);
-                                              setEditingQIdx(null);
-                                              setEditingQData(null);
-                                              Alert.alert("Updated", "Question updated in list successfully.");
-                                            }}
-                                            style={[styles.primaryBtn, { flex: 1, backgroundColor: "#2e7d32" }]}
-                                          >
-                                            <Text style={styles.primaryBtnTxt}>Save Changes</Text>
-                                          </TouchableOpacity>
-                                        </View>
-                                      </View>
-                                    )}
-
-                                    {/* List of Questions */}
-                                    <ScrollView style={{ maxHeight: 520 }} nestedScrollEnabled>
-                                      {extractedQuestions.map((q: any, idx: number) => {
-                                        const isCorrect = (opt: string) => q.correctAnswer === opt;
-                                        const hasQuestionImage = !!(q.imageUrl || q.questionImage);
-                                        const isUploadingThisQ = uploadingImageQIdx === idx;
-                                        return (
-                                          <View
-                                            key={idx}
-                                            style={{
-                                              padding: 12,
-                                              backgroundColor: darkMode ? "#1e1e1e" : "#fdfdfd",
-                                              borderWidth: 1,
-                                              borderColor: darkMode ? "#333" : "#e0e0e0",
-                                              borderRadius: 12,
-                                              marginBottom: 10,
-                                              borderLeftWidth: 4,
-                                              borderLeftColor: isExtracting ? "#aaa" : "#c62828"
-                                            }}
-                                          >
-                                            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                                              <View style={{ backgroundColor: "#c62828", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12 }}>
-                                                <Text style={{ color: "#ffffff", fontWeight: "bold", fontSize: 10 }}>Q{q.questionNo || idx + 1}</Text>
-                                              </View>
-
-                                              <View style={{ flexDirection: "row", gap: 6 }}>
-                                                <TouchableOpacity
-                                                  disabled={isUploadingThisQ}
-                                                  onPress={() => handleUploadQuestionImage(idx)}
-                                                  style={{ flexDirection: "row", alignItems: "center", backgroundColor: isUploadingThisQ ? "#f57c00" : (hasQuestionImage ? "#2e7d32" : "#7b1fa2"), paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, gap: 4 }}
-                                                >
-                                                  {isUploadingThisQ ? (
-                                                    <>
-                                                      <ActivityIndicator size="small" color="#ffffff" />
-                                                      <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "bold" }}>Uploading...</Text>
-                                                    </>
-                                                  ) : (
-                                                    <>
-                                                      <Ionicons name={hasQuestionImage ? "image" : "image-outline"} size={14} color="#ffffff" />
-                                                      <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "bold" }}>
-                                                        {hasQuestionImage ? "Image Attached" : "Add Image"}
-                                                      </Text>
-                                                    </>
-                                                  )}
-                                                </TouchableOpacity>
-
-                                                <TouchableOpacity
-                                                  onPress={() => {
-                                                    setEditingQIdx(idx);
-                                                    setEditingQData(JSON.parse(JSON.stringify(q)));
-                                                  }}
-                                                  style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#1976d2", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, gap: 4 }}
-                                                >
-                                                  <Ionicons name="create-outline" size={14} color="#ffffff" />
-                                                  <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "bold" }}>Edit</Text>
-                                                </TouchableOpacity>
-
-                                                <TouchableOpacity
-                                                  onPress={() => {
-                                                    Alert.alert(
-                                                      "Delete Question",
-                                                      `Are you sure you want to delete Question #${idx + 1}?`,
-                                                      [
-                                                        { text: "Cancel", style: "cancel" },
-                                                        {
-                                                          text: "Delete",
-                                                          style: "destructive",
-                                                          onPress: () => {
-                                                            const updated = extractedQuestions.filter((_, i) => i !== idx);
-                                                            const reindexed = updated.map((item, i) => ({ ...item, questionNo: i + 1 }));
-                                                            setExtractedQuestions(reindexed);
-                                                          }
-                                                        }
-                                                      ]
-                                                    );
-                                                  }}
-                                                  style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#c62828", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, gap: 4 }}
-                                                >
-                                                  <Ionicons name="trash-outline" size={14} color="#ffffff" />
-                                                  <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "bold" }}>Delete</Text>
-                                                </TouchableOpacity>
-                                              </View>
-                                            </View>
-
-                                            <Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#212121", fontSize: 12 }}>{q.questionEn || q.question}</Text>
-                                            {q.questionTa && <Text style={{ color: darkMode ? "#aaa" : "#555", fontSize: 11, marginTop: 2, fontStyle: "italic" }}>{q.questionTa}</Text>}
-                                            {q.questionMl && <Text style={{ color: darkMode ? "#80deea" : "#00838f", fontSize: 11, marginTop: 2, fontStyle: "italic" }}>[Malayalam] {q.questionMl}</Text>}
-                                            {q.questionTe && <Text style={{ color: darkMode ? "#ffe082" : "#f57f17", fontSize: 11, marginTop: 2, fontStyle: "italic" }}>[Telugu] {q.questionTe}</Text>}
-                                            {q.formula && <Text style={{ color: darkMode ? "#b39ddb" : "#512da8", fontSize: 11, marginTop: 4, fontWeight: "bold" }}>Formula: {q.formula}</Text>}
-
-                                            {/* Inline Uploading Indicator Banner */}
-                                            {isUploadingThisQ && (
-                                              <View style={{ marginTop: 8, marginBottom: 8, flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#fff3e0", padding: 10, borderRadius: 8, borderWidth: 1, borderColor: "#ffe0b2" }}>
-                                                <ActivityIndicator size="small" color="#e65100" />
-                                                <Text style={{ fontSize: 12, color: "#e65100", fontWeight: "bold" }}>Uploading Question #{idx + 1} Image to Google Drive...</Text>
-                                              </View>
-                                            )}
-
-                                            {/* Question Image Attachment Preview & Actions */}
-                                            {hasQuestionImage && (
-                                              <View style={{ marginTop: 8, marginBottom: 8, flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: darkMode ? "#1a2433" : "#f4f8fb", padding: 8, borderRadius: 8, borderWidth: 1, borderColor: "#e0e0e0" }}>
-                                                <TouchableOpacity
-                                                  onPress={() => {
-                                                    setPreviewImageUri(q.imageUrl || q.questionImage);
-                                                    setPreviewImageTitle(`Question #${q.questionNo || idx + 1} Image`);
-                                                  }}
-                                                >
-                                                  <Image
-                                                    source={{ uri: q.imageUrl || q.questionImage }}
-                                                    style={{ width: 130, height: 85, borderRadius: 6, resizeMode: "contain", backgroundColor: "#ffffff", borderWidth: 1, borderColor: "#e0e0e0" }}
-                                                  />
-                                                </TouchableOpacity>
-                                                <View style={{ gap: 6 }}>
-                                                  <TouchableOpacity
-                                                    onPress={() => {
-                                                      setPreviewImageUri(q.imageUrl || q.questionImage);
-                                                      setPreviewImageTitle(`Question #${q.questionNo || idx + 1} Image`);
-                                                    }}
-                                                    style={{ backgroundColor: "#e3f2fd", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, flexDirection: "row", alignItems: "center", gap: 4 }}
-                                                  >
-                                                    <Ionicons name="eye-outline" size={12} color="#1565c0" />
-                                                    <Text style={{ fontSize: 10, color: "#1565c0", fontWeight: "bold" }}>View Fullscreen</Text>
-                                                  </TouchableOpacity>
-
-                                                  <TouchableOpacity
-                                                    disabled={isUploadingThisQ}
-                                                    onPress={() => handleUploadQuestionImage(idx)}
-                                                    style={{ backgroundColor: "#ffffff", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, borderWidth: 1, borderColor: "#0288d1", flexDirection: "row", alignItems: "center", gap: 4 }}
-                                                  >
-                                                    {isUploadingThisQ ? (
-                                                      <>
-                                                        <ActivityIndicator size="small" color="#0288d1" />
-                                                        <Text style={{ fontSize: 10, color: "#0288d1", fontWeight: "bold" }}>Uploading...</Text>
-                                                      </>
-                                                    ) : (
-                                                      <>
-                                                        <Ionicons name="image-outline" size={12} color="#0288d1" />
-                                                        <Text style={{ fontSize: 10, color: "#0288d1", fontWeight: "bold" }}>Change Image</Text>
-                                                      </>
-                                                    )}
-                                                  </TouchableOpacity>
-
-                                                  <TouchableOpacity
-                                                    onPress={() => {
-                                                      const updated = [...extractedQuestions];
-                                                      delete updated[idx].imageUrl;
-                                                      delete updated[idx].questionImage;
-                                                      setExtractedQuestions(updated);
-                                                    }}
-                                                    style={{ backgroundColor: "#ffebee", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, flexDirection: "row", alignItems: "center", gap: 4 }}
-                                                  >
-                                                    <Ionicons name="trash-outline" size={12} color="#c62828" />
-                                                    <Text style={{ fontSize: 10, color: "#c62828", fontWeight: "bold" }}>Remove Image</Text>
-                                                  </TouchableOpacity>
-                                                </View>
-                                              </View>
-                                            )}
-
-                                            {/* Options */}
-                                            <View style={{ marginTop: 8, gap: 4 }}>
-                                              {["A", "B", "C", "D"].map(opt => {
-                                                const optionData = q.options?.[opt];
-                                                const hasEn = !!optionData?.en;
-                                                const hasTa = !!optionData?.ta;
-                                                if (!hasEn && !hasTa) return null;
-                                                return (
-                                                  <View
-                                                    key={opt}
-                                                    style={{
-                                                      flexDirection: "row",
-                                                      padding: 6,
-                                                      borderRadius: 6,
-                                                      borderWidth: 1,
-                                                      borderColor: isCorrect(opt) ? "#2e7d32" : (darkMode ? "#333" : "#f0f0f0"),
-                                                      backgroundColor: isCorrect(opt) ? (darkMode ? "#1b2e1b" : "#e8f5e9") : (darkMode ? "#121212" : "#fafafa")
-                                                    }}
-                                                  >
-                                                    <Text style={{ fontWeight: "bold", fontSize: 11, color: isCorrect(opt) ? "#2e7d32" : (darkMode ? "#9e9e9e" : "#555"), marginRight: 6 }}>{opt}.</Text>
-                                                    <View style={{ flex: 1 }}>
-                                                      {hasEn && <Text style={{ fontSize: 11, color: darkMode ? "#fff" : "#212121", fontWeight: isCorrect(opt) ? "bold" : "normal" }}>{optionData.en}</Text>}
-                                                      {hasTa && <Text style={{ fontSize: 10, color: darkMode ? "#aaa" : "#666", fontStyle: "italic" }}>{optionData.ta}</Text>}
-                                                    </View>
-                                                    {isCorrect(opt) && <Ionicons name="checkmark-circle" size={14} color="#2e7d32" style={{ marginLeft: 4 }} />}
-                                                  </View>
-                                                );
-                                              })}
-                                            </View>
-
-                                            {/* Quick Answer Changer */}
-                                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10, borderTopWidth: 0.5, borderTopColor: darkMode ? "#333" : "#eee", paddingTop: 8 }}>
-                                              <Text style={{ fontSize: 10, color: darkMode ? "#9e9e9e" : "#757575", fontWeight: "bold" }}>Correct Ans:</Text>
-                                              <View style={{ flexDirection: "row", gap: 4 }}>
-                                                {["A", "B", "C", "D"].map(opt => (
-                                                  <TouchableOpacity
-                                                    key={opt}
-                                                    onPress={() => {
-                                                      const updated = [...extractedQuestions];
-                                                      updated[idx] = { ...updated[idx], correctAnswer: opt };
-                                                      setExtractedQuestions(updated);
-                                                    }}
-                                                    style={{
-                                                      width: 24,
-                                                      height: 24,
-                                                      borderRadius: 12,
-                                                      backgroundColor: isCorrect(opt) ? "#2e7d32" : (darkMode ? "#333" : "#e0e0e0"),
-                                                      alignItems: "center",
-                                                      justifyContent: "center"
-                                                    }}
-                                                  >
-                                                    <Text style={{ fontSize: 10, fontWeight: "bold", color: isCorrect(opt) ? "#ffffff" : (darkMode ? "#9e9e9e" : "#424242") }}>{opt}</Text>
-                                                  </TouchableOpacity>
-                                                ))}
-                                              </View>
-                                            </View>
-                                          </View>
-                                        );
-                                      })}
-                                    </ScrollView>
-                                  </View>
-                                )}
-
-                                {/* Step 4: Exam Settings (Schedule & Timing) */}
-                                <View style={[styles.card, darkMode && styles.cardDark]}>
-                                  <Text style={[styles.sectionTitle, darkMode && styles.sectionTitleDark]}>4. Exam Settings (Schedule & Timing)</Text>
-
-                                  {/* SCHEDULE TEST (Image 2) */}
-                                  <View style={{ backgroundColor: darkMode ? "#1a1a1a" : "#f5f5f5", padding: 12, borderRadius: 10, marginBottom: 14, borderLeftWidth: 3, borderLeftColor: "#1565c0" }}>
-                                    <Text style={{ fontWeight: "bold", color: darkMode ? "#90caf9" : "#1565c0", fontSize: 12, marginBottom: 8 }}>SCHEDULE TEST (Mandatory)</Text>
-                                    <DateTimePickerSelect
-                                      label="Start Date & Time:"
-                                      value={specialMockStartTime}
-                                      onChange={(t: string) => {
-                                        setSpecialMockStartTime(t);
-                                        if (t && specialMockEndTime) {
-                                          const s = new Date(t).getTime();
-                                          const e = new Date(specialMockEndTime).getTime();
-                                          if (!isNaN(s) && !isNaN(e) && e > s) {
-                                            setSpecialMockDuration(String(Math.round((e - s) / 60000)));
-                                          }
-                                        }
-                                      }}
-                                      darkMode={darkMode}
-                                    />
-                                    <DateTimePickerSelect
-                                      label="End Date & Time:"
-                                      value={specialMockEndTime}
-                                      onChange={(t: string) => {
-                                        setSpecialMockEndTime(t);
-                                        if (specialMockStartTime && t) {
-                                          const s = new Date(specialMockStartTime).getTime();
-                                          const e = new Date(t).getTime();
-                                          if (!isNaN(s) && !isNaN(e) && e > s) {
-                                            setSpecialMockDuration(String(Math.round((e - s) / 60000)));
-                                          }
-                                        }
-                                      }}
-                                      darkMode={darkMode}
-                                    />
-                                  </View>
-
-                                  <View style={{ flexDirection: isMobile ? "column" : "row", gap: 12 }}>
-                                    <View style={{ flex: 1 }}>
-                                      <Text style={styles.label}>
-                                        Duration (Minutes)
-                                        <Text style={{ fontSize: 10, color: "#10b981", fontWeight: "600" }}> (Auto-calculated)</Text>
-                                      </Text>
-                                      <TextInput
-                                        style={[
-                                          styles.input,
-                                          darkMode && styles.inputDark,
-                                          { backgroundColor: darkMode ? "#222" : "#f1f5f9", color: darkMode ? "#90caf9" : "#1565c0", fontWeight: "bold" }
-                                        ]}
-                                        value={specialMockDuration}
-                                        editable={false}
-                                        placeholder="Auto from Start & End"
-                                      />
-                                    </View>
-                                    <View style={{ flex: 1 }}>
-                                      <Text style={styles.label}>Marks per Question (+)</Text>
-                                      <TextInput
-                                        style={[styles.input, darkMode && styles.inputDark]}
-                                        value={specialMockMarksPerQ}
-                                        onChangeText={setSpecialMockMarksPerQ}
-                                        keyboardType="numeric"
-                                      />
-                                    </View>
-                                    <View style={{ flex: 1 }}>
-                                      <Text style={styles.label}>Negative Marks (-)</Text>
-                                      <TextInput
-                                        style={[styles.input, darkMode && styles.inputDark]}
-                                        value={specialMockNegMarks}
-                                        onChangeText={setSpecialMockNegMarks}
-                                        keyboardType="numeric"
-                                      />
-                                    </View>
-                                    <View style={{ flex: 1 }}>
-                                      <Text style={styles.label}>Unattended Marks</Text>
-                                      <TextInput
-                                        style={[styles.input, darkMode && styles.inputDark]}
-                                        value={specialMockUnattendedMarks}
-                                        onChangeText={setSpecialMockUnattendedMarks}
-                                        keyboardType="numeric"
-                                      />
-                                    </View>
-                                  </View>
-                                </View>
-
-                                {/* Step 5: Submit Button */}
-                                <View style={{ alignItems: "flex-end", marginTop: 5 }}>
-                                  <TouchableOpacity
-                                    disabled={isCreatingSpecialMock}
-                                    onPress={handleCreateSpecialMock}
-                                    style={[styles.primaryBtn, { backgroundColor: "#2e7d32", paddingHorizontal: 28, opacity: isCreatingSpecialMock ? 0.6 : 1 }]}
-                                  >
-                                    <Text style={styles.primaryBtnTxt}>
-                                      {isCreatingSpecialMock ? "Creating Special Mock..." : "Create Special Mock Exam"}
-                                    </Text>
-                                  </TouchableOpacity>
-                                </View>
-                              </View>
-                            )}
-
-                            {/* View 2: Manage All Special Mocks */}
-                            {specialMockSubTab === "manage" && (
-                              <View style={{ gap: 15 }}>
-                                {specialMockTestsList.length === 0 ? (
-                                  <View style={[styles.card, darkMode && styles.cardDark, { padding: 40, alignItems: "center" }]}>
-                                    <Ionicons name="medal-outline" size={48} color="#9e9e9e" />
-                                    <Text style={{ fontSize: 16, fontWeight: "bold", color: darkMode ? "#fff" : "#212121", marginTop: 10 }}>
-                                      No Special Mock Exams Yet
-                                    </Text>
-                                    <Text style={{ fontSize: 12, color: "#757575", marginTop: 4, textAlign: "center" }}>
-                                      Switch to the "Create Special Mock" tab to create your first multi-batch mock test with sequential roll numbers.
-                                    </Text>
-                                  </View>
-                                ) : (
-                                  <View style={{ gap: 12 }}>
-                                    {specialMockTestsList.map((mt: any) => {
-                                      const mockConfig = mt.mockConfig || {};
-                                      const startingRoll = mockConfig.startingRollNo || "182026";
-                                      const batchList = mockConfig.orderedBatches || (mt.targetBatch ? mt.targetBatch.split(",") : []);
-                                      const totalMockStudents = mockConfig.mockRollNumbers ? Object.keys(mockConfig.mockRollNumbers).length : 0;
-
-                                      return (
-                                        <View key={mt.id} style={[styles.card, darkMode && styles.cardDark, { gap: 10 }]}>
-                                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
-                                            <View style={{ flex: 1 }}>
-                                              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                                                <Text style={{ fontSize: 15, fontWeight: "bold", color: darkMode ? "#fff" : "#1a237e" }}>
-                                                  {mt.title}
-                                                </Text>
-                                                <View style={{ backgroundColor: "#fee2e2", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
-                                                  <Text style={{ fontSize: 10, fontWeight: "bold", color: "#b91c1c" }}>SPECIAL MOCK</Text>
-                                                </View>
-                                              </View>
-                                              <Text style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>
-                                                Starting Roll No: <Text style={{ fontWeight: "bold", color: "#c62828" }}>{startingRoll}</Text> • Batches: <Text style={{ fontWeight: "600" }}>{batchList.join(", ") || "All"}</Text> • Enrolled: <Text style={{ fontWeight: "bold" }}>{totalMockStudents} candidates</Text>
-                                              </Text>
-                                            </View>
-
-                                            <TouchableOpacity
-                                              onPress={() => {
-                                                executeDelete("tests", mt.id, async () => {
-                                                  try {
-                                                    await api.delete(`/test-portal/test-creation/${mt.id}`);
-                                                    RNAlert.alert("Success", "Special Mock Test deleted successfully.");
-                                                    await loadTests();
-                                                  } catch (e: any) {
-                                                    RNAlert.alert("Error", e.message || "Failed to delete test.");
-                                                  }
-                                                });
-                                              }}
-                                              style={{ padding: 6 }}
-                                            >
-                                              <Ionicons name="trash-outline" size={18} color="#ef4444" />
-                                            </TouchableOpacity>
-                                          </View>
-
-                                          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, borderTopWidth: 1, borderColor: darkMode ? "#333" : "#f1f5f9", paddingTop: 10, marginTop: 4 }}>
-                                            <TouchableOpacity
-                                              onPress={() => loadStudentLeaderboard(mt.id, mt)}
-                                              style={{
-                                                flexDirection: "row",
-                                                alignItems: "center",
-                                                gap: 6,
-                                                backgroundColor: "#2e7d32",
-                                                paddingHorizontal: 12,
-                                                paddingVertical: 7,
-                                                borderRadius: 6
-                                              }}
-                                            >
-                                              <Ionicons name="trophy-outline" size={14} color="#ffffff" />
-                                              <Text style={{ color: "#ffffff", fontSize: 12, fontWeight: "bold" }}>View Leaderboard</Text>
-                                            </TouchableOpacity>
-
-                                            <TouchableOpacity
-                                              onPress={() => {
-                                                setSelectedMonitorTestId(mt.id);
-                                                setMonitorActiveTab("leaderboard");
-                                              }}
-                                              style={{
-                                                flexDirection: "row",
-                                                alignItems: "center",
-                                                gap: 6,
-                                                backgroundColor: "#1565c0",
-                                                paddingHorizontal: 12,
-                                                paddingVertical: 7,
-                                                borderRadius: 6
-                                              }}
-                                            >
-                                              <Ionicons name="analytics-outline" size={14} color="#ffffff" />
-                                              <Text style={{ color: "#ffffff", fontSize: 12, fontWeight: "bold" }}>Monitor Live</Text>
-                                            </TouchableOpacity>
-
-                                            <TouchableOpacity
-                                              onPress={() => {
-                                                setSelectedMockForIdGen(mt.id);
-                                                setBulkTargetGroup("mock");
-                                                setActiveTab("erp");
-                                                setErpSub("id-card");
-                                                setGenerationMode("batch");
-                                              }}
-                                              style={{
-                                                flexDirection: "row",
-                                                alignItems: "center",
-                                                gap: 6,
-                                                backgroundColor: "#d97706",
-                                                paddingHorizontal: 12,
-                                                paddingVertical: 7,
-                                                borderRadius: 6
-                                              }}
-                                            >
-                                              <Ionicons name="id-card-outline" size={14} color="#ffffff" />
-                                              <Text style={{ color: "#ffffff", fontSize: 12, fontWeight: "bold" }}>Generate ID Cards</Text>
-                                            </TouchableOpacity>
-                                          </View>
-                                        </View>
-                                      );
-                                    })}
-                                  </View>
-                                )}
-                              </View>
-                            )}
-                          </View>
-                        );
-                      })()}
-
+                      {testSub === "special-mock" && isAdmin && (
+                        <React.Suspense fallback={<View style={{ padding: 40, alignItems: "center" }}><ActivityIndicator size="large" color="#c62828" /></View>}>
+                          <SpecialMockRollNumberPage
+                            api={api}
+                            user={user}
+                            darkMode={darkMode}
+                            batches={batches}
+                            students={students}
+                            loadStudents={loadStudents}
+                          />
+                        </React.Suspense>
+                      )}
 
                       {testSub === "results" && (() => {
                         const now = nowTick;
@@ -30952,7 +29953,7 @@ SOURCE QUESTION PAPER:
                                       const isDiagExpanded = expandedClosedTestDiagId === t.id;
 
                                       return (
-                                        <View key={t.id} style={{ backgroundColor: darkMode ? "#18181b" : "#fafafa", borderRadius: 10, padding: 12, marginBottom: 8, borderLeftWidth: 3, borderLeftColor: "#c62828", borderWidth: 1, borderColor: darkMode ? "#27272a" : "#e2e8f0" }}>
+                                        <View key={t.id} style={{ backgroundColor: darkMode ? "#18181b" : "#fafafa", borderRadius: 10, padding: (isMobile || Platform.OS !== "web") ? 8 : 12, marginBottom: 8, borderLeftWidth: 3, borderLeftColor: "#c62828", borderWidth: 1, borderColor: darkMode ? "#27272a" : "#e2e8f0", overflow: "hidden", maxWidth: "100%" }}>
                                           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
                                             <Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#212121", fontSize: 13, flex: 1 }}>{t.title}</Text>
                                             <View style={{ backgroundColor: "#ffebee", borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 }}>
@@ -30990,14 +29991,13 @@ SOURCE QUESTION PAPER:
                                                     {hasSubjects && (
                                                       <TouchableOpacity
                                                         onPress={() => {
-                                                          const nextId = isDiagExpanded ? null : t.id;
-                                                          setExpandedClosedTestDiagId(nextId);
-                                                          if (nextId) fetchTestDiagnostics(t.id);
+                                                          fetchTestDiagnostics(t.id);
+                                                          setMobileSubjectAnalyticsModalTest(t);
                                                         }}
-                                                        style={{ flex: 1, backgroundColor: isDiagExpanded ? "#0369a1" : "#0284c7", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 5 }}
+                                                        style={{ flex: 1, backgroundColor: "#0284c7", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 5 }}
                                                       >
                                                         <Ionicons name="pie-chart-outline" size={14} color="#fff" />
-                                                        <Text style={{ color: "#fff", fontSize: 11, fontWeight: "700" }}>{isDiagExpanded ? "Hide Analytics" : "Analytics"}</Text>
+                                                        <Text style={{ color: "#fff", fontSize: 11, fontWeight: "700" }}>Analytics</Text>
                                                       </TouchableOpacity>
                                                     )}
                                                     <TouchableOpacity
@@ -31522,7 +30522,7 @@ SOURCE QUESTION PAPER:
                         {renderSidebarItem("students", erpSub, "Students", "people-outline", () => changeErpSub("students"), "erp-students", undefined, erpSidebarCollapsed && !isMobile, "student_management")}
                         {renderSidebarItem("announcements", erpSub, "Notices", "megaphone-outline", () => changeErpSub("announcements"), "erp-announcements", undefined, erpSidebarCollapsed && !isMobile, "notices_announcements")}
                         {renderSidebarItem("fees", erpSub, "Fees", "cash-outline", () => changeErpSub("fees"), "erp-fees", (adminAlerts || []).filter((a: any) => a.type === "payment").length || undefined, erpSidebarCollapsed && !isMobile, "fees_management")}
-                        {renderSidebarItem("offline-attendance", erpSub, "Offline Attendance", "clipboard-outline", () => { changeErpSub("offline-attendance"); loadStudents(); loadBatches(); }, "erp-offline-attendance", undefined, erpSidebarCollapsed && !isMobile, "offline_attendance")}
+                        {renderSidebarItem("offline-attendance", erpSub, "Attendance Registry", "clipboard-outline", () => { changeErpSub("offline-attendance"); loadStudents(); loadBatches(); }, "erp-offline-attendance", undefined, erpSidebarCollapsed && !isMobile, "offline_attendance")}
 
                         {!erpSidebarCollapsed || isMobile ? <Text style={styles.categoryHeader}>ADMINISTRATION & GROUPS</Text> : null}
                         {renderSidebarItem("staff", erpSub, "Admin", "shield-checkmark-outline", () => changeErpSub("staff"), "erp-staff", undefined, erpSidebarCollapsed && !isMobile, "staff_management")}
@@ -31639,17 +30639,29 @@ SOURCE QUESTION PAPER:
                               )}
                             </View>
 
-                            {/* Bulk Student Upload Modal */}
-                            {showBulkStudentModal && BulkStudentUploadModal && (
+                            {/* Bulk Student Upload Modal (Adaptive: Mobile/Native vs Desktop Web) */}
+                            {showBulkStudentModal && (
                               <Suspense fallback={null}>
-                                <BulkStudentUploadModal
-                                  isOpen={showBulkStudentModal}
-                                  onClose={() => setShowBulkStudentModal(false)}
-                                  batches={batches}
-                                  onSuccess={() => {
-                                    loadStudents(true);
-                                  }}
-                                />
+                                {(isMobile || Platform.OS !== 'web') ? (
+                                  <MobileBulkStudentUploadModal
+                                    isOpen={showBulkStudentModal}
+                                    onClose={() => setShowBulkStudentModal(false)}
+                                    batches={batches}
+                                    darkMode={darkMode}
+                                    onSuccess={() => {
+                                      loadStudents(true);
+                                    }}
+                                  />
+                                ) : (
+                                  <BulkStudentUploadModal
+                                    isOpen={showBulkStudentModal}
+                                    onClose={() => setShowBulkStudentModal(false)}
+                                    batches={batches}
+                                    onSuccess={() => {
+                                      loadStudents(true);
+                                    }}
+                                  />
+                                )}
                               </Suspense>
                             )}
 
@@ -33944,19 +32956,54 @@ SOURCE QUESTION PAPER:
                             </View>
 
                             {/* TAB 1: PENDING INITIAL PROFILE COMPLETIONS */}
-                            {profileRequestsTab === "incomplete" && (
+                            {profileRequestsTab === "incomplete" && (() => {
+                              const batchFilteredIncomplete = profileBatchFilter === "all"
+                                ? incompleteStudents
+                                : incompleteStudents.filter((s: any) => String(s.batch || "").trim().toLowerCase() === String(profileBatchFilter).trim().toLowerCase());
+                              const displayedIncomplete = batchFilteredIncomplete.slice(0, profileDisplayLimit);
+                              const availableBatches = [...new Set(incompleteStudents.map((s: any) => s.batch).filter(Boolean))];
+
+                              return (
                               <View style={{ gap: 10 }}>
+                                {/* Batch Filter & Pagination Bar */}
+                                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, backgroundColor: "#fff8e1", padding: 10, borderRadius: 8, borderWidth: 1, borderColor: "#ffe082" }}>
+                                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1, minWidth: 200 }}>
+                                    <Ionicons name="filter" size={16} color="#e65100" />
+                                    <Text style={{ fontSize: 12, fontWeight: "bold", color: "#e65100" }}>Filter Batch:</Text>
+                                    <View style={{ flex: 1, minWidth: 160 }}>
+                                      <UniversalDropdown
+                                        value={profileBatchFilter}
+                                        onSelect={(val) => {
+                                          setProfileBatchFilter(val);
+                                          setProfileDisplayLimit(20);
+                                        }}
+                                        options={[
+                                          { label: `All Batches (${incompleteStudents.length})`, value: "all" },
+                                          ...availableBatches.map((bName) => ({
+                                            label: `${bName} (${incompleteStudents.filter((s: any) => s.batch === bName).length})`,
+                                            value: bName
+                                          }))
+                                        ]}
+                                        style={{ height: 32, fontSize: 12, borderColor: "#ffb74d" }}
+                                      />
+                                    </View>
+                                  </View>
+                                  <Text style={{ fontSize: 11, color: "#757575", fontWeight: "600" }}>
+                                    Showing {displayedIncomplete.length} of {batchFilteredIncomplete.length}
+                                  </Text>
+                                </View>
+
                                 <Text style={{ fontSize: 13, fontWeight: "bold", color: "#e65100" }}>
                                   Students who have NOT submitted their initial profile details:
                                 </Text>
-                                {incompleteStudents.length === 0 ? (
+                                {batchFilteredIncomplete.length === 0 ? (
                                   <View style={[styles.card, { alignItems: "center", padding: 30 }]}>
                                     <Ionicons name="checkmark-circle-outline" size={40} color="#4caf50" />
-                                    <Text style={{ color: "#4caf50", fontWeight: "bold", marginTop: 10 }}>All Registered Students Have Submitted Their Profiles!</Text>
+                                    <Text style={{ color: "#4caf50", fontWeight: "bold", marginTop: 10 }}>No incomplete profiles found for this batch!</Text>
                                   </View>
                                 ) : (
                                   <View style={styles.card}>
-                                    {incompleteStudents.map((s: any, idx: number) => {
+                                    {displayedIncomplete.map((s: any, idx: number) => {
                                       const hasPermission = !!s.profileEditPermission;
                                       const isMobileCard = isMobile || Platform.OS !== "web";
                                       if (isMobileCard) {
@@ -34061,8 +33108,30 @@ SOURCE QUESTION PAPER:
                                     })}
                                   </View>
                                 )}
+                                {batchFilteredIncomplete.length > profileDisplayLimit && (
+                                  <TouchableOpacity
+                                    onPress={() => setProfileDisplayLimit(prev => prev + 20)}
+                                    style={{
+                                      backgroundColor: "#fff3e0",
+                                      borderWidth: 1,
+                                      borderColor: "#ffb74d",
+                                      paddingVertical: 10,
+                                      borderRadius: 8,
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      flexDirection: "row",
+                                      gap: 6
+                                    }}
+                                  >
+                                    <Ionicons name="arrow-down-circle-outline" size={16} color="#e65100" />
+                                    <Text style={{ fontSize: 12, fontWeight: "bold", color: "#e65100" }}>
+                                      Load More ({batchFilteredIncomplete.length - profileDisplayLimit} remaining)
+                                    </Text>
+                                  </TouchableOpacity>
+                                )}
                               </View>
-                            )}
+                              );
+                            })()}
 
                             {/* TAB 2: SUBMITTED PROFILE CHANGE REQUESTS FOR REVIEW */}
                             {profileRequestsTab === "requests" && (
@@ -34160,9 +33229,42 @@ SOURCE QUESTION PAPER:
                       })()}
 
                       {/* PROFILE EDIT PERMISSIONS PANEL (Admin) */}
-                      {erpSub === "edit-permissions" && isAdmin && (
+                      {erpSub === "edit-permissions" && isAdmin && (() => {
+                        const submittedStudents = students.filter((s: any) => s.isProfileSubmitted === true || (typeof s.profileSubmitCount === "number" && s.profileSubmitCount > 0) || s.status === "completed");
+                        const batchFilteredSubmitted = editPermBatchFilter === "all"
+                          ? submittedStudents
+                          : submittedStudents.filter((s: any) => String(s.batch || "").trim().toLowerCase() === String(editPermBatchFilter).trim().toLowerCase());
+                        const displayedSubmitted = batchFilteredSubmitted.slice(0, editPermDisplayLimit);
+                        const availableBatches = [...new Set(submittedStudents.map((s: any) => s.batch).filter(Boolean))];
+
+                        return (
                         <View style={{ gap: 12 }}>
-                          <Text style={styles.sectionTitle}> Profile Edit Permissions</Text>
+                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                            <Text style={styles.sectionTitle}> Profile Edit Permissions</Text>
+                            {/* Batch Filter dropdown */}
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#f5f5f5", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: "#e0e0e0" }}>
+                              <Ionicons name="filter" size={14} color="#555" />
+                              <Text style={{ fontSize: 11, fontWeight: "bold", color: "#555" }}>Batch:</Text>
+                              <View style={{ minWidth: 150 }}>
+                                <UniversalDropdown
+                                  value={editPermBatchFilter}
+                                  onSelect={(val) => {
+                                    setEditPermBatchFilter(val);
+                                    setEditPermDisplayLimit(20);
+                                  }}
+                                  options={[
+                                    { label: `All Batches (${submittedStudents.length})`, value: "all" },
+                                    ...availableBatches.map((bName) => ({
+                                      label: `${bName} (${submittedStudents.filter((s: any) => s.batch === bName).length})`,
+                                      value: bName
+                                    }))
+                                  ]}
+                                  style={{ height: 30, fontSize: 11, borderColor: "#ccc" }}
+                                />
+                              </View>
+                            </View>
+                          </View>
+
                           <View style={[styles.card, { padding: 0, overflow: "hidden" }]}>
                             <View style={{ flexDirection: "row", paddingHorizontal: 12, paddingVertical: 8, backgroundColor: "#f5f5f5", borderBottomWidth: 1, borderColor: "#e0e0e0" }}>
                               <Text style={{ flex: 1, fontWeight: "bold", fontSize: 12, color: "#555" }}>Roll No</Text>
@@ -34170,19 +33272,18 @@ SOURCE QUESTION PAPER:
                               <Text style={{ flex: 1, fontWeight: "bold", fontSize: 12, color: "#555", textAlign: "center" }}>Edit Permission</Text>
                             </View>
                             {(() => {
-                              const submittedStudents = students.filter((s: any) => s.isProfileSubmitted === true || (typeof s.profileSubmitCount === "number" && s.profileSubmitCount > 0) || s.status === "completed");
-                              if (submittedStudents.length === 0) {
+                              if (batchFilteredSubmitted.length === 0) {
                                 return (
                                   <View style={{ padding: 25, alignItems: "center" }}>
                                     <Ionicons name="lock-closed-outline" size={32} color="#bdbdbd" />
-                                    <Text style={{ color: "#757575", marginTop: 8, fontSize: 13 }}>No submitted profiles yet.</Text>
+                                    <Text style={{ color: "#757575", marginTop: 8, fontSize: 13 }}>No submitted profiles found for this batch.</Text>
                                     <Text style={{ color: "#aaa", fontSize: 11, textAlign: "center", marginTop: 4 }}>
                                       Students will appear here after they fill out and submit their profile form on the student portal.
                                     </Text>
                                   </View>
                                 );
                               }
-                              return submittedStudents.map((s: any, idx: number) => {
+                              return displayedSubmitted.map((s: any, idx: number) => {
                                 const hasPermission = !!s.profileEditPermission;
                                 return (
                                   <View key={s.id} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 10, backgroundColor: idx % 2 === 0 ? "#fff" : "#fafafa", borderBottomWidth: 1, borderColor: "#f0f0f0" }}>
@@ -34210,11 +33311,33 @@ SOURCE QUESTION PAPER:
                               });
                             })()}
                           </View>
+                          {batchFilteredSubmitted.length > editPermDisplayLimit && (
+                            <TouchableOpacity
+                              onPress={() => setEditPermDisplayLimit(prev => prev + 20)}
+                              style={{
+                                backgroundColor: "#e3f2fd",
+                                borderWidth: 1,
+                                borderColor: "#90caf9",
+                                paddingVertical: 10,
+                                borderRadius: 8,
+                                alignItems: "center",
+                                justifyContent: "center",
+                                flexDirection: "row",
+                                gap: 6
+                              }}
+                            >
+                              <Ionicons name="arrow-down-circle-outline" size={16} color="#1976d2" />
+                              <Text style={{ fontSize: 12, fontWeight: "bold", color: "#1976d2" }}>
+                                Load More ({batchFilteredSubmitted.length - editPermDisplayLimit} remaining)
+                              </Text>
+                            </TouchableOpacity>
+                          )}
                           <Text style={{ color: "#999", fontSize: 11, textAlign: "center" }}>
-                            Tap a button to toggle. Students with Enabled status can submit/re-submit their profile once.
+                            Showing {'{' + 'displayedSubmitted.length' + '}'} of {'{' + 'batchFilteredSubmitted.length' + '}'} students. Tap a button to toggle.
                           </Text>
                         </View>
-                      )}
+                        );
+                      })()}
 
                       {/* STUDENT MY PROFILE SECTION */}
                       {erpSub === "my-profile" && user.role === "student" && (
@@ -35123,7 +34246,7 @@ SOURCE QUESTION PAPER:
                                           shadowRadius: 2,
                                           elevation: 3
                                         }}>
-                                          <ScrollView nestedScrollEnabled={true} style={{ maxHeight: 200 }}>
+                                          <ScrollView nestedScrollEnabled={true} style={{ maxHeight: 220 }} contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={true} keyboardShouldPersistTaps="handled">
                                             {[
                                               { key: "super_admin", label: "Super Admin" },
                                               { key: "admin", label: "Admin" },
@@ -35293,7 +34416,7 @@ SOURCE QUESTION PAPER:
                                           shadowRadius: 2,
                                           elevation: 3
                                         }}>
-                                          <ScrollView nestedScrollEnabled={true} style={{ maxHeight: 200 }}>
+                                          <ScrollView nestedScrollEnabled={true} style={{ maxHeight: 220 }} contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={true} keyboardShouldPersistTaps="handled">
                                             {[
                                               { key: "super_admin", label: "Super Admin" },
                                               { key: "admin", label: "Admin" },
@@ -35629,7 +34752,7 @@ SOURCE QUESTION PAPER:
                                         shadowRadius: 2,
                                         elevation: 3
                                       }}>
-                                        <ScrollView nestedScrollEnabled={true} style={{ maxHeight: 200 }}>
+                                        <ScrollView nestedScrollEnabled={true} style={{ maxHeight: 220 }} contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={true} keyboardShouldPersistTaps="handled">
                                           {["All", "ERP", "LMS", "CRM", "Test Portal", "System"].map(cat => {
                                             const isSelected = selectedPermissionCategory === cat;
                                             return (
@@ -38011,333 +37134,63 @@ SOURCE QUESTION PAPER:
                       )}
 
                       {erpSub === "analytics" && (() => {
-                        /* ---- STUDENT: personal analytics ---- */
                         if (user.role === "student") {
                           const myStudent = getLoggedInStudent(user, students);
-                          const myAttempts = studentAttempts.filter((a: any) => a.isSubmitted && a.score !== null && a.score !== undefined);
-
-                          // Base categories and recommendations for the subjects
-                          const baseSubjects: Record<string, { avg: number, category: string, recommendation: string, status: string, color: string, count: number }> = {
-                            "Polity": { avg: 0, category: "General Studies", recommendation: "No tests taken yet", status: "No Data", color: "#757575", count: 0 },
-                            "History": { avg: 0, category: "General Studies", recommendation: "No tests taken yet", status: "No Data", color: "#757575", count: 0 },
-                            "Geography": { avg: 0, category: "General Studies", recommendation: "No tests taken yet", status: "No Data", color: "#757575", count: 0 },
-                            "Science": { avg: 0, category: "General Studies", recommendation: "No tests taken yet", status: "No Data", color: "#757575", count: 0 },
-                            "Maths": { avg: 0, category: "CSAT", recommendation: "No tests taken yet", status: "No Data", color: "#757575", count: 0 },
-                            "Reasoning": { avg: 0, category: "CSAT", recommendation: "No tests taken yet", status: "No Data", color: "#757575", count: 0 },
-                          };
-
-                          // If we have actual test score submissions, recalculate the subject average dynamically
-                          myAttempts.forEach((a: any) => {
-                            const title = a.testTitle || "";
-                            let matchedSubject = "";
-                            if (title.toLowerCase().includes("polity")) matchedSubject = "Polity";
-                            else if (title.toLowerCase().includes("history")) matchedSubject = "History";
-                            else if (title.toLowerCase().includes("geography")) matchedSubject = "Geography";
-                            else if (title.toLowerCase().includes("science")) matchedSubject = "Science";
-                            else if (title.toLowerCase().includes("math") || title.toLowerCase().includes("aptitude")) matchedSubject = "Maths";
-                            else if (title.toLowerCase().includes("reasoning")) matchedSubject = "Reasoning";
-
-                            if (matchedSubject && baseSubjects[matchedSubject]) {
-                              const scorePct = a.totalMarks > 0 ? Math.round((a.score / a.totalMarks) * 100) : a.percentage || 0;
-                              if (baseSubjects[matchedSubject].count === 0) {
-                                baseSubjects[matchedSubject].avg = scorePct;
-                              } else {
-                                baseSubjects[matchedSubject].avg = Math.round((baseSubjects[matchedSubject].avg + scorePct) / 2);
-                              }
-                              baseSubjects[matchedSubject].count += 1;
-
-                              // Reevaluate status & color
-                              const avg = baseSubjects[matchedSubject].avg;
-                              if (avg >= 75) {
-                                baseSubjects[matchedSubject].status = "Performing Well";
-                                baseSubjects[matchedSubject].color = "#2e7d32";
-                                baseSubjects[matchedSubject].recommendation = "Performing well";
-                              } else if (avg >= 50) {
-                                baseSubjects[matchedSubject].status = "On Track";
-                                baseSubjects[matchedSubject].color = "#f57f17";
-                                baseSubjects[matchedSubject].recommendation = "On Track";
-                              } else {
-                                baseSubjects[matchedSubject].status = "Improvement Needed";
-                                baseSubjects[matchedSubject].color = "#c62828";
-                                baseSubjects[matchedSubject].recommendation = "Additional practice required";
-                              }
-                            }
-                          });
-
-                          const filteredSubjects = Object.entries(baseSubjects).filter(([_, info]) => {
-                            if (selectedCategory === "All") return true;
-                            return info.category === selectedCategory;
-                          });
-
-                          const gradedSubjects = Object.values(baseSubjects).filter(s => s.count > 0);
-                          const overallAvg = gradedSubjects.length > 0
-                            ? Math.round(gradedSubjects.reduce((sum, s) => sum + s.avg, 0) / gradedSubjects.length)
-                            : 0;
-
-                          const getLabel = (avg: number) => {
-                            if (gradedSubjects.length === 0) return { label: "No Tests Attempted", color: "#757575" };
-                            return avg >= 75 ? { label: "Performing Well", color: "#2e7d32" } : avg >= 50 ? { label: "On Track", color: "#f57f17" } : { label: "Needs Improvement", color: "#c62828" };
-                          };
-                          const overall = getLabel(overallAvg);
-
                           return (
-                            <View style={{ gap: 15 }}>
-                              {/* Summary header */}
-                              <View style={[styles.card, { borderLeftWidth: 4, borderLeftColor: overall.color }]}>
-                                <Text style={styles.sectionTitle}>My Performance Summary</Text>
-                                <View style={{ flexDirection: "row", justifyContent: "space-around", marginVertical: 10 }}>
-                                  <View style={{ alignItems: "center" }}>
-                                    <Text style={{ fontSize: 28, fontWeight: "bold", color: overall.color }}>{overallAvg}%</Text>
-                                    <Text style={{ fontSize: 11, color: "#757575" }}>Overall Average</Text>
-                                  </View>
-                                  <View style={{ alignItems: "center" }}>
-                                    <Text style={{ fontSize: 28, fontWeight: "bold", color: "#c62828" }}>{myAttempts.length}</Text>
-                                    <Text style={{ fontSize: 11, color: "#757575" }}>Tests Attempted</Text>
-                                  </View>
-                                  <View style={{ alignItems: "center" }}>
-                                    <Text style={{ fontSize: 28, fontWeight: "bold", color: "#1565c0" }}>{tests.length}</Text>
-                                    <Text style={{ fontSize: 11, color: "#757575" }}>Total Tests</Text>
-                                  </View>
-                                </View>
-                                <View style={{ backgroundColor: overall.color + "20", borderRadius: 8, padding: 8 }}>
-                                  <Text style={{ color: overall.color, fontWeight: "bold", textAlign: "center" }}>{overall.label}</Text>
-                                </View>
-                              </View>
-
-                              {/* Filter Controls */}
-                              <View style={styles.card}>
-                                <Text style={styles.sectionTitle}>Filter Subjects by Category</Text>
-                                <View style={{ flexDirection: "row", gap: 8, marginVertical: 5 }}>
-                                  {["All", "General Studies", "CSAT"].map((cat) => (
-                                    <TouchableOpacity
-                                      key={cat}
-                                      onPress={() => setSelectedCategory(cat)}
-                                      style={[
-                                        styles.rectTab,
-                                        selectedCategory === cat && styles.rectTabActive
-                                      ]}
-                                    >
-                                      <Text style={[styles.rectTabTxt, selectedCategory === cat && styles.rectTabTxtActive, { fontSize: 11 }]}>
-                                        {cat}
-                                      </Text>
-                                    </TouchableOpacity>
-                                  ))}
-                                </View>
-                              </View>
-
-                              {/* Subject-wise breakdown */}
-                              <View style={styles.card}>
-                                <Text style={styles.sectionTitle}>Subject-wise Performance Analytics</Text>
-                                <View style={{ gap: 14 }}>
-                                  {filteredSubjects.map(([subject, info]) => {
-                                    return (
-                                      <View key={subject} style={{ gap: 4 }}>
-                                        <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                                          <Text style={{ color: "#212121", fontWeight: "600", fontSize: 13 }}>{subject} ({info.category})</Text>
-                                          <Text style={{ color: info.color, fontWeight: "bold", fontSize: 12 }}>{info.status}</Text>
-                                        </View>
-                                        <View style={{ height: 8, backgroundColor: "#eeeeee", borderRadius: 4, overflow: "hidden" }}>
-                                          <View style={{ width: `${info.avg}%`, height: "100%", backgroundColor: info.color }} />
-                                        </View>
-                                        <Text style={{ color: "#757575", fontSize: 11, textAlign: "right" }}>
-                                          Average Score: {info.avg}% | {info.recommendation}
-                                        </Text>
-                                      </View>
-                                    );
-                                  })}
-                                </View>
-                              </View>
-
-                              {/* Attendance - Only show for offline students (Online/Recorded attendance hidden) */}
-                              {(() => {
-                                const targetBatchName = myStudent?.batch;
-                                const targetModes = targetBatchName && myStudent?.batchModes ? (myStudent.batchModes[targetBatchName] || []) : [];
-                                const isOffline = targetModes.length > 0
-                                  ? targetModes.includes("offline")
-                                  : (myStudent?.type || "").toLowerCase() === "offline";
-
-                                if (!isOffline) return null; // Hide attendance UI for online & recorded students
-
-                                const attended = myStudent?.attendedDays !== undefined ? Number(myStudent.attendedDays) : 24;
-                                const total = myStudent?.totalDays !== undefined ? Number(myStudent.totalDays) : 28;
-                                const pct = total > 0 ? Math.round((attended / total) * 100) : 0;
-                                const atColor = pct >= 75 ? "#2e7d32" : pct >= 60 ? "#f57f17" : "#c62828";
-                                return (
-                                  <View style={styles.card}>
-                                    <Text style={styles.sectionTitle}>My Attendance</Text>
-                                    <View style={{ gap: 8 }}>
-                                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                                        <Text style={{ color: "#555" }}>Days Present: <Text style={{ fontWeight: "bold" }}>{attended}</Text></Text>
-                                        <Text style={{ color: "#555" }}>Total Days: <Text style={{ fontWeight: "bold" }}>{total}</Text></Text>
-                                      </View>
-                                      <View style={{ height: 10, backgroundColor: "#eeeeee", borderRadius: 5, overflow: "hidden" }}>
-                                        <View style={{ width: `${pct}%`, height: "100%", backgroundColor: atColor }} />
-                                      </View>
-                                      <Text style={{ color: atColor, fontWeight: "bold", textAlign: "right" }}>{pct}% Attendance</Text>
-                                      {pct < 75 && <Text style={{ color: "#c62828", fontSize: 12 }}>Below 75% threshold. Please attend regularly.</Text>}
-                                    </View>
-                                  </View>
-                                );
-                              })()}
-                            </View>
+                            <StudentAnalyticsDashboard
+                              user={user}
+                              student={myStudent}
+                              studentAttempts={studentAttempts}
+                              allTests={tests}
+                            />
                           );
                         }
 
-                        /* ---- ADMIN / STAFF: institution-wide analytics ---- */
+                        /* ---- ADMIN / STAFF / FACULTY: institution & academic analytics ---- */
                         return (
-                          <View style={{ gap: 15 }}>
-                            <View style={styles.card}>
-                              <Text style={styles.sectionTitle}>Academy Enrollments Overview</Text>
-                              <View style={{ flexDirection: "row", justifyContent: "space-around", marginVertical: 10 }}>
-                                <View style={{ alignItems: "center", backgroundColor: "#fff5f5", padding: 15, borderRadius: 8, flex: 1, marginRight: 8, borderWidth: 1, borderColor: "#ffebee" }}>
-                                  <Ionicons name="people" size={24} color="#c62828" />
-                                  <Text style={{ fontSize: 20, fontWeight: "bold", color: "#c62828", marginTop: 5 }}>{students.length}</Text>
-                                  <Text style={{ fontSize: 11, color: "#757575", marginTop: 2 }}>IAS Candidates</Text>
-                                </View>
-                                <View style={{ alignItems: "center", backgroundColor: "#fff5f5", padding: 15, borderRadius: 8, flex: 1, marginRight: 8, borderWidth: 1, borderColor: "#ffebee" }}>
-                                  <Ionicons name="briefcase" size={24} color="#c62828" />
-                                  <Text style={{ fontSize: 20, fontWeight: "bold", color: "#c62828", marginTop: 5 }}>{staff.length}</Text>
-                                  <Text style={{ fontSize: 11, color: "#757575", marginTop: 2 }}>Faculty Members</Text>
-                                </View>
-                                <View style={{ alignItems: "center", backgroundColor: "#fff5f5", padding: 15, borderRadius: 8, flex: 1, borderWidth: 1, borderColor: "#ffebee" }}>
-                                  <Ionicons name="checkbox" size={24} color="#c62828" />
-                                  <Text style={{ fontSize: 20, fontWeight: "bold", color: "#c62828", marginTop: 5 }}>{questions.length}</Text>
-                                  <Text style={{ fontSize: 11, color: "#757575", marginTop: 2 }}>Question Bank</Text>
-                                </View>
-                              </View>
-                            </View>
-
-                            <View style={styles.card}>
-                              <Text style={styles.sectionTitle}>Tuition Ledger Metrics</Text>
-                              {(() => {
-                                const totalPaid = students.reduce((sum: number, s: any) => sum + (Number(s.feesPaid) || 0), 0);
-                                const totalExpected = students.reduce((sum: number, s: any) => sum + (Number(s.totalFees) || 0), 0);
-                                const collectionRate = totalExpected > 0 ? Math.round((totalPaid / totalExpected) * 100) : 0;
-                                return (
-                                  <View style={{ gap: 8 }}>
-                                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                                      <Text style={{ color: "#212121" }}>Total Collected:</Text>
-                                      <Text style={{ fontWeight: "bold", color: "#2e7d32" }}>₹{totalPaid}</Text>
-                                    </View>
-                                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                                      <Text style={{ color: "#212121" }}>Total Outstanding:</Text>
-                                      <Text style={{ fontWeight: "bold", color: "#c62828" }}>₹{totalExpected - totalPaid}</Text>
-                                    </View>
-                                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                                      <Text style={{ color: "#212121" }}>Expected Revenue:</Text>
-                                      <Text style={{ fontWeight: "bold", color: "#212121" }}>₹{totalExpected}</Text>
-                                    </View>
-                                    <View style={{ height: 8, backgroundColor: "#eeeeee", borderRadius: 4, overflow: "hidden", marginTop: 5 }}>
-                                      <View style={{ width: `${collectionRate}%`, height: "100%", backgroundColor: "#2e7d32" }} />
-                                    </View>
-                                    <Text style={{ fontSize: 11, color: "#757575", textAlign: "right" }}>Collection rate: {collectionRate}%</Text>
-                                  </View>
-                                );
-                              })()}
-                            </View>
-
-                            <View style={styles.card}>
-                              <Text style={styles.sectionTitle}>Course Distributions</Text>
-                              {(() => {
-                                const dbCourseNames = lmsCourses.map(c => (c.name || c.title || "")).filter(Boolean);
-                                const studentCourseNames = students.map((s: any) => s.course || "").filter(Boolean);
-                                const courseList = [...new Set([...dbCourseNames, ...studentCourseNames])].sort();
-                                const totalStudents = students.length || 1;
-                                return (
-                                  <View style={{ gap: 12 }}>
-                                    {courseList.length === 0 ? (
-                                      <Text style={{ color: "#757575", fontSize: 12, fontStyle: "italic" }}>No courses configured.</Text>
-                                    ) : (
-                                      courseList.map(c => {
-                                        const count = students.filter((s: any) => String(s.course || "").trim().toLowerCase() === c.trim().toLowerCase()).length;
-                                        const pct = Math.round((count / totalStudents) * 100);
-                                        return (
-                                          <View key={c} style={{ gap: 4 }}>
-                                            <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                                              <Text style={{ color: "#212121", fontSize: 13, fontWeight: "600" }}>{c}</Text>
-                                              <Text style={{ color: "#757575", fontSize: 12 }}>{count} ({pct}%)</Text>
-                                            </View>
-                                            <View style={{ height: 6, backgroundColor: "#eeeeee", borderRadius: 3, overflow: "hidden" }}>
-                                              <View style={{ width: `${pct}%`, height: "100%", backgroundColor: "#c62828" }} />
-                                            </View>
-                                          </View>
-                                        );
-                                      })
-                                    )}
-                                  </View>
-                                );
-                              })()}
-                            </View>
-
-                            <View style={styles.card}>
-                              <Text style={styles.sectionTitle}>Batch Attendance Overview (Offline Students Only)</Text>
-                              <View style={{ gap: 12 }}>
-                                {batches.length === 0 ? (
-                                  <Text style={{ color: "#757575", fontSize: 12, fontStyle: "italic" }}>No batches configured.</Text>
-                                ) : (
-                                  (() => {
-                                    const renderedBatches = batches.map(b => {
-                                      const batchStudents = students.filter((s: any) => s.batch === b.batchName);
-                                      // Filter to only offline candidates for attendance calculation
-                                      const offlineBatchStudents = batchStudents.filter((s: any) => {
-                                        const targetBatchName = b.batchName;
-                                        const targetModes = targetBatchName && s.batchModes ? (s.batchModes[targetBatchName] || []) : [];
-                                        return targetModes.length > 0
-                                          ? targetModes.includes("offline")
-                                          : (s.type || "").toLowerCase() === "offline";
-                                      });
-
-                                      if (offlineBatchStudents.length === 0) return null;
-
-                                      let totalAttended = 0;
-                                      let totalPossible = 0;
-                                      offlineBatchStudents.forEach((s: any) => {
-                                        totalAttended += s.attendedDays !== undefined ? Number(s.attendedDays) : 24;
-                                        totalPossible += s.totalDays !== undefined ? Number(s.totalDays) : 28;
-                                      });
-                                      const pct = totalPossible > 0 ? Math.round((totalAttended / totalPossible) * 100) : 85;
-                                      return (
-                                        <View key={b.id || b.batchName} style={{ gap: 4 }}>
-                                          <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                                            <Text style={{ color: "#212121", fontSize: 13 }}>{b.batchName}</Text>
-                                            <Text style={{ color: pct >= 75 ? "#2e7d32" : "#c62828", fontSize: 12, fontWeight: "bold" }}>{pct}%</Text>
-                                          </View>
-                                          <View style={{ height: 6, backgroundColor: "#eeeeee", borderRadius: 3, overflow: "hidden" }}>
-                                            <View style={{ width: `${pct}%`, height: "100%", backgroundColor: pct >= 75 ? "#2e7d32" : "#c62828" }} />
-                                          </View>
-                                          <Text style={{ color: "#757575", fontSize: 10 }}>
-                                            {offlineBatchStudents.length} offline candidate(s) enrolled
-                                          </Text>
-                                        </View>
-                                      );
-                                    }).filter(Boolean);
-
-                                    if (renderedBatches.length === 0) {
-                                      return <Text style={{ color: "#757575", fontSize: 12, fontStyle: "italic" }}>No offline students enrolled in any batch.</Text>;
-                                    }
-                                    return renderedBatches;
-                                  })()
-                                )}
-                              </View>
-                            </View>
-                          </View>
+                          <AdminAnalyticsDashboard
+                            batches={batches}
+                            students={students}
+                            staff={staff}
+                            questions={questions}
+                            lmsCourses={lmsCourses}
+                            isAdmin={isAdmin}
+                          />
                         );
                       })()}
 
-                                            {/* ========== OFFLINE ATTENDANCE PANEL ========== */}
-                      {erpSub === "offline-attendance" && isAdmin && (() => {
-                        // Only offline students
-                        const offlineStudents = students.filter((s: any) => (s.type || "").toLowerCase() === "offline");
-                        // Unique batch names from offline students
-                        const offlineBatchNames: string[] = [];
-                        offlineStudents.forEach((s: any) => {
-                          if (s.batch && !offlineBatchNames.includes(s.batch)) offlineBatchNames.push(s.batch);
+                                            {/* ========== ATTENDANCE REGISTRY PANEL (ONLINE & OFFLINE) ========== */}
+                                            {erpSub === "offline-attendance" && isAdmin && (() => {
+                        // Helper to detect online student
+                        const isStudentOnline = (s: any) => {
+                          const t = (s.type || s.mode || s.accessTier || s.enrollmentMode || "").toLowerCase();
+                          return t.includes("online") || (!t.includes("offline") && s.enrollmentMode !== "offline");
+                        };
+
+                        // Filter students based on attendanceModeFilter ("all" | "online" | "offline")
+                        const attendanceStudents = students.filter((s: any) => {
+                          const online = isStudentOnline(s);
+                          if (attendanceModeFilter === "online") return online;
+                          if (attendanceModeFilter === "offline") return !online;
+                          return true;
                         });
 
-                        const activeMonthlyBatch = offlineAttendanceMonthlyBatch || (offlineBatchNames.length > 0 ? offlineBatchNames[0] : "");
+                        // Counts for filter pills
+                        const onlineCount = students.filter(isStudentOnline).length;
+                        const offlineCount = students.filter((s: any) => !isStudentOnline(s)).length;
+                        const totalAttendanceCount = students.length;
+
+                        // Unique batch names from filtered students
+                        const attendanceBatchNames: string[] = [];
+                        attendanceStudents.forEach((s: any) => {
+                          const bName = s.batch || "General / Unassigned";
+                          if (!attendanceBatchNames.includes(bName)) attendanceBatchNames.push(bName);
+                        });
+
+                        const activeMonthlyBatch = offlineAttendanceMonthlyBatch || (attendanceBatchNames.length > 0 ? attendanceBatchNames[0] : "");
 
                         const studentsInBatch = offlineAttendanceBatch
-                          ? offlineStudents.filter((s: any) => s.batch === offlineAttendanceBatch)
+                          ? attendanceStudents.filter((s: any) => (s.batch || "General / Unassigned") === offlineAttendanceBatch)
                           : [];
 
                         // Daily Marking function
@@ -38394,7 +37247,7 @@ SOURCE QUESTION PAPER:
                         };
 
                         // Monthly students in selected batch
-                        const monthlyStudents = offlineStudents.filter((s: any) => s.batch === activeMonthlyBatch);
+                        const monthlyStudents = attendanceStudents.filter((s: any) => (s.batch || "General / Unassigned") === activeMonthlyBatch);
 
                         // Batch statistics for monthly register
                         let totalBatchMonthlyPresent = 0;
@@ -38553,10 +37406,12 @@ SOURCE QUESTION PAPER:
                             <View style={[styles.card, { borderLeftWidth: 4, borderLeftColor: "#c62828", gap: 10 }]}>
                               <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
                                 <View>
-                                  <Text style={styles.sectionTitle}>Offline Attendance Registry</Text>
-                                  <Text style={{ color: "#757575", fontSize: 13, marginTop: 2 }}>
-                                    Record daily attendance and review comprehensive monthly registers.
-                                  </Text>
+                                  <View>
+                                    <Text style={styles.sectionTitle}>Attendance Registry</Text>
+                                    <Text style={{ color: "#757575", fontSize: 13, marginTop: 2 }}>
+                                      Track attendance for Online and Offline students. Live class attendance marks automatically.
+                                    </Text>
+                                  </View>
                                 </View>
                                 {offlineAttendanceViewMode === "monthly" && (
                                   <TouchableOpacity
@@ -38577,6 +37432,40 @@ SOURCE QUESTION PAPER:
                                     <Text style={{ color: "#2e7d32", fontWeight: "bold", fontSize: 12 }}>Export Excel</Text>
                                   </TouchableOpacity>
                                 )}
+                              </View>
+
+                              {/* Student Mode Switcher: All | Online | Offline */}
+                              <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                                <Text style={{ fontSize: 12, fontWeight: "bold", color: "#616161", marginRight: 4 }}>STUDENT MODE:</Text>
+                                {[
+                                  { key: "all" as const, label: `All Students (${totalAttendanceCount})` },
+                                  { key: "online" as const, label: `🌐 Online Students (${onlineCount})` },
+                                  { key: "offline" as const, label: `🏢 Offline Students (${offlineCount})` },
+                                ].map(filterTab => {
+                                  const isSelected = attendanceModeFilter === filterTab.key;
+                                  return (
+                                    <TouchableOpacity
+                                      key={filterTab.key}
+                                      onPress={() => {
+                                        setAttendanceModeFilter(filterTab.key);
+                                        setOfflineAttendanceBatch(null);
+                                        setOfflineAttendanceMarks({});
+                                      }}
+                                      style={{
+                                        paddingHorizontal: 14,
+                                        paddingVertical: 7,
+                                        borderRadius: 20,
+                                        backgroundColor: isSelected ? "#c62828" : (darkMode ? "#2a2a2a" : "#f1f3f4"),
+                                        borderWidth: 1,
+                                        borderColor: isSelected ? "#c62828" : (darkMode ? "#444" : "#e0e0e0")
+                                      }}
+                                    >
+                                      <Text style={{ fontSize: 12, fontWeight: isSelected ? "bold" : "600", color: isSelected ? "#fff" : (darkMode ? "#ddd" : "#424242") }}>
+                                        {filterTab.label}
+                                      </Text>
+                                    </TouchableOpacity>
+                                  );
+                                })}
                               </View>
 
                               {/* Segmented Tab Switcher */}
@@ -38641,7 +37530,7 @@ SOURCE QUESTION PAPER:
                                       setOfflineAttendanceDate(d);
                                       if (offlineAttendanceBatch) {
                                         const initialMarks: Record<string, "present" | "absent" | null> = {};
-                                        const batchStuds = offlineStudents.filter((s: any) => s.batch === offlineAttendanceBatch);
+                                        const batchStuds = attendanceStudents.filter((s: any) => (s.batch || "General / Unassigned") === offlineAttendanceBatch);
                                         batchStuds.forEach((s: any) => {
                                           if (s.attendanceLog && s.attendanceLog[d]) {
                                             initialMarks[s.id] = s.attendanceLog[d];
@@ -38659,7 +37548,7 @@ SOURCE QUESTION PAPER:
                                       setOfflineAttendanceDate(todayStr);
                                       if (offlineAttendanceBatch) {
                                         const initialMarks: Record<string, "present" | "absent" | null> = {};
-                                        const batchStuds = offlineStudents.filter((s: any) => s.batch === offlineAttendanceBatch);
+                                        const batchStuds = attendanceStudents.filter((s: any) => (s.batch || "General / Unassigned") === offlineAttendanceBatch);
                                         batchStuds.forEach((s: any) => {
                                           if (s.attendanceLog && s.attendanceLog[todayStr]) {
                                             initialMarks[s.id] = s.attendanceLog[todayStr];
@@ -38674,28 +37563,30 @@ SOURCE QUESTION PAPER:
                                   </TouchableOpacity>
                                 </View>
 
-                                {offlineBatchNames.length === 0 ? (
+                                {attendanceBatchNames.length === 0 ? (
                                   <View style={[styles.card, styles.emptyContainer]}>
                                     <Ionicons name="people-outline" size={48} color="#bdbdbd" />
-                                    <Text style={styles.emptyText}>No offline students registered yet.</Text>
+                                    <Text style={styles.emptyText}>No students found for this mode filter.</Text>
                                     <Text style={{ color: "#999", fontSize: 12, textAlign: "center" }}>
-                                      Register students with enrollment type "Offline" to use this panel.
+                                      Switch the student mode filter or enroll students to view and mark attendance.
                                     </Text>
                                   </View>
                                 ) : !offlineAttendanceBatch ? (
                                   // Show batch list
                                   <View style={{ gap: 10 }}>
                                     <Text style={{ fontWeight: "bold", color: "#212121", fontSize: 14, marginBottom: 4 }}>Select a Batch to Mark</Text>
-                                    {offlineBatchNames.map((batchName: string) => {
-                                      const count = offlineStudents.filter((s: any) => s.batch === batchName).length;
+                                    {attendanceBatchNames.map((batchName: string) => {
+                                      const batchStuds = attendanceStudents.filter((s: any) => (s.batch || "General / Unassigned") === batchName);
+                                      const count = batchStuds.length;
                                       const batchInfo = batches.find((b: any) => b.batchName === batchName);
+                                      const onlineInBatch = batchStuds.filter(isStudentOnline).length;
+                                      const offlineInBatch = count - onlineInBatch;
                                       return (
                                         <TouchableOpacity
                                           key={batchName}
                                           onPress={() => {
                                             setOfflineAttendanceBatch(batchName);
                                             const initialMarks: Record<string, "present" | "absent" | null> = {};
-                                            const batchStuds = offlineStudents.filter((s: any) => s.batch === batchName);
                                             batchStuds.forEach((s: any) => {
                                               if (s.attendanceLog && s.attendanceLog[offlineAttendanceDate]) {
                                                 initialMarks[s.id] = s.attendanceLog[offlineAttendanceDate];
@@ -38718,9 +37609,21 @@ SOURCE QUESTION PAPER:
                                             {batchInfo?.course && (
                                               <Text style={{ color: "#757575", fontSize: 12, marginTop: 2 }}>{batchInfo.course}</Text>
                                             )}
-                                            <Text style={{ color: "#c62828", fontSize: 12, marginTop: 4, fontWeight: "600" }}>
-                                              {count} offline student{count !== 1 ? "s" : ""}
-                                            </Text>
+                                            <View style={{ flexDirection: "row", gap: 8, marginTop: 4, alignItems: "center" }}>
+                                              <Text style={{ color: "#c62828", fontSize: 12, fontWeight: "600" }}>
+                                                {count} student{count !== 1 ? "s" : ""}
+                                              </Text>
+                                              {onlineInBatch > 0 && (
+                                                <View style={{ backgroundColor: "#e3f2fd", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1 }}>
+                                                  <Text style={{ color: "#1565c0", fontSize: 10, fontWeight: "600" }}>🌐 {onlineInBatch} Online</Text>
+                                                </View>
+                                              )}
+                                              {offlineInBatch > 0 && (
+                                                <View style={{ backgroundColor: "#fbe9e7", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1 }}>
+                                                  <Text style={{ color: "#d84315", fontSize: 10, fontWeight: "600" }}>🏢 {offlineInBatch} Offline</Text>
+                                                </View>
+                                              )}
+                                            </View>
                                           </View>
                                           <View style={{ backgroundColor: "#ffebee", borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8, flexDirection: "row", alignItems: "center", gap: 6 }}>
                                             <Text style={{ color: "#c62828", fontWeight: "bold", fontSize: 13 }}>Mark</Text>
@@ -38796,7 +37699,7 @@ SOURCE QUESTION PAPER:
                                     {/* Student list */}
                                     {studentsInBatch.length === 0 ? (
                                       <View style={[styles.card, styles.emptyContainer]}>
-                                        <Text style={styles.emptyText}>No offline students in this batch.</Text>
+                                        <Text style={styles.emptyText}>No students in this batch.</Text>
                                       </View>
                                     ) : (
                                       studentsInBatch.map((student: any) => {
@@ -38830,7 +37733,14 @@ SOURCE QUESTION PAPER:
                                                 </Text>
                                               </View>
                                               <View style={{ flex: 1 }}>
-                                                <Text style={{ fontWeight: "bold", color: "#212121", fontSize: 14 }} numberOfLines={1}>{name || "Unnamed"}</Text>
+                                                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                                                  <Text style={{ fontWeight: "bold", color: "#212121", fontSize: 14 }} numberOfLines={1}>{name || "Unnamed"}</Text>
+                                                  <View style={{ backgroundColor: isStudentOnline(student) ? "#e3f2fd" : "#fbe9e7", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1 }}>
+                                                    <Text style={{ color: isStudentOnline(student) ? "#1565c0" : "#d84315", fontSize: 10, fontWeight: "bold" }}>
+                                                      {isStudentOnline(student) ? "Online" : "Offline"}
+                                                    </Text>
+                                                  </View>
+                                                </View>
                                                 <Text style={{ color: "#757575", fontSize: 12 }}>Roll: {rollNo}</Text>
                                                 {total > 0 && (
                                                   <Text style={{ color: pct >= 75 ? "#2e7d32" : pct >= 50 ? "#f57c00" : "#c62828", fontSize: 11, marginTop: 1, fontWeight: "600" }}>
@@ -38998,9 +37908,9 @@ SOURCE QUESTION PAPER:
                                   <View style={{ gap: 6 }}>
                                     <Text style={{ fontSize: 12, fontWeight: "bold", color: "#757575" }}>SELECT OFFLINE BATCH:</Text>
                                     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-                                      {offlineBatchNames.map(batchName => {
+                                      {attendanceBatchNames.map(batchName => {
                                         const isSelected = activeMonthlyBatch === batchName;
-                                        const count = offlineStudents.filter((s: any) => s.batch === batchName).length;
+                                        const count = attendanceStudents.filter((s: any) => (s.batch || "General / Unassigned") === batchName).length;
                                         return (
                                           <TouchableOpacity
                                             key={batchName}
@@ -39178,9 +38088,14 @@ SOURCE QUESTION PAPER:
                                                     {name ? name.charAt(0).toUpperCase() : "?"}
                                                   </Text>
                                                 </View>
-                                                <Text style={{ fontSize: 12, fontWeight: "bold", color: "#212121", flex: 1 }} numberOfLines={1}>
-                                                  {name || "Unnamed"}
-                                                </Text>
+                                                <View style={{ flex: 1 }}>
+                                                  <Text style={{ fontSize: 12, fontWeight: "bold", color: "#212121" }} numberOfLines={1}>
+                                                    {name || "Unnamed"}
+                                                  </Text>
+                                                  <Text style={{ fontSize: 10, color: isStudentOnline(st) ? "#1976d2" : "#e64a19", fontWeight: "600" }}>
+                                                    {isStudentOnline(st) ? "Online" : "Offline"}
+                                                  </Text>
+                                                </View>
                                               </TouchableOpacity>
 
                                               {/* Day Cells */}
@@ -39450,6 +38365,8 @@ SOURCE QUESTION PAPER:
                           </View>
                         );
                       })()}
+
+                      {/* ========== ACCESS CONTROL (SACS) PANEL ========== */}
 
                       {/* ========== ACCESS CONTROL (SACS) PANEL ========== */}
                       {erpSub === "sacs" && isAdmin && (() => {
@@ -40633,19 +39550,15 @@ SOURCE QUESTION PAPER:
                     contentContainerStyle={{ alignItems: lmsTabsCollapsed && !isMobile ? "center" : "stretch", gap: 6, paddingBottom: 60 }}
                     showsVerticalScrollIndicator={false}
                   >
-                    {isAdmin && renderSidebarItem("lms-access", lmsSub, "Access Control", "shield-checkmark-outline", () => changeLmsSub("lms-access"), "lms-admin-access", (sacsRequests || []).length || undefined, lmsTabsCollapsed && !isMobile, "lms_sacs_access")}
+                    {isAdmin && renderSidebarItem("lms-access", lmsSub, "Resource/Class Request", "shield-checkmark-outline", () => changeLmsSub("lms-access"), "lms-admin-access", (sacsRequests || []).length || undefined, lmsTabsCollapsed && !isMobile, "lms_sacs_access")}
 
                     {!lmsTabsCollapsed || isMobile ? <Text style={styles.categoryHeader}>LEARNING</Text> : null}
                     {isAdmin && renderSidebarItem("live-classes", lmsSub, "Live", "videocam-outline", () => changeLmsSub("live-classes"), "lms-live-classes", (lmsLiveSessions || []).filter((s: any) => s.status === "live").length || undefined, lmsTabsCollapsed && !isMobile, "lms_live_classes")}
-                    {renderSidebarItem("daily-content", lmsSub, "Daily Content", "calendar-outline", () => changeLmsSub("daily-content"), "lms-daily-content", undefined, lmsTabsCollapsed && !isMobile, "lms_daily_content")}
-                    {renderSidebarItem("quiz", (lmsSub === "quiz" || lmsSub === "all-quizzes" || lmsSub === "create-quiz") ? "quiz" : lmsSub, "Quiz", "help-circle-outline", () => changeLmsSub("quiz"), "lms-quiz", undefined, lmsTabsCollapsed && !isMobile, "lms_quiz_posting")}
-                    {renderSidebarItem("recorded", lmsSub, "Recorded", "play-circle-outline", () => changeLmsSub("recorded"), "lms-recorded", undefined, lmsTabsCollapsed && !isMobile, "lms_recorded_videos")}
-                    {/* Student: My Courses & Live page */}
-                    {/* {!isAdmin && renderSidebarItem("my-courses", lmsSub, "My Courses", "school-outline", () => changeLmsSub("my-courses"), "lms-my-courses", undefined, lmsTabsCollapsed && !isMobile)} */}
                     {!isAdmin && renderSidebarItem("my-live", lmsSub, "Live Classes", "radio-outline", () => changeLmsSub("my-live"), "lms-my-live", undefined, lmsTabsCollapsed && !isMobile)}
-
-                    {!lmsTabsCollapsed || isMobile ? <Text style={styles.categoryHeader}>MATERIALS</Text> : null}
+                    {renderSidebarItem("daily-content", lmsSub, "Daily Content", "calendar-outline", () => changeLmsSub("daily-content"), "lms-daily-content", undefined, lmsTabsCollapsed && !isMobile, "lms_daily_content")}
+                    {renderSidebarItem("recorded", lmsSub, "Recorded", "play-circle-outline", () => changeLmsSub("recorded"), "lms-recorded", undefined, lmsTabsCollapsed && !isMobile, "lms_recorded_videos")}
                     {renderSidebarItem("resources", lmsSub, "Resources", "folder-outline", () => changeLmsSub("resources"), "lms-resources", undefined, lmsTabsCollapsed && !isMobile, "lms_resources")}
+                    {renderSidebarItem("quiz", (lmsSub === "quiz" || lmsSub === "all-quizzes" || lmsSub === "create-quiz") ? "quiz" : lmsSub, "Quiz", "help-circle-outline", () => changeLmsSub("quiz"), "lms-quiz", undefined, lmsTabsCollapsed && !isMobile, "lms_quiz_posting")}
 
                     {/* Admin-only: Full LMS Management */}
                     {isAdmin && (!lmsTabsCollapsed || isMobile) && <Text style={styles.categoryHeader}>LMS MANAGEMENT</Text>}
@@ -40665,35 +39578,51 @@ SOURCE QUESTION PAPER:
                 </View>
               )}
 
-              {/* Show Sidebar Button */}
-              {isMobile && lmsTabsCollapsed && (
-                <TouchableOpacity
-                  onPress={() => setLmsTabsCollapsed(false)}
-                  style={{
-                    position: "absolute",
-                    left: 10,
-                    top: 10,
-                    zIndex: 1000,
-                    backgroundColor: darkMode ? "#1e1e1e" : "#ffffff",
-                    borderRadius: 8,
-                    width: 36,
-                    height: 36,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    borderWidth: 1,
-                    borderColor: darkMode ? "#333" : "#e0e0e0",
-                    shadowColor: "#000",
-                    shadowOffset: { width: 0, height: 2 },
-                    shadowOpacity: 0.15,
-                    shadowRadius: 2.5,
-                    elevation: 4
-                  }}
-                >
-                  <Ionicons name="menu" size={20} color="#c62828" />
-                </TouchableOpacity>
-              )}
+              {/* Subpage Content on the right */}
+              <View style={{ flex: 1, position: "relative" }}>
+                {isMobile && lmsTabsCollapsed && (
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      backgroundColor: darkMode ? "#1a1a2e" : "#ffffff",
+                      borderBottomWidth: 1,
+                      borderBottomColor: darkMode ? "#2a2a2a" : "#eeeeee",
+                      gap: 10,
+                      zIndex: 100,
+                    }}
+                  >
+                    <TouchableOpacity
+                      onPress={() => setLmsTabsCollapsed(false)}
+                      style={{
+                        backgroundColor: darkMode ? "#26263a" : "#f5f5f5",
+                        borderRadius: 8,
+                        width: 36,
+                        height: 36,
+                        alignItems: "center",
+                        justifyContent: "center",
+                        borderWidth: 1,
+                        borderColor: darkMode ? "#3e3e55" : "#e0e0e0",
+                      }}
+                    >
+                      <Ionicons name="menu" size={20} color="#c62828" />
+                    </TouchableOpacity>
+                    <Text
+                      style={{
+                        fontSize: 15,
+                        fontWeight: "bold",
+                        color: darkMode ? "#ffffff" : "#212121",
+                        textTransform: "capitalize",
+                      }}
+                    >
+                      {lmsSub === 'lms-access' ? 'Resource/Class Request' : (lmsSub ? lmsSub.replace(/^(lms-|my-)/, '').replace(/-/g, ' ') : 'LMS Portal')}
+                    </Text>
+                  </View>
+                )}
 
-              <ScrollView style={[styles.splitContent, { paddingTop: (isMobile && lmsTabsCollapsed) ? 50 : 15 }, darkMode && styles.splitContentDark]} contentContainerStyle={{ paddingBottom: 80, alignItems: "stretch" }}>
+                <ScrollView style={[styles.splitContent, { paddingTop: isMobile ? 12 : 15 }, darkMode && styles.splitContentDark]} contentContainerStyle={{ paddingBottom: isMobile ? 160 : 80, alignItems: "stretch" }}>
                 {checkAccessNone(getLmsFeatureKey(lmsSub))}
                 {getFeatureAccess(getLmsFeatureKey(lmsSub)) !== "none" && (
                   <>
@@ -41022,7 +39951,59 @@ SOURCE QUESTION PAPER:
                           const filteredResources = lmsResources.filter(r => {
                             const matchSearch = !lmsResourceSearch || (r.title || r.name || "").toLowerCase().includes(lmsResourceSearch.toLowerCase());
                             const matchCat = lmsResourceCategory === "All" || (r.type || r.fileType || "").toLowerCase() === lmsResourceCategory.toLowerCase();
-                            return matchSearch && matchCat;
+                            if (!matchSearch || !matchCat) return false;
+
+                            if (user?.role === "student") {
+                              const myStudent = getLoggedInStudent(user, studentsRef.current);
+                              const studentBatches: string[] = [];
+                              const addBatchVal = (val: any) => {
+                                if (!val) return;
+                                const s = String(val).trim().toLowerCase();
+                                if (s && !studentBatches.includes(s)) studentBatches.push(s);
+                              };
+                              if (myStudent?.batch) addBatchVal(myStudent.batch);
+                              if (myStudent?.batchName) addBatchVal(myStudent.batchName);
+                              if (myStudent?.batchId) addBatchVal(myStudent.batchId);
+                              if (user?.batch) addBatchVal(user.batch);
+                              if (user?.batchName) addBatchVal(user.batchName);
+                              if (user?.batchId) addBatchVal(user.batchId);
+                              const arrBatches = myStudent?.batches || user?.batches;
+                              if (Array.isArray(arrBatches)) {
+                                arrBatches.forEach((b: any) => addBatchVal(b));
+                              }
+                              const knownBatches = (erpBatches && erpBatches.length > 0) ? erpBatches : batches;
+                              (knownBatches || []).forEach((b: any) => {
+                                const bName = String(b.batchName || b.name || "").trim().toLowerCase();
+                                const bId = String(b.id || b._id || "").trim().toLowerCase();
+                                if (studentBatches.includes(bName) && bId) addBatchVal(bId);
+                              });
+
+                              const vis = String(r.visibility || "public").trim().toLowerCase();
+                              if (vis === "guest") return false;
+                              if (vis === "public" || vis === "free") return true;
+
+                              const rawTargets = r.targetBatchIds || [];
+                              const targetBatchIds = (Array.isArray(rawTargets)
+                                ? rawTargets.map((id: any) => String(id).trim().toLowerCase())
+                                : [String(rawTargets).trim().toLowerCase()]).filter(Boolean);
+
+                              const hasSpecificBatch = targetBatchIds.length > 0 && !targetBatchIds.includes("all") && !targetBatchIds.includes("all_paid") && !targetBatchIds.includes("all_free");
+
+                              if (vis === "batch" || hasSpecificBatch) {
+                                if (targetBatchIds.includes("all") || targetBatchIds.includes("all_paid")) return studentBatches.length > 0;
+                                if (targetBatchIds.length === 0) return false;
+                                return studentBatches.some((b: string) =>
+                                  targetBatchIds.some(t => t === b || t.includes(b) || b.includes(t))
+                                );
+                              }
+
+                              if (vis === "premium" || vis === "paid") {
+                                return studentBatches.length > 0;
+                              }
+
+                              return studentBatches.length > 0;
+                            }
+                            return true;
                           });
                           return filteredResources.length === 0 ? (
                             <View style={styles.emptyContainer}>
@@ -41084,7 +40065,9 @@ SOURCE QUESTION PAPER:
                                                   isGeneral: res.isGeneral || false,
                                                   offlineAvailable: res.offlineAvailable !== false,
                                                   isSecure: res.isSecure !== false,
-                                                  targetBatchIds: res.targetBatchIds?.join(", ") || "",
+                                                  targetBatchIds: (res.targetBatchIds || [])
+                                                    .filter((id: string) => id !== "all" && (res.visibility === "batch" ? id !== "all_paid" : true))
+                                                    .join(", "),
                                                   uploadMode: res.sourceUrl ? "link" : "file",
                                                   file: null,
                                                   fileName: "",
@@ -41294,7 +40277,8 @@ SOURCE QUESTION PAPER:
                                 const endTimeMs = startTimeMs + durationMins * 60 * 1000;
                                 const isExpired = startTimeMs > 0 && Date.now() > endTimeMs;
 
-                                const isEnded = sessionStatus === 'ENDED' || sessionStatus === 'CANCELLED' || sessionStatus === 'EXPIRED' || sessionStatus === 'ARCHIVED' || sessionStatus === 'ended' || isExpired;
+                                const isEndedStatus = (s: string) => ['ENDED', 'CANCELLED', 'EXPIRED', 'ARCHIVED', 'NOT_UPLOADED', 'RECORDED_AVAILABLE', 'ended'].includes(String(s || '').toUpperCase()) || String(s || '').toLowerCase() === 'ended';
+                                const isEnded = isEndedStatus(sessionStatus) || isExpired;
                                 const isLive = !isEnded && (sessionStatus === 'live' || sessionStatus === 'active' || sessionStatus === 'in_progress' || sessionStatus === 'LIVE' || sessionStatus === 'JOINING' || sessionStatus === 'HOST_CONNECTED' || sessionStatus === 'ATTENDANCE_RUNNING');
 
                                 if (isEnded) endedSessions.push(session);
@@ -41314,7 +40298,7 @@ SOURCE QUESTION PAPER:
                                 const endTimeMs = startTimeMs + durationMins * 60 * 1000;
                                 const isExpired = startTimeMs > 0 && Date.now() > endTimeMs;
 
-                                const isEnded = sessionStatus === 'ENDED' || sessionStatus === 'CANCELLED' || sessionStatus === 'EXPIRED' || sessionStatus === 'ARCHIVED';
+                                const isEnded = ['ENDED', 'CANCELLED', 'EXPIRED', 'ARCHIVED', 'NOT_UPLOADED', 'RECORDED_AVAILABLE', 'ended'].includes(String(sessionStatus || '').toUpperCase()) || String(sessionStatus || '').toLowerCase() === 'ended' || isExpired;
 
                                 const isLive = !isEnded && (sessionStatus === "live" || sessionStatus === "active" || sessionStatus === "in_progress" || sessionStatus === "LIVE" || sessionStatus === "JOINING" || sessionStatus === "HOST_CONNECTED" || sessionStatus === "ATTENDANCE_RUNNING");
                                 const isEndable = isAdmin && !isEnded;
@@ -42718,7 +41702,7 @@ SOURCE QUESTION PAPER:
 
                           const matchBatch = (targetBatch: string, sList: string[]) => {
                             if (!targetBatch || targetBatch === "all") return true;
-                            if (sList.length === 0) return true;
+                            if (sList.length === 0) return false;
                             const targets = targetBatch.split(",").map(b => b.trim().toLowerCase()).filter(Boolean);
                             return sList.some(sb => {
                               const s = sb.trim().toLowerCase();
@@ -42936,7 +41920,8 @@ SOURCE QUESTION PAPER:
                     )}
                   </>
                 )}
-              </ScrollView>
+                </ScrollView>
+              </View>
             </View>
           )
         )}
@@ -43201,14 +42186,14 @@ SOURCE QUESTION PAPER:
                     showsVerticalScrollIndicator={false}
                   >
                     {!crmSidebarCollapsed || isMobile ? <Text style={styles.categoryHeader}>ADMISSIONS & LEADS</Text> : null}
-                    {renderSidebarItem("merged-leads", crmSub, "Applications & Leads (New)", "people-outline", () => changeCrmSub("merged-leads"), "crm-leads", (((admissions || []).filter((a: any) => a.status === "pending" || a.status === "new" || !a.status).length) + ((enquiries || []).filter((e: any) => e.status === "pending" || e.status === "new").length) + ((customLeads || []).filter((l: any) => l.status === "new" || !l.status).length)) || undefined, crmSidebarCollapsed && !isMobile, "leads")}
                     {renderSidebarItem("admissions", crmSub, "Admission Application", "mail-outline", () => changeCrmSub("admissions"), "crm-admissions", (admissions || []).filter((a: any) => a.status === "pending" || a.status === "new" || !a.status).length || undefined, crmSidebarCollapsed && !isMobile, "admissions")}
+                    {renderSidebarItem("merged-leads", crmSub, "Applications & Leads (New)", "people-outline", () => changeCrmSub("merged-leads"), "crm-leads", (((admissions || []).filter((a: any) => a.status === "pending" || a.status === "new" || !a.status).length) + ((enquiries || []).filter((e: any) => e.status === "pending" || e.status === "new").length) + ((customLeads || []).filter((l: any) => l.status === "new" || !l.status).length)) || undefined, crmSidebarCollapsed && !isMobile, "leads")}
                     {renderSidebarItem("leads", crmSub, "Leads", "funnel-outline", () => changeCrmSub("leads"), "crm-leads", undefined, crmSidebarCollapsed && !isMobile, "leads")}
-                    {renderSidebarItem("custom-leads", crmSub, "Custom Leads", "clipboard-outline", () => changeCrmSub("custom-leads"), "crm-leads", (customLeads || []).filter((l: any) => l.status === "new" || !l.status).length || undefined, crmSidebarCollapsed && !isMobile, "leads")}
                     {renderSidebarItem("inquiries", crmSub, "Inquiries", "chatbubble-ellipses-outline", () => changeCrmSub("inquiries"), "crm-inquiries", (enquiries || []).filter((e: any) => e.status === "pending" || e.status === "new").length || undefined, crmSidebarCollapsed && !isMobile, "admissions")}
 
                     {!crmSidebarCollapsed || isMobile ? <Text style={styles.categoryHeader}>FORM BUILDER</Text> : null}
                     {renderSidebarItem("custom-form", crmSub, "Customize Application", "create-outline", () => changeCrmSub("custom-form"), "crm-campaigns", undefined, crmSidebarCollapsed && !isMobile, "campaigns")}
+                    {renderSidebarItem("custom-leads", crmSub, "Custom Leads", "clipboard-outline", () => changeCrmSub("custom-leads"), "crm-leads", (customLeads || []).filter((l: any) => l.status === "new" || !l.status).length || undefined, crmSidebarCollapsed && !isMobile, "leads")}
 
                     {!crmSidebarCollapsed || isMobile ? <Text style={styles.categoryHeader}>CAMPAIGNS & ENGAGEMENT</Text> : null}
                     {renderSidebarItem("campaigns", crmSub, "Campaigns", "megaphone-outline", () => changeCrmSub("campaigns"), "crm-campaigns", undefined, crmSidebarCollapsed && !isMobile, "campaigns")}
@@ -43372,10 +42357,10 @@ SOURCE QUESTION PAPER:
                           <View style={{ gap: 15 }}>
                             {/* Header */}
                             <View style={styles.card}>
-                              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
                                 <Text style={styles.sectionTitle}>General Inquiries</Text>
-                                <View style={{ flexDirection: "row", gap: 8 }}>
-                                  <TextInput style={[styles.input, { flex: 1, minWidth: 100, marginBottom: 0, height: 36, fontSize: 12 }]} placeholder="From date" placeholderTextColor="#999" value={enquiryDateFilter} onChangeText={setEnquiryDateFilter} />
+                                <View style={{ flexDirection: "row", gap: 8, alignItems: "center", flexWrap: "wrap", flexShrink: 1 }}>
+                                  <TextInput style={[styles.input, { width: 110, marginBottom: 0, height: 36, fontSize: 12 }]} placeholder="From date" placeholderTextColor="#999" value={enquiryDateFilter} onChangeText={setEnquiryDateFilter} />
                                   <TouchableOpacity onPress={() => loadEnquiries(enquiryDateFilter)} style={[styles.primaryBtn, { paddingVertical: 0, paddingHorizontal: 12, height: 36, justifyContent: "center" }]}>
                                     <Text style={[styles.primaryBtnTxt, { fontSize: 12 }]}>Filter</Text>
                                   </TouchableOpacity>
@@ -43679,7 +42664,8 @@ SOURCE QUESTION PAPER:
                             <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
                               {[
                                 { label: "All Users", value: "all" },
-                                { label: "Free Users Only", value: "free" },
+                                { label: "Guests / Leads", value: "guest" },
+                                { label: "Free Users", value: "free" },
                                 { label: "Enrolled Students Only", value: "paid" }
                               ].map(seg => (
                                 <TouchableOpacity
@@ -44328,6 +43314,7 @@ SOURCE QUESTION PAPER:
             </ScrollView>
           </View>
         )}
+        </TabErrorBoundary>
       </View>
       {/* Bottom Tab Bar */}
       {(() => {
@@ -45172,6 +44159,71 @@ SOURCE QUESTION PAPER:
               </TouchableOpacity>
             </View>
           </View>
+        </Modal>
+      )}
+
+      {/* ── MOBILE SEPARATE WINDOW / MODAL FOR SUBJECT ANALYTICS ── */}
+      {mobileSubjectAnalyticsModalTest && (
+        <Modal
+          visible={true}
+          animationType="slide"
+          onRequestClose={() => setMobileSubjectAnalyticsModalTest(null)}
+        >
+          <SafeAreaView style={{ flex: 1, backgroundColor: darkMode ? "#0f172a" : "#f8fafc" }}>
+            {/* Modal Top Header Bar */}
+            <View style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              paddingHorizontal: 16,
+              paddingVertical: 14,
+              backgroundColor: darkMode ? "#1e293b" : "#ffffff",
+              borderBottomWidth: 1,
+              borderBottomColor: darkMode ? "#334155" : "#e2e8f0",
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.08,
+              shadowRadius: 4,
+              elevation: 3
+            }}>
+              <View style={{ flex: 1, marginRight: 12 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Ionicons name="pie-chart" size={18} color="#c62828" />
+                  <Text style={{ fontSize: 16, fontWeight: "900", color: darkMode ? "#ffffff" : "#0f172a" }} numberOfLines={1}>
+                    Subject Analytics
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 12, color: darkMode ? "#94a3b8" : "#64748b", marginTop: 2 }} numberOfLines={1}>
+                  {mobileSubjectAnalyticsModalTest.title || "Exam Diagnostics"}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                onPress={() => setMobileSubjectAnalyticsModalTest(null)}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 4,
+                  paddingHorizontal: 12,
+                  paddingVertical: 6,
+                  borderRadius: 8,
+                  backgroundColor: darkMode ? "#334155" : "#fee2e2"
+                }}
+              >
+                <Ionicons name="close" size={18} color="#dc2626" />
+                <Text style={{ fontSize: 13, fontWeight: "800", color: "#dc2626" }}>Close</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Scrollable Body */}
+            <ScrollView
+              style={{ flex: 1 }}
+              contentContainerStyle={{ padding: 12, paddingBottom: 40 }}
+              showsVerticalScrollIndicator={true}
+            >
+              {renderSubjectAnalyticsDiagnosticPanel(mobileSubjectAnalyticsModalTest)}
+            </ScrollView>
+          </SafeAreaView>
         </Modal>
       )}
 

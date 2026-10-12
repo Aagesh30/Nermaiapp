@@ -177,7 +177,7 @@ export const exportAnalytics = handle(async (req) => {
 
 export const listHistory = handle(async (req) => {
   const { status } = req.query as any;
-  const validStatuses = ['APPROVED', 'REJECTED'];
+  const validStatuses = ['APPROVED', 'REJECTED', 'REVOKED'];
   const statusFilter = validStatuses.includes(status) ? status : undefined;
   return { success: true, data: await service.listHistory(statusFilter) };
 });

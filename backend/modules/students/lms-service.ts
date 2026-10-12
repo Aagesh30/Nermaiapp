@@ -101,21 +101,48 @@ async function resolveStudentContext(userId: string): Promise<StudentContext> {
     const studentBatches: string[] = studentData.batches || (studentData.batch ? [studentData.batch] : []);
     for (const bName of studentBatches) {
       if (bName) {
-        if (!result.batchIds.includes(String(bName))) {
-          result.batchIds.push(String(bName));
+        const bStr = String(bName).trim();
+        if (!result.batchIds.includes(bStr)) {
+          result.batchIds.push(bStr);
         }
-        const batchSnap = await db.collection('batches')
-          .where('batchName', '==', String(bName))
+        // 1. Try matching by batchName
+        let batchSnap = await db.collection('batches')
+          .where('batchName', '==', bStr)
           .where('isDeleted', '==', false)
           .limit(1)
           .get();
 
+        if (batchSnap.empty) {
+          batchSnap = await db.collection('batches')
+            .where('name', '==', bStr)
+            .where('isDeleted', '==', false)
+            .limit(1)
+            .get();
+        }
+
         if (!batchSnap.empty) {
-          const bId = batchSnap.docs[0].id;
+          const bDoc = batchSnap.docs[0];
+          const bId = bDoc.id;
+          const resolvedName = bDoc.data()?.batchName || bDoc.data()?.name || bStr;
           if (!result.batchIds.includes(bId)) {
             result.batchIds.push(bId);
           }
-          result.batchNameMap[bId] = bName;
+          if (!result.batchIds.includes(resolvedName)) {
+            result.batchIds.push(resolvedName);
+          }
+          result.batchNameMap[bId] = resolvedName;
+        } else {
+          // 2. Try fetching by doc ID directly
+          try {
+            const bDoc = await db.collection('batches').doc(bStr).get();
+            if (bDoc.exists && !bDoc.data()?.isDeleted) {
+              const resolvedName = bDoc.data()?.batchName || bDoc.data()?.name;
+              if (resolvedName && !result.batchIds.includes(resolvedName)) {
+                result.batchIds.push(resolvedName);
+              }
+              result.batchNameMap[bDoc.id] = resolvedName || bStr;
+            }
+          } catch (_) { }
         }
       }
     }
@@ -157,78 +184,72 @@ async function resolveStudentContext(userId: string): Promise<StudentContext> {
  * Visibility ≠ access permission — SACS (Layer 3) handles that separately.
  *
  * Offline students:
- *   Always visible if they are in one of the target batches (or content has no batch restriction).
+ *   Visible ONLY if they are in one of the target batches (or content has no batch restriction).
  *   They must request access through SACS to consume the content.
  *
  * Online/Recorded students:
  *   Visibility is additionally gated by accessLevel sentinels.
  */
 function isVisibleToStudent(
-  targetBatchIds: string[],
+  rawTargetBatchIds: string[],
   accessLevel: string,
-  studentBatchIds: string[],
+  rawStudentBatchIds: string[],
   studentType: string,
   userRole?: string
 ): boolean {
-  const isOffline = studentType === 'offline';
-  const isEnrolled = studentBatchIds.length > 0;
+  const normAccess = String(accessLevel || '').trim().toLowerCase();
+  const cleanTargets = (rawTargetBatchIds || []).map(id => String(id).trim().toLowerCase()).filter(Boolean);
+  const cleanStudentBatches = (rawStudentBatchIds || []).map(id => String(id).trim().toLowerCase()).filter(Boolean);
+  const isEnrolled = cleanStudentBatches.length > 0;
   const isGuestUser = userRole === 'guest' || (!isEnrolled && userRole !== 'student');
 
   // Guest Only: Only visible if user is a guest user (unenrolled guest)
-  if (accessLevel === 'guest') {
+  if (normAccess === 'guest') {
     return isGuestUser;
   }
 
-  // Enroll Only (premium): Visible to any enrolled student
-  if (accessLevel === 'premium') {
+  // Unenrolled guest cannot see protected content unless public/free
+  const isPublicOrFree = normAccess === 'public' || normAccess === 'free' || normAccess === 'all' || cleanTargets.includes('all') || cleanTargets.includes('all_free');
+  if (isGuestUser && !isPublicOrFree) {
+    return false;
+  }
+
+  // Enrolled student should not see guest-only teaser content
+  if (isEnrolled && normAccess === 'guest') {
+    return false;
+  }
+
+  // Specific batch targeting check:
+  // If accessLevel is 'batch' OR there are specific target batches defined (excluding universal sentinels)
+  const actualSpecificBatches = cleanTargets.filter(t => t !== 'all' && t !== 'all_paid' && t !== 'all_free');
+  const hasSpecificBatchRestrictions = actualSpecificBatches.length > 0;
+
+  if (normAccess === 'batch' || hasSpecificBatchRestrictions) {
+    if (!isEnrolled) return false;
+    if (actualSpecificBatches.length === 0) return false;
+
+    // Student MUST belong to one of the targeted batches
+    const matchesBatch = cleanStudentBatches.some((bId) => actualSpecificBatches.includes(bId));
+    if (!matchesBatch) return false;
+    return true;
+  }
+
+  // Enroll Only (premium / paid): Visible to any enrolled student
+  if (normAccess === 'premium' || normAccess === 'paid') {
     return isEnrolled;
   }
 
-  // Enroll Batch Wise (batch): Visible ONLY if user is enrolled and matches batch
-  if (accessLevel === 'batch') {
-    const cleanTargets = (targetBatchIds || []).map(id => String(id).trim().toLowerCase()).filter(Boolean);
-    if (cleanTargets.length === 0) return false;
-    return isEnrolled && (
-      cleanTargets.includes('all') ||
-      cleanTargets.includes('all_paid') ||
-      studentBatchIds.some((bId) => cleanTargets.includes(String(bId).trim().toLowerCase()))
-    );
+  // Public / Free / All: Visible to all users
+  if (isPublicOrFree) {
+    return true;
   }
 
-  // Guest + Enroll (public / free / all): Visible to all users
-  const isPublicOrFree = accessLevel === 'public' || accessLevel === 'free' || accessLevel === 'all' || targetBatchIds.includes('all') || targetBatchIds.includes('all_free');
-
-  // If not enrolled and content is not public/free and not guest → hide
-  if (!isEnrolled && !isPublicOrFree) return false;
-
-  // If enrolled student and accessLevel is guest → hide from enrolled student!
-  if (isEnrolled && accessLevel === 'guest') return false;
-
-  // ── Batch matching ──────────────────────────────────────────────────────────
-  let batchMatches: boolean;
-  if (targetBatchIds.length === 0) {
-    // No batch restriction → visible to all users (unless accessLevel is restricted above)
-    batchMatches = accessLevel !== 'guest' || !isEnrolled;
-  } else if (targetBatchIds.includes('all') || targetBatchIds.includes('all_free')) {
-    batchMatches = true;
-  } else if (targetBatchIds.includes('all_paid') && isEnrolled) {
-    batchMatches = true;
-  } else if (!isEnrolled) {
-    batchMatches = isPublicOrFree;
-  } else {
-    // Specific batch targeting
-    batchMatches = studentBatchIds.some((bId) => targetBatchIds.includes(bId));
+  if (cleanTargets.includes('all_paid')) {
+    return isEnrolled;
   }
 
-  if (!batchMatches) return false;
-
-  // ── Student type visibility gating ─────────────────────────────────────────
-  if (isOffline) return true;
-
-  if (accessLevel === 'public' || accessLevel === 'free' || accessLevel === 'all') return true;
-  if (accessLevel === 'paid' || accessLevel === '') return isEnrolled;
-
-  return true;
+  // Default: Visible if enrolled
+  return isEnrolled;
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────

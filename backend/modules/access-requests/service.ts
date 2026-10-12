@@ -73,6 +73,27 @@ export class AccessRequestService {
     } as any;
 
     await db.collection('access_requests').doc(newRequest.id).set(newRequest);
+
+    try {
+      const { sendPushNotification } = await import('../../services/pushService');
+      sendPushNotification({
+        title: '🔑 New Access Request',
+        body: `${label || 'A student'} requested access to ${newRequest.contentName || 'course content'}.`,
+        targetRole: 'admin',
+        excludeUserId: newRequest.studentId,
+        data: {
+          targetTab: 'lms',
+          targetSub: 'lms-access',
+          screen: 'lms',
+          subTab: 'lms-access',
+          requestId: newRequest.id,
+          studentId: newRequest.studentId,
+          contentId: newRequest.contentId || '',
+          dedupeId: `access_req_${newRequest.id}`
+        }
+      }).catch(err => console.log('[Push] Access request push note:', err?.message));
+    } catch (_) {}
+
     return newRequest;
   }
 
@@ -314,10 +335,15 @@ export class AccessRequestService {
         title: 'Access Request Approved',
         body: `Your request for ${request.contentName || 'content'} has been approved!`,
         targetUserId: request.studentId,
+        excludeUserId: adminId,
         data: {
           targetTab: 'lms',
-          targetSub: 'courses',
-          contentId: request.contentId
+          targetSub: 'recorded',
+          screen: 'lms',
+          subTab: 'recorded',
+          contentId: request.contentId || '',
+          requestId: requestId,
+          dedupeId: `access_req_approved_${requestId}`
         }
       }).catch(() => {});
     } catch (_) {}
@@ -340,6 +366,25 @@ export class AccessRequestService {
       updatedAt: new Date().toISOString(),
       updatedBy: adminId
     });
+
+    try {
+      const { sendPushNotification } = await import('../../services/pushService');
+      sendPushNotification({
+        title: '❌ Access Request Rejected',
+        body: `Your request for ${request.contentName || 'content'} was declined${reason ? `: ${reason}` : '.'}`,
+        targetUserId: request.studentId,
+        excludeUserId: adminId,
+        data: {
+          targetTab: 'lms',
+          targetSub: 'recorded',
+          screen: 'lms',
+          subTab: 'recorded',
+          contentId: request.contentId || '',
+          requestId: requestId,
+          dedupeId: `access_req_rejected_${requestId}`
+        }
+      }).catch(err => console.log('[Push] Access reject push note:', err?.message));
+    } catch (_) {}
 
     return { success: true };
   }
@@ -787,14 +832,14 @@ export class AccessRequestService {
 
   // ─── Admin: Request History (Approved + Rejected) ────────────────────────────────────────────
 
-  async listHistory(status?: 'APPROVED' | 'REJECTED') {
+  async listHistory(status?: 'APPROVED' | 'REJECTED' | 'REVOKED') {
     let query: FirebaseFirestore.Query = db.collection('access_requests');
 
     if (status) {
       query = query.where('status', '==', status);
     } else {
-      // Return both APPROVED and REJECTED
-      query = query.where('status', 'in', ['APPROVED', 'REJECTED']);
+      // Return APPROVED, REJECTED, and REVOKED for full audit trail
+      query = query.where('status', 'in', ['APPROVED', 'REJECTED', 'REVOKED']);
     }
 
     // Removed orderBy('updatedAt') to prevent Firestore composite index 500 error
@@ -812,6 +857,10 @@ export class AccessRequestService {
     return Promise.all(requests.map(async (req: any) => {
       let studentDoc = await db.collection(STUDENT_COLLECTIONS.PROFILES).doc(req.studentId).get();
       let student = studentDoc.exists ? studentDoc.data() : null;
+      if (!student) {
+        const legacyDoc = await db.collection('students').doc(req.studentId).get();
+        if (legacyDoc.exists) student = legacyDoc.data();
+      }
       if (!student) {
         const userDoc = await db.collection('users').doc(req.studentId).get();
         if (userDoc.exists) student = userDoc.data();
@@ -836,10 +885,17 @@ export class AccessRequestService {
       const regNo = student?.username || student?.regNo || '';
       const finalName = (regNo && regNo !== name) ? `${name} (${regNo})` : name;
 
+      const batchName = req.batchName
+        || student?.batch
+        || student?.batchName
+        || (Array.isArray(student?.batches) && student.batches.length > 0 ? student.batches[0] : null)
+        || null;
+
       return {
         ...req,
         studentName: finalName,
         studentEmail: student?.email || '',
+        batchName,
         grant,
         hoursLeft
       };

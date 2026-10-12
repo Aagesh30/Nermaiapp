@@ -143,6 +143,35 @@ export class StaffController {
                 await db.collection("users").doc(userId).set(userPayload);
             }
 
+            // Trigger push notification to admin if a teacher / faculty is added
+            const isTeacher = resolvedRole === "teacher" ||
+                String(designation || "").toLowerCase().includes("teacher") ||
+                String(role || "").toLowerCase() === "teacher" ||
+                String(department || "").toLowerCase().includes("faculty") ||
+                String(department || "").toLowerCase().includes("teaching");
+
+            if (isTeacher) {
+                try {
+                    const { sendPushNotification } = await import("../../../services/pushService");
+                    const teacherName = `${firstName} ${lastName}`.trim();
+                    sendPushNotification({
+                        title: "👨‍🏫 New Teacher Added",
+                        body: `${teacherName} (${designation || 'Faculty'}) has been registered.`,
+                        targetRole: "admin",
+                        excludeUserId: (req as any).user?.userId || createdBy || null,
+                        data: {
+                            targetTab: "lms",
+                            targetSub: "lms-teachers",
+                            screen: "lms",
+                            subTab: "lms-teachers",
+                            staffId: id,
+                            teacherId: id,
+                            dedupeId: `teacher_added_${id}`
+                        }
+                    }).catch(err => console.log("[Push] Teacher creation push note:", err?.message));
+                } catch (_) {}
+            }
+
             return res.status(201).json({
                 success: true,
                 message: "Admin created successfully",

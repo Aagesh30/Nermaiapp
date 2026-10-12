@@ -66,20 +66,27 @@ export class AnnouncementController {
 
             await db.collection(COLLECTION).doc(id).set(payload);
 
-            // Dispatch remote push notification on notice creation
+            // Dispatch remote push notification on notice creation (guests included for general notices)
             try {
                 const { sendPushNotification } = await import("../../services/pushService");
-                const targetRole = targetDashboard === "student" || targetDashboard === "paid" ? "student" : (targetDashboard === "free" ? "guest" : "all");
+                const isBatchSpecific = targetDashboard === "batch" || (!!targetBatch && targetBatch !== "all");
+                const targetRole = isBatchSpecific
+                    ? "student"
+                    : (targetDashboard === "free" ? "guest" : "all");
+
                 sendPushNotification({
                     title: title.trim(),
                     body: content.trim(),
                     targetRole: targetRole as any,
-                    targetBatch: targetBatch || null,
+                    targetBatch: isBatchSpecific ? (targetBatch || null) : null,
+                    excludeUserId: (req as any).user?.userId || createdBy || null,
                     data: {
                         targetTab: targetDashboard === "free" ? "home" : "dashboard",
                         targetSub: "notices",
                         screen: targetDashboard === "free" ? "home" : "dashboard",
-                        subTab: "notices"
+                        subTab: "notices",
+                        announcementId: id,
+                        dedupeId: `announcement_${id}`
                     }
                 }).catch(e => console.log("[AnnouncementController] Push note:", e?.message));
             } catch (_) {}

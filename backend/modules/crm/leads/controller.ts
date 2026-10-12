@@ -75,6 +75,7 @@ export class LeadsController {
                 title: "💬 New Student Inquiry",
                 body: `${name} (${phone}) registered as a new prospect.`,
                 targetRole: "admin",
+                excludeUserId: (req as any).user?.userId || (createdBy !== "system" ? createdBy : null) || null,
                 data: {
                     targetTab: "crm",
                     targetSub: "leads",

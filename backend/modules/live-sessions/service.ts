@@ -599,8 +599,8 @@ export class LiveSessionService {
             derivedStatus = 'RECORDED_AVAILABLE';
         }
 
-        const scheduledStartTime = cls.scheduledStartTime || null;
-        const durationMinutes = cls.expectedDurationMinutes || 60;
+        const scheduledStartTime = cls.scheduledStartTime || resolvedSession.scheduledStartTime || null;
+        const durationMinutes = cls.expectedDurationMinutes || resolvedSession.expectedDurationMinutes || 60;
 
         const courseName = courseMap.get(cls.courseId) || cls.courseName || '';
         let batchName = '';
@@ -672,8 +672,8 @@ export class LiveSessionService {
         // Show denied-access classes if they are scheduled or live so students can request access
         const requestableStatuses = ['SCHEDULED', 'DRAFT', 'LIVE', 'JOINING', 'HOST_CONNECTED', 'ATTENDANCE_RUNNING'];
         if (requestableStatuses.includes(derivedStatus)) {
-          const scheduledStartTime = cls.scheduledStartTime || null;
-          const durationMinutes = cls.expectedDurationMinutes || 60;
+          const scheduledStartTime = cls.scheduledStartTime || resolvedSession.scheduledStartTime || null;
+          const durationMinutes = cls.expectedDurationMinutes || resolvedSession.expectedDurationMinutes || 60;
           const courseName = courseMap.get(cls.courseId) || cls.courseName || '';
           let batchName = '';
           if (targetBatches.length > 0) {
@@ -1098,6 +1098,7 @@ Launch Payload Exists: ${!!session.launchPayload}
             body: `${clsData?.title || 'Live Session'} is now live! Tap to join.`,
             targetRole: 'student',
             targetBatch: clsData?.targetBatchIds?.[0] || null,
+            excludeUserId: session.hostId || null,
             data: {
               targetTab: 'lms',
               targetSub: 'live-classes',
@@ -1240,6 +1241,10 @@ Launch Payload Exists: ${!!session.launchPayload}
         }).catch(() => {});
       }
     }
+
+    // Invalidate all live session caches and course caches immediately
+    this.invalidateListSessionsCache();
+    generalCache.invalidatePrefix('courses:');
 
     await this.notifyLiveClassIndexChanged(targetClassId, 'DELETED');
     return { success: true };

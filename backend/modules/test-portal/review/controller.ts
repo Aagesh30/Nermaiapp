@@ -1327,4 +1327,171 @@ export class ReviewController {
             });
         }
     }
+
+    /**
+     * BATCH ACADEMIC ANALYTICS
+     * GET /api/test-portal/review/batch-analytics?batchName=...
+     * Aggregates recent tests, identifying batch trends, top improvers, and at-risk students
+     */
+    static async getBatchAcademicAnalytics(req: Request, res: Response) {
+        try {
+            const { batchName } = req.query;
+
+            // Fetch the last 10 published tests
+            const testsSnapshot = await db.collection("tests")
+                .where("isDeleted", "==", false)
+                .where("published", "==", true)
+                .limit(15)
+                .get();
+
+            let allTests = testsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+            // Sort tests chronologically descending, then pick up to 10
+            allTests.sort((a: any, b: any) => {
+                const timeA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;
+                const timeB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;
+                return timeB - timeA;
+            });
+            const recentTests: any[] = allTests.slice(0, 10);
+
+            // Fetch students for the target batch if specified
+            let batchStudentQuery: any = db.collection("students").where("isDeleted", "==", false);
+            if (batchName && String(batchName).trim() && String(batchName) !== "all") {
+                batchStudentQuery = batchStudentQuery.where("batch", "==", String(batchName));
+            }
+            const studentsSnap = await batchStudentQuery.get();
+            const enrolledStudents: any[] = studentsSnap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+            const studentIdSet = new Set(enrolledStudents.map((s: any) => s.id));
+            const studentUserMap = new Map();
+            enrolledStudents.forEach((s: any) => {
+                studentUserMap.set(s.id, s);
+                if (s.userId) studentUserMap.set(s.userId, s);
+            });
+
+            // Gather evaluated results for these tests
+            const testOverviewList: any[] = [];
+            const studentRecentScores: Record<string, { studentName: string, scores: { testId: string, testTitle: string, pct: number, date: any }[] }> = {};
+
+            for (const t of recentTests) {
+                const resultsSnap = await db.collection("results")
+                    .where("testId", "==", t.id)
+                    .where("isDeleted", "==", false)
+                    .get();
+
+                let results = resultsSnap.docs.map((doc: any) => doc.data());
+                if (studentIdSet.size > 0 && batchName && String(batchName) !== "all") {
+                    results = results.filter((r: any) => studentIdSet.has(r.studentId) || (r.userId && studentUserMap.has(r.userId)));
+                }
+
+                const totalSubmissions = results.length;
+                let sumPct = 0;
+                let passCount = 0;
+
+                results.forEach((r: any) => {
+                    const pct = r.percentage !== undefined ? Number(r.percentage) : (r.totalMarks > 0 ? (r.obtainedMarks / r.totalMarks) * 100 : 0);
+                    sumPct += pct;
+                    if (pct >= 40) passCount++;
+
+                    // Track per student for trajectory
+                    const sid = r.studentId || r.userId;
+                    if (sid) {
+                        const sObj = studentUserMap.get(sid) || { name: r.studentName || "Student" };
+                        if (!studentRecentScores[sid]) {
+                            studentRecentScores[sid] = {
+                                studentName: sObj.name || r.studentName || "Candidate",
+                                scores: []
+                            };
+                        }
+                        studentRecentScores[sid].scores.push({
+                            testId: t.id,
+                            testTitle: t.title || "Mock Test",
+                            pct: Math.round(pct),
+                            date: t.createdAt
+                        });
+                    }
+                });
+
+                const avgScore = totalSubmissions > 0 ? Math.round(sumPct / totalSubmissions) : 0;
+                const passRate = totalSubmissions > 0 ? Math.round((passCount / totalSubmissions) * 100) : 0;
+                const participationRate = enrolledStudents.length > 0 ? Math.round((totalSubmissions / enrolledStudents.length) * 100) : 0;
+
+                testOverviewList.push({
+                    testId: t.id,
+                    title: t.title || "Untitled Mock",
+                    totalSubmissions,
+                    avgScore,
+                    passRate,
+                    participationRate,
+                    date: t.createdAt ? (t.createdAt.toDate ? t.createdAt.toDate().toISOString() : t.createdAt) : null
+                });
+            }
+
+            // Identify Top Improvers & At-Risk Students
+            const topImprovers: any[] = [];
+            const atRiskStudents: any[] = [];
+
+            Object.entries(studentRecentScores).forEach(([sid, record]) => {
+                const sScores = record.scores; // in reverse chronological order
+                const latest = sScores[0];
+                const prev = sScores[1];
+
+                if (latest && prev) {
+                    const delta = latest.pct - prev.pct;
+                    if (delta > 5) {
+                        topImprovers.push({
+                            studentId: sid,
+                            studentName: record.studentName,
+                            delta,
+                            latestScore: latest.pct,
+                            previousScore: prev.pct
+                        });
+                    }
+                }
+
+                // Check At-Risk criteria
+                // 1. Latest score under 35%
+                // 2. Two falling scores in a row
+                let isFallingTwice = false;
+                if (sScores.length >= 3) {
+                    if (sScores[0].pct < sScores[1].pct && sScores[1].pct < sScores[2].pct) {
+                        isFallingTwice = true;
+                    }
+                }
+
+                const sObj = studentUserMap.get(sid);
+                const isCriticalLow = latest && latest.pct < 35;
+
+                if (isCriticalLow || isFallingTwice) {
+                    atRiskStudents.push({
+                        studentId: sid,
+                        studentName: record.studentName,
+                        latestScore: latest ? latest.pct : 0,
+                        reason: isCriticalLow ? "Score critically below 35%" : "Falling test scores consecutively",
+                        unpaidFees: sObj?.totalFees && sObj?.feesPaid ? (Number(sObj.totalFees) - Number(sObj.feesPaid)) : 0
+                    });
+                }
+            });
+
+            // Sort top improvers descending
+            topImprovers.sort((a, b) => b.delta - a.delta);
+
+            return res.status(200).json({
+                success: true,
+                data: {
+                    batchName: batchName || "all",
+                    enrolledCount: enrolledStudents.length,
+                    testOverview: testOverviewList,
+                    topImprovers: topImprovers.slice(0, 5),
+                    atRiskStudents: atRiskStudents.slice(0, 10)
+                }
+            });
+
+        } catch (error: any) {
+            return res.status(500).json({
+                success: false,
+                message: error.message || "An error occurred while generating batch academic analytics"
+            });
+        }
+    }
 }
+

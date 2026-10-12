@@ -68,6 +68,29 @@ export class AdminApprovalService {
     };
 
     await db.collection(COLLECTION).doc(id).set(request);
+
+    try {
+      const { sendPushNotification } = await import('../../services/pushService');
+      const requester = params.requestedBy || 'An admin';
+      const feature = params.featureKey || 'a system change';
+      sendPushNotification({
+        title: '🛡️ New Approval Request',
+        body: `${requester} submitted an edit-by-approval request for ${feature}.`,
+        targetRole: 'super_admin',
+        excludeUserId: params.requestedByUserId || null,
+        data: {
+          targetTab: 'erp',
+          targetSub: 'approvals',
+          screen: 'erp',
+          subTab: 'approvals',
+          approvalId: id,
+          featureKey: params.featureKey,
+          actionType: params.actionType,
+          dedupeId: `approval_req_${id}`
+        }
+      }).catch(err => console.log('[Push] Admin approval push note:', err?.message));
+    } catch (_) {}
+
     return request;
   }
 

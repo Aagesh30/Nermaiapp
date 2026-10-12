@@ -404,6 +404,53 @@ export class CourseService {
 
     const createdClass = await this.classRepo.create(classData, userId);
     generalCache.invalidatePrefix('courses:');
+
+    const isRecorded = classData.classType === 'recorded' || (classData.classType as string) === 'youtube_recorded' || !!classData.encryptedVideoId;
+    if (isRecorded) {
+      try {
+        const { sendPushNotification } = await import('../../services/pushService');
+        const classTitle = createdClass.title || 'A new recorded class';
+        sendPushNotification({
+          title: '🎥 New Recorded Class Added',
+          body: `"${classTitle}" has been added to LMS.`,
+          targetRole: 'admin',
+          excludeUserId: userId,
+          data: {
+            targetTab: 'lms',
+            targetSub: 'recorded',
+            screen: 'lms',
+            subTab: 'recorded',
+            classId: createdClass.id,
+            courseId: course.id,
+            dedupeId: `recorded_class_${createdClass.id}_${Date.now()}`
+          }
+        }).catch(err => console.log('[Push] Recorded class push note:', err?.message));
+      } catch (_) {}
+    }
+
+    const isLive = ['live', 'zoom_live', 'youtube_live'].includes(classData.classType);
+    if (isLive) {
+      try {
+        const { sendPushNotification } = await import('../../services/pushService');
+        const classTitle = createdClass.title || 'A new live class';
+        sendPushNotification({
+          title: '🔴 Live Class Scheduled',
+          body: `"${classTitle}" has been scheduled in LMS live classes.`,
+          targetRole: 'admin',
+          excludeUserId: userId,
+          data: {
+            targetTab: 'lms',
+            targetSub: 'live-classes',
+            screen: 'lms',
+            subTab: 'live-classes',
+            classId: createdClass.id,
+            courseId: course.id,
+            dedupeId: `live_class_sched_${createdClass.id}_${Date.now()}`
+          }
+        }).catch(err => console.log('[Push] Live class schedule push note:', err?.message));
+      } catch (_) {}
+    }
+
     return createdClass;
   }
 
@@ -546,7 +593,28 @@ export class CourseService {
         metadata: { classId: id, courseId: course?.id || 'unknown' }
       });
     } catch (err) {}
-    
+
+    // Dispatch push notification to admin about recorded class upload
+    try {
+      const { sendPushNotification } = await import('../../services/pushService');
+      const classTitle = classDoc.title || 'Class';
+      sendPushNotification({
+        title: '🎥 Recorded Class Uploaded',
+        body: `Recording for "${classTitle}" is now available.`,
+        targetRole: 'admin',
+        excludeUserId: userId,
+        data: {
+          targetTab: 'lms',
+          targetSub: 'recorded',
+          screen: 'lms',
+          subTab: 'recorded',
+          classId: id,
+          courseId: course?.id || '',
+          dedupeId: `recorded_class_upload_${id}`
+        }
+      }).catch(err => console.log('[Push] Class recording upload push note:', err?.message));
+    } catch (_) {}
+
     return await this.classRepo.findById(id);
   }
 

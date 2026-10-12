@@ -99,19 +99,25 @@ export class AnnouncementService {
    */
   private async dispatchPushNotifications(announcement: IAnnouncement): Promise<void> {
     const { sendPushNotification } = await import('../../services/pushService');
-    const targetRole = announcement.visibility === 'global' ? 'all' : (announcement.visibility === 'batch' ? 'student' : 'student');
-    const targetBatch = announcement.targetBatchIds && announcement.targetBatchIds.length > 0 ? announcement.targetBatchIds[0] : null;
+    const hasBatches = Array.isArray(announcement.targetBatchIds) && announcement.targetBatchIds.length > 0;
+    const isBatch = announcement.visibility === 'batch' && hasBatches;
+    const targetRole = isBatch ? 'student' : 'all';
+    const targetBatch = isBatch && announcement.targetBatchIds ? announcement.targetBatchIds[0] : null;
 
     await sendPushNotification({
-      title: 'New Announcement: ' + announcement.title,
-      body: announcement.content || announcement.title,
+      title: 'New Announcement: ' + (announcement.title || 'Academy Notice'),
+      body: announcement.content || announcement.title || 'Please view the latest announcement.',
       targetRole: targetRole as any,
       targetBatch,
+      excludeUserId: announcement.authorId || null,
       data: {
         targetTab: 'dashboard',
         targetSub: 'notices',
+        screen: 'dashboard',
+        subTab: 'notices',
         type: 'announcement',
-        announcementId: announcement.id
+        announcementId: announcement.id,
+        dedupeId: `announcement_svc_${announcement.id}`
       }
     }).catch(err => {
       console.warn('[AnnouncementService] Push dispatch note:', err?.message);

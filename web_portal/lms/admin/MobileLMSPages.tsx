@@ -101,6 +101,10 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
   const [sacsSubTab, setSacsSubTab] = useState<'requests' | 'history' | 'permanent' | 'permissions'>('requests');
   const [sacsDurationDays, setSacsDurationDays] = useState<number>(7);
   const [sacsProcessingId, setSacsProcessingId] = useState<string | null>(null);
+  const [sacsSearch, setSacsSearch] = useState<string>('');
+  const [sacsBatchFilter, setSacsBatchFilter] = useState<string>('all');
+  const [sacsTypeFilter, setSacsTypeFilter] = useState<string>('all');
+  const [sacsBatches, setSacsBatches] = useState<string[]>([]);
   const [sacsConfirmModal, setSacsConfirmModal] = useState<{
     type: 'reject' | 'revert';
     item: any;
@@ -156,26 +160,32 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
   // ── Data Fetching ─────────────────────────────────────────────────────────
   const fetchCurriculum = async () => {
     setLoading(true);
+    const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(null), 6000));
     try {
-      const [cRes, sRes, tRes, subRes, staffRes] = await Promise.all([
-        CourseApi.listCourses().catch(() => ({ data: { data: [] } })),
-        CourseApi.listAllSubjects().catch(() => ({ data: { data: [] } })),
-        CourseApi.listAllTopics().catch(() => ({ data: { data: [] } })),
-        CourseApi.listAllSubtopics().catch(() => ({ data: { data: [] } })),
-        api.get('/erp/staff').catch(() => ({ data: { data: [] } })),
+      // 1. Fetch courses immediately
+      CourseApi.listCourses()
+        .then((res) => {
+          const list = res.data?.data || [];
+          if (Array.isArray(list) && list.length > 0) setCourses(list);
+        })
+        .catch(() => {});
+
+      // 2. Fetch other sections with safety timeout
+      await Promise.race([
+        Promise.allSettled([
+          CourseApi.listCourses().then((r) => setCourses(r.data?.data || [])).catch(() => {}),
+          CourseApi.listAllSubjects().then((r) => setSubjects(r.data?.data || [])).catch(() => {}),
+          CourseApi.listAllTopics().then((r) => setTopics(r.data?.data || [])).catch(() => {}),
+          CourseApi.listAllSubtopics().then((r) => setSubtopics(r.data?.data || [])).catch(() => {}),
+          api.get('/erp/staff').then((r) => {
+            const list = r.data?.data || r.data || [];
+            if (Array.isArray(list)) {
+              setTeachers(list.filter((s: any) => s.role === 'teacher' && !s.isDeleted));
+            }
+          }).catch(() => {}),
+        ]),
+        timeoutPromise,
       ]);
-
-      const cList = cRes.data?.data || [];
-      const sList = sRes.data?.data || [];
-      const tList = tRes.data?.data || [];
-      const subList = subRes.data?.data || [];
-      const staffList = staffRes.data?.data || staffRes.data || [];
-
-      setCourses(cList);
-      setSubjects(sList);
-      setTopics(tList);
-      setSubtopics(subList);
-      setTeachers(staffList.filter((s: any) => s.role === 'teacher' && !s.isDeleted));
     } catch (err) {
       console.error('[MobileLMSPages] Curriculum fetch error:', err);
     } finally {
@@ -219,17 +229,24 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
   const fetchSacs = async () => {
     setLoading(true);
     try {
-      const [reqRes, histRes, permRes] = await Promise.all([
+      const [reqRes, histRes, permRes, batchRes] = await Promise.all([
         AccessRulesApi.listAccessRequests().catch(() => ({ data: { data: [] } })),
         AccessRulesApi.listAccessHistory().catch(() => ({ data: { data: [] } })),
         AccessRulesApi.listPermanentGrants().catch(() => ({ data: { data: [] } })),
+        BatchApi.listBatches().catch(() => ({ data: { data: [] } })),
       ]);
       const reqList = reqRes?.data?.data || reqRes?.data || [];
       const histList = histRes?.data?.data || histRes?.data || [];
       const permList = permRes?.data?.data || permRes?.data || [];
+      const bList = (batchRes?.data?.data || batchRes?.data || [])
+        .map((b: any) => b.batchName || b.name || b.id)
+        .filter(Boolean);
       setSacsRequests(Array.isArray(reqList) ? reqList : []);
       setSacsHistory(Array.isArray(histList) ? histList : []);
       setSacsPermanent(Array.isArray(permList) ? permList : []);
+      if (bList.length > 0) {
+        setSacsBatches(bList);
+      }
     } catch (err) {
       console.error('[MobileLMSPages] SACS fetch error:', err);
     } finally {
@@ -313,6 +330,7 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
           if (!snap.empty) {
             const list = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((c: any) => !c.isDeleted);
             setCourses(list);
+            setLoading(false);
           }
         });
         unsubS = onSnapshot(collection(db, 'subjects'), (snap) => {
@@ -895,14 +913,15 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
                       backgroundColor: darkMode ? '#1e293b' : '#f0fdf4',
                       borderColor: '#22c55e',
                       borderWidth: 1,
-                      paddingHorizontal: 14,
-                      height: 36,
+                      paddingHorizontal: 12,
+                      height: 38,
                       flex: 1,
+                      minWidth: 150,
                     },
                   ]}
                 >
                   <Ionicons name="document-text-outline" size={15} color="#16a34a" />
-                  <Text style={[styles.primaryBtnText, { color: '#16a34a' }]}>Upload Syllabus Excel</Text>
+                  <Text style={[styles.primaryBtnText, { color: '#16a34a', fontSize: 13 }]}>Upload Syllabus Excel</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -911,7 +930,7 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
                     setCourseForm({ name: '', description: '', visibility: 'private', price: '0', tags: '' });
                     setIsModalOpen(true);
                   }}
-                  style={[styles.primaryBtn, { backgroundColor: themeRed, paddingHorizontal: 14, height: 40, flex: 1 }]}
+                  style={[styles.primaryBtn, { backgroundColor: themeRed, paddingHorizontal: 14, height: 38, flex: 1, minWidth: 120 }]}
                 >
                   <Ionicons name="add" size={16} color="#fff" />
                   <Text style={styles.primaryBtnText}>Add Course</Text>
@@ -933,24 +952,61 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
           </View>
 
           {/* List */}
-          {loading ? (
+          {loading && courses.length === 0 ? (
             <ActivityIndicator color={themeRed} size="large" style={{ marginVertical: 30 }} />
+          ) : courses.filter((c) => (c.name || c.title || '').toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
+            <View style={{ padding: 24, alignItems: 'center', backgroundColor: bgCard, borderRadius: 12, borderWidth: 1, borderColor }}>
+              <Ionicons name="school-outline" size={36} color={textSecondary} />
+              <Text style={{ fontSize: 14, fontWeight: '700', color: textPrimary, marginTop: 8 }}>No Courses Found</Text>
+              <Text style={{ fontSize: 12, color: textSecondary, marginTop: 2, textAlign: 'center' }}>
+                Tap "+ Add Course" or "Upload Syllabus Excel" to publish courses.
+              </Text>
+            </View>
           ) : (
             courses
               .filter((c) => (c.name || c.title || '').toLowerCase().includes(searchQuery.toLowerCase()))
               .map((c) => (
                 <View key={c.id} style={[styles.card, { backgroundColor: bgCard, borderColor }]}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <View style={{ flex: 1, paddingRight: 8 }}>
-                      <Text style={{ fontSize: 17, fontWeight: '800', color: textPrimary }}>{c.name || c.title}</Text>
-                      {c.description ? (
-                        <Text style={{ fontSize: 14, color: textSecondary, marginTop: 4 }} numberOfLines={2}>
-                          {c.description}
-                        </Text>
-                      ) : null}
-                      <View style={{ flexDirection: 'row', gap: 6, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <View style={{ gap: 10 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <View style={{ flex: 1, paddingRight: 8 }}>
+                        <Text style={{ fontSize: 16, fontWeight: '800', color: textPrimary }}>{c.name || c.title}</Text>
+                        {c.description ? (
+                          <Text style={{ fontSize: 13, color: textSecondary, marginTop: 3 }} numberOfLines={2}>
+                            {c.description}
+                          </Text>
+                        ) : null}
+                      </View>
+                      <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                        <TouchableOpacity
+                          onPress={() => {
+                            setEditingItem(c);
+                            setCourseForm({
+                              name: c.name || c.title || '',
+                              description: c.description || '',
+                              visibility: c.visibility || 'private',
+                              price: String(c.price || '0'),
+                              tags: Array.isArray(c.tags) ? c.tags.join(', ') : '',
+                            });
+                            setIsModalOpen(true);
+                          }}
+                          style={[styles.smallBtn, { backgroundColor: inputBg, borderColor, borderWidth: 1 }]}
+                        >
+                          <Ionicons name="pencil" size={13} color={textPrimary} />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => handleDeleteCourse(c)}
+                          style={[styles.smallBtn, { backgroundColor: '#fee2e2' }]}
+                        >
+                          <Ionicons name="trash" size={13} color="#dc2626" />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, paddingTop: 4, borderTopWidth: 1, borderTopColor: borderColor }}>
+                      <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                         <View style={[styles.pill, { backgroundColor: c.visibility === 'public' ? '#dcfce7' : '#f3f4f6' }]}>
-                          <Text style={{ fontSize: 12, fontWeight: '800', color: c.visibility === 'public' ? '#16a34a' : '#6b7280' }}>
+                          <Text style={{ fontSize: 11, fontWeight: '800', color: c.visibility === 'public' ? '#16a34a' : '#6b7280' }}>
                             {(c.visibility || 'private').toUpperCase()}
                           </Text>
                         </View>
@@ -960,14 +1016,12 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
                           <Text style={{ fontSize: 13, color: textSecondary }}>Free</Text>
                         )}
                         {Array.isArray(c.tags) && c.tags.length > 0 && (
-                          <Text style={{ fontSize: 12, color: textSecondary, fontStyle: 'italic' }}>
+                          <Text style={{ fontSize: 11, color: textSecondary, fontStyle: 'italic' }}>
                             • {c.tags.slice(0, 3).join(', ')}
                           </Text>
                         )}
                       </View>
-                    </View>
 
-                    <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
                       <TouchableOpacity
                         onPress={() => {
                           setSelectedCourseForExcel(c.id);
@@ -982,33 +1036,12 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
                             flexDirection: 'row',
                             gap: 4,
                             paddingHorizontal: 10,
+                            paddingVertical: 5,
                           },
                         ]}
                       >
                         <Ionicons name="sync-outline" size={13} color="#16a34a" />
                         <Text style={{ fontSize: 12, fontWeight: '700', color: '#16a34a' }}>Sync Syllabus</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={() => {
-                          setEditingItem(c);
-                          setCourseForm({
-                            name: c.name || c.title || '',
-                            description: c.description || '',
-                            visibility: c.visibility || 'private',
-                            price: String(c.price || '0'),
-                            tags: Array.isArray(c.tags) ? c.tags.join(', ') : '',
-                          });
-                          setIsModalOpen(true);
-                        }}
-                        style={[styles.smallBtn, { backgroundColor: inputBg, borderColor, borderWidth: 1 }]}
-                      >
-                        <Ionicons name="pencil" size={13} color={textPrimary} />
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={() => handleDeleteCourse(c)}
-                        style={[styles.smallBtn, { backgroundColor: '#fee2e2' }]}
-                      >
-                        <Ionicons name="trash" size={13} color="#dc2626" />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -1022,8 +1055,8 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
       {lmsSub === 'lms-subjects' && (
         <View style={{ gap: 14 }}>
           <View style={[styles.card, { backgroundColor: bgCard, borderColor }]}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <View style={{ flex: 1, minWidth: 160 }}>
                 <Text style={[styles.pageTitle, { color: textPrimary }]}>Subject Management</Text>
                 <Text style={{ fontSize: 13, color: textSecondary, marginTop: 2 }}>
                   {subjects.length} subjects configured.
@@ -1035,7 +1068,7 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
                   setSubjectForm({ name: '', description: '', courseId: courses[0]?.id || '', order: '0' });
                   setIsModalOpen(true);
                 }}
-                style={[styles.primaryBtn, { backgroundColor: themeRed, paddingHorizontal: 14, height: 40 }]}
+                style={[styles.primaryBtn, { backgroundColor: themeRed, paddingHorizontal: 14, height: 38 }]}
               >
                 <Ionicons name="add" size={16} color="#fff" />
                 <Text style={styles.primaryBtnText}>Add Subject</Text>
@@ -1130,8 +1163,8 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
       {lmsSub === 'lms-topics' && (
         <View style={{ gap: 14 }}>
           <View style={[styles.card, { backgroundColor: bgCard, borderColor }]}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <View style={{ flex: 1, minWidth: 160 }}>
                 <Text style={[styles.pageTitle, { color: textPrimary }]}>Topic Management</Text>
                 <Text style={{ fontSize: 13, color: textSecondary, marginTop: 2 }}>
                   {topics.length} topics configured.
@@ -1143,7 +1176,7 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
                   setTopicForm({ name: '', description: '', subjectId: subjects[0]?.id || '', order: '0' });
                   setIsModalOpen(true);
                 }}
-                style={[styles.primaryBtn, { backgroundColor: themeRed, paddingHorizontal: 14, height: 40 }]}
+                style={[styles.primaryBtn, { backgroundColor: themeRed, paddingHorizontal: 14, height: 38 }]}
               >
                 <Ionicons name="add" size={16} color="#fff" />
                 <Text style={styles.primaryBtnText}>Add Topic</Text>
@@ -1238,8 +1271,8 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
       {lmsSub === 'lms-subtopics' && (
         <View style={{ gap: 14 }}>
           <View style={[styles.card, { backgroundColor: bgCard, borderColor }]}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <View style={{ flex: 1, minWidth: 160 }}>
                 <Text style={[styles.pageTitle, { color: textPrimary }]}>Subtopic Management</Text>
                 <Text style={{ fontSize: 13, color: textSecondary, marginTop: 2 }}>
                   {subtopics.length} subtopics configured.
@@ -1251,7 +1284,7 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
                   setSubtopicForm({ name: '', description: '', topicId: topics[0]?.id || '', order: '0' });
                   setIsModalOpen(true);
                 }}
-                style={[styles.primaryBtn, { backgroundColor: themeRed, paddingHorizontal: 14, height: 40 }]}
+                style={[styles.primaryBtn, { backgroundColor: themeRed, paddingHorizontal: 14, height: 38 }]}
               >
                 <Ionicons name="add" size={16} color="#fff" />
                 <Text style={styles.primaryBtnText}>Add Subtopic</Text>
@@ -1346,8 +1379,8 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
       {lmsSub === 'lms-teachers' && (
         <View style={{ gap: 14 }}>
           <View style={[styles.card, { backgroundColor: bgCard, borderColor }]}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <View style={{ flex: 1, minWidth: 160 }}>
                 <Text style={[styles.pageTitle, { color: textPrimary }]}>Teachers & Staffs</Text>
                 <Text style={{ fontSize: 13, color: textSecondary, marginTop: 2 }}>
                   {teachers.length} faculty members registered.
@@ -1359,7 +1392,7 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
                   setTeacherForm({ firstName: '', lastName: '', email: '', phone: '', loginUsername: '', loginPassword: '' });
                   setIsModalOpen(true);
                 }}
-                style={[styles.primaryBtn, { backgroundColor: themeRed, paddingHorizontal: 14, height: 40 }]}
+                style={[styles.primaryBtn, { backgroundColor: themeRed, paddingHorizontal: 14, height: 38 }]}
               >
                 <Ionicons name="person-add" size={16} color="#fff" />
                 <Text style={styles.primaryBtnText}>Add Teacher</Text>
@@ -1431,8 +1464,8 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
       {lmsSub === 'lms-zoom-accounts' && (
         <View style={{ gap: 14 }}>
           <View style={[styles.card, { backgroundColor: bgCard, borderColor }]}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <View style={{ flex: 1, minWidth: 160 }}>
                 <Text style={[styles.pageTitle, { color: textPrimary }]}>Zoom SDK Accounts</Text>
                 <Text style={{ fontSize: 13, color: textSecondary, marginTop: 2 }}>
                   {zoomAccounts.length} API credentials configured.
@@ -1444,7 +1477,7 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
                   setZoomForm({ name: '', meetingSdkKey: '', meetingSdkSecret: '', s2sAccountId: '', s2sClientId: '', s2sClientSecret: '', priority: '1' });
                   setIsModalOpen(true);
                 }}
-                style={[styles.primaryBtn, { backgroundColor: themeRed, paddingHorizontal: 14, height: 40 }]}
+                style={[styles.primaryBtn, { backgroundColor: themeRed, paddingHorizontal: 14, height: 38 }]}
               >
                 <Ionicons name="add" size={16} color="#fff" />
                 <Text style={styles.primaryBtnText}>Add Account</Text>
@@ -1523,98 +1556,278 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
       )}
 
       {/* ─── 7. ACCESS CONTROL (SACS) ───────────────────────────────── */}
-      {lmsSub === 'lms-access' && (
+      {lmsSub === 'lms-access' && (() => {
+        // Compute combined batches
+        const combinedBatches = [...new Set([
+          ...sacsBatches,
+          ...sacsRequests.map(r => r.batchName || r.batchId).filter(Boolean),
+          ...sacsHistory.map(h => h.batchName || h.batchId).filter(Boolean)
+        ])].sort();
+
+        // Filter function for mobile SACS
+        const filterItems = (list: any[]) => {
+          const q = sacsSearch.trim().toLowerCase();
+          return list.filter((item) => {
+            const student = (item.studentName || item.studentId || '').toLowerCase();
+            const content = (item.contentName || item.entityName || item.resourceName || item.contentId || '').toLowerCase();
+            const reason = (item.reason || item.customReason || '').toLowerCase();
+            if (q && !student.includes(q) && !content.includes(q) && !reason.includes(q)) return false;
+
+            if (sacsBatchFilter !== 'all') {
+              if (item.batchId !== sacsBatchFilter && item.batchName !== sacsBatchFilter) return false;
+            }
+
+            if (sacsTypeFilter !== 'all') {
+              const rt = (item.requestType || item.entityType || 'CLASS').toUpperCase();
+              if (rt !== sacsTypeFilter) return false;
+            }
+
+            return true;
+          });
+        };
+
+        const filteredRequests = filterItems(sacsRequests);
+        const filteredHistory = filterItems(sacsHistory);
+        const filteredPermanent = filterItems(sacsPermanent);
+
+        return (
         <View style={{ gap: 14 }}>
-          <View style={[styles.card, { backgroundColor: bgCard, borderColor }]}>
-            <Text style={[styles.pageTitle, { color: textPrimary }]}>Smart Access Control (SACS)</Text>
-            <Text style={{ fontSize: 13, color: textSecondary, marginTop: 2 }}>
-              Manage access requests and permissions.
-            </Text>
+          {/* Red Section Title matching Image 2 style */}
+          <Text style={{ fontSize: 16, fontWeight: '800', color: themeRed, letterSpacing: -0.2 }}>
+            Smart Access Control & Permissions
+          </Text>
 
-            {/* Sub-tabs */}
-            <View style={{ flexDirection: 'row', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
-              <TouchableOpacity
-                onPress={() => setSacsSubTab('requests')}
-                style={[
-                  styles.tabBtn,
-                  { backgroundColor: sacsSubTab === 'requests' ? themeRed : inputBg, borderColor },
-                ]}
-              >
-                <Text style={{ fontSize: 13, fontWeight: '700', color: sacsSubTab === 'requests' ? '#fff' : textSecondary }}>
-                  Requests ({sacsRequests.length})
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => setSacsSubTab('history')}
-                style={[
-                  styles.tabBtn,
-                  { backgroundColor: sacsSubTab === 'history' ? themeRed : inputBg, borderColor },
-                ]}
-              >
-                <Text style={{ fontSize: 13, fontWeight: '700', color: sacsSubTab === 'history' ? '#fff' : textSecondary }}>
-                  History ({sacsHistory.length})
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => setSacsSubTab('permanent')}
-                style={[
-                  styles.tabBtn,
-                  { backgroundColor: sacsSubTab === 'permanent' ? themeRed : inputBg, borderColor },
-                ]}
-              >
-                <Text style={{ fontSize: 13, fontWeight: '700', color: sacsSubTab === 'permanent' ? '#fff' : textSecondary }}>
-                  Permanent ({sacsPermanent.length})
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => setSacsSubTab('permissions')}
-                style={[
-                  styles.tabBtn,
-                  { backgroundColor: sacsSubTab === 'permissions' ? themeRed : inputBg, borderColor },
-                ]}
-              >
-                <Text style={{ fontSize: 13, fontWeight: '700', color: sacsSubTab === 'permissions' ? '#fff' : textSecondary }}>
-                  Rules
-                </Text>
-              </TouchableOpacity>
-            </View>
+          {/* Full-Width Segmented Sub-Tabs matching Image 2 */}
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <TouchableOpacity
+              onPress={() => setSacsSubTab('requests')}
+              style={{
+                flex: 1,
+                paddingVertical: 12,
+                paddingHorizontal: 10,
+                borderRadius: 8,
+                backgroundColor: sacsSubTab === 'requests' ? themeRed : (darkMode ? '#1e1e2e' : '#f5f5f5'),
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderWidth: 1,
+                borderColor: sacsSubTab === 'requests' ? themeRed : borderColor,
+              }}
+            >
+              <Text style={{ fontSize: 13, fontWeight: '800', color: sacsSubTab === 'requests' ? '#ffffff' : textSecondary }}>
+                Requests ({sacsRequests.length})
+              </Text>
+            </TouchableOpacity>
 
-            {/* Duration Selector for Requests */}
-            {sacsSubTab === 'requests' && (
-              <View style={{ marginTop: 12, gap: 6 }}>
-                <Text style={[styles.label, { color: textSecondary }]}>Default Approval Duration</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-                  {[
-                    { label: '1 Day', days: 1 },
-                    { label: '3 Days', days: 3 },
-                    { label: '7 Days', days: 7 },
-                    { label: '14 Days', days: 14 },
-                    { label: '30 Days', days: 30 },
-                    { label: 'Perm.', days: 0 },
-                  ].map((preset) => {
-                    const isSelected = sacsDurationDays === preset.days;
-                    return (
+            <TouchableOpacity
+              onPress={() => setSacsSubTab('history')}
+              style={{
+                flex: 1,
+                paddingVertical: 12,
+                paddingHorizontal: 10,
+                borderRadius: 8,
+                backgroundColor: sacsSubTab === 'history' ? themeRed : (darkMode ? '#1e1e2e' : '#f5f5f5'),
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderWidth: 1,
+                borderColor: sacsSubTab === 'history' ? themeRed : borderColor,
+              }}
+            >
+              <Text style={{ fontSize: 13, fontWeight: '800', color: sacsSubTab === 'history' ? '#ffffff' : textSecondary }}>
+                History ({sacsHistory.length})
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Secondary Sub-Tabs: Permanent & Rules */}
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity
+              onPress={() => setSacsSubTab('permanent')}
+              style={{
+                flex: 1,
+                paddingVertical: 8,
+                paddingHorizontal: 8,
+                borderRadius: 6,
+                backgroundColor: sacsSubTab === 'permanent' ? (darkMode ? '#334155' : '#475569') : (darkMode ? '#1e1e2e' : '#f8fafc'),
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderWidth: 1,
+                borderColor: sacsSubTab === 'permanent' ? (darkMode ? '#475569' : '#334155') : borderColor,
+              }}
+            >
+              <Text style={{ fontSize: 12, fontWeight: '700', color: sacsSubTab === 'permanent' ? '#ffffff' : textSecondary }}>
+                Permanent Grants ({sacsPermanent.length})
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setSacsSubTab('permissions')}
+              style={{
+                flex: 1,
+                paddingVertical: 8,
+                paddingHorizontal: 8,
+                borderRadius: 6,
+                backgroundColor: sacsSubTab === 'permissions' ? (darkMode ? '#334155' : '#475569') : (darkMode ? '#1e1e2e' : '#f8fafc'),
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderWidth: 1,
+                borderColor: sacsSubTab === 'permissions' ? (darkMode ? '#475569' : '#334155') : borderColor,
+              }}
+            >
+              <Text style={{ fontSize: 12, fontWeight: '700', color: sacsSubTab === 'permissions' ? '#ffffff' : textSecondary }}>
+                Access Policies
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Filter Batch Banner matching Image 2 yellow/amber filter box */}
+          {sacsSubTab !== 'permissions' && (
+            <View style={{
+              backgroundColor: darkMode ? '#261b0d' : '#fff8e1',
+              padding: 10,
+              borderRadius: 8,
+              borderWidth: 1,
+              borderColor: darkMode ? '#5c3d10' : '#ffe082',
+              gap: 8,
+            }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, minWidth: 180 }}>
+                  <Ionicons name="filter" size={16} color="#e65100" />
+                  <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#e65100' }}>Filter Batch:</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                    <TouchableOpacity
+                      onPress={() => setSacsBatchFilter('all')}
+                      style={{
+                        paddingHorizontal: 8,
+                        paddingVertical: 4,
+                        borderRadius: 6,
+                        backgroundColor: sacsBatchFilter === 'all' ? '#e65100' : (darkMode ? '#332312' : '#ffffff'),
+                        borderWidth: 1,
+                        borderColor: '#ffb74d',
+                      }}
+                    >
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: sacsBatchFilter === 'all' ? '#ffffff' : '#e65100' }}>
+                        All Batches
+                      </Text>
+                    </TouchableOpacity>
+                    {combinedBatches.map((b) => (
                       <TouchableOpacity
-                        key={preset.days}
-                        onPress={() => setSacsDurationDays(preset.days)}
-                        style={[
-                          styles.chip,
-                          {
-                            backgroundColor: isSelected ? themeRed : inputBg,
-                            borderColor: isSelected ? themeRed : borderColor,
-                          },
-                        ]}
+                        key={b}
+                        onPress={() => setSacsBatchFilter(b)}
+                        style={{
+                          paddingHorizontal: 8,
+                          paddingVertical: 4,
+                          borderRadius: 6,
+                          backgroundColor: sacsBatchFilter === b ? '#e65100' : (darkMode ? '#332312' : '#ffffff'),
+                          borderWidth: 1,
+                          borderColor: '#ffb74d',
+                        }}
                       >
-                        <Text style={{ fontSize: 13, fontWeight: '700', color: isSelected ? '#fff' : textPrimary }}>
-                          {preset.label}
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: sacsBatchFilter === b ? '#ffffff' : '#e65100' }}>
+                          {b}
                         </Text>
                       </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
+                    ))}
+                  </ScrollView>
+                </View>
+                <Text style={{ fontSize: 11, color: darkMode ? '#ffcc80' : '#757575', fontWeight: '600' }}>
+                  Showing {sacsSubTab === 'requests' ? filteredRequests.length : sacsSubTab === 'history' ? filteredHistory.length : filteredPermanent.length} of {sacsSubTab === 'requests' ? sacsRequests.length : sacsSubTab === 'history' ? sacsHistory.length : sacsPermanent.length}
+                </Text>
               </View>
-            )}
-          </View>
+
+              {/* Type Filter Pills & Search in Filter Box */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                {[
+                  { key: 'all', label: 'All Types' },
+                  { key: 'LIVE_SESSION', label: 'Live Class' },
+                  { key: 'CLASS', label: 'Recorded Class' },
+                ].map((t) => {
+                  const isSelected = sacsTypeFilter === t.key;
+                  return (
+                    <TouchableOpacity
+                      key={t.key}
+                      onPress={() => setSacsTypeFilter(t.key)}
+                      style={{
+                        paddingHorizontal: 8,
+                        paddingVertical: 3,
+                        borderRadius: 4,
+                        backgroundColor: isSelected ? '#e65100' : (darkMode ? '#332312' : '#ffffff'),
+                        borderWidth: 1,
+                        borderColor: '#ffb74d',
+                      }}
+                    >
+                      <Text style={{ fontSize: 11, fontWeight: isSelected ? '800' : '600', color: isSelected ? '#ffffff' : '#e65100' }}>
+                        {t.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+
+          {/* Search Bar */}
+          {sacsSubTab !== 'permissions' && (
+            <View style={[styles.searchBar, { backgroundColor: inputBg, borderColor }]}>
+              <Ionicons name="search" size={14} color={textSecondary} />
+              <TextInput
+                placeholder="Search student, content, reason..."
+                placeholderTextColor={textSecondary}
+                value={sacsSearch}
+                onChangeText={setSacsSearch}
+                style={[styles.searchInput, { color: textPrimary }]}
+              />
+              {sacsSearch ? (
+                <TouchableOpacity onPress={() => setSacsSearch('')}>
+                  <Ionicons name="close-circle" size={16} color={textSecondary} />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          )}
+
+          {/* Approval Duration Selector (Only for Requests) */}
+          {sacsSubTab === 'requests' && (
+            <View style={[styles.card, { backgroundColor: bgCard, borderColor, padding: 12, gap: 6 }]}>
+              <Text style={[styles.label, { color: textSecondary, fontSize: 11 }]}>GRANT DURATION ON APPROVAL:</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                {[
+                  { label: '1 Day', days: 1 },
+                  { label: '3 Days', days: 3 },
+                  { label: '7 Days', days: 7 },
+                  { label: '14 Days', days: 14 },
+                  { label: '30 Days', days: 30 },
+                  { label: 'Perm.', days: 0 },
+                ].map((preset) => {
+                  const isSelected = sacsDurationDays === preset.days;
+                  return (
+                    <TouchableOpacity
+                      key={preset.days}
+                      onPress={() => setSacsDurationDays(preset.days)}
+                      style={[
+                        styles.chip,
+                        {
+                          backgroundColor: isSelected ? themeRed : inputBg,
+                          borderColor: isSelected ? themeRed : borderColor,
+                          paddingHorizontal: 12,
+                          paddingVertical: 5,
+                        },
+                      ]}
+                    >
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: isSelected ? '#fff' : textPrimary }}>
+                        {preset.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
+
+          {/* Label matching Image 2 */}
+          {sacsSubTab === 'requests' && (
+            <Text style={{ fontSize: 13, fontWeight: 'bold', color: themeRed, marginTop: 4 }}>
+              Students requesting temporary / special access:
+            </Text>
+          )}
 
           {/* List Content */}
           {loading ? (
@@ -1635,16 +1848,16 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
               </View>
             </View>
           ) : sacsSubTab === 'requests' ? (
-            sacsRequests.length === 0 ? (
+            filteredRequests.length === 0 ? (
               <View style={[styles.card, { backgroundColor: bgCard, borderColor, padding: 34, alignItems: 'center' }]}>
                 <Ionicons name="shield-checkmark-outline" size={44} color={textSecondary} />
                 <Text style={{ color: textPrimary, fontWeight: 'bold', fontSize: 16, marginTop: 10 }}>No Pending Requests</Text>
                 <Text style={{ color: textSecondary, fontSize: 14, textAlign: 'center', marginTop: 4 }}>
-                  All access requests have been processed.
+                  {sacsRequests.length === 0 ? 'All access requests have been processed.' : 'No requests match your current filters.'}
                 </Text>
               </View>
             ) : (
-              sacsRequests.map((r) => {
+              filteredRequests.map((r) => {
                 const studentName = r.studentName || r.studentId || 'Unknown Student';
                 const contentName = r.contentName || r.entityName || r.resourceName || r.contentId || 'LMS Content';
                 const studentReason = r.customReason || r.reason || '';
@@ -1726,20 +1939,23 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
               })
             )
           ) : sacsSubTab === 'history' ? (
-            sacsHistory.length === 0 ? (
+            filteredHistory.length === 0 ? (
               <View style={[styles.card, { backgroundColor: bgCard, borderColor, padding: 34, alignItems: 'center' }]}>
                 <Ionicons name="time-outline" size={44} color={textSecondary} />
                 <Text style={{ color: textPrimary, fontWeight: 'bold', fontSize: 16, marginTop: 10 }}>No History Records</Text>
                 <Text style={{ color: textSecondary, fontSize: 14, textAlign: 'center', marginTop: 4 }}>
-                  Approved and rejected access history will appear here.
+                  {sacsHistory.length === 0 ? 'Approved and rejected access history will appear here.' : 'No history matches your current filters.'}
                 </Text>
               </View>
             ) : (
-              sacsHistory.map((h, i) => {
+              filteredHistory.map((h, i) => {
                 const studentName = h.studentName || h.studentId || 'Unknown Student';
                 const contentName = h.contentName || h.entityName || h.resourceName || 'LMS Content';
-                const isApproved = (h.status || '').toUpperCase() === 'APPROVED';
+                const statusUpper = (h.status || '').toUpperCase();
+                const isApproved = statusUpper === 'APPROVED';
+                const isRevoked = statusUpper === 'REVOKED';
                 const isProcessing = sacsProcessingId === h.id;
+                const reqType = (h.requestType || h.entityType || 'CLASS').toUpperCase();
 
                 return (
                   <View key={h.id || i} style={[styles.card, { backgroundColor: bgCard, borderColor }]}>
@@ -1747,23 +1963,53 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
                       <View style={{ flex: 1, paddingRight: 8 }}>
                         <Text style={{ fontSize: 16, fontWeight: '800', color: textPrimary }}>{studentName}</Text>
                         <Text style={{ fontSize: 14, color: textSecondary, marginTop: 2 }}>{contentName}</Text>
-                        {h.reason ? (
-                          <Text style={{ fontSize: 13, color: textSecondary, marginTop: 4, fontStyle: 'italic' }}>
+                        {h.batchName ? (
+                          <Text style={{ fontSize: 12, color: '#0284c7', fontWeight: '700', marginTop: 2 }}>Batch: {h.batchName}</Text>
+                        ) : null}
+                        {h.revocationReason ? (
+                          <Text style={{ fontSize: 12, color: '#ea580c', marginTop: 3, fontWeight: '600' }}>
+                            Revert Reason: "{h.revocationReason}"
+                          </Text>
+                        ) : h.reason ? (
+                          <Text style={{ fontSize: 13, color: textSecondary, marginTop: 3, fontStyle: 'italic' }}>
                             "{h.reason}"
                           </Text>
                         ) : null}
                       </View>
-                      <View style={[styles.pill, { backgroundColor: isApproved ? '#dcfce7' : '#fee2e2' }]}>
-                        <Text style={{ fontSize: 12, fontWeight: '800', color: isApproved ? '#16a34a' : '#dc2626' }}>
-                          {isApproved ? 'APPROVED' : 'REJECTED'}
+                      <View
+                        style={[
+                          styles.pill,
+                          {
+                            backgroundColor: isApproved
+                              ? '#dcfce7'
+                              : isRevoked
+                              ? '#ffedd5'
+                              : '#fee2e2',
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 12,
+                            fontWeight: '800',
+                            color: isApproved
+                              ? '#16a34a'
+                              : isRevoked
+                              ? '#ea580c'
+                              : '#dc2626',
+                          }}
+                        >
+                          {isRevoked ? 'REVERTED' : (h.status || 'PROCESSED')}
                         </Text>
                       </View>
                     </View>
 
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <View style={[styles.pill, { backgroundColor: '#fee2e2' }]}>
-                          <Text style={{ fontSize: 12, fontWeight: '800', color: themeRed }}>📹 CLASS</Text>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, flexWrap: 'wrap', gap: 6 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <View style={[styles.pill, { backgroundColor: reqType === 'LIVE_SESSION' ? '#dcfce7' : '#fee2e2' }]}>
+                          <Text style={{ fontSize: 12, fontWeight: '800', color: reqType === 'LIVE_SESSION' ? '#16a34a' : themeRed }}>
+                            {reqType === 'LIVE_SESSION' ? '📹 LIVE' : '📹 CLASS'}
+                          </Text>
                         </View>
                         {(h.requestedAt || h.createdAt || h.updatedAt) ? (
                           <Text style={{ fontSize: 12, color: textSecondary }}>
@@ -1797,16 +2043,16 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
               })
             )
           ) : sacsSubTab === 'permanent' ? (
-            sacsPermanent.length === 0 ? (
+            filteredPermanent.length === 0 ? (
               <View style={[styles.card, { backgroundColor: bgCard, borderColor, padding: 34, alignItems: 'center' }]}>
                 <Ionicons name="lock-closed-outline" size={44} color={textSecondary} />
                 <Text style={{ color: textPrimary, fontWeight: 'bold', fontSize: 16, marginTop: 10 }}>No Permanent Grants</Text>
                 <Text style={{ color: textSecondary, fontSize: 14, textAlign: 'center', marginTop: 4 }}>
-                  Permanent content permissions granted to students will appear here.
+                  {sacsPermanent.length === 0 ? 'Permanent content permissions granted to students will appear here.' : 'No grants match your current filters.'}
                 </Text>
               </View>
             ) : (
-              sacsPermanent.map((p, i) => {
+              filteredPermanent.map((p, i) => {
                 const studentName = p.studentName || p.studentId || 'Unknown Student';
                 const contentName = p.contentName || p.entityName || p.resourceName || 'LMS Content';
                 const isProcessing = sacsProcessingId === p.id;
@@ -1817,6 +2063,9 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
                       <View style={{ flex: 1, paddingRight: 8 }}>
                         <Text style={{ fontSize: 16, fontWeight: '800', color: textPrimary }}>{studentName}</Text>
                         <Text style={{ fontSize: 14, color: textSecondary, marginTop: 2 }}>{contentName}</Text>
+                        {p.batchName ? (
+                          <Text style={{ fontSize: 12, color: '#0284c7', fontWeight: '700', marginTop: 2 }}>Batch: {p.batchName}</Text>
+                        ) : null}
                       </View>
                       <View style={[styles.pill, { backgroundColor: '#e0e7ff' }]}>
                         <Text style={{ fontSize: 12, fontWeight: '800', color: '#4338ca' }}>PERMANENT</Text>
@@ -1848,7 +2097,8 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
             )
           ) : null}
         </View>
-      )}
+        );
+      })()}
 
       {/* ─── 8. SYLLABUS TRACKER ────────────────────────────────────── */}
       {lmsSub === 'lms-syllabus' && (

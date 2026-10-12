@@ -14,6 +14,9 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as XLSX from 'xlsx';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
+import * as FileSystemLegacy from 'expo-file-system/legacy';
 import api from '../core/api';
 import { db } from '../../firebaseConfig';
 import { collection, onSnapshot } from 'firebase/firestore';
@@ -739,7 +742,112 @@ export default function MergedLeadsAdmissionsPage() {
     XLSX.writeFile(wb, `NERMAI_IAS_ACADEMY_G_ENQUIRY_2026_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  // Import and Extract Data from Excel File
+  // Process parsed Excel workbook rows (shared across Web and Mobile)
+  const processExcelWorkbook = async (workbook: XLSX.WorkBook) => {
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const jsonRows: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+
+    if (!jsonRows || jsonRows.length === 0) {
+      Alert.alert('Empty Sheet', 'No data rows found in the uploaded Excel file.');
+      return;
+    }
+
+    // Helper function to find case-insensitive column key
+    const getVal = (row: any, ...keys: string[]) => {
+      for (const k of keys) {
+        if (row[k] !== undefined && row[k] !== '') return String(row[k]).trim();
+        const lowerK = k.toLowerCase();
+        for (const rk of Object.keys(row)) {
+          if (rk.trim().toLowerCase() === lowerK && row[rk] !== '') {
+            return String(row[rk]).trim();
+          }
+        }
+      }
+      return '';
+    };
+
+    const promises = [];
+    let validCount = 0;
+
+    for (const row of jsonRows) {
+      const name = getVal(row, 'NAME', 'Name', 'Applicant Name', 'Candidate Name', 'student name');
+      const contact = getVal(row, 'CONTACT', 'Contact', 'PHONE', 'Phone', 'Mobile', 'phone number');
+
+      // Skip completely empty rows
+      if (!name && !contact) continue;
+
+      const rawNature = getVal(row, 'nature of enquiry', 'Nature of enquiry', 'nature', 'Nature', 'source').toLowerCase();
+      let natureOfEnquiry: NatureOfEnquiry = 'phone';
+      if (rawNature.includes('visit') || rawNature.includes('walk')) natureOfEnquiry = 'visit';
+      else if (rawNature.includes('what')) natureOfEnquiry = 'whatsapp';
+      else if (rawNature.includes('tele')) natureOfEnquiry = 'Telegram';
+      else if (rawNature.includes('w35')) natureOfEnquiry = 'W35';
+      else if (rawNature.includes('fb') || rawNature.includes('face')) natureOfEnquiry = 'FB';
+      else if (rawNature.includes('insta')) natureOfEnquiry = 'Instagram';
+      else if (rawNature.includes('phone') || rawNature.includes('call')) natureOfEnquiry = 'phone';
+
+      const rawMode = getVal(row, 'MODE', 'Mode', 'mode', 'Class Mode').toLowerCase();
+      let mode: 'Offline' | 'Online' | 'Hybrid' = 'Offline';
+      if (rawMode.includes('online')) mode = 'Online';
+      else if (rawMode.includes('hyb')) mode = 'Hybrid';
+
+      const rawStatus = getVal(row, 'join status', 'Join Status', 'status', 'Status').toLowerCase();
+      let joinStatus: UnifiedRecord['joinStatus'] = 'new';
+      let apiStatus = 'pending';
+      if (rawStatus.includes('join') || rawStatus.includes('convert') || rawStatus.includes('admit')) {
+        joinStatus = 'joined';
+        apiStatus = 'converted';
+      } else if (rawStatus.includes('follow')) {
+        joinStatus = 'follow_up';
+      } else if (rawStatus.includes('contact')) {
+        joinStatus = 'contacted';
+      } else if (rawStatus.includes('not') || rawStatus.includes('reject')) {
+        joinStatus = 'not_interested';
+      }
+
+      const atten = getVal(row, 'ATTEN', 'Atten', 'Attended By', 'staff', 'Staff') || 'Admin Staff';
+      const reminder1 = getVal(row, 'REMINDER 1', 'REMINDER', 'Reminder 1', 'Reminder');
+      const reminder2 = getVal(row, 'REMINDER 2', 'Reminder 2');
+      const reminder3 = getVal(row, 'REMINDER 3', 'Reminder 3');
+      const reference = getVal(row, 'REFERENCE / REMARKS', 'REFERENCE', 'Reference', 'Source', 'Referral');
+      const remarks1 = getVal(row, 'REMARKS 1', 'REMARKS', 'Remarks 1', 'Remarks', 'Notes');
+      const remarks2 = getVal(row, 'REMARKS 2', 'Remarks 2');
+
+      const payload = {
+        name: name || 'Enquiry Candidate',
+        phone: contact,
+        natureOfEnquiry,
+        mode,
+        preferredMode: mode,
+        joinStatus,
+        status: apiStatus,
+        atten,
+        reminder1,
+        reminder2,
+        reminder3,
+        reference,
+        remarks1,
+        notes: remarks1,
+        remarks2,
+        source: natureOfEnquiry,
+        updatedBy: 'excel_import'
+      };
+
+      promises.push(api.post('/crm/admission', payload));
+      validCount++;
+    }
+
+    if (validCount > 0) {
+      await Promise.allSettled(promises);
+      await fetchData();
+      Alert.alert('Excel Import Complete', `Successfully imported and arranged ${validCount} enquiries from Excel!`);
+    } else {
+      Alert.alert('No Valid Data', 'Could not find any candidate rows with Name or Contact.');
+    }
+  };
+
+  // Import and Extract Data from Excel File (Web Input)
   const handleFileUpload = async (e: any) => {
     const file = e.target?.files?.[0];
     if (!file) return;
@@ -748,114 +856,88 @@ export default function MergedLeadsAdmissionsPage() {
     try {
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data, { type: 'array' });
-      const sheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[sheetName];
-      const jsonRows: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
-
-      if (!jsonRows || jsonRows.length === 0) {
-        Alert.alert('Empty Sheet', 'No data rows found in the uploaded Excel file.');
-        setImporting(false);
-        return;
-      }
-
-      // Helper function to find case-insensitive column key
-      const getVal = (row: any, ...keys: string[]) => {
-        for (const k of keys) {
-          if (row[k] !== undefined && row[k] !== '') return String(row[k]).trim();
-          const lowerK = k.toLowerCase();
-          for (const rk of Object.keys(row)) {
-            if (rk.trim().toLowerCase() === lowerK && row[rk] !== '') {
-              return String(row[rk]).trim();
-            }
-          }
-        }
-        return '';
-      };
-
-      const promises = [];
-      let validCount = 0;
-
-      for (const row of jsonRows) {
-        const name = getVal(row, 'NAME', 'Name', 'Applicant Name', 'Candidate Name', 'student name');
-        const contact = getVal(row, 'CONTACT', 'Contact', 'PHONE', 'Phone', 'Mobile', 'phone number');
-
-        // Skip completely empty rows
-        if (!name && !contact) continue;
-
-        const rawNature = getVal(row, 'nature of enquiry', 'Nature of enquiry', 'nature', 'Nature', 'source').toLowerCase();
-        let natureOfEnquiry: NatureOfEnquiry = 'phone';
-        if (rawNature.includes('visit') || rawNature.includes('walk')) natureOfEnquiry = 'visit';
-        else if (rawNature.includes('what')) natureOfEnquiry = 'whatsapp';
-        else if (rawNature.includes('tele')) natureOfEnquiry = 'Telegram';
-        else if (rawNature.includes('w35')) natureOfEnquiry = 'W35';
-        else if (rawNature.includes('fb') || rawNature.includes('face')) natureOfEnquiry = 'FB';
-        else if (rawNature.includes('insta')) natureOfEnquiry = 'Instagram';
-        else if (rawNature.includes('phone') || rawNature.includes('call')) natureOfEnquiry = 'phone';
-
-        const rawMode = getVal(row, 'MODE', 'Mode', 'mode', 'Class Mode').toLowerCase();
-        let mode: 'Offline' | 'Online' | 'Hybrid' = 'Offline';
-        if (rawMode.includes('online')) mode = 'Online';
-        else if (rawMode.includes('hyb')) mode = 'Hybrid';
-
-        const rawStatus = getVal(row, 'join status', 'Join Status', 'status', 'Status').toLowerCase();
-        let joinStatus: UnifiedRecord['joinStatus'] = 'new';
-        let apiStatus = 'pending';
-        if (rawStatus.includes('join') || rawStatus.includes('convert') || rawStatus.includes('admit')) {
-          joinStatus = 'joined';
-          apiStatus = 'converted';
-        } else if (rawStatus.includes('follow')) {
-          joinStatus = 'follow_up';
-        } else if (rawStatus.includes('contact')) {
-          joinStatus = 'contacted';
-        } else if (rawStatus.includes('not') || rawStatus.includes('reject')) {
-          joinStatus = 'not_interested';
-        }
-
-        const atten = getVal(row, 'ATTEN', 'Atten', 'Attended By', 'staff', 'Staff') || 'Admin Staff';
-        const reminder1 = getVal(row, 'REMINDER 1', 'REMINDER', 'Reminder 1', 'Reminder');
-        const reminder2 = getVal(row, 'REMINDER 2', 'Reminder 2');
-        const reminder3 = getVal(row, 'REMINDER 3', 'Reminder 3');
-        const reference = getVal(row, 'REFERENCE / REMARKS', 'REFERENCE', 'Reference', 'Source', 'Referral');
-        const remarks1 = getVal(row, 'REMARKS 1', 'REMARKS', 'Remarks 1', 'Remarks', 'Notes');
-        const remarks2 = getVal(row, 'REMARKS 2', 'Remarks 2');
-
-        const payload = {
-          name: name || 'Enquiry Candidate',
-          phone: contact,
-          natureOfEnquiry,
-          mode,
-          preferredMode: mode,
-          joinStatus,
-          status: apiStatus,
-          atten,
-          reminder1,
-          reminder2,
-          reminder3,
-          reference,
-          remarks1,
-          notes: remarks1,
-          remarks2,
-          source: natureOfEnquiry,
-          updatedBy: 'excel_import'
-        };
-
-        promises.push(api.post('/crm/admission', payload));
-        validCount++;
-      }
-
-      if (validCount > 0) {
-        await Promise.allSettled(promises);
-        await fetchData();
-        Alert.alert('Excel Import Complete', `Successfully imported and arranged ${validCount} enquiries from Excel!`);
-      } else {
-        Alert.alert('No Valid Data', 'Could not find any candidate rows with Name or Contact.');
-      }
+      await processExcelWorkbook(workbook);
     } catch (err) {
       console.error('Failed to parse Excel file:', err);
       Alert.alert('Error', 'Failed to read Excel file. Please ensure it is a valid .xlsx or .xls file.');
     } finally {
       setImporting(false);
       if (e.target) e.target.value = '';
+    }
+  };
+
+  // Unified Excel File Pick & Import (Cross-Platform: Web & Native APK)
+  const handlePickExcel = async () => {
+    if (Platform.OS === 'web') {
+      if (fileInputRef.current) {
+        fileInputRef.current.click();
+      }
+      return;
+    }
+
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: [
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'application/vnd.ms-excel',
+          'text/csv',
+          '*/*'
+        ],
+        copyToCacheDirectory: true
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      const pickedName = (asset.name || '').toLowerCase();
+      if (!pickedName.endsWith('.xlsx') && !pickedName.endsWith('.xls') && !pickedName.endsWith('.csv')) {
+        Alert.alert('Invalid File', 'Please upload a valid Excel workbook (.xlsx, .xls) or .csv file.');
+        return;
+      }
+
+      setImporting(true);
+
+      let base64 = '';
+      try {
+        if (FileSystemLegacy && typeof (FileSystemLegacy as any).readAsStringAsync === 'function') {
+          base64 = await (FileSystemLegacy as any).readAsStringAsync(asset.uri, {
+            encoding: (FileSystemLegacy as any).EncodingType?.Base64 || 'base64'
+          });
+        } else {
+          throw new Error('legacy readAsStringAsync unavailable');
+        }
+      } catch (legacyErr) {
+        try {
+          const fsFile = new (FileSystem as any).File(asset.uri);
+          if (typeof fsFile.base64 === 'function') {
+            base64 = await fsFile.base64();
+          } else {
+            throw new Error('FileSystem.File base64 unavailable');
+          }
+        } catch {
+          const res = await fetch(asset.uri);
+          const blob = await res.blob();
+          base64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const r = reader.result as string;
+              resolve(r.split(',')[1] || r);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+        }
+      }
+
+      const workbook = XLSX.read(base64, { type: 'base64' });
+      await processExcelWorkbook(workbook);
+    } catch (err: any) {
+      console.error('Failed to parse Excel file on mobile:', err);
+      Alert.alert('Error', err.message || 'Failed to read Excel file on device.');
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -883,7 +965,14 @@ export default function MergedLeadsAdmissionsPage() {
           </Text>
         </View>
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-start' }}>
+        <ScrollView
+          horizontal={isMobile}
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={[
+            { flexDirection: 'row', alignItems: 'center', gap: 8 },
+            !isMobile && { flexWrap: 'wrap', justifyContent: 'flex-start' }
+          ]}
+        >
           {/* Hidden File Input for Excel Upload */}
           {Platform.OS === 'web' && (
             <input
@@ -896,7 +985,7 @@ export default function MergedLeadsAdmissionsPage() {
           )}
 
           <TouchableOpacity
-            style={[styles.addBtn, isMobile && { flex: 1, justifyContent: 'center' }]}
+            style={styles.addBtn}
             onPress={() => {
               setNewCourse('');
               setIsCustomCourse(false);
@@ -913,12 +1002,8 @@ export default function MergedLeadsAdmissionsPage() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.uploadBtn, isMobile && { flex: 1, justifyContent: 'center' }]}
-            onPress={() => {
-              if (fileInputRef.current) {
-                fileInputRef.current.click();
-              }
-            }}
+            style={styles.uploadBtn}
+            onPress={handlePickExcel}
             disabled={importing}
           >
             {importing ? (
@@ -930,7 +1015,7 @@ export default function MergedLeadsAdmissionsPage() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.notifyBtn, isMobile && { flex: 1, justifyContent: 'center' }]}
+            style={styles.notifyBtn}
             onPress={() => setShowNotifyModal(true)}
           >
             <MaterialCommunityIcons name="send-outline" size={16} color="#1d4ed8" />
@@ -938,7 +1023,7 @@ export default function MergedLeadsAdmissionsPage() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.refreshBtn, isMobile && { flex: 1, justifyContent: 'center' }]}
+            style={styles.refreshBtn}
             onPress={fetchData}
             disabled={loading}
           >
@@ -947,13 +1032,13 @@ export default function MergedLeadsAdmissionsPage() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.exportBtn, isMobile && { flex: 1, justifyContent: 'center' }]}
+            style={styles.exportBtn}
             onPress={handleExportExcel}
           >
             <MaterialCommunityIcons name="file-excel-outline" size={18} color="#15803d" />
             <Text style={styles.exportBtnText}>Export Excel</Text>
           </TouchableOpacity>
-        </View>
+        </ScrollView>
       </View>
 
       {/* 4 Stat Metric Cards */}

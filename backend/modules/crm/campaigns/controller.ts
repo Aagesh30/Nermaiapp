@@ -173,7 +173,7 @@ export class CampaignsController {
                 // Filter by target user type
                 const tu = campaign.targetUsers;
                 if (tu === "all" || tu === "both") return true;
-                if (tu === "free" && (userType === "free" || userType === "guest")) return true;
+                if ((tu === "free" || tu === "guest") && (userType === "free" || userType === "guest")) return true;
                 if (tu === "paid" && (userType === "paid" || userType === "student")) return true;
                 if (tu === userType) return true;
                 return false;

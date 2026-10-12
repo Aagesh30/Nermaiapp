@@ -46,6 +46,27 @@ export class LiveSessionController {
 
       // Invalidate list cache so students see new session on next poll
       LiveSessionService.invalidateListSessionsCache();
+
+      // Dispatch admin push notification for scheduled live class
+      try {
+        const { sendPushNotification } = await import('../../services/pushService');
+        sendPushNotification({
+          title: '🔴 Live Class Scheduled',
+          body: 'A live session has been scheduled in LMS live classes.',
+          targetRole: 'admin',
+          excludeUserId: teacherId || (req as any).user?.userId || null,
+          data: {
+            targetTab: 'lms',
+            targetSub: 'live-classes',
+            screen: 'lms',
+            subTab: 'live-classes',
+            sessionId: session.id || '',
+            classId: classId || '',
+            dedupeId: `live_session_sched_${session.id || classId}_${Date.now()}`
+          }
+        }).catch(err => console.log('[Push] Live session schedule push note:', err?.message));
+      } catch (_) {}
+
       res.status(201).json({ success: true, data: session });
     } catch (error: any) {
       logger.error('Error creating live session:', error);

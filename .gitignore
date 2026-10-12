@@ -13,3 +13,5 @@ build/
 .env.local
 .env.*
 service-account.json
+serviceAccountKey.json
+*serviceAccountKey*.json

@@ -8,6 +8,7 @@ import * as path from "path";
 import { uploadFileToGoogleDrive } from "../../../services/google_drive";
 import { testDetailsCache, testQuestionsCache } from "../../../shared/utils/cache";
 import { TestPortalCleanupService } from "./cleanupService";
+import { sendPushNotification } from "../../../services/pushService";
 
 const db = admin.firestore();
 const COLLECTION = "tests";
@@ -872,6 +873,48 @@ ${chunkText}${cleanedAkText ? `\n\nAnswer Key:\n${cleanedAkText}` : ""}`;
 
             await db.collection(COLLECTION).doc(id).set(payload);
 
+            // Dispatch push notification to students/guests if test is published immediately and not a draft
+            if (payload.published !== false && payload.status !== "draft") {
+                try {
+                    const tTitle = title || "Online Test";
+                    const isBatch = payload.targetBatch && payload.targetBatch !== "all" && String(payload.targetBatch).trim() !== "";
+                    const nowTs = Date.now();
+                    sendPushNotification({
+                        title: `📝 New Test Available: ${tTitle}`,
+                        body: `Test "${tTitle}" is now available. Click to start your attempt!`,
+                        targetRole: "student",
+                        targetBatch: isBatch ? payload.targetBatch : null,
+                        excludeUserId: createdBy || (req as any).user?.userId || null,
+                        data: {
+                            targetTab: "test",
+                            targetSub: "available",
+                            screen: "test",
+                            subTab: "available",
+                            testId: id,
+                            dedupeId: `test_pub_${id}_${nowTs}`
+                        }
+                    }).catch(err => console.log("[Push] Test create push note:", err?.message));
+
+                    // If open to all (not batch-restricted), also notify guests
+                    if (!isBatch) {
+                        sendPushNotification({
+                            title: `📝 New Test Available: ${tTitle}`,
+                            body: `Test "${tTitle}" is now available in Free Tests. Click to explore!`,
+                            targetRole: "guest",
+                            excludeUserId: createdBy || (req as any).user?.userId || null,
+                            data: {
+                                targetTab: "guest",
+                                targetSub: "tests",
+                                screen: "test",
+                                subTab: "tests",
+                                testId: id,
+                                dedupeId: `test_pub_guest_${id}_${nowTs}`
+                            }
+                        }).catch(err => console.log("[Push] Test guest push note:", err?.message));
+                    }
+                } catch (_) {}
+            }
+
             return res.status(201).json({
                 success: true,
                 message: "Test created successfully",
@@ -1065,6 +1108,46 @@ ${chunkText}${cleanedAkText ? `\n\nAnswer Key:\n${cleanedAkText}` : ""}`;
             });
 
             testDetailsCache.delete(`test_${id}`);
+
+            try {
+                const testData = doc.data() || {};
+                const tTitle = testData.title || "Online Test";
+                const isBatch = testData.targetBatch && testData.targetBatch !== "all" && String(testData.targetBatch).trim() !== "";
+                const nowTs = Date.now();
+                sendPushNotification({
+                    title: `📝 New Test Available: ${tTitle}`,
+                    body: `Test "${tTitle}" is now published and available. Click to start your attempt!`,
+                    targetRole: "student",
+                    targetBatch: isBatch ? testData.targetBatch : null,
+                    excludeUserId: (req as any).user?.userId || null,
+                    data: {
+                        targetTab: "test",
+                        targetSub: "available",
+                        screen: "test",
+                        subTab: "available",
+                        testId: id,
+                        dedupeId: `test_pub_${id}_${nowTs}`
+                    }
+                }).catch(err => console.log("[Push] Test publish push note:", err?.message));
+
+                // If open to all (not batch-restricted), also notify guests
+                if (!isBatch) {
+                    sendPushNotification({
+                        title: `📝 New Test Available: ${tTitle}`,
+                        body: `Test "${tTitle}" is now available in Free Tests. Click to explore!`,
+                        targetRole: "guest",
+                        excludeUserId: (req as any).user?.userId || null,
+                        data: {
+                            targetTab: "guest",
+                            targetSub: "tests",
+                            screen: "test",
+                            subTab: "tests",
+                            testId: id,
+                            dedupeId: `test_pub_guest_${id}_${nowTs}`
+                        }
+                    }).catch(err => console.log("[Push] Test guest push note:", err?.message));
+                }
+            } catch (_) {}
 
             return res.status(200).json({ success: true, message: "Test published successfully" });
         } catch (error: any) {
@@ -1574,6 +1657,28 @@ export class OfflineTestRequestController {
                 updatedAt: new Date().toISOString()
             };
             await db.collection(OFFLINE_REQUESTS_COLLECTION).doc(reqId).set(payload, { merge: true });
+
+            try {
+                const senderName = studentName || username || rollNumber || "A student";
+                const tTitle = testTitle || "Test";
+                sendPushNotification({
+                    title: "✋ New Test Entry Request",
+                    body: `${senderName} requested permission to enter test: "${tTitle}".`,
+                    targetRole: "admin",
+                    excludeUserId: studentId || username || null,
+                    data: {
+                        targetTab: "test",
+                        targetSub: "offline-requests",
+                        screen: "test",
+                        subTab: "offline-requests",
+                        requestId: reqId,
+                        testId: testId,
+                        studentId: studentId || "",
+                        dedupeId: `test_req_${reqId}_${Date.now()}`
+                    }
+                }).catch(err => console.log("[Push] Test request push note:", err?.message));
+            } catch (_) {}
+
             return res.status(200).json({ success: true, data: payload });
         } catch (error: any) {
             console.error("[OfflineTestRequest] submit error:", error);
@@ -1722,10 +1827,43 @@ export class OfflineTestRequestController {
             if (!["approved", "rejected", "pending"].includes(status)) {
                 return res.status(400).json({ success: false, message: "Invalid status. Use: approved, rejected, pending" });
             }
+            const reqDoc = await db.collection(OFFLINE_REQUESTS_COLLECTION).doc(id).get();
+            const reqData = reqDoc.exists ? (reqDoc.data() || {}) : {};
+
             await db.collection(OFFLINE_REQUESTS_COLLECTION).doc(id).update({
                 status,
                 updatedAt: new Date().toISOString()
             });
+
+            if (status === "approved" || status === "rejected") {
+                try {
+                    const studentTarget = reqData.studentId || reqData.username;
+                    const tTitle = reqData.testTitle || "Test";
+                    const isApp = status === "approved";
+                    if (studentTarget) {
+                        sendPushNotification({
+                            title: isApp ? "✅ Test Entry Request Accepted" : "❌ Test Entry Request Rejected",
+                            body: isApp
+                                ? `Your request to attend "${tTitle}" has been accepted! You can now take the test.`
+                                : `Your request to attend "${tTitle}" was declined.`,
+                            targetUserId: studentTarget,
+                            excludeUserId: (req as any).user?.userId || null,
+                            data: {
+                                targetTab: "test",
+                                targetSub: "available",
+                                screen: "test",
+                                subTab: "available",
+                                requestId: id,
+                                testId: reqData.testId || "",
+                                studentId: studentTarget,
+                                status,
+                                dedupeId: `test_req_status_${id}_${status}`
+                            }
+                        }).catch(err => console.log("[Push] Test request status push note:", err?.message));
+                    }
+                } catch (_) {}
+            }
+
             return res.status(200).json({ success: true, message: `Request ${status}` });
         } catch (error: any) {
             console.error("[OfflineTestRequest] updateStatus error:", error);

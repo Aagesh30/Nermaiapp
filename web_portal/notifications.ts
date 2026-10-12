@@ -41,6 +41,8 @@ export const initNotifications = async () => {
         shouldShowAlert: true,
         shouldPlaySound: true,
         shouldSetBadge: true,
+        shouldShowBanner: true,
+        shouldShowList: true,
       }),
     });
 
@@ -123,7 +125,7 @@ export const registerForPushNotificationsAsync = async (user?: any, forcePrompt:
       const { doc, setDoc, serverTimestamp } = require("firebase/firestore");
 
       const messaging = getMessaging(app);
-      const vapidKey = process.env.EXPO_PUBLIC_FIREBASE_VAPID_KEY || undefined;
+      const vapidKey = (globalThis as any).process?.env?.EXPO_PUBLIC_FIREBASE_VAPID_KEY || undefined;
 
       if (!vapidKey) {
         console.warn("[WebNotifications] Missing VAPID Key: EXPO_PUBLIC_FIREBASE_VAPID_KEY is not set in build environment. Web push token generation may fail.");
@@ -153,7 +155,7 @@ export const registerForPushNotificationsAsync = async (user?: any, forcePrompt:
       const cleanDocId = "web_" + webToken.slice(-24).replace(/[^a-zA-Z0-9_-]/g, "_");
       const docRef = doc(db, "device_push_tokens", cleanDocId);
 
-      const userId = user?.userId || user?.studentId || user?.id || user?.leadId || (user?.role === "guest" ? `guest_${cleanDocId.slice(-6)}` : "anonymous");
+      const userId = user?.userId || user?.studentId || user?.id || user?.leadId || ((user?.role === "guest" || !user) ? `guest_${cleanDocId.slice(-6)}` : "anonymous");
       const studentId = user?.studentId || user?.id || user?.userId || null;
       const role = user?.role || "guest";
       const batch = user?.batch || (Array.isArray(user?.batches) ? user.batches[0] : null) || null;
@@ -168,6 +170,38 @@ export const registerForPushNotificationsAsync = async (user?: any, forcePrompt:
         platform: "web",
         updatedAt: serverTimestamp(),
       }, { merge: true });
+
+      // Listen for foreground FCM push notifications when site is open & focused
+      try {
+        const { onMessage } = require("firebase/messaging");
+        if (typeof window !== "undefined" && !(window as any).__nermai_fcm_listener_attached) {
+          (window as any).__nermai_fcm_listener_attached = true;
+          onMessage(messaging, (payload: any) => {
+            console.log("[WebNotifications] Foreground FCM push received:", payload);
+            const title = payload?.notification?.title || payload?.data?.title || "NERMAI IAS ACADEMY";
+            const body = payload?.notification?.body || payload?.data?.body || "New notification available.";
+            const notifData = payload?.data || {};
+            if (reg && reg.showNotification) {
+              reg.showNotification(title, {
+                body,
+                icon: "/favicon.png",
+                badge: "/favicon.png",
+                data: notifData,
+                tag: notifData.dedupeId || `nermai_fg_${Date.now()}`
+              });
+            } else if ("Notification" in window && Notification.permission === "granted") {
+              new Notification(title, {
+                body,
+                icon: "/favicon.png",
+                badge: "/favicon.png",
+                data: notifData
+              });
+            }
+          });
+        }
+      } catch (fgErr: any) {
+        console.warn("[WebNotifications] Note while attaching foreground FCM listener:", fgErr?.message);
+      }
 
       return webToken;
     } catch (e: any) {
@@ -186,11 +220,34 @@ export const registerForPushNotificationsAsync = async (user?: any, forcePrompt:
     if (!granted) return null;
 
     const Notifications = require("expo-notifications");
-    if (!Notifications || !Notifications.getExpoPushTokenAsync) return null;
+    if (!Notifications) return null;
 
-    const projectId = Constants?.expoConfig?.extra?.eas?.projectId || Constants?.easConfig?.projectId || "7b9009b2-f209-4d9b-8e24-21f04e78de96";
-    const tokenObj = await Notifications.getExpoPushTokenAsync({ projectId });
-    const pushToken = tokenObj?.data;
+    let pushToken: string | null = null;
+
+    // Prioritize direct Google FCM Device Token (pure native, no Expo servers needed)
+    if (Notifications.getDevicePushTokenAsync) {
+      try {
+        const deviceTokenObj = await Notifications.getDevicePushTokenAsync();
+        if (deviceTokenObj?.data && typeof deviceTokenObj.data === "string") {
+          pushToken = deviceTokenObj.data;
+          console.log("[Notifications] Acquired native FCM Device Push Token directly (No Expo middleman)");
+        }
+      } catch (fcmErr: any) {
+        console.warn("[Notifications] Direct FCM token fetch fallback:", fcmErr?.message || fcmErr);
+      }
+    }
+
+    // Fallback to Expo Push Token if device push token is unavailable
+    if (!pushToken && Notifications.getExpoPushTokenAsync) {
+      try {
+        const projectId = Constants?.expoConfig?.extra?.eas?.projectId || Constants?.easConfig?.projectId || "7b9009b2-f209-4d9b-8e24-21f04e78de96";
+        const tokenObj = await Notifications.getExpoPushTokenAsync({ projectId });
+        pushToken = tokenObj?.data || null;
+      } catch (expoTokenErr: any) {
+        console.warn("[Notifications] Expo token fetch error:", expoTokenErr?.message || expoTokenErr);
+      }
+    }
+
     if (!pushToken) return null;
 
     // Cache push token locally
@@ -204,7 +261,7 @@ export const registerForPushNotificationsAsync = async (user?: any, forcePrompt:
       const cleanDocId = pushToken.replace(/[^a-zA-Z0-9_-]/g, "_");
       const docRef = doc(db, "device_push_tokens", cleanDocId);
       
-      const userId = user?.userId || user?.studentId || user?.id || user?.leadId || (user?.role === "guest" ? `guest_${cleanDocId.slice(-6)}` : "anonymous");
+      const userId = user?.userId || user?.studentId || user?.id || user?.leadId || ((user?.role === "guest" || !user) ? `guest_${cleanDocId.slice(-6)}` : "anonymous");
       const studentId = user?.studentId || user?.id || user?.userId || null;
       const role = user?.role || "guest";
       const batch = user?.batch || (Array.isArray(user?.batches) ? user.batches[0] : null) || null;

@@ -34,27 +34,47 @@ export class NewAttendanceService {
         batchName = d.batchName || d.batch || d.batchId || '-';
         console.log('[NEW-ATT-SVC] recordJoin — canonical (direct students doc):', canonicalId, 'name:', studentName);
       } else {
-        // Value is NOT a students doc ID — treat it as a Firebase Auth userId and resolve
-        const byUserId = await db.collection('students').where('userId', '==', studentId).limit(1).get();
-        if (!byUserId.empty) {
-          const d = byUserId.docs[0].data()!;
-          canonicalId = byUserId.docs[0].id; // ← use the students DOC ID as canonical
-          rollNo = d.regNo || d.registrationNumber || d.rollNumber || d.rollNo || d.username || '-';
-          studentName = d.name || d.fullName || d.studentName || d.username || '-';
-          batchName = d.batchName || d.batch || d.batchId || '-';
-          console.log('[NEW-ATT-SVC] recordJoin — canonical (via userId lookup):', canonicalId, 'name:', studentName);
-        } else {
-          // Fall back to student_profiles
-          const profileDoc = await db.collection('student_profiles').doc(studentId).get();
-          if (profileDoc.exists) {
-            const d = profileDoc.data()!;
-            canonicalId = studentId;
-            rollNo = d.regNo || d.rollNumber || d.rollNo || '-';
-            studentName = d.name || d.fullName || d.studentName || '-';
-            batchName = d.batchName || d.batch || '-';
-            console.log('[NEW-ATT-SVC] recordJoin — canonical (student_profiles):', canonicalId, 'name:', studentName);
+        // Value is NOT a students doc ID — check users collection first to find studentId
+        let foundStudentDoc = false;
+        try {
+          const uDoc = await db.collection('users').doc(studentId).get();
+          if (uDoc.exists && uDoc.data()?.studentId) {
+            const mappedStId = uDoc.data()!.studentId;
+            const mappedDoc = await db.collection('students').doc(mappedStId).get();
+            if (mappedDoc.exists) {
+              const d = mappedDoc.data()!;
+              canonicalId = mappedStId;
+              rollNo = d.regNo || d.registrationNumber || d.rollNumber || d.rollNo || d.username || '-';
+              studentName = d.name || d.fullName || d.studentName || d.username || '-';
+              batchName = d.batchName || d.batch || d.batchId || '-';
+              foundStudentDoc = true;
+              console.log('[NEW-ATT-SVC] recordJoin — canonical (via users doc studentId):', canonicalId, 'name:', studentName);
+            }
+          }
+        } catch (uErr) {}
+
+        if (!foundStudentDoc) {
+          const byUserId = await db.collection('students').where('userId', '==', studentId).limit(1).get();
+          if (!byUserId.empty) {
+            const d = byUserId.docs[0].data()!;
+            canonicalId = byUserId.docs[0].id; // ← use the students DOC ID as canonical
+            rollNo = d.regNo || d.registrationNumber || d.rollNumber || d.rollNo || d.username || '-';
+            studentName = d.name || d.fullName || d.studentName || d.username || '-';
+            batchName = d.batchName || d.batch || d.batchId || '-';
+            console.log('[NEW-ATT-SVC] recordJoin — canonical (via userId lookup):', canonicalId, 'name:', studentName);
           } else {
-            console.warn('[NEW-ATT-SVC] recordJoin — student NOT found anywhere for id:', studentId);
+            // Fall back to student_profiles
+            const profileDoc = await db.collection('student_profiles').doc(studentId).get();
+            if (profileDoc.exists) {
+              const d = profileDoc.data()!;
+              canonicalId = studentId;
+              rollNo = d.regNo || d.rollNumber || d.rollNo || '-';
+              studentName = d.name || d.fullName || d.studentName || '-';
+              batchName = d.batchName || d.batch || '-';
+              console.log('[NEW-ATT-SVC] recordJoin — canonical (student_profiles):', canonicalId, 'name:', studentName);
+            } else {
+              console.warn('[NEW-ATT-SVC] recordJoin — student NOT found anywhere for id:', studentId);
+            }
           }
         }
       }
@@ -89,6 +109,30 @@ export class NewAttendanceService {
     console.log('[NEW-ATT-SVC] recordJoin — writing to Firestore:', docPayload);
     await db.collection(COLLECTION).add(docPayload);
     console.log('[NEW-ATT-SVC] recordJoin — SUCCESS — document written to', COLLECTION);
+
+    // Sync to student's attendanceLog in students collection so ERP Attendance Registry reflects it automatically
+    try {
+      const dateStr = now.split('T')[0];
+      const sDocRef = db.collection('students').doc(canonicalId);
+      const sDoc = await sDocRef.get();
+      if (sDoc.exists) {
+        const sData = sDoc.data() || {};
+        const log = sData.attendanceLog || {};
+        if (log[dateStr] !== 'present') {
+          const newAttended = (Number(sData.attendedDays || 0)) + 1;
+          await sDocRef.update({
+            [`attendanceLog.${dateStr}`]: 'present',
+            attendedDays: newAttended,
+            lastAttendanceDate: dateStr,
+            lastAttendanceStatus: 'present',
+            updatedAt: now,
+          });
+          console.log(`[NEW-ATT-SVC] Updated student ${canonicalId} attendanceLog for ${dateStr} as present`);
+        }
+      }
+    } catch (e) {
+      console.warn('[NEW-ATT-SVC] Failed to sync attendanceLog to students collection:', e);
+    }
   }
 
   /**

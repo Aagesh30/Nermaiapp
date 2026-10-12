@@ -9,6 +9,7 @@ export interface PushNotificationPayload {
   targetUserId?: string | null;
   targetAudience?: string | null;
   data?: Record<string, any>;
+  excludeUserId?: string | null;
 }
 
 export interface PushDeliveryResult {
@@ -79,10 +80,31 @@ export async function sendPushNotification(
   };
 
   try {
-    const { title, body, targetRole, targetBatch, targetUserId, data } = payload;
+    const { title, body, targetRole, targetBatch, targetUserId, data, excludeUserId } = payload;
     if (!title || !body) {
       console.warn("[PushService] Skipped: title and body are required");
       return result;
+    }
+
+    // Resolve excluded candidate IDs if excludeUserId is passed
+    const excludeSet = new Set<string>();
+    if (excludeUserId) {
+      const exStr = String(excludeUserId).trim();
+      if (exStr) {
+        excludeSet.add(exStr);
+        try {
+          const sDoc = await db.collection("students").doc(exStr).get();
+          if (sDoc.exists) {
+            const uId = sDoc.data()?.userId;
+            if (uId && typeof uId === "string" && uId.trim()) excludeSet.add(uId.trim());
+          }
+          const uDoc = await db.collection("users").doc(exStr).get();
+          if (uDoc.exists) {
+            const sId = uDoc.data()?.studentId;
+            if (sId && typeof sId === "string" && sId.trim()) excludeSet.add(sId.trim());
+          }
+        } catch (_) {}
+      }
     }
 
     const docsMap = new Map<string, admin.firestore.QueryDocumentSnapshot>();
@@ -144,6 +166,7 @@ export async function sendPushNotification(
     }
 
     const expoTokenDocMap = new Map<string, string>(); // token -> docId
+    const tokenRoleMap = new Map<string, string>(); // token -> role
     const webTokens: string[] = [];
 
     docsMap.forEach((docSnap) => {
@@ -151,19 +174,29 @@ export async function sendPushNotification(
       const token = d?.token;
       if (!token || typeof token !== "string") return;
 
+      // Exclude sender / performed user if specified
+      if (excludeSet.size > 0) {
+        const uId = d.userId ? String(d.userId).trim() : "";
+        const sId = d.studentId ? String(d.studentId).trim() : "";
+        if (excludeSet.has(uId) || (sId && excludeSet.has(sId)) || excludeSet.has(docSnap.id)) {
+          return;
+        }
+      }
+
       // Filter by targetBatch if specified and user is student
       if (
         targetBatch &&
         targetBatch !== "all" &&
         targetBatch !== "all_paid" &&
-        String(targetBatch).trim() !== "" &&
-        d.role === "student" &&
-        d.batch
+        String(targetBatch).trim() !== ""
       ) {
-        if (String(d.batch).trim().toLowerCase() !== String(targetBatch).trim().toLowerCase()) {
+        if (d.role !== "student" || !d.batch || String(d.batch).trim().toLowerCase() !== String(targetBatch).trim().toLowerCase()) {
           return;
         }
       }
+
+      const roleStr = String(d.role || "").toLowerCase();
+      tokenRoleMap.set(token, roleStr);
 
       if (token.startsWith("ExponentPushToken") || token.startsWith("ExpoPushToken")) {
         expoTokenDocMap.set(token, docSnap.id);
@@ -182,7 +215,7 @@ export async function sendPushNotification(
     const cleanData: Record<string, string> = {};
     if (data) {
       Object.entries(data).forEach(([k, v]) => {
-        cleanData[k] = typeof v === "string" ? v : JSON.stringify(v);
+        cleanData[String(k)] = typeof v === "string" ? v : (v === null || v === undefined ? "" : JSON.stringify(v));
       });
     }
 
@@ -194,15 +227,42 @@ export async function sendPushNotification(
 
     // 1. Dispatch to Expo Push API (Physical Android Devices)
     if (uniqueExpo.length > 0) {
-      const expoMessages = uniqueExpo.map((to) => ({
-        to,
-        sound: "default",
-        title,
-        body,
-        priority: "high",
-        channelId: "default",
-        data: cleanData,
-      }));
+      const expoMessages = uniqueExpo.map((to) => {
+        const tokenRole = tokenRoleMap.get(to) || "student";
+        const isAdmin = ["admin", "super_admin", "staff", "developer"].includes(tokenRole);
+        const isGuest = tokenRole === "guest";
+        const tokenData = { ...cleanData };
+        if (isAdmin && tokenData.targetTab === "test" && tokenData.targetSub === "available") {
+          tokenData.targetSub = "test-list";
+          tokenData.subTab = "test-list";
+        } else if (isGuest) {
+          if (tokenData.targetTab === "test" || tokenData.targetTab === "tests" || tokenData.targetSub === "tests" || tokenData.targetSub === "available") {
+            tokenData.targetTab = "guest";
+            tokenData.targetSub = "tests";
+          } else if (tokenData.targetTab === "resources" || tokenData.targetTab === "lms" || tokenData.targetSub === "resources" || tokenData.targetSub === "daily-content") {
+            tokenData.targetTab = "guest";
+            tokenData.targetSub = "resources";
+          } else if (tokenData.targetTab === "crm" || tokenData.targetSub === "admissions" || tokenData.targetSub === "apply") {
+            tokenData.targetTab = "guest";
+            tokenData.targetSub = "apply";
+          } else {
+            tokenData.targetTab = "guest";
+            tokenData.targetSub = "home";
+          }
+          tokenData.screen = tokenData.targetTab;
+          tokenData.subTab = tokenData.targetSub;
+        }
+        return {
+          to,
+          sound: "default",
+          title,
+          body,
+          priority: "high",
+          channelId: "default",
+          data: tokenData,
+          ...(tokenData.dedupeId ? { collapseId: tokenData.dedupeId } : {}),
+        };
+      });
 
       for (let i = 0; i < expoMessages.length; i += 100) {
         const chunk = expoMessages.slice(i, i + 100);
@@ -233,9 +293,10 @@ export async function sendPushNotification(
                   result.ticketDetails?.push({ token: masked, status: "ok", receiptId: ticket.id });
                 } else if (ticket.status === "error") {
                   result.ticketsError++;
-                  const errCode = ticket.details?.error || ticket.message || "UnknownError";
-                  console.warn(`[PushService] Ticket error for token ${masked}: ${errCode}`);
-                  result.ticketDetails?.push({ token: masked, status: "error", error: errCode });
+                  const errCode = ticket.details?.error || "UnknownError";
+                  const errMsg = ticket.message || "";
+                  console.warn(`[PushService] Ticket error for token ${masked}: [${errCode}] ${errMsg}`);
+                  result.ticketDetails?.push({ token: masked, status: "error", error: `${errCode}: ${errMsg}` });
 
                   if (errCode === "DeviceNotRegistered" && docId) {
                     console.log(`[PushService] Deleting stale unregistered token doc ${docId} (${masked})`);
@@ -260,45 +321,132 @@ export async function sendPushNotification(
       }
     }
 
-    // 2. Dispatch to Web FCM (Browsers via Firebase Admin Messaging)
+    // 2. Dispatch to Direct FCM (Native Android & Web Browsers via Firebase Admin SDK)
     if (uniqueWeb.length > 0) {
+      const isTestAvailable = cleanData.targetTab === "test" && cleanData.targetSub === "available";
+
       for (let i = 0; i < uniqueWeb.length; i += 500) {
         const chunk = uniqueWeb.slice(i, i + 500);
-        try {
-          const response = await messaging.sendEachForMulticast({
-            tokens: chunk,
-            notification: {
-              title,
-              body,
-            },
-            data: cleanData,
-            webpush: {
+
+        // Subdivide chunk into recipient payloads based on role (guest, admin, student)
+        const subChunks: Array<{ tokens: string[]; payloadData: Record<string, string>; link: string }> = [];
+        const studentTokens: string[] = [];
+        const adminTokens: string[] = [];
+        const guestTokens: string[] = [];
+
+        chunk.forEach((t) => {
+          const r = tokenRoleMap.get(t) || "student";
+          if (["admin", "super_admin", "staff", "developer"].includes(r)) {
+            adminTokens.push(t);
+          } else if (r === "guest") {
+            guestTokens.push(t);
+          } else {
+            studentTokens.push(t);
+          }
+        });
+
+        // 2a. Guest Web FCM payload & link
+        if (guestTokens.length > 0) {
+          let guestSub = "home";
+          if (cleanData.targetTab === "test" || cleanData.targetTab === "tests" || cleanData.targetSub === "tests" || cleanData.targetSub === "available") {
+            guestSub = "tests";
+          } else if (cleanData.targetTab === "resources" || cleanData.targetTab === "lms" || cleanData.targetSub === "resources" || cleanData.targetSub === "daily-content") {
+            guestSub = "resources";
+          } else if (cleanData.targetTab === "crm" || cleanData.targetSub === "admissions" || cleanData.targetSub === "apply") {
+            guestSub = "apply";
+          }
+          subChunks.push({
+            tokens: guestTokens,
+            payloadData: { ...cleanData, targetTab: "guest", targetSub: guestSub, screen: "guest", subTab: guestSub },
+            link: `https://nermaiiasacademy-519c8.web.app/#guest/${guestSub}`,
+          });
+        }
+
+        // 2b. Admin Web FCM payload & link
+        if (adminTokens.length > 0) {
+          if (isTestAvailable) {
+            subChunks.push({
+              tokens: adminTokens,
+              payloadData: { ...cleanData, targetSub: "test-list", subTab: "test-list" },
+              link: `https://nermaiiasacademy-519c8.web.app/#test/test-list`,
+            });
+          } else {
+            const adminPath = cleanData.targetTab ? `/#${cleanData.targetTab}${cleanData.targetSub ? `/${cleanData.targetSub}` : ''}` : "/";
+            subChunks.push({
+              tokens: adminTokens,
+              payloadData: cleanData,
+              link: `https://nermaiiasacademy-519c8.web.app${adminPath}`,
+            });
+          }
+        }
+
+        // 2c. Student Web FCM payload & link
+        if (studentTokens.length > 0) {
+          const studentPath = isTestAvailable ? "/#test" : (cleanData.targetTab ? `/#${cleanData.targetTab}${cleanData.targetSub ? `/${cleanData.targetSub}` : ''}` : "/");
+          subChunks.push({
+            tokens: studentTokens,
+            payloadData: cleanData,
+            link: `https://nermaiiasacademy-519c8.web.app${studentPath}`,
+          });
+        }
+
+        for (const sub of subChunks) {
+          try {
+            const response = await messaging.sendEachForMulticast({
+              tokens: sub.tokens,
               notification: {
                 title,
                 body,
-                icon: "/favicon.png",
-                badge: "/favicon.png",
               },
-              fcmOptions: {
-                link: cleanData.targetTab ? `/#${cleanData.targetTab}` : "/",
+              data: sub.payloadData,
+              android: {
+                priority: "high",
+                collapseKey: sub.payloadData.dedupeId || undefined,
+                notification: {
+                  title,
+                  body,
+                  channelId: "default",
+                  sound: "default",
+                  priority: "max",
+                  defaultVibrateTimings: true,
+                  defaultSound: true,
+                  clickAction: "fcm.ACTION.NOTIFICATION_CLICK",
+                  tag: sub.payloadData.dedupeId || undefined,
+                },
               },
-            },
-          });
-          result.webCount += response.successCount;
-          result.ticketsOk += response.successCount;
-          result.ticketsError += response.failureCount;
+              webpush: {
+                notification: {
+                  title,
+                  body,
+                  icon: "/favicon.png",
+                  badge: "/favicon.png",
+                  tag: sub.payloadData.dedupeId || undefined,
+                },
+                fcmOptions: {
+                  link: sub.link,
+                },
+              },
+            });
+            result.webCount += response.successCount;
+            result.ticketsOk += response.successCount;
+            result.ticketsError += response.failureCount;
 
           if (response.failureCount > 0 && Array.isArray(response.responses)) {
             let staleWebCount = 0;
             const batch = db.batch();
             response.responses.forEach((resp, idx) => {
+              const targetToken = chunk[idx] || "";
+              const masked = maskToken(targetToken);
               if (!resp.success && resp.error) {
-                const code = resp.error.code;
+                const code = resp.error.code || "unknown";
+                const msg = resp.error.message || "Unknown error";
+                console.warn(`[PushService] Web FCM error for token ${masked}: [${code}] ${msg}`);
+                result.ticketDetails?.push({ token: masked, status: "error", error: `${code}: ${msg}` });
+
                 if (
                   code === "messaging/registration-token-not-registered" ||
                   code === "messaging/invalid-registration-token"
                 ) {
-                  const targetToken = chunk[idx];
                   if (targetToken) {
                     const cleanDocId = "web_" + targetToken.slice(-24).replace(/[^a-zA-Z0-9_-]/g, "_");
                     batch.delete(db.collection("device_push_tokens").doc(cleanDocId));
@@ -314,16 +462,18 @@ export async function sendPushNotification(
           }
         } catch (e: any) {
           console.warn("[PushService] Web FCM delivery error:", e?.message);
+          result.ticketsError += chunk.length;
         }
       }
     }
-
-    result.success = result.ticketsOk > 0;
-    console.log(`[PushService] Push complete: tokensFound=${result.tokensFound}, ticketsOk=${result.ticketsOk}, ticketsError=${result.ticketsError}`);
-    return result;
-  } catch (error: any) {
-    console.error("[PushService] Global error in sendPushNotification:", error?.message);
-    return result;
   }
+
+  result.success = result.ticketsOk > 0;
+  console.log(`[PushService] Push complete: tokensFound=${result.tokensFound}, ticketsOk=${result.ticketsOk}, ticketsError=${result.ticketsError}`);
+  return result;
+} catch (error: any) {
+  console.error("[PushService] Global error in sendPushNotification:", error?.message);
+  return result;
+}
 }
 
