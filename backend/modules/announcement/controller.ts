@@ -79,7 +79,7 @@ export class AnnouncementController {
                     body: content.trim(),
                     targetRole: targetRole as any,
                     targetBatch: isBatchSpecific ? (targetBatch || null) : null,
-                    excludeUserId: (req as any).user?.userId || createdBy || null,
+                    excludeUserId: (req as any).user?.userId || (createdBy && createdBy !== "admin" ? createdBy : null) || null,
                     data: {
                         targetTab: targetDashboard === "free" ? "home" : "dashboard",
                         targetSub: "notices",

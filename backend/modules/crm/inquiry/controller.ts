@@ -51,6 +51,25 @@ export class InquiryController {
                 await batch.commit();
             }
 
+            // Dispatch push notification to admins for new inquiry
+            try {
+                const { sendPushNotification } = await import("../../../services/pushService");
+                sendPushNotification({
+                    title: "New Website Inquiry",
+                    body: `${name} submitted an inquiry: "${subject || message.slice(0, 60)}"`,
+                    targetRole: "admin",
+                    excludeUserId: (req as any).user?.userId || null,
+                    data: {
+                        targetTab: "crm",
+                        targetSub: "enquiries",
+                        screen: "crm",
+                        subTab: "enquiries",
+                        inquiryId: id,
+                        dedupeId: `crm_inquiry_${id}_${Date.now()}`
+                    }
+                }).catch(err => console.log("[Push] Website inquiry push note:", err?.message));
+            } catch (_) {}
+
             return res.status(201).json({
                 success: true,
                 message: "Enquiry submitted successfully",

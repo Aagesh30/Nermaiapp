@@ -99,36 +99,42 @@ async function resolveStudentContext(userId: string): Promise<StudentContext> {
     
     // Resolve multiple batches
     const studentBatches: string[] = studentData.batches || (studentData.batch ? [studentData.batch] : []);
+    let allBatchesDocs: any[] = [];
+    try {
+      const allBatchesSnap = await db.collection('batches').where('isDeleted', '==', false).get();
+      allBatchesDocs = allBatchesSnap.docs;
+    } catch (_) { }
+
     for (const bName of studentBatches) {
       if (bName) {
         const bStr = String(bName).trim();
+        const bLower = bStr.toLowerCase();
         if (!result.batchIds.includes(bStr)) {
           result.batchIds.push(bStr);
         }
-        // 1. Try matching by batchName
-        let batchSnap = await db.collection('batches')
-          .where('batchName', '==', bStr)
-          .where('isDeleted', '==', false)
-          .limit(1)
-          .get();
-
-        if (batchSnap.empty) {
-          batchSnap = await db.collection('batches')
-            .where('name', '==', bStr)
-            .where('isDeleted', '==', false)
-            .limit(1)
-            .get();
+        if (!result.batchIds.includes(String(bName))) {
+          result.batchIds.push(String(bName));
         }
 
-        if (!batchSnap.empty) {
-          const bDoc = batchSnap.docs[0];
-          const bId = bDoc.id;
-          const resolvedName = bDoc.data()?.batchName || bDoc.data()?.name || bStr;
+        // 1. In-memory match against active batches (handles trailing spaces and case insensitivity)
+        const matchedDoc = allBatchesDocs.find(d => {
+          const dData = d.data() || {};
+          const bNameTrim = String(dData.batchName || '').trim().toLowerCase();
+          const nameTrim = String(dData.name || '').trim().toLowerCase();
+          return bNameTrim === bLower || nameTrim === bLower || d.id === bStr || d.id.toLowerCase() === bLower;
+        });
+
+        if (matchedDoc) {
+          const bId = matchedDoc.id;
+          const resolvedName = matchedDoc.data()?.batchName || matchedDoc.data()?.name || bStr;
           if (!result.batchIds.includes(bId)) {
             result.batchIds.push(bId);
           }
           if (!result.batchIds.includes(resolvedName)) {
             result.batchIds.push(resolvedName);
+          }
+          if (!result.batchIds.includes(String(resolvedName).trim())) {
+            result.batchIds.push(String(resolvedName).trim());
           }
           result.batchNameMap[bId] = resolvedName;
         } else {
@@ -229,7 +235,9 @@ function isVisibleToStudent(
     if (actualSpecificBatches.length === 0) return false;
 
     // Student MUST belong to one of the targeted batches
-    const matchesBatch = cleanStudentBatches.some((bId) => actualSpecificBatches.includes(bId));
+    const matchesBatch = cleanStudentBatches.some((bId) =>
+      actualSpecificBatches.some(t => t === bId || t.includes(bId) || bId.includes(t))
+    );
     if (!matchesBatch) return false;
     return true;
   }
@@ -265,14 +273,36 @@ export async function getMyLmsClasses(userId: string, rawTenantId: string): Prom
   const tenantId = !rawTenantId || rawTenantId === 'nermaiiasacademy-519c8' || rawTenantId === 'default' ? 'default_tenant' : rawTenantId;
   const ctx = await resolveStudentContext(userId);
 
-  // ── Pre-fetch courses for cross-course enrollment gate ───────────────────────
+  // ── Pre-fetch courses and batches for cross-course enrollment gate ───────────
   // Prevents UDC students from seeing LDC content (and vice versa) when class-level
   // targetBatchIds are absent or too broad (e.g. empty = "all").
-  const coursesSnap = await db.collection('courses').get();
+  const [coursesSnap, batchesSnap] = await Promise.all([
+    db.collection('courses').get(),
+    db.collection('batches').where('isDeleted', '==', false).get(),
+  ]);
+
+  const activeBatches = batchesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
   const courseTargetBatches = new Map<string, string[]>();
+
   for (const cdoc of coursesSnap.docs) {
     const cdata = cdoc.data() as any;
-    courseTargetBatches.set(cdoc.id, cdata.targetBatchIds || []);
+    let bIds: string[] = Array.isArray(cdata.targetBatchIds) ? [...cdata.targetBatchIds] : [];
+
+    // If course does not have explicit targetBatchIds, infer from batches linked to this course
+    if (bIds.length === 0) {
+      const courseName = String(cdata.name || cdata.title || '').trim().toLowerCase();
+      activeBatches.forEach((b: any) => {
+        const bCourse = String(b.course || '').trim().toLowerCase();
+        const bName = String(b.batchName || b.name || '').trim().toLowerCase();
+        if ((courseName && (bCourse === courseName || bName === courseName)) || b.courseId === cdoc.id) {
+          bIds.push(b.id);
+          if (b.batchName) bIds.push(b.batchName);
+          if (b.name) bIds.push(b.name);
+        }
+      });
+    }
+
+    courseTargetBatches.set(cdoc.id, bIds);
   }
 
   // Query only recorded classes from Firestore
@@ -291,15 +321,24 @@ export async function getMyLmsClasses(userId: string, rawTenantId: string): Prom
     // ── Course-level enrollment gate (Bug fix: cross-course contamination) ──────
     // A student must belong to a batch that is targeted by the CLASS'S COURSE.
     // This stops UDC students from seeing LDC recorded classes and vice versa,
-    // even when individual class targetBatchIds are missing or set to "all".
+    // when individual class targetBatchIds are missing or set to "all".
     if (cls.courseId) {
-      const courseBatches = courseTargetBatches.get(cls.courseId) || [];
-      if (
-        courseBatches.length > 0 &&
-        !courseBatches.includes('all') &&
-        !ctx.batchIds.some(bId => courseBatches.includes(bId))
-      ) {
-        continue; // Student's batch is not enrolled in this course
+      const explicitBatches = (cls.targetBatchIds || []).filter((b: string) => b && !['all', 'all_paid', 'all_free'].includes(b));
+      const hasExplicitTarget = explicitBatches.length > 0;
+      const studentMatchesExplicit = hasExplicitTarget && ctx.batchIds.some(bId =>
+        explicitBatches.some((t: string) => t === bId || t.includes(bId) || bId.includes(t))
+      );
+
+      // Only apply course-level filter if student is not already explicitly targeted by the class
+      if (!studentMatchesExplicit) {
+        const courseBatches = courseTargetBatches.get(cls.courseId) || [];
+        if (
+          courseBatches.length > 0 &&
+          !courseBatches.includes('all') &&
+          !ctx.batchIds.some(bId => courseBatches.includes(bId))
+        ) {
+          continue; // Student's batch is not enrolled in this course
+        }
       }
     }
 

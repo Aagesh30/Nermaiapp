@@ -102,7 +102,7 @@ export class AnnouncementService {
     const hasBatches = Array.isArray(announcement.targetBatchIds) && announcement.targetBatchIds.length > 0;
     const isBatch = announcement.visibility === 'batch' && hasBatches;
     const targetRole = isBatch ? 'student' : 'all';
-    const targetBatch = isBatch && announcement.targetBatchIds ? announcement.targetBatchIds[0] : null;
+    const targetBatch = isBatch && announcement.targetBatchIds ? announcement.targetBatchIds : null;
 
     await sendPushNotification({
       title: 'New Announcement: ' + (announcement.title || 'Academy Notice'),

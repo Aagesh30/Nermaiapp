@@ -18,7 +18,12 @@ export class FirebaseStorageProvider implements IResourceProvider {
     if (!storagePath) {
       throw new AppError('Invalid Firebase Storage Path', 400);
     }
-    
+
+    if (storagePath.includes('drive.google.com') || storagePath.includes('docs.google.com') || storagePath.includes('googleusercontent.com')) {
+      const { GoogleDriveProvider } = require('./GoogleDriveProvider');
+      return new GoogleDriveProvider().getStream(resource, options);
+    }
+
     try {
       const file = this.getBucket().file(storagePath);
       const [exists] = await file.exists();

@@ -1,11 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StudentApi } from '../core/services';
-import { PageHeader } from '../components/ui/PageHeader';
-import { Card, CardContent } from '../components/ui/Card';
-import { Button } from '../components/ui/Button';
-import { Dialog } from '../components/ui/Dialog';
+import { getUserFromAuth } from '../core/api';
 import { useToast } from '../components/ui/Toast/ToastContext';
-import { QrCode, Clock, CheckCircle2, AlertCircle, Send, Upload, Eye, Image as ImageIcon } from 'lucide-react';
 import { 
   Platform, 
   View, 
@@ -26,7 +22,27 @@ import { db } from '../../firebaseConfig';
 import { doc, onSnapshot, collection, query, where } from 'firebase/firestore';
 
 export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean }) => {
-  const { success, error } = useToast();
+  let toastContext: any = null;
+  try {
+    toastContext = useToast();
+  } catch (_) {}
+
+  const showSuccess = (msg: string) => {
+    if (Platform.OS === 'web' && toastContext?.success) {
+      toastContext.success(msg);
+    } else {
+      Alert.alert('Success', msg);
+    }
+  };
+
+  const showError = (msg: string) => {
+    if (Platform.OS === 'web' && toastContext?.error) {
+      toastContext.error(msg);
+    } else {
+      Alert.alert('Error', msg);
+    }
+  };
+
   const [status, setStatus] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -97,11 +113,7 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
           if (timerRef.current) clearInterval(timerRef.current);
           // Set qrCodeEnabled to false locally so page updates
           setStatus((prev: any) => ({ ...prev, qrCodeEnabled: false }));
-          if (Platform.OS === 'web') {
-            success("The payment QR code session has expired.");
-          } else {
-            Alert.alert("Expired", "The payment QR code session has expired.");
-          }
+          showSuccess("The payment QR code session has expired.");
         }
       }, 1000);
     }
@@ -116,24 +128,29 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
     let unsubStudent: (() => void) | null = null;
     let unsubPayments: (() => void) | null = null;
     try {
-      if (typeof localStorage !== 'undefined') {
-        const storedUser = JSON.parse(localStorage.getItem('nermai_auth_user') || '{}');
-        const studentDocId = storedUser?.studentId || storedUser?.id || storedUser?.userId;
-        if (studentDocId) {
-          unsubStudent = onSnapshot(doc(db, 'students', studentDocId), () => {
-            fetchQrStatus();
-          }, (err) => {
-            console.warn('[StudentPayFeesPage] Realtime student sync error:', err);
-          });
+      const authUser = getUserFromAuth();
+      let studentDocId = authUser?.userId;
+      if (!studentDocId && typeof localStorage !== 'undefined') {
+        try {
+          const storedUser = JSON.parse(localStorage.getItem('nermai_auth_user') || '{}');
+          studentDocId = storedUser?.studentId || storedUser?.id || storedUser?.userId;
+        } catch (_) {}
+      }
 
-          // Scope payment listener strictly to this student to prevent academy-wide read multiplier
-          const qPayments = query(collection(db, 'payment_acknowledgements'), where('studentId', '==', studentDocId));
-          unsubPayments = onSnapshot(qPayments, () => {
-            fetchPaymentHistory();
-          }, (err) => {
-            console.warn('[StudentPayFeesPage] Realtime payment sync error:', err);
-          });
-        }
+      if (studentDocId) {
+        unsubStudent = onSnapshot(doc(db, 'students', studentDocId), () => {
+          fetchQrStatus();
+        }, (err) => {
+          console.warn('[StudentPayFeesPage] Realtime student sync error:', err);
+        });
+
+        // Scope payment listener strictly to this student to prevent academy-wide read multiplier
+        const qPayments = query(collection(db, 'payment_acknowledgements'), where('studentId', '==', studentDocId));
+        unsubPayments = onSnapshot(qPayments, () => {
+          fetchPaymentHistory();
+        }, (err) => {
+          console.warn('[StudentPayFeesPage] Realtime payment sync error:', err);
+        });
       }
     } catch (e) {}
 
@@ -154,21 +171,12 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
     setSubmitting(true);
     try {
       await StudentApi.requestStudentQr();
-      const msg = "Request sent, admin will respond in a short time";
-      if (Platform.OS === 'web') {
-        success(msg);
-      } else {
-        Alert.alert("Request Sent", msg);
-      }
+      showSuccess("Request sent, admin will respond in a short time");
       setIsDialogOpen(false);
       await fetchQrStatus();
     } catch (err: any) {
       const errMsg = err?.response?.data?.message || 'Failed to send request.';
-      if (Platform.OS === 'web') {
-        error(errMsg);
-      } else {
-        Alert.alert("Error", errMsg);
-      }
+      showError(errMsg);
     } finally {
       setSubmitting(false);
     }
@@ -177,6 +185,8 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
   const handleScreenshotChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
 
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -222,7 +232,7 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
         }
 
         setScreenshotUrl(compressed);
-        success("Screenshot processed & compressed below 50KB successfully!");
+        showSuccess("Screenshot processed & compressed below 50KB successfully!");
       };
     };
     reader.readAsDataURL(file);
@@ -257,11 +267,7 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
     if (e) e.preventDefault();
     if (!transactionId && !screenshotUrl) {
       const msg = "Please enter a Transaction ID or upload a payment screenshot.";
-      if (Platform.OS === 'web') {
-        return error(msg);
-      } else {
-        return Alert.alert("Error", msg);
-      }
+      return showError(msg);
     }
 
     setSubmittingPayment(true);
@@ -271,15 +277,11 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
         screenshotUrl
       });
       const msg = "Transaction acknowledgement submitted successfully!";
-      if (Platform.OS === 'web') {
-        success(msg);
-      } else {
-        Alert.alert("Success", msg);
-      }
+      showSuccess(msg);
       setTransactionId('');
       setScreenshotUrl('');
       
-      if (Platform.OS === 'web') {
+      if (Platform.OS === 'web' && typeof document !== 'undefined') {
         // Reset file input on web
         const fileInput = document.getElementById('screenshot-upload') as HTMLInputElement;
         if (fileInput) fileInput.value = '';
@@ -288,11 +290,7 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
       fetchPaymentHistory();
     } catch (err: any) {
       const errMsg = err?.response?.data?.message || 'Failed to submit acknowledgement.';
-      if (Platform.OS === 'web') {
-        error(errMsg);
-      } else {
-        Alert.alert("Error", errMsg);
-      }
+      showError(errMsg);
     } finally {
       setSubmittingPayment(false);
     }
@@ -336,6 +334,48 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
           <RNContainerSkeleton rows={2} darkMode={darkMode} />
         ) : (
           <View style={{ gap: 20 }}>
+            {/* 3-Step Fee Payment Guide */}
+            <View style={{
+              backgroundColor: darkMode ? '#222' : '#f8fafc',
+              borderRadius: 12,
+              padding: 16,
+              borderWidth: 1,
+              borderColor: darkMode ? '#333' : '#e2e8f0',
+            }}>
+              <Text style={{ fontSize: 13, fontWeight: 'bold', color: darkMode ? '#fff' : '#1e293b', marginBottom: 10 }}>
+                💡 HOW TO PAY FEES IN 3 EASY STEPS:
+              </Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+                <View style={{ flex: 1, minWidth: 200, flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
+                  <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: '#c62828', alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>1</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: 'bold', color: darkMode ? '#fff' : '#1e293b' }}>Request Access</Text>
+                    <Text style={{ fontSize: 12, color: darkMode ? '#aaa' : '#64748b' }}>Tap the button below. Admin grants temporary QR permission.</Text>
+                  </View>
+                </View>
+                <View style={{ flex: 1, minWidth: 200, flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
+                  <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: '#1565c0', alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>2</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: 'bold', color: darkMode ? '#fff' : '#1e293b' }}>Scan & Pay via UPI</Text>
+                    <Text style={{ fontSize: 12, color: darkMode ? '#aaa' : '#64748b' }}>Scan QR using GPay, PhonePe, Paytm or BHIM app.</Text>
+                  </View>
+                </View>
+                <View style={{ flex: 1, minWidth: 200, flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
+                  <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: '#2e7d32', alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>3</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: 'bold', color: darkMode ? '#fff' : '#1e293b' }}>Upload Receipt</Text>
+                    <Text style={{ fontSize: 12, color: darkMode ? '#aaa' : '#64748b' }}>Enter 12-digit UTR & upload receipt for instant verification.</Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+
             {/* Main Payment Card */}
             <View style={{
               backgroundColor: darkMode ? '#1e1e1e' : '#ffffff',
@@ -351,45 +391,48 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
             }}>
               {!status?.qrCodeEnabled ? (
                 // Not Enabled State
-                <View style={{ alignItems: 'center', width: '100%', maxWidth: 500, gap: 16 }}>
+                <View style={{ alignItems: 'center', width: '100%', maxWidth: 520, gap: 16 }}>
                   <View style={{
-                    width: 64,
-                    height: 64,
-                    borderRadius: 32,
+                    width: 68,
+                    height: 68,
+                    borderRadius: 34,
                     backgroundColor: darkMode ? '#3a1a1a' : '#ffebee',
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}>
-                    <Ionicons name="qr-code-outline" size={34} color="#c62828" />
+                    <Ionicons name="qr-code-outline" size={36} color="#c62828" />
                   </View>
 
                   {status?.qrCodeRequested ? (
-                    <View style={{ alignItems: 'center', gap: 10 }}>
+                    <View style={{ alignItems: 'center', gap: 12, width: '100%' }}>
                       <View style={{
                         flexDirection: 'row',
                         alignItems: 'center',
                         gap: 6,
                         backgroundColor: darkMode ? '#3a2e1a' : '#fff8e1',
-                        paddingHorizontal: 14,
+                        paddingHorizontal: 16,
                         paddingVertical: 8,
                         borderRadius: 20,
                         borderWidth: 1,
                         borderColor: darkMode ? '#5a461a' : '#ffe082',
                       }}>
-                        <Ionicons name="time-outline" size={16} color="#f57c00" />
+                        <Ionicons name="time" size={16} color="#f57c00" />
                         <Text style={{ color: '#f57c00', fontSize: 14, fontWeight: 'bold' }}>Request Pending Approval</Text>
                       </View>
-                      <Text style={{ fontSize: 20, fontWeight: 'bold', color: darkMode ? '#ffffff' : '#111111' }}>
-                        Your request is sent!
+                      <Text style={{ fontSize: 22, fontWeight: '800', color: darkMode ? '#ffffff' : '#111111', textAlign: 'center' }}>
+                        Your Request Has Been Sent!
                       </Text>
-                      <Text style={{ fontSize: 15, color: darkMode ? '#9ca3af' : '#666666', textAlign: 'center', lineHeight: 18 }}>
-                        The administrator has been notified. They will respond in a short time. Please refresh this page or check back later.
+                      <Text style={{ fontSize: 14, color: darkMode ? '#9ca3af' : '#64748b', textAlign: 'center', lineHeight: 20 }}>
+                        The academy administrator has been notified. Once approved, the payment QR code will automatically appear on this screen.
                       </Text>
                       <TouchableOpacity
                         onPress={fetchQrStatus}
                         style={{
                           marginTop: 8,
-                          paddingHorizontal: 18,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 6,
+                          paddingHorizontal: 20,
                           paddingVertical: 10,
                           borderRadius: 8,
                           borderWidth: 1,
@@ -397,16 +440,17 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
                           backgroundColor: darkMode ? '#2a2a2a' : '#f5f5f5',
                         }}
                       >
+                        <Ionicons name="refresh-outline" size={16} color={darkMode ? '#fff' : '#333'} />
                         <Text style={{ fontSize: 14, fontWeight: 'bold', color: darkMode ? '#fff' : '#333' }}>Refresh Status</Text>
                       </TouchableOpacity>
                     </View>
                   ) : (
-                    <View style={{ alignItems: 'center', gap: 10 }}>
-                      <Text style={{ fontSize: 20, fontWeight: 'bold', color: darkMode ? '#ffffff' : '#111111' }}>
-                        Scan QR Code for Payments
+                    <View style={{ alignItems: 'center', gap: 12, width: '100%' }}>
+                      <Text style={{ fontSize: 22, fontWeight: '800', color: darkMode ? '#ffffff' : '#111111', textAlign: 'center' }}>
+                        Scan QR Code for Fee Payment
                       </Text>
-                      <Text style={{ fontSize: 15, color: darkMode ? '#9ca3af' : '#666666', textAlign: 'center', lineHeight: 18 }}>
-                        To view the administration's fee payment QR code, please request access. The code will be valid for a limited time.
+                      <Text style={{ fontSize: 14, color: darkMode ? '#9ca3af' : '#64748b', textAlign: 'center', lineHeight: 20 }}>
+                        To access the official fee payment QR code, tap the button below. Permission will be granted by the academy administrator for a secure time window.
                       </Text>
                       <TouchableOpacity
                         onPress={handleRequestQr}
@@ -417,10 +461,15 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
                           alignItems: 'center',
                           gap: 8,
                           backgroundColor: submitting ? '#e57373' : '#c62828',
-                          paddingHorizontal: 22,
-                          paddingVertical: 12,
-                          borderRadius: 8,
+                          paddingHorizontal: 26,
+                          paddingVertical: 14,
+                          borderRadius: 10,
                           opacity: submitting ? 0.8 : 1,
+                          shadowColor: '#c62828',
+                          shadowOffset: { width: 0, height: 4 },
+                          shadowOpacity: 0.25,
+                          shadowRadius: 8,
+                          elevation: 3,
                         }}
                       >
                         {submitting ? (
@@ -430,8 +479,8 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
                           </>
                         ) : (
                           <>
-                            <Ionicons name="qr-code" size={18} color="#ffffff" />
-                            <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: 'bold' }}>Request QR Code</Text>
+                            <Ionicons name="qr-code" size={19} color="#ffffff" />
+                            <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: 'bold' }}>Request QR Code Access</Text>
                           </>
                         )}
                       </TouchableOpacity>
@@ -627,6 +676,46 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
       <Text style={styles.headerTitle}>Pay Fees</Text>
       <Text style={styles.headerSub}>View payment terms, scan QR codes, and pay your fees.</Text>
 
+      {/* 3-Step Fee Payment Guide */}
+      <View style={{
+        backgroundColor: darkMode ? '#1e1e1e' : '#f8fafc',
+        borderRadius: 12,
+        padding: 14,
+        borderWidth: 1,
+        borderColor: darkMode ? '#333' : '#e2e8f0',
+        marginBottom: 16,
+      }}>
+        <Text style={{ fontSize: 12, fontWeight: '800', color: darkMode ? '#fff' : '#1e293b', marginBottom: 8, textTransform: 'uppercase' }}>
+          💡 How to Pay Fees in 3 Easy Steps
+        </Text>
+        <View style={{ gap: 8 }}>
+          <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+            <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#c62828', alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ color: '#fff', fontSize: 11, fontWeight: 'bold' }}>1</Text>
+            </View>
+            <Text style={{ fontSize: 12, color: darkMode ? '#ddd' : '#334155', flex: 1 }}>
+              <Text style={{ fontWeight: 'bold' }}>Request Access:</Text> Tap the button below. Admin grants temporary QR permission.
+            </Text>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+            <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#1565c0', alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ color: '#fff', fontSize: 11, fontWeight: 'bold' }}>2</Text>
+            </View>
+            <Text style={{ fontSize: 12, color: darkMode ? '#ddd' : '#334155', flex: 1 }}>
+              <Text style={{ fontWeight: 'bold' }}>Scan & Pay:</Text> Open any UPI App (GPay, PhonePe, Paytm, BHIM) to pay fees.
+            </Text>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+            <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#2e7d32', alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ color: '#fff', fontSize: 11, fontWeight: 'bold' }}>3</Text>
+            </View>
+            <Text style={{ fontSize: 12, color: darkMode ? '#ddd' : '#334155', flex: 1 }}>
+              <Text style={{ fontWeight: 'bold' }}>Upload Proof:</Text> Enter 12-digit UTR & screenshot to confirm payment receipt.
+            </Text>
+          </View>
+        </View>
+      </View>
+
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#c62828" />
@@ -643,24 +732,25 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
                 </View>
 
                 {status?.qrCodeRequested ? (
-                  <View style={{ alignItems: 'center', gap: 8 }}>
+                  <View style={{ alignItems: 'center', gap: 10, width: '100%' }}>
                     <View style={styles.pendingBadge}>
                       <Ionicons name="time" size={14} color="#f57c00" />
                       <Text style={styles.pendingBadgeText}>Request Pending Approval</Text>
                     </View>
-                    <Text style={styles.titleText}>Your request is sent!</Text>
-                    <Text style={styles.bodyText}>
-                      The administrator has been notified. They will respond in a short time. Please refresh this page or check back later.
+                    <Text style={styles.titleText}>Your Request Has Been Sent!</Text>
+                    <Text style={[styles.bodyText, { textAlign: 'center' }]}>
+                      The administrator has been notified. Once approved, the payment QR code will automatically appear on this screen.
                     </Text>
                     <TouchableOpacity style={styles.refreshBtn} onPress={fetchQrStatus}>
+                      <Ionicons name="refresh-outline" size={16} color="#c62828" />
                       <Text style={styles.refreshBtnText}>Refresh Status</Text>
                     </TouchableOpacity>
                   </View>
                 ) : (
-                  <View style={{ alignItems: 'center', gap: 8 }}>
-                    <Text style={styles.titleText}>Scan QR Code for Payments</Text>
-                    <Text style={styles.bodyText}>
-                      To view the administration's fee payment QR code, please request access. The code will be valid for a limited time.
+                  <View style={{ alignItems: 'center', gap: 10, width: '100%' }}>
+                    <Text style={styles.titleText}>Scan QR Code for Fee Payment</Text>
+                    <Text style={[styles.bodyText, { textAlign: 'center' }]}>
+                      To view the administration's fee payment QR code, tap the button below. Permission will be granted for a secure time window.
                     </Text>
                     <TouchableOpacity 
                       style={[styles.requestBtn, submitting && { opacity: 0.7 }]} 
@@ -670,12 +760,12 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
                       {submitting ? (
                         <>
                           <ActivityIndicator size="small" color="#fff" />
-                          <Text style={[styles.requestBtnText, { marginLeft: 6 }]}>Sending...</Text>
+                          <Text style={[styles.requestBtnText, { marginLeft: 6 }]}>Sending Request...</Text>
                         </>
                       ) : (
                         <>
                           <Ionicons name="qr-code" size={18} color="#fff" />
-                          <Text style={styles.requestBtnText}>Request QR Code</Text>
+                          <Text style={styles.requestBtnText}>Request QR Code Access</Text>
                         </>
                       )}
                     </TouchableOpacity>
@@ -698,13 +788,18 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
                   </Text>
                 </View>
 
-                {/* QR Code image */}
+                {/* QR Code image & UPI Support Badges */}
                 {status?.qrCodeUrl ? (
-                  <View style={styles.qrContainer}>
-                    <Image 
-                      source={{ uri: status.qrCodeUrl }} 
-                      style={styles.qrImage}
-                    />
+                  <View style={{ alignItems: 'center', gap: 10 }}>
+                    <View style={styles.qrContainer}>
+                      <Image 
+                        source={{ uri: status.qrCodeUrl }} 
+                        style={styles.qrImage}
+                      />
+                    </View>
+                    <Text style={{ fontSize: 11, color: '#64748b', textAlign: 'center' }}>
+                      Scan with any UPI App: GPay • PhonePe • Paytm • BHIM
+                    </Text>
                   </View>
                 ) : (
                   <View style={styles.placeholderBox}>
@@ -719,20 +814,23 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
                     <Ionicons name="send" size={14} color="#c62828" /> Submit Transaction Proof
                   </Text>
 
-                  <View style={{ gap: 10 }}>
+                  <View style={{ gap: 12 }}>
                     <View>
-                      <Text style={styles.inputLabel}>Transaction ID / UTR</Text>
+                      <Text style={styles.inputLabel}>Transaction ID / UTR (12 Digits) *</Text>
                       <TextInput 
-                        placeholder="Enter 12-digit transaction ID"
-                        placeholderTextColor="#999"
+                        placeholder="Enter 12-digit transaction ID or UTR"
+                        placeholderTextColor="#9ca3af"
                         value={transactionId}
                         onChangeText={setTransactionId}
                         style={styles.textInput}
                       />
+                      <Text style={{ fontSize: 10, color: '#94a3b8', marginTop: 3 }}>
+                        Check your UPI transaction details for the 12-digit UTR/UPI Ref ID
+                      </Text>
                     </View>
 
                     <View>
-                      <Text style={styles.inputLabel}>Upload Receipt Screenshot</Text>
+                      <Text style={styles.inputLabel}>Upload Receipt Screenshot *</Text>
                       <TouchableOpacity style={styles.filePicker} onPress={handleMobileScreenshotPick}>
                         <Text style={styles.filePickerText}>
                           {screenshotUrl ? "✓ Screenshot attached" : "Choose payment receipt image"}
@@ -744,7 +842,12 @@ export const StudentPayFeesPage = ({ darkMode = false }: { darkMode?: boolean })
                     {screenshotUrl !== "" && (
                       <View style={styles.previewBox}>
                         <Image source={{ uri: screenshotUrl }} style={styles.previewImage} />
-                        <Text style={{ fontSize: 12, color: '#2e7d32', marginTop: 4 }}>Screenshot Attached Successfully</Text>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                          <Text style={{ fontSize: 12, color: '#2e7d32', fontWeight: 'bold' }}>✓ Receipt Attached</Text>
+                          <TouchableOpacity onPress={() => setScreenshotUrl('')}>
+                            <Text style={{ fontSize: 11, color: '#dc2626', fontWeight: 'bold' }}>Remove</Text>
+                          </TouchableOpacity>
+                        </View>
                       </View>
                     )}
 

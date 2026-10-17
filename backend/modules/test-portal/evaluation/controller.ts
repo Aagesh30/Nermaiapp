@@ -374,8 +374,15 @@ export class EvaluationController {
                 rollNumber = u.rollNumber || u.username || u.loginUsername || "Guest";
             }
             if (!studentName || studentName === "Student") studentName = attempt.studentName && attempt.studentName !== "Student" ? attempt.studentName : (attempt.username || "Guest User");
-            const isPhoneNum = (val: string) => /^\d{7,15}$/.test(String(val || "").trim().replace(/[\s\-\+\(\)]/g, ""));
+            const isPhoneNum = (val: string) => {
+                if (!val) return false;
+                const clean = String(val).trim().replace(/[\s\-\+\(\)]/g, "");
+                return /^\d{7,15}$/.test(clean);
+            };
             if (!rollNumber || rollNumber === "N/A" || rollNumber === "Student" || isPhoneNum(rollNumber) || rollNumber === studentName) rollNumber = "Guest";
+            if (attempt.isSpecialBatchTest && (attempt.specialRollNo || (attempt.rollNumber && attempt.rollNumber !== "Guest"))) {
+                rollNumber = attempt.specialRollNo || attempt.rollNumber;
+            }
 
             const resultPayload = {
                 id: attemptId,

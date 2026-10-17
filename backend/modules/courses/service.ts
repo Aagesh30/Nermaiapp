@@ -410,6 +410,30 @@ export class CourseService {
       try {
         const { sendPushNotification } = await import('../../services/pushService');
         const classTitle = createdClass.title || 'A new recorded class';
+        const rawBatches = Array.isArray(createdClass.targetBatchIds)
+          ? createdClass.targetBatchIds
+          : (createdClass.targetBatchIds ? [createdClass.targetBatchIds] : []);
+        const validBatches = rawBatches.filter((b: any) => b && b !== 'all' && b !== 'all_paid');
+
+        // 1. Notify students
+        sendPushNotification({
+          title: '🎥 New Recorded Class Available',
+          body: `"${classTitle}" has been added to your LMS classes.`,
+          targetRole: 'student',
+          targetBatch: validBatches.length > 0 ? validBatches : null,
+          excludeUserId: userId,
+          data: {
+            targetTab: 'lms',
+            targetSub: 'recorded',
+            screen: 'lms',
+            subTab: 'recorded',
+            classId: createdClass.id,
+            courseId: course.id,
+            dedupeId: `recorded_class_${createdClass.id}_${Date.now()}`
+          }
+        }).catch(err => console.log('[Push] Recorded class student push note:', err?.message));
+
+        // 2. Notify admin
         sendPushNotification({
           title: '🎥 New Recorded Class Added',
           body: `"${classTitle}" has been added to LMS.`,
@@ -422,7 +446,7 @@ export class CourseService {
             subTab: 'recorded',
             classId: createdClass.id,
             courseId: course.id,
-            dedupeId: `recorded_class_${createdClass.id}_${Date.now()}`
+            dedupeId: `recorded_class_adm_${createdClass.id}_${Date.now()}`
           }
         }).catch(err => console.log('[Push] Recorded class push note:', err?.message));
       } catch (_) {}
@@ -527,12 +551,34 @@ export class CourseService {
     const classDoc = await this.classRepo.findById(id);
     if (!classDoc) throw new AppError('Class not found', 404);
     
-    const topic = await this.topicRepo.findById(classDoc.topicId);
-    const subject = await this.subjectRepo.findById(topic!.subjectId);
-    const course = await this.courseRepo.findById(subject!.courseId);
+    const targetTopicId = data.topicId || classDoc.topicId;
+    const topic = targetTopicId ? await this.topicRepo.findById(targetTopicId) : null;
+    let course = null;
+    let subject = null;
+    if (topic) {
+      subject = await this.subjectRepo.findById(topic.subjectId);
+      if (subject) {
+        course = await this.courseRepo.findById(subject.courseId);
+      }
+    }
+    if (!course) {
+      const origTopic = await this.topicRepo.findById(classDoc.topicId);
+      const origSubject = origTopic ? await this.subjectRepo.findById(origTopic.subjectId) : null;
+      course = origSubject ? await this.courseRepo.findById(origSubject.courseId) : null;
+    }
     if (!course || (course.tenantId !== tenantId && !subject?.courseId?.startsWith('erp_course_') && course.tenantId !== 'default_tenant')) throw new AppError('Tenant mismatch', 403);
     
     const classData: any = { ...data };
+    if (course) {
+      classData.courseId = course.id;
+    } else if (data.courseId) {
+      classData.courseId = data.courseId;
+    }
+    if (subject) {
+      classData.subjectId = subject.id;
+    } else if (data.subjectId) {
+      classData.subjectId = data.subjectId;
+    }
     
     if (classData.youtubeUrl) {
       const videoId = extractYoutubeId(classData.youtubeUrl);
@@ -594,10 +640,34 @@ export class CourseService {
       });
     } catch (err) {}
 
-    // Dispatch push notification to admin about recorded class upload
+    // Dispatch push notification to students & admin about recorded class upload
     try {
       const { sendPushNotification } = await import('../../services/pushService');
       const classTitle = classDoc.title || 'Class';
+      const rawBatches = Array.isArray(classDoc.targetBatchIds)
+        ? classDoc.targetBatchIds
+        : (classDoc.targetBatchIds ? [classDoc.targetBatchIds] : []);
+      const validBatches = rawBatches.filter((b: any) => b && b !== 'all' && b !== 'all_paid');
+
+      // 1. Notify students
+      sendPushNotification({
+        title: '🎥 Recorded Class Video Ready',
+        body: `Recording for "${classTitle}" is now available in your LMS classes.`,
+        targetRole: 'student',
+        targetBatch: validBatches.length > 0 ? validBatches : null,
+        excludeUserId: userId,
+        data: {
+          targetTab: 'lms',
+          targetSub: 'recorded',
+          screen: 'lms',
+          subTab: 'recorded',
+          classId: id,
+          courseId: course?.id || '',
+          dedupeId: `recorded_video_st_${id}`
+        }
+      }).catch(err => console.log('[Push] Class video student push note:', err?.message));
+
+      // 2. Notify admin
       sendPushNotification({
         title: '🎥 Recorded Class Uploaded',
         body: `Recording for "${classTitle}" is now available.`,
@@ -689,9 +759,13 @@ export class CourseService {
     if (!sapeDecision.allowed) {
       return {
         status: 'DENIED',
+        reason: sapeDecision.reason || 'RECORDED_REQUIRES_APPROVAL',
         denialReason: 'SAPE: ' + sapeDecision.reason,
-        allowedRequestScopes: sapeDecision.allowedRequestScopes,
-        remainingRecordedUnits: sapeDecision.remainingRecordedUnits
+        allowedRequestScopes: (sapeDecision.allowedRequestScopes && sapeDecision.allowedRequestScopes.length > 0)
+          ? sapeDecision.allowedRequestScopes
+          : [{ type: 'CLASS', contentId: classId, count: 1, units: 1, allowed: true }],
+        remainingRecordedUnits: sapeDecision.remainingRecordedUnits ?? 10,
+        monthlyLimit: (sapeDecision as any).monthlyLimit ?? 10
       };
     }
 
@@ -714,9 +788,12 @@ export class CourseService {
       if (!sacsDecision.allowed) {
         return {
           status: 'DENIED',
+          reason: 'RECORDED_REQUIRES_APPROVAL',
           denialReason: 'SACS: ' + (sacsDecision.lockMessage || 'Class Access Denied'),
           // Instruct UI that a request can be made for this class
-          allowedRequestScopes: ['class']
+          allowedRequestScopes: [{ type: 'CLASS', contentId: classId, count: 1, units: 1, allowed: true }],
+          remainingRecordedUnits: 10,
+          monthlyLimit: 10
         };
       }
     } else {

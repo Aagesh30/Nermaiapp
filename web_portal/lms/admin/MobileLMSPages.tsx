@@ -17,7 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { CourseApi, StaffApi, AccessRulesApi, DashboardApi, LiveClassesApi, ProviderAccountsApi } from '../core/services';
 import api from '../core/api';
 import { db } from '../../firebaseConfig';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, doc, onSnapshot } from 'firebase/firestore';
 import { MobileExcelSyllabusModal } from './MobileExcelSyllabusModal';
 
 const showUniversalAlert = (title: string, message: string) => {
@@ -260,7 +260,7 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
       const [cRes, liveRes, reqRes] = await Promise.all([
         DashboardApi.getStudentOverview().catch(() => ({ data: { data: {} } })),
         LiveClassesApi.getStudentLiveSessions().catch(() => ({ data: { data: [] } })),
-        api.get('/access-requests/student/my').catch(() => ({ data: { data: [] } })),
+        api.get('/access-requests/my-requests').catch(() => ({ data: { data: [] } })),
       ]);
       setStudentCourses(cRes.data?.data?.myCourses || []);
       const liveList = liveRes.data?.data || liveRes.data || [];
@@ -318,10 +318,13 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
     }
   }, [lmsSub]);
 
-  // Real-time Firestore sync for courses & subjects
+  // Real-time Firestore sync for curriculum (courses, subjects, topics, subtopics), zoom accounts, SACS
   useEffect(() => {
     let unsubC: any;
     let unsubS: any;
+    let unsubT: any;
+    let unsubSubT: any;
+    let unsubZoom: any;
     let unsubA: any;
     let unsubReq: any;
     try {
@@ -339,37 +342,77 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
             setSubjects(list);
           }
         });
-      } else if (lmsSub === 'lms-access') {
-        unsubA = onSnapshot(collection(db, 'access_requests'), (snap) => {
+        unsubT = onSnapshot(collection(db, 'topics'), (snap) => {
           if (!snap.empty) {
-            const list = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((r: any) => !r.isDeleted && r.status === 'PENDING');
-            if (list.length > 0) setSacsRequests(list);
+            const list = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((t: any) => !t.isDeleted);
+            setTopics(list);
           }
         });
+        unsubSubT = onSnapshot(collection(db, 'subtopics'), (snap) => {
+          if (!snap.empty) {
+            const list = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((st: any) => !st.isDeleted);
+            setSubtopics(list);
+          }
+        });
+      } else if (lmsSub === 'lms-zoom-accounts') {
+        unsubZoom = onSnapshot(collection(db, 'zoom_accounts'), () => {
+          fetchZoomAccounts();
+        });
+      } else if (lmsSub === 'lms-access') {
+        unsubA = onSnapshot(collection(db, 'access_requests'), (snap) => {
+          const list = snap.docs
+            .map((d) => ({ id: d.id, ...d.data() }))
+            .filter((r: any) => !r.isDeleted && String(r.status || '').toUpperCase() === 'PENDING');
+          setSacsRequests(list);
+        }, () => {});
         unsubS = onSnapshot(collection(db, 'access_history'), (snap) => {
           if (!snap.empty) {
             const list = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((h: any) => !h.isDeleted);
             if (list.length > 0) setSacsHistory(list);
           }
-        });
+        }, () => {});
+        unsubZoom = onSnapshot(doc(db, 'live_class_index', 'current'), () => {
+          fetchSacs();
+        }, () => {});
       } else if (lmsSub === 'my-live' || lmsSub === 'my-courses') {
         unsubA = onSnapshot(collection(db, 'live_sessions'), () => {
           fetchStudentData();
-        });
+        }, () => {});
         // Real-time access requests sync: immediately reloads live class permissions when approved
-        unsubReq = onSnapshot(collection(db, 'access_requests'), () => {
+        unsubReq = onSnapshot(doc(db, 'live_class_index', 'current'), () => {
           fetchStudentData();
-        });
+        }, () => {});
+        // Real-time curriculum & enrollment sync (Item 4)
+        unsubC = onSnapshot(collection(db, 'courses'), () => {
+          fetchStudentData();
+        }, () => {});
+        unsubS = onSnapshot(collection(db, 'enrollments'), () => {
+          fetchStudentData();
+        }, () => {});
       }
     } catch {}
 
     return () => {
       if (unsubC) unsubC();
       if (unsubS) unsubS();
+      if (unsubT) unsubT();
+      if (unsubSubT) unsubSubT();
+      if (unsubZoom) unsubZoom();
       if (unsubA) unsubA();
       if (unsubReq) unsubReq();
     };
   }, [lmsSub]);
+
+  // Active fast polling fallback while student has pending access requests
+  useEffect(() => {
+    if (lmsSub !== 'my-live') return;
+    const hasPending = studentLiveClasses.some((c: any) => c.accessRequestPending);
+    if (!hasPending) return;
+    const interval = setInterval(() => {
+      fetchStudentData();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [lmsSub, studentLiveClasses]);
 
   // ── Actions ───────────────────────────────────────────────────────────────
   const handleDeleteCourse = (course: any) => {
@@ -2916,7 +2959,7 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
                                   {cls.accessRequestPending ? '⏳ Request Pending' : '🔒 Request Live Class Access'}
                                 </Text>
                               </TouchableOpacity>
-                            ) : (
+                            ) : cls.isLive ? (
                               <TouchableOpacity
                                 disabled={isJoining}
                                 onPress={async () => {
@@ -2998,6 +3041,26 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
                                   {isJoining ? 'Joining...' : 'Join Live Class'}
                                 </Text>
                               </TouchableOpacity>
+                            ) : (
+                              <View
+                                style={{
+                                  backgroundColor: darkMode ? '#2e2608' : '#fef9c3',
+                                  borderColor: darkMode ? '#594406' : '#fde047',
+                                  borderWidth: 1,
+                                  paddingHorizontal: 16,
+                                  paddingVertical: 10,
+                                  borderRadius: 6,
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: 6
+                                }}
+                              >
+                                <Ionicons name="time-outline" size={15} color={darkMode ? '#fde047' : '#854d0e'} />
+                                <Text style={{ color: darkMode ? '#fde047' : '#854d0e', fontSize: 13, fontWeight: '700' }}>
+                                  Available at start time
+                                </Text>
+                              </View>
                             )
                           ) : null}
 

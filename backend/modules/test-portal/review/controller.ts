@@ -652,6 +652,34 @@ export class ReviewController {
                 return /^\d{7,15}$/.test(clean);
             };
 
+            // Check if this test is targeted to a Special Mock Batch
+            let isSpecialBatchTest = !!testData?.isSpecialBatchTest;
+            const specialBatchRollMap: Record<string, string> = { ...(testData?.mockConfig?.mockRollNumbers || {}) };
+
+            if (!isSpecialBatchTest && (testData?.targetAudience === "batch" || testData?.targetBatch)) {
+                const targetBatchNames = String(testData.targetBatch || "")
+                    .split(",")
+                    .map(b => b.trim().toLowerCase())
+                    .filter(Boolean);
+
+                try {
+                    const specialBatchesSnap = await db.collection("batches").where("isSpecial", "==", true).get();
+                    for (const sbDoc of specialBatchesSnap.docs) {
+                        const sbData = sbDoc.data();
+                        const sbName = String(sbData.batchName || "").trim().toLowerCase();
+                        if (targetBatchNames.includes(sbName)) {
+                            isSpecialBatchTest = true;
+                            if (sbData.studentRollMap && typeof sbData.studentRollMap === "object") {
+                                Object.assign(specialBatchRollMap, sbData.studentRollMap);
+                            }
+                            break;
+                        }
+                    }
+                } catch (e) {
+                    console.log("Error checking special batches in getLeaderboard:", e);
+                }
+            }
+
             const enrichedEntries = await Promise.all(entries.map(async entry => {
                 let sName = entry.studentName || "";
                 let rNum = entry.rollNumber || "";
@@ -687,11 +715,15 @@ export class ReviewController {
                 if (isGenericName(sName)) sName = "Guest User";
                 if (isGenericName(rNum) || isPhoneNum(rNum) || rNum === sName) rNum = "Guest";
 
-                // Enrich with special mock sequential roll number if test has mockConfig or offline entry
-                if (testData?.mockConfig?.mockRollNumbers && entry.studentId && testData.mockConfig.mockRollNumbers[entry.studentId]) {
-                    rNum = testData.mockConfig.mockRollNumbers[entry.studentId];
-                } else if (entry.mockRollNumber) {
-                    rNum = entry.mockRollNumber;
+                // Enrich with special batch roll number ONLY when this test is for a special mock batch
+                if (isSpecialBatchTest) {
+                    if (entry.studentId && specialBatchRollMap[entry.studentId]) {
+                        rNum = String(specialBatchRollMap[entry.studentId]);
+                    } else if (entry.specialRollNo) {
+                        rNum = String(entry.specialRollNo);
+                    } else if (entry.mockRollNumber) {
+                        rNum = String(entry.mockRollNumber);
+                    }
                 }
 
                 return {

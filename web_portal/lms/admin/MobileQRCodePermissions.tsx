@@ -18,7 +18,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
-import { StudentApi, BatchApi, CourseApi } from '../core/services';
+import { StudentApi, BatchApi, CourseApi, LmsAttendanceApi } from '../core/services';
 
 // Real-time ticking countdown for active permissions
 const MobileTimerCountdown = ({
@@ -526,11 +526,62 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
         </View>
       </View>
 
+      {/* ─── 1.1 Urgent Pending Requests Quick Action Bar ────────────── */}
+      {requestCount > 0 && (
+        <View style={[styles.card, { backgroundColor: bgCard, borderColor: '#fca5a5', borderWidth: 1.5, padding: 14 }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#dc2626' }} />
+              <Text style={{ fontSize: 15, fontWeight: '800', color: '#dc2626' }}>
+                Pending Student Requests ({requestCount})
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => handleBulkEnable('requested')}
+              disabled={bulkActionLoading}
+              style={{ backgroundColor: '#dc2626', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 4 }}
+            >
+              <Ionicons name="checkmark-done" size={14} color="#fff" />
+              <Text style={{ color: '#fff', fontSize: 12, fontWeight: '800' }}>Approve All ({requestCount})</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={{ fontSize: 12, color: textSecondary, marginBottom: 10 }}>
+            These students are waiting to pay fees. Tap to grant instant temporary QR access:
+          </Text>
+          <View style={{ gap: 8 }}>
+            {students.filter((s) => s.qrCodeRequested === true).map((s) => {
+              const sName = s.displayName || `${s.firstName || ''} ${s.lastName || ''}`.trim() || s.name || 'Student';
+              const roll = s.rollNo || s.rollNumber || s.loginUsername || '—';
+              return (
+                <View key={`req-${s.id}`} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: inputBg, padding: 10, borderRadius: 8, borderWidth: 1, borderColor }}>
+                  <View style={{ flex: 1, paddingRight: 8 }}>
+                    <Text style={{ fontSize: 14, fontWeight: 'bold', color: textPrimary }}>{sName}</Text>
+                    <Text style={{ fontSize: 12, color: textSecondary }}>Roll: {roll}{s.batch ? ` • ${s.batch}` : ''}{s.course ? ` • ${s.course}` : ''}</Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => handleSinglePermission(s.id, true)}
+                    style={{ backgroundColor: '#16a34a', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 6, flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                  >
+                    <Ionicons name="checkmark-circle-outline" size={14} color="#fff" />
+                    <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Approve</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      )}
+
       {/* ─── 2. QR Code Configuration Card ───────────────────────────── */}
-      <View style={[styles.card, { backgroundColor: bgCard, borderColor }]}>
+      <View style={[styles.card, { backgroundColor: bgCard, borderColor, padding: 16 }]}>
         <View style={styles.cardHeader}>
-          <Ionicons name="cloud-upload-outline" size={17} color="#8B0000" />
-          <Text style={[styles.cardTitle, { color: textPrimary }]}>Upload Payment QR Code</Text>
+          <Ionicons name="cloud-upload-outline" size={18} color="#8B0000" />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.cardTitle, { color: textPrimary }]}>Upload Payment QR Code</Text>
+            <Text style={{ fontSize: 12, color: textSecondary, marginTop: 1 }}>
+              Official UPI QR code displayed to students during fee payment
+            </Text>
+          </View>
         </View>
 
         {/* QR Image Viewport */}
@@ -540,30 +591,38 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
             {
               backgroundColor: inputBg,
               borderColor: qrCodeUrl ? '#8B0000' : borderColor,
+              borderRadius: 12,
+              padding: 14,
             },
           ]}
         >
           {qrCodeUrl ? (
-            <View style={{ alignItems: 'center', width: '100%', gap: 10 }}>
-              <Image
-                source={{ uri: qrCodeUrl }}
-                style={{ width: 170, height: 170, backgroundColor: '#fff', borderRadius: 10 }}
-                resizeMode="contain"
-              />
-              <View style={{ flexDirection: 'row', gap: 12 }}>
+            <View style={{ alignItems: 'center', width: '100%', gap: 12 }}>
+              <View style={{ backgroundColor: '#ffffff', borderRadius: 12, padding: 10, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 4, elevation: 2 }}>
+                <Image
+                  source={{ uri: qrCodeUrl }}
+                  style={{ width: 180, height: 180, borderRadius: 8 }}
+                  resizeMode="contain"
+                />
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ionicons name="checkmark-circle" size={14} color="#16a34a" />
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#16a34a' }}>Active Payment QR Code</Text>
+              </View>
+              <View style={{ flexDirection: 'row', gap: 10, width: '100%', justifyContent: 'center' }}>
                 <TouchableOpacity
                   onPress={handlePickImage}
-                  style={[styles.smallBtn, { backgroundColor: '#8B0000' }]}
+                  style={[styles.smallBtn, { backgroundColor: '#8B0000', flex: 1, maxWidth: 140, justifyContent: 'center', paddingVertical: 8 }]}
                 >
-                  <Ionicons name="refresh-outline" size={13} color="#fff" />
-                  <Text style={styles.smallBtnText}>Change</Text>
+                  <Ionicons name="camera-outline" size={14} color="#fff" />
+                  <Text style={styles.smallBtnText}>Change QR</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   onPress={handleDeleteQrCode}
-                  style={[styles.smallBtn, { backgroundColor: '#fee2e2', borderColor: '#fca5a5', borderWidth: 1 }]}
+                  style={[styles.smallBtn, { backgroundColor: '#fee2e2', borderColor: '#fca5a5', borderWidth: 1, flex: 1, maxWidth: 140, justifyContent: 'center', paddingVertical: 8 }]}
                 >
-                  <Ionicons name="trash-outline" size={13} color="#dc2626" />
+                  <Ionicons name="trash-outline" size={14} color="#dc2626" />
                   <Text style={[styles.smallBtnText, { color: '#dc2626' }]}>Remove</Text>
                 </TouchableOpacity>
               </View>
@@ -574,42 +633,109 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
               style={{ alignItems: 'center', padding: 22 }}
               activeOpacity={0.7}
             >
-              <View style={[styles.iconCircle, { backgroundColor: 'rgba(139,0,0,0.1)', marginBottom: 8 }]}>
-                <Ionicons name="cloud-upload-outline" size={24} color="#8B0000" />
+              <View style={[styles.iconCircle, { backgroundColor: 'rgba(139,0,0,0.1)', marginBottom: 8, width: 50, height: 50, borderRadius: 25 }]}>
+                <Ionicons name="cloud-upload-outline" size={26} color="#8B0000" />
               </View>
               <Text style={{ fontSize: 15, fontWeight: '700', color: textPrimary }}>
-                Tap to choose QR Code image
+                Tap to Choose QR Code Image
               </Text>
-              <Text style={{ fontSize: 13, color: textSecondary, marginTop: 2 }}>PNG, JPG or SVG</Text>
+              <Text style={{ fontSize: 12, color: textSecondary, marginTop: 4 }}>
+                Supports PNG, JPG, or WebP (Square UPI recommended)
+              </Text>
             </TouchableOpacity>
           )}
         </View>
 
-        {/* Timer Config */}
-        <View style={{ marginTop: 14, gap: 12 }}>
+        {/* Timer Config & Quick Presets */}
+        <View style={{ marginTop: 16, gap: 12 }}>
+          {/* Quick Presets Bar */}
+          <View>
+            <Text style={[styles.label, { color: textSecondary, marginBottom: 6 }]}>
+              QUICK VALIDITY PRESETS
+            </Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+              {[
+                { label: '15 Mins', dur: 15, unit: 'minutes' },
+                { label: '30 Mins', dur: 30, unit: 'minutes' },
+                { label: '1 Hour', dur: 1, unit: 'hours' },
+                { label: '2 Hours', dur: 2, unit: 'hours' },
+                { label: '24 Hours', dur: 24, unit: 'hours' },
+              ].map(p => {
+                const isSelected = timerDuration === p.dur && timerUnit === p.unit;
+                return (
+                  <TouchableOpacity
+                    key={p.label}
+                    onPress={() => {
+                      setTimerDuration(p.dur);
+                      setTimerUnit(p.unit);
+                    }}
+                    style={{
+                      paddingHorizontal: 12,
+                      paddingVertical: 7,
+                      borderRadius: 20,
+                      borderWidth: 1,
+                      borderColor: isSelected ? '#8B0000' : borderColor,
+                      backgroundColor: isSelected ? '#8B0000' : inputBg,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontWeight: '700',
+                        color: isSelected ? '#ffffff' : textSecondary,
+                      }}
+                    >
+                      {p.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+
+          {/* Stepper + Input + Unit Selector */}
           <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
-            {/* Validity Duration */}
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.label, { color: textSecondary }]}>Validity Duration</Text>
-              <TextInput
-                keyboardType="numeric"
-                value={String(timerDuration)}
-                onChangeText={(val) => setTimerDuration(Math.max(1, parseInt(val) || 1))}
-                style={[
-                  styles.input,
-                  {
-                    backgroundColor: inputBg,
-                    borderColor,
-                    color: textPrimary,
-                  },
-                ]}
-              />
+            {/* Validity Duration with Steppers */}
+            <View style={{ flex: 1.2 }}>
+              <Text style={[styles.label, { color: textSecondary, marginBottom: 4 }]}>Duration</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: inputBg, borderRadius: 10, borderWidth: 1, borderColor, height: 44 }}>
+                <TouchableOpacity
+                  onPress={() => setTimerDuration(Math.max(1, timerDuration - 1))}
+                  style={{ width: 36, height: 44, justifyContent: 'center', alignItems: 'center' }}
+                >
+                  <Ionicons name="remove" size={18} color={textPrimary} />
+                </TouchableOpacity>
+                <TextInput
+                  keyboardType="numeric"
+                  value={String(timerDuration)}
+                  onChangeText={(val) => setTimerDuration(Math.max(1, parseInt(val) || 1))}
+                  style={[
+                    styles.input,
+                    {
+                      flex: 1,
+                      textAlign: 'center',
+                      backgroundColor: 'transparent',
+                      borderWidth: 0,
+                      color: textPrimary,
+                      fontSize: 15,
+                      fontWeight: 'bold',
+                      height: 44,
+                    },
+                  ]}
+                />
+                <TouchableOpacity
+                  onPress={() => setTimerDuration(timerDuration + 1)}
+                  style={{ width: 36, height: 44, justifyContent: 'center', alignItems: 'center' }}
+                >
+                  <Ionicons name="add" size={18} color={textPrimary} />
+                </TouchableOpacity>
+              </View>
             </View>
 
             {/* Time Unit Selector */}
             <View style={{ flex: 1 }}>
-              <Text style={[styles.label, { color: textSecondary }]}>Time Unit</Text>
-              <View style={{ flexDirection: 'row', borderRadius: 10, borderWidth: 1, borderColor, overflow: 'hidden', height: 42 }}>
+              <Text style={[styles.label, { color: textSecondary, marginBottom: 4 }]}>Unit</Text>
+              <View style={{ flexDirection: 'row', borderRadius: 10, borderWidth: 1, borderColor, overflow: 'hidden', height: 44 }}>
                 <TouchableOpacity
                   onPress={() => setTimerUnit('minutes')}
                   style={{
@@ -621,7 +747,7 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
                 >
                   <Text
                     style={{
-                      fontSize: 14,
+                      fontSize: 13,
                       fontWeight: '700',
                       color: timerUnit === 'minutes' ? '#fff' : textSecondary,
                     }}
@@ -640,7 +766,7 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
                 >
                   <Text
                     style={{
-                      fontSize: 14,
+                      fontSize: 13,
                       fontWeight: '700',
                       color: timerUnit === 'hours' ? '#fff' : textSecondary,
                     }}
@@ -652,18 +778,22 @@ export const MobileQRCodePermissions: React.FC<MobileQRCodePermissionsProps> = (
             </View>
           </View>
 
+          <Text style={{ fontSize: 11, color: textSecondary, fontStyle: 'italic' }}>
+            ℹ️ Students can view the payment QR code for {timerDuration} {timerUnit} once permission is granted.
+          </Text>
+
           {/* Save Settings Button */}
           <TouchableOpacity
             onPress={handleSaveSettings}
             disabled={settingsSaving}
-            style={[styles.primaryBtn, { backgroundColor: '#8B0000', opacity: settingsSaving ? 0.7 : 1 }]}
+            style={[styles.primaryBtn, { backgroundColor: '#8B0000', opacity: settingsSaving ? 0.7 : 1, height: 44, borderRadius: 10 }]}
           >
             {settingsSaving ? (
               <ActivityIndicator color="#fff" size="small" />
             ) : (
               <>
-                <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
-                <Text style={styles.primaryBtnText}>Save Settings</Text>
+                <Ionicons name="checkmark-circle-outline" size={17} color="#fff" />
+                <Text style={styles.primaryBtnText}>Save QR Settings</Text>
               </>
             )}
           </TouchableOpacity>

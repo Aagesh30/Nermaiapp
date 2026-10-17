@@ -222,66 +222,67 @@ export default function CustomLeadsPage() {
   };
 
   return (
-    <View style={[styles.container, isMobile && { padding: 14 }]}>
+    <View style={[styles.container, isMobile && { paddingHorizontal: 0, paddingVertical: 4 }]}>
       {/* Top Header */}
-      <View style={[styles.header, isMobile && { flexDirection: 'column', alignItems: 'stretch', gap: 12, padding: 16 }]}>
+      <View style={[styles.header, isMobile && { flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start', gap: 10, padding: 12, marginBottom: 12 }]}>
         <View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <MaterialCommunityIcons name="clipboard-account-outline" size={26} color="#b91c1c" />
-            <Text style={[styles.headerTitle, isMobile && { fontSize: 20 }]}>Custom Application Leads</Text>
+            <MaterialCommunityIcons name="clipboard-account-outline" size={22} color="#b91c1c" />
+            <Text style={[styles.headerTitle, isMobile && { fontSize: 17 }]}>Custom Application Leads</Text>
           </View>
-          <Text style={styles.headerSubtitle}>
+          <Text style={[styles.headerSubtitle, isMobile && { fontSize: 12, marginTop: 2 }]}>
             Dedicated submissions from the Mock Test & Application Form.
           </Text>
         </View>
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, justifyContent: isMobile ? 'space-between' : 'flex-end' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: isMobile ? 'space-between' : 'flex-end' }}>
           <TouchableOpacity
-            style={[styles.refreshBtn, isMobile && { flex: 1, justifyContent: 'center' }]}
+            style={[styles.refreshBtn, isMobile && { flex: 1, justifyContent: 'center', paddingVertical: 8, paddingHorizontal: 12 }]}
             onPress={fetchLeads}
             disabled={loading}
           >
-            <MaterialCommunityIcons name="refresh" size={18} color="#475569" />
-            <Text style={styles.refreshBtnText}>Refresh</Text>
+            <MaterialCommunityIcons name="refresh" size={16} color="#475569" />
+            <Text style={[styles.refreshBtnText, isMobile && { fontSize: 13 }]}>Refresh</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.exportBtn, isMobile && { flex: 1, justifyContent: 'center' }]}
+            style={[styles.exportBtn, isMobile && { flex: 1, justifyContent: 'center', paddingVertical: 8, paddingHorizontal: 12 }]}
             onPress={handleExportExcel}
           >
-            <MaterialCommunityIcons name="file-excel-outline" size={18} color="#15803d" />
-            <Text style={styles.exportBtnText}>Export Excel</Text>
+            <MaterialCommunityIcons name="file-excel-outline" size={16} color="#15803d" />
+            <Text style={[styles.exportBtnText, isMobile && { fontSize: 13 }]}>Export Excel</Text>
           </TouchableOpacity>
         </View>
       </View>
 
       {/* Metrics Banner */}
-      <View style={[styles.metricsRow, isMobile && { flexWrap: 'wrap', gap: 8 }]}>
-        <View style={[styles.metricCard, isMobile && { minWidth: '47%', flex: undefined, padding: 14 }]}>
-          <Text style={[styles.metricLabel, isMobile && { fontSize: 11 }]} numberOfLines={1}>TOTAL SUBMISSIONS</Text>
-          <Text style={[styles.metricValue, { color: '#0f172a' }, isMobile && { fontSize: 22, marginTop: 2 }]}>{metrics.total}</Text>
+      <View style={[styles.metricsRow, isMobile && { flexWrap: 'wrap', gap: 8, justifyContent: 'space-between', marginBottom: 12 }]}>
+        <View style={[styles.metricCard, isMobile && { width: '48.5%', minWidth: 0, flex: undefined, padding: 10 }]}>
+          <Text style={[styles.metricLabel, isMobile && { fontSize: 10 }]} numberOfLines={1}>TOTAL SUBMISSIONS</Text>
+          <Text style={[styles.metricValue, { color: '#0f172a' }, isMobile && { fontSize: 18, marginTop: 2 }]}>{metrics.total}</Text>
         </View>
-        <View style={[styles.metricCard, isMobile && { minWidth: '47%', flex: undefined, padding: 14 }]}>
-          <Text style={[styles.metricLabel, isMobile && { fontSize: 11 }]} numberOfLines={1}>NEW LEADS</Text>
-          <Text style={[styles.metricValue, { color: '#2563eb' }, isMobile && { fontSize: 22, marginTop: 2 }]}>{metrics.newCount}</Text>
+        <View style={[styles.metricCard, isMobile && { width: '48.5%', minWidth: 0, flex: undefined, padding: 10 }]}>
+          <Text style={[styles.metricLabel, isMobile && { fontSize: 10 }]} numberOfLines={1}>NEW LEADS</Text>
+          <Text style={[styles.metricValue, { color: '#2563eb' }, isMobile && { fontSize: 18, marginTop: 2 }]}>{metrics.newCount}</Text>
         </View>
-        <View style={[styles.metricCard, isMobile && { minWidth: '47%', flex: undefined, padding: 14 }]}>
-          <Text style={[styles.metricLabel, isMobile && { fontSize: 11 }]} numberOfLines={1}>CONTACTED</Text>
-          <Text style={[styles.metricValue, { color: '#d97706' }, isMobile && { fontSize: 22, marginTop: 2 }]}>{metrics.contactedCount}</Text>
+        <View style={[styles.metricCard, isMobile && { width: '48.5%', minWidth: 0, flex: undefined, padding: 10 }]}>
+          <Text style={[styles.metricLabel, isMobile && { fontSize: 10 }]} numberOfLines={1}>CONTACTED</Text>
+          <Text style={[styles.metricValue, { color: '#d97706' }, isMobile && { fontSize: 18, marginTop: 2 }]}>{metrics.contactedCount}</Text>
         </View>
-        <View style={[styles.metricCard, isMobile && { minWidth: '47%', flex: undefined, padding: 14 }]}>
-          <Text style={[styles.metricLabel, isMobile && { fontSize: 11 }]} numberOfLines={1}>CONVERTED</Text>
-          <Text style={[styles.metricValue, { color: '#16a34a' }, isMobile && { fontSize: 22, marginTop: 2 }]}>{metrics.convertedCount}</Text>
+        <View style={[styles.metricCard, isMobile && { width: '48.5%', minWidth: 0, flex: undefined, padding: 10 }]}>
+          <Text style={[styles.metricLabel, isMobile && { fontSize: 10 }]} numberOfLines={1}>CONVERTED</Text>
+          <Text style={[styles.metricValue, { color: '#16a34a' }, isMobile && { fontSize: 18, marginTop: 2 }]}>{metrics.convertedCount}</Text>
         </View>
       </View>
 
       {/* Clean Toolbar with Search & 3 Status Filter Pills */}
-      <View style={[styles.toolbar, isMobile && { flexDirection: 'column', alignItems: 'stretch', gap: 10, padding: 12 }]}>
-        <View style={[styles.searchBox, isMobile && { width: '100%' }]}>
-          <MaterialCommunityIcons name="magnify" size={18} color="#94a3b8" />
+      <View style={[styles.toolbar, isMobile && { flexDirection: 'column', alignItems: 'stretch', gap: 8, padding: 10, marginBottom: 12 }]}>
+        <View style={[styles.searchBox, isMobile && { width: '100%', paddingVertical: 4, paddingHorizontal: 12, minHeight: 44 }]}>
+          <MaterialCommunityIcons name="magnify" size={20} color="#64748b" />
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, isMobile && { fontSize: 13, height: 40 }]}
             placeholder="Search by name, phone, email, or city..."
+            placeholderTextColor="#64748b"
             value={searchTerm}
             onChangeText={setSearchTerm}
           />
@@ -336,7 +337,7 @@ export default function CustomLeadsPage() {
           </Text>
         </View>
       ) : isMobile ? (
-        <ScrollView style={{ gap: 10 }} showsVerticalScrollIndicator={false}>
+        <View style={{ gap: 10, width: '100%' }}>
           {filteredLeads.map((lead, idx) => {
             const badge = getStatusBadge(lead.status);
             const dateStr = (lead as any).createdAt?._seconds
@@ -344,9 +345,9 @@ export default function CustomLeadsPage() {
               : ((lead as any).createdAt ? new Date((lead as any).createdAt).toLocaleDateString() : 'Recent');
             const updaterName = (lead as any).updatedByAdminName || (lead as any).updatedBy || (lead as any).atten;
             return (
-              <View key={lead.id} style={{ backgroundColor: '#fff', borderRadius: 10, borderWidth: 1, borderColor: '#e2e8f0', padding: 16, marginBottom: 8 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <View style={{ flex: 1, paddingRight: 8 }}>
+              <View key={lead.id} style={{ backgroundColor: '#fff', borderRadius: 10, borderWidth: 1, borderColor: '#e2e8f0', padding: 14, marginBottom: 8, width: '100%' }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 6 }}>
+                  <View style={{ flex: 1, minWidth: 160, paddingRight: 6 }}>
                     <Text style={{ fontSize: 16, fontWeight: '700', color: '#0f172a' }}>{lead.name}</Text>
                     <Text style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>📅 {dateStr}</Text>
                     <Text style={{ fontSize: 14, color: '#475569', marginTop: 2 }}>📞 {lead.phone}</Text>
@@ -354,7 +355,7 @@ export default function CustomLeadsPage() {
                   </View>
                   <View style={{ alignItems: 'flex-end', gap: 4 }}>
                     <TouchableOpacity
-                      style={[styles.statusBadge, { backgroundColor: badge.bg }]}
+                      style={[styles.statusBadge, { width: 'auto', minWidth: 95, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: badge.bg }]}
                       onPress={() => {
                         setSelectedLead(lead);
                         const currentNorm = (lead.status as any) === 'admitted' ? 'converted' : lead.status;
@@ -362,8 +363,8 @@ export default function CustomLeadsPage() {
                         setEditNotes(lead.notes || '');
                       }}
                     >
-                      <Text style={[styles.statusBadgeText, { color: badge.color }]}>{badge.label}</Text>
-                      <MaterialCommunityIcons name="chevron-down" size={14} color={badge.color} />
+                      <Text style={[styles.statusBadgeText, { color: badge.color, fontSize: 12 }]}>{badge.label}</Text>
+                      <MaterialCommunityIcons name="chevron-down" size={13} color={badge.color} />
                     </TouchableOpacity>
                     {updaterName ? (
                       <Text style={{ fontSize: 10, color: '#94a3b8', fontStyle: 'italic', marginTop: 2 }}>
@@ -376,9 +377,9 @@ export default function CustomLeadsPage() {
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#f1f5f9' }}>
                   <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
                     <View style={styles.modeBadge}>
-                      <Text style={styles.modeBadgeText}>{lead.mode || 'Offline'}</Text>
+                      <Text style={[styles.modeBadgeText, { fontSize: 12 }]}>{lead.mode || 'Offline'}</Text>
                     </View>
-                    {lead.city ? <Text style={{ fontSize: 13, color: '#64748b' }}>📍 {lead.city}</Text> : null}
+                    {lead.city ? <Text style={{ fontSize: 12, color: '#64748b' }}>📍 {lead.city}</Text> : null}
                   </View>
                   <View style={{ flexDirection: 'row', gap: 6 }}>
                     <TouchableOpacity
@@ -406,7 +407,7 @@ export default function CustomLeadsPage() {
               </View>
             );
           })}
-        </ScrollView>
+        </View>
       ) : (
         <ScrollView style={styles.tableCard} horizontal showsHorizontalScrollIndicator={true}>
           <View>
@@ -727,18 +728,26 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#ffffff',
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#cbd5e1',
     borderRadius: 8,
     paddingHorizontal: 14,
-    paddingVertical: 10,
-    gap: 8
+    paddingVertical: Platform.OS === 'android' ? 2 : 8,
+    minHeight: 44,
+    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   searchInput: {
     flex: 1,
     fontSize: 15,
-    color: '#0f172a'
+    color: '#0f172a',
+    paddingVertical: 0,
+    height: '100%',
   },
   filterPillsRow: {
     flexDirection: 'row',

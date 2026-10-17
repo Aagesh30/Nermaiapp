@@ -90,31 +90,68 @@ export class ZoomProvider implements LiveProvider {
       const token = await this.getAccessToken(credentials);
 
       // 4. Create Meeting
-      const response = await axios.post(
-        `https://api.zoom.us/v2/users/${zoomUserId}/meetings`,
-        {
-          topic: config.title,
-          type: 2, // Scheduled meeting
-          start_time: config.startTime ? new Date(config.startTime).toISOString() : new Date().toISOString(),
-          duration: config.durationMinutes || 60,
-          settings: {
-            host_video: true,
-            participant_video: false,
-            join_before_host: false,
-            mute_upon_entry: true,
-            waiting_room: false,
-            approval_type: 2, // No registration required
-            who_can_share_screen: "host",
-            who_can_share_screen_when_someone_is_sharing: "host"
+      let response;
+      try {
+        response = await axios.post(
+          `https://api.zoom.us/v2/users/${zoomUserId}/meetings`,
+          {
+            topic: config.title,
+            type: 2, // Scheduled meeting
+            start_time: config.startTime ? new Date(config.startTime).toISOString() : new Date().toISOString(),
+            duration: config.durationMinutes || 60,
+            settings: {
+              host_video: true,
+              participant_video: false,
+              join_before_host: false,
+              mute_upon_entry: true,
+              waiting_room: false,
+              approval_type: 2, // No registration required
+              who_can_share_screen: "host",
+              who_can_share_screen_when_someone_is_sharing: "host",
+              auto_recording: "cloud"
+            }
+          },
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
           }
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
+        );
+      } catch (postError: any) {
+        const errMsg = (postError.response?.data?.message || postError.message || '').toLowerCase();
+        if (errMsg.includes('cloud') || errMsg.includes('recording')) {
+          logger.warn(`[ZoomProvider] Cloud recording not supported or enabled on account. Retrying with local auto_recording: ${errMsg}`);
+          response = await axios.post(
+            `https://api.zoom.us/v2/users/${zoomUserId}/meetings`,
+            {
+              topic: config.title,
+              type: 2,
+              start_time: config.startTime ? new Date(config.startTime).toISOString() : new Date().toISOString(),
+              duration: config.durationMinutes || 60,
+              settings: {
+                host_video: true,
+                participant_video: false,
+                join_before_host: false,
+                mute_upon_entry: true,
+                waiting_room: false,
+                approval_type: 2,
+                who_can_share_screen: "host",
+                who_can_share_screen_when_someone_is_sharing: "host",
+                auto_recording: "local"
+              }
+            },
+            {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              }
+            }
+          );
+        } else {
+          throw postError;
         }
-      );
+      }
 
       const meetingData = response.data;
 
@@ -152,6 +189,51 @@ export class ZoomProvider implements LiveProvider {
   }
 
   async startSession(liveSession: any) {
+    if (liveSession.providerSessionId && liveSession.hostId !== 'manual') {
+      try {
+        const meetingId = liveSession.providerSessionId.replace(/\D/g, '');
+        if (meetingId) {
+          let token: string | null = null;
+          if (liveSession.providerAccountId && liveSession.providerAccountId !== 'auto') {
+            const account = await ProviderAccountService.getAccountById(liveSession.providerAccountId, true);
+            if (account) {
+              token = await this.getAccessToken(account.credentials || {});
+            }
+          }
+          if (!token) {
+            token = await this.getAccessToken({});
+          }
+
+          // Ensure auto_recording is active when class starts
+          await axios.patch(
+            `https://api.zoom.us/v2/meetings/${meetingId}`,
+            {
+              settings: {
+                auto_recording: 'cloud'
+              }
+            },
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              }
+            }
+          ).catch(async (patchErr: any) => {
+            const patchMsg = (patchErr.response?.data?.message || patchErr.message || '').toLowerCase();
+            if (patchMsg.includes('cloud') || patchMsg.includes('recording')) {
+              await axios.patch(
+                `https://api.zoom.us/v2/meetings/${meetingId}`,
+                { settings: { auto_recording: 'local' } },
+                { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }
+              ).catch(() => {});
+            }
+          });
+          logger.info(`[ZoomProvider] Auto-recording verified/enabled for meeting ${meetingId} on session start.`);
+        }
+      } catch (err: any) {
+        logger.warn(`[ZoomProvider] Could not update auto_recording on startSession: ${err.message}`);
+      }
+    }
     return {
       type: 'sdk' as const,
     };

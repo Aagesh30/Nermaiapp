@@ -2,8 +2,11 @@
   "expo": {
     "name": "NERMAI IAS Academy",
     "slug": "nermai-ias-academy-web-portal",
-    "scheme": ["nermaiiasacademy", "com.nermai.iasacademy"],
-    "version": "1.0.0",
+    "scheme": [
+      "nermaiiasacademy",
+      "com.nermai.iasacademy"
+    ],
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -17,7 +20,7 @@
     },
     "android": {
       "package": "com.nermai.iasacademy",
-      "versionCode": 2,
+      "versionCode": 4,
       "splash": {
         "image": "./assets/splash-icon.png",
         "resizeMode": "contain",
@@ -31,7 +34,7 @@
         "android.permission.POST_NOTIFICATIONS"
       ],
       "adaptiveIcon": {
-        "backgroundColor": "#ffffff",
+        "backgroundColor": "#5a0000",
         "foregroundImage": "./assets/android-icon-foreground.png"
       },
       "predictiveBackGestureEnabled": false
@@ -51,7 +54,7 @@
         {
           "android": {
             "compileSdkVersion": 36,
-            "targetSdkVersion": 35,
+            "targetSdkVersion": 36,
             "minSdkVersion": 24,
             "buildToolsVersion": "36.0.0"
           }
@@ -62,10 +65,10 @@
       "favicon": "./assets/favicon.png",
       "bundler": "metro"
     },
-    "owner": "a_k_j_d",
+    "owner": "unistrix",
     "extra": {
       "eas": {
-        "projectId": "7b9009b2-f209-4d9b-8e24-21f04e78de96"
+        "projectId": "ea494a69-1ba0-46dd-bf4e-d444439771b1"
       }
     }
   }

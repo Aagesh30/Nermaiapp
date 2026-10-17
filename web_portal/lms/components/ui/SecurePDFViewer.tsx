@@ -22,6 +22,13 @@ if (typeof window !== 'undefined') {
     : `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 }
 
+// Disable byte-range requests and stream chunking to prevent "Invalid PDF structure" errors on streamed files
+const PDF_DOCUMENT_OPTIONS = {
+  disableRange: true,
+  disableStream: true,
+  disableAutoFetch: false,
+};
+
 interface SecurePDFViewerProps {
   url: string;
   fallbackUrl?: string;
@@ -46,6 +53,7 @@ export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({
   const [containerWidth, setContainerWidth] = useState<number>(360);
   const [zoomScale, setZoomScale] = useState<number>(1);
   const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [useIframeFallback, setUseIframeFallback] = useState<boolean>(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
@@ -91,7 +99,7 @@ export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({
     return null;
   };
 
-  const driveId = getDriveId(cleanUrl);
+  const driveId = getDriveId(cleanUrl) || getDriveId(fallbackUrl || '') || getDriveId(url || '');
   const apiOrigin = typeof window !== 'undefined' && window.location?.origin && !window.location.origin.includes('localhost')
     ? window.location.origin
     : 'https://nermaiiasacademy-519c8.web.app';
@@ -506,6 +514,12 @@ export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({
 
   const onDocumentLoadError = (err: Error) => {
     console.error('[SecurePDFViewer] PDF loading error:', err);
+    if (driveId && !useIframeFallback) {
+      console.log('[SecurePDFViewer] PDF rendering failed, switching to secure Google Drive preview fallback...');
+      setUseIframeFallback(true);
+      setLoadError(null);
+      return;
+    }
     // Automatic fallback logic on first error
     if (retryAttempt === 0) {
       if (dailyContentId && !activePdfSource.includes('/api/lms/daily-content/')) {
@@ -655,7 +669,24 @@ export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({
             transition: 'filter 0.1s ease, opacity 0.1s ease'
           }}
         >
-          {loadError ? (
+          {useIframeFallback && driveId ? (
+            <div className="relative w-full h-full min-h-[500px] flex-1">
+              <iframe
+                src={`https://drive.google.com/file/d/${driveId}/preview`}
+                className="w-full h-full border-none bg-[#0d1017]"
+                title={title}
+                allow="autoplay"
+              />
+              {isSecure && (
+                <div
+                  className="absolute top-0 right-0 w-20 sm:w-32 h-14 sm:h-20 bg-[#151515]/90 backdrop-blur-xl z-50 select-none cursor-default flex items-center justify-center pointer-events-auto"
+                  title="Pop-out disabled for secure documents"
+                >
+                  <span className="text-[10px] sm:text-xs text-white/50 font-bold tracking-widest uppercase">SECURE</span>
+                </div>
+              )}
+            </div>
+          ) : loadError ? (
             <div className="flex flex-col items-center justify-center p-8 text-center my-auto min-h-full">
               <AlertCircle size={40} className="text-red-400 mb-3" />
               <p className="text-sm font-medium text-white mb-2">Unable to Load Document</p>
@@ -681,6 +712,7 @@ export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({
             >
               <Document
                 file={activePdfSource}
+                options={PDF_DOCUMENT_OPTIONS}
                 onLoadSuccess={onDocumentLoadSuccess}
                 onLoadError={onDocumentLoadError}
                 loading={

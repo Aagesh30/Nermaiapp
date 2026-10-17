@@ -1093,11 +1093,15 @@ Launch Payload Exists: ${!!session.launchPayload}
         const { sendPushNotification } = await import('../../services/pushService');
         const classRepo = new ClassRepository();
         classRepo.findById(session.classId).then((clsData) => {
+          const rawBatches = Array.isArray(clsData?.targetBatchIds)
+            ? clsData.targetBatchIds
+            : (clsData?.targetBatchIds ? [clsData.targetBatchIds] : []);
+          const validBatches = rawBatches.filter((b: any) => b && b !== 'all' && b !== 'all_paid');
           sendPushNotification({
             title: 'Live Class Started 🔴',
             body: `${clsData?.title || 'Live Session'} is now live! Tap to join.`,
             targetRole: 'student',
-            targetBatch: clsData?.targetBatchIds?.[0] || null,
+            targetBatch: validBatches.length > 0 ? validBatches : null,
             excludeUserId: session.hostId || null,
             data: {
               targetTab: 'lms',

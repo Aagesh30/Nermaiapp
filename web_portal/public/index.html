@@ -10,7 +10,8 @@
     <title>NERMAI IAS Academy</title>
     <link rel="manifest" href="/manifest.json" />
     <link rel="apple-touch-icon" href="/favicon.png" />
-    <link rel="icon" href="/favicon.ico" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="shortcut icon" type="image/png" href="/favicon.png" />
     <!-- Expo Metro Web Style Reset -->
     <style id="expo-reset">
       html, body {
@@ -24,7 +25,66 @@
         height: 100%;
         flex: 1;
       }
+      /* Remove browser focus rings & ugly Chrome autofill backgrounds */
+      input, textarea {
+        outline: none !important;
+      }
+      input:-webkit-autofill,
+      input:-webkit-autofill:hover, 
+      input:-webkit-autofill:focus, 
+      input:-webkit-autofill:active {
+        -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+        -webkit-text-fill-color: #212121 !important;
+        transition: background-color 5000s ease-in-out 0s;
+      }
+      /* Laptop/Desktop Login Background Top Anchor Fix */
+      @media (min-width: 769px) {
+        #login-laptop-bg,
+        #login-laptop-bg > div,
+        div[style*="login_bg_laptop"] {
+          background-position: center top !important;
+        }
+      }
     </style>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <!-- Mobile Phone Cache Purge & Fresh Asset Enforcer (Phone View Only) -->
+    <script>
+      (function() {
+        try {
+          var ua = navigator.userAgent || "";
+          var isPhone = /Android|iPhone|iPad|iPod/i.test(ua) || (window.innerWidth <= 768);
+          // Strictly apply ONLY to phone view website. Do NOT touch laptop or desktop browsers!
+          if (!isPhone) return;
+
+          fetch("/version.json?_t=" + Date.now(), { cache: "no-store" })
+            .then(function(res) {
+              if (!res.ok) return null;
+              return res.json();
+            })
+            .then(function(data) {
+              if (data && data.version) {
+                var storedBuild = localStorage.getItem("nermai_mobile_build_id");
+                if (storedBuild && storedBuild !== String(data.version)) {
+                  localStorage.setItem("nermai_mobile_build_id", String(data.version));
+                  if (typeof window !== "undefined" && "caches" in window) {
+                    caches.keys().then(function(names) {
+                      for (var i = 0; i < names.length; i++) {
+                        caches.delete(names[i]);
+                      }
+                    });
+                  }
+                  window.location.reload(true);
+                } else if (!storedBuild) {
+                  localStorage.setItem("nermai_mobile_build_id", String(data.version));
+                }
+              }
+            })
+            .catch(function(_) {});
+        } catch (_) {}
+      })();
+    </script>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>

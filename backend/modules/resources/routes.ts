@@ -4,7 +4,10 @@ import { Readable } from 'stream';
 import { requireAuth, requireRole, requireAuthOrQueryToken } from '../../core/middleware/auth.middleware';
 import * as Controller from './controller';
 
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 150 * 1024 * 1024 }
+});
 
 /**
  * Cloud Functions v2 pre-reads the HTTP body into req.rawBody (Buffer) before Express sees it.

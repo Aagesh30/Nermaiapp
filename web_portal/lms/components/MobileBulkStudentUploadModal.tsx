@@ -687,6 +687,11 @@ export const MobileBulkStudentUploadModal: React.FC<MobileBulkStudentUploadModal
                           <View style={{ backgroundColor: darkMode ? '#262638' : '#f1f5f9', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 5 }}>
                             <Text style={{ fontSize: 10, color: textSecondary }}>
                               Paid: <Text style={{ fontWeight: '800', color: '#16a34a' }}>₹{s.feesPaid.toLocaleString()}</Text> / ₹{s.totalFees.toLocaleString()}
+                              {s.dueFees > 0 ? (
+                                <Text style={{ color: '#d97706', fontWeight: '700' }}> (Due: ₹{s.dueFees.toLocaleString()})</Text>
+                              ) : (
+                                <Text style={{ color: '#16a34a', fontWeight: '700' }}> (Cleared)</Text>
+                              )}
                             </Text>
                           </View>
 

@@ -110,6 +110,7 @@ export const updateClassSchema = z.object({
   description: z.string().optional(),
   teacherId: z.string().optional(),
   teacherName: z.string().optional(),
+  courseId: z.string().optional(),
   subjectId: z.string().optional(),
   subjectName: z.string().optional(),
   topicName: z.string().optional(),

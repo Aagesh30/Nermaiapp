@@ -14,6 +14,15 @@ export class AccessRequestService {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   }
 
+  private async notifyAccessSignal() {
+    try {
+      await db.collection('live_class_index').doc('current').set({
+        updatedAt: new Date().toISOString(),
+        accessRequestUpdate: new Date().toISOString(),
+      }, { merge: true });
+    } catch (_) {}
+  }
+
   // ─── Student: Create Request ─────────────────────────────────────────────────
 
   async createRequest(
@@ -73,6 +82,7 @@ export class AccessRequestService {
     } as any;
 
     await db.collection('access_requests').doc(newRequest.id).set(newRequest);
+    this.notifyAccessSignal().catch(() => {});
 
     try {
       const { sendPushNotification } = await import('../../services/pushService');
@@ -331,6 +341,12 @@ export class AccessRequestService {
 
     try {
       const { sendPushNotification } = await import('../../services/pushService');
+      const rType = String(request.requestType || request.type || '').toLowerCase();
+      let resolvedSub = 'recorded';
+      if (rType.includes('live')) resolvedSub = 'live-classes';
+      else if (rType.includes('resource')) resolvedSub = 'resources';
+      else if (rType.includes('recorded')) resolvedSub = 'recorded';
+
       sendPushNotification({
         title: 'Access Request Approved',
         body: `Your request for ${request.contentName || 'content'} has been approved!`,
@@ -338,15 +354,20 @@ export class AccessRequestService {
         excludeUserId: adminId,
         data: {
           targetTab: 'lms',
-          targetSub: 'recorded',
+          targetSub: resolvedSub,
           screen: 'lms',
-          subTab: 'recorded',
+          subTab: resolvedSub,
           contentId: request.contentId || '',
           requestId: requestId,
           dedupeId: `access_req_approved_${requestId}`
         }
       }).catch(() => {});
     } catch (_) {}
+
+    // Clean up dashboard alert notification
+    db.collection('admin_alerts').doc(`sacs_req_${requestId}`).delete().catch(() => {});
+
+    await this.notifyAccessSignal().catch(() => {});
 
     return { success: true, message: 'Request approved successfully.' };
   }
@@ -369,6 +390,12 @@ export class AccessRequestService {
 
     try {
       const { sendPushNotification } = await import('../../services/pushService');
+      const rType = String(request.requestType || request.type || '').toLowerCase();
+      let resolvedSub = 'recorded';
+      if (rType.includes('live')) resolvedSub = 'live-classes';
+      else if (rType.includes('resource')) resolvedSub = 'resources';
+      else if (rType.includes('recorded')) resolvedSub = 'recorded';
+
       sendPushNotification({
         title: '❌ Access Request Rejected',
         body: `Your request for ${request.contentName || 'content'} was declined${reason ? `: ${reason}` : '.'}`,
@@ -376,15 +403,20 @@ export class AccessRequestService {
         excludeUserId: adminId,
         data: {
           targetTab: 'lms',
-          targetSub: 'recorded',
+          targetSub: resolvedSub,
           screen: 'lms',
-          subTab: 'recorded',
+          subTab: resolvedSub,
           contentId: request.contentId || '',
           requestId: requestId,
           dedupeId: `access_req_rejected_${requestId}`
         }
       }).catch(err => console.log('[Push] Access reject push note:', err?.message));
     } catch (_) {}
+
+    // Clean up dashboard alert notification
+    db.collection('admin_alerts').doc(`sacs_req_${requestId}`).delete().catch(() => {});
+
+    await this.notifyAccessSignal().catch(() => {});
 
     return { success: true };
   }
@@ -545,9 +577,14 @@ export class AccessRequestService {
           // ignore cache invalidation errors
         }
 
+        // Clean up dashboard alert notification
+        db.collection('admin_alerts').doc(`sacs_req_${id}`).delete().catch(() => {});
+
         return id;
       })
     );
+
+    await this.notifyAccessSignal().catch(() => {});
 
     const approved = results.filter(r => r.status === 'fulfilled').length;
     const failed = results.filter(r => r.status === 'rejected').length;

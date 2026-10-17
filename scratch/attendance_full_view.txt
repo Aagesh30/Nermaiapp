@@ -1,0 +1,492 @@
+
+=== STEP 283
+Created At: 2026-10-11T11:26:14+05:30
+Completed At: 2026-10-11T11:26:14+05:30
+File Path: `file:///d:/unistrix/NERMAI_IAS_ACADEMY/web_portal/App.tsx`
+Total Lines: 47824
+Total Bytes: 2846182
+Showing lines 38340 to 38375
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+38340:                                       );
+38341:                                     }).filter(Boolean);
+38342: 
+38343:                                     if (renderedBatches.length === 0) {
+38344:                                       return <Text style={{ color: "#757575", fontSize: 12, fontStyle: "italic" }}>No offline students enrolled in any batch.</Text>;
+38345:                                     }
+38346:                                     return renderedBatches;
+38347:                                   })()
+38348:                                 )}
+38349:                               </View>
+38350:                             </View>
+38351:                           </View>
+38352:                         );
+38353:                       })()}
+38354: 
+38355:                                             {/* ========== ATTENDANCE REGISTRY PANEL (ONLINE & OFFLINE) ========== */}
+38356:                       {erpSub === "offline-attendance" && isAdmin && (() => {
+38357:                         // Helper to detect online student
+38358:                         const isStudentOnline = (s: any) => {
+38359:                           const t = (s.type || s.mode || s.accessTier || s.enrollmentMode || "").toLowerCase();
+38360:                           return t.includes("online") || (!t.includes("offline") && s.enrollmentMode !== "offline");
+38361:                         };
+38362: 
+38363:                         // Filter students based on attendanceModeFilter ("all" | "online" | "offline")
+38364:                         const attendanceStudents = students.filter((s: any) => {
+38365:                           const online = isStudentOnline(s);
+38366:                           if (attendanceModeFilter === "online") return online;
+38367:                           if (attendanceModeFilter === "offline") return !online;
+38368:                           return true;
+38369:                         });
+38370: 
+38371:                         // Counts for filter pills
+38372:                         const onlineCount = students.filter(isStudentOnline).length;
+38373:                         const offlineCount = students.filter((s: any) => !isStudentOnline(s)).length;
+38374:                         const totalAttendanceCount = students.length;
+38375: 
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.
+
+=== STEP 297
+Created At: 2026-10-11T11:27:08+05:30
+Completed At: 2026-10-11T11:27:08+05:30
+File Path: `file:///d:/unistrix/NERMAI_IAS_ACADEMY/web_portal/App.tsx`
+Total Lines: 47824
+Total Bytes: 2846182
+Showing lines 38360 to 38385
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+38360:                           return t.includes("online") || (!t.includes("offline") && s.enrollmentMode !== "offline");
+38361:                         };
+38362: 
+38363:                         // Filter students based on attendanceModeFilter ("all" | "online" | "offline")
+38364:                         const attendanceStudents = students.filter((s: any) => {
+38365:                           const online = isStudentOnline(s);
+38366:                           if (attendanceModeFilter === "online") return online;
+38367:                           if (attendanceModeFilter === "offline") return !online;
+38368:                           return true;
+38369:                         });
+38370: 
+38371:                         // Counts for filter pills
+38372:                         const onlineCount = students.filter(isStudentOnline).length;
+38373:                         const offlineCount = students.filter((s: any) => !isStudentOnline(s)).length;
+38374:                         const totalAttendanceCount = students.length;
+38375: 
+38376:                         // Unique batch names from filtered students
+38377:                         const attendanceBatchNames: string[] = [];
+38378:                         attendanceStudents.forEach((s: any) => {
+38379:                           const bName = s.batch || "General / Unassigned";
+38380:                           if (!attendanceBatchNames.includes(bName)) attendanceBatchNames.push(bName);
+38381:                         });
+38382: 
+38383:                         const activeMonthlyBatch = offlineAttendanceMonthlyBatch || (attendanceBatchNames.length > 0 ? attendanceBatchNames[0] : "");
+38384: 
+38385:                         const studentsInBatch = offlineAttendanceBatch
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.
+
+=== STEP 279
+Created At: 2026-10-11T11:25:56+05:30
+Completed At: 2026-10-11T11:25:56+05:30
+File Path: `file:///d:/unistrix/NERMAI_IAS_ACADEMY/web_portal/App.tsx`
+Total Lines: 47824
+Total Bytes: 2846182
+Showing lines 38370 to 38420
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+38370: 
+38371:                         // Counts for filter pills
+38372:                         const onlineCount = students.filter(isStudentOnline).length;
+38373:                         const offlineCount = students.filter((s: any) => !isStudentOnline(s)).length;
+38374:                         const totalAttendanceCount = students.length;
+38375: 
+38376:                         // Unique batch names from filtered students
+38377:                         const attendanceBatchNames: string[] = [];
+38378:                         attendanceStudents.forEach((s: any) => {
+38379:                           const bName = s.batch || "General / Unassigned";
+38380:                           if (!attendanceBatchNames.includes(bName)) attendanceBatchNames.push(bName);
+38381:                         });
+38382: 
+38383:                         const activeMonthlyBatch = offlineAttendanceMonthlyBatch || (attendanceBatchNames.length > 0 ? attendanceBatchNames[0] : "");
+38384: 
+38385:                         const studentsInBatch = offlineAttendanceBatch
+38386:                           ? attendanceStudents.filter((s: any) => (s.batch || "General / Unassigned") === offlineAttendanceBatch)
+38387:                           : [];
+38388: 
+38389:                         // Daily Marking function
+38390:                         const markAttendance = async (student: any, status: "present" | "absent") => {
+38391:                           const prev = offlineAttendanceMarks[student.id];
+38392:                           if (prev === status) return; // toggle off — s
+<truncated 285 bytes>
+nst attended = Number(student.attendedDays || 0);
+38397:                             let newAttended = attended;
+38398:                             if (status === "present" && prev !== "present") newAttended = attended + 1;
+38399:                             else if (status === "absent" && prev === "present") newAttended = Math.max(0, attended - 1);
+38400: 
+38401:                             const updatedLog = { ...(student.attendanceLog || {}), [offlineAttendanceDate]: status };
+38402: 
+38403:                             await api.put(`/erp/student/${student.id}`, {
+38404:                               attendedDays: newAttended,
+38405:                               lastAttendanceDate: offlineAttendanceDate,
+38406:                               lastAttendanceStatus: status,
+38407:                               attendanceLog: updatedLog,
+38408:                             });
+38409:                             // Update local student list
+38410:                             setStudents((prevList: any[]) => prevList.map((s: any) => s.id === student.id ? { ...s, attendedDays: newAttended, attendanceLog: updatedLog } : s));
+38411:                           } catch (e) {
+38412:                             Alert.alert("Error", "Failed to save attendance. Please try again.");
+38413:                             setOfflineAttendanceMarks(m => ({ ...m, [student.id]: prev || null }));
+38414:                           } finally {
+38415:                             setOfflineAttendanceSaving(s => ({ ...s, [student.id]: false }));
+38416:                           }
+38417:                         };
+38418: 
+38419:                         // Helper for Monthly calculation
+38420:                         const [currYear, currMonthNum] = (offlineAttendanceMonth || new Date().toISOString().slice(0, 7)).split("-").map(Number);
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.
+
+=== STEP 277
+Created At: 2026-10-11T11:25:43+05:30
+Completed At: 2026-10-11T11:25:43+05:30
+File Path: `file:///d:/unistrix/NERMAI_IAS_ACADEMY/web_portal/App.tsx`
+Total Lines: 47824
+Total Bytes: 2846182
+Showing lines 38420 to 38500
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+38420:                         const [currYear, currMonthNum] = (offlineAttendanceMonth || new Date().toISOString().slice(0, 7)).split("-").map(Number);
+38421:                         const daysInMonthCount = new Date(currYear, currMonthNum, 0).getDate();
+38422:                         const daysArray = Array.from({ length: daysInMonthCount }, (_, i) => i + 1);
+38423: 
+38424:                         const formatMonthTitle = (ym: string) => {
+38425:                           try {
+38426:                             const [y, m] = ym.split("-").map(Number);
+38427:                             const d = new Date(y, m - 1, 1);
+38428:                             return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+38429:                           } catch {
+38430:                             return ym;
+38431:                           }
+38432:                         };
+38433: 
+38434:                         const changeMonthlyMonth = (offset: number) => {
+38435:                           const [y, m] = (offlineAttendanceMonth || new Date().toISOString().slice(0, 7)).split("-").map(Number);
+38436:                           const d = new Date(y, m - 1 + offset, 1);
+38437:                           const newY = d.getFullYear();
+38438:                           const newM = String(d.getMonth() + 1).padStart(2, "0");
+38439:                           setOfflineAttendanceMonth(`${newY}-${newM}`);
+38440:                         };
+38441: 
+38442:                         // Monthly students in selected batch
+38443:                    
+<truncated 1706 bytes>
+pct < 75) monthlyDefaultersCount++;
+38471:                         });
+38472: 
+38473:                         const batchAvgAttendanceRate = totalBatchMonthlyMarks > 0 ? Math.round((totalBatchMonthlyPresent / totalBatchMonthlyMarks) * 100) : 0;
+38474:                         const totalWorkingDaysRecorded = recordedDaysSet.size;
+38475: 
+38476:                         // Toggle a cell in Monthly table
+38477:                         const toggleCellAttendance = async (student: any, dateStr: string, currentStatus?: string) => {
+38478:                           const cellKey = `${student.id}_${dateStr}`;
+38479:                           if (offlineAttendanceCellSaving[cellKey]) return;
+38480: 
+38481:                           setOfflineAttendanceCellSaving(prev => ({ ...prev, [cellKey]: true }));
+38482: 
+38483:                           let nextStatus: "present" | "absent" | undefined;
+38484:                           if (!currentStatus) {
+38485:                             nextStatus = "present";
+38486:                           } else if (currentStatus === "present") {
+38487:                             nextStatus = "absent";
+38488:                           } else if (currentStatus === "absent") {
+38489:                             nextStatus = undefined; // clear
+38490:                           }
+38491: 
+38492:                           const currentLog = { ...(student.attendanceLog || {}) };
+38493:                           if (nextStatus) {
+38494:                             currentLog[dateStr] = nextStatus;
+38495:                           } else {
+38496:                             delete currentLog[dateStr];
+38497:                           }
+38498: 
+38499:                           const attended = Number(student.attendedDays || 0);
+38500:                           let newAttended = attended;
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.
+
+=== STEP 275
+Created At: 2026-10-11T11:25:37+05:30
+Completed At: 2026-10-11T11:25:37+05:30
+File Path: `file:///d:/unistrix/NERMAI_IAS_ACADEMY/web_portal/App.tsx`
+Total Lines: 47824
+Total Bytes: 2846182
+Showing lines 38500 to 38570
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+38500:                           let newAttended = attended;
+38501:                           if (nextStatus === "present" && currentStatus !== "present") {
+38502:                             newAttended = attended + 1;
+38503:                           } else if (currentStatus === "present" && nextStatus !== "present") {
+38504:                             newAttended = Math.max(0, attended - 1);
+38505:                           }
+38506: 
+38507:                           // Optimistic update
+38508:                           setStudents((prevList: any[]) =>
+38509:                             prevList.map((s: any) =>
+38510:                               s.id === student.id
+38511:                                 ? {
+38512:                                   ...s,
+38513:                                   attendanceLog: currentLog,
+38514:                                   attendedDays: newAttended,
+38515:                                   lastAttendanceDate: dateStr,
+38516:                                   lastAttendanceStatus: nextStatus || s.lastAttendanceStatus,
+38517:                                 }
+38518:                                 : s
+38519:                             )
+38520:                           );
+38521: 
+38522:                           try {
+38523:                             await api.put(`/erp/student/${student.id}`, {
+38524:                               attendanceLog: currentLog,
+38525:                               attendedDays: newAttended,
+38526:                               lastAttendanceDate: dateStr,
+38527:
+<truncated 1066 bytes>
+ing().slice(0, 7)).split("-");
+38544:                             const daysCount = new Date(parseInt(y), parseInt(m), 0).getDate();
+38545: 
+38546:                             const headers = ["Roll / Reg No", "Student Name", "Mode", "Batch"];
+38547:                             for (let d = 1; d <= daysCount; d++) {
+38548:                               headers.push(String(d));
+38549:                             }
+38550:                             headers.push("Total Present (P)", "Total Absent (A)", "Attendance %");
+38551: 
+38552:                             const dataRows = monthlyStudents.map((st: any, idx: number) => {
+38553:                               const roll = st.rollNumber || st.admissionNumber || `S${idx + 1}`;
+38554:                               const name = getStudentName(st);
+38555:                               const mode = isStudentOnline(st) ? "Online" : "Offline";
+38556:                               const log = st.attendanceLog || {};
+38557: 
+38558:                               let pCount = 0;
+38559:                               let aCount = 0;
+38560:                               const dayValues: string[] = [];
+38561: 
+38562:                               for (let d = 1; d <= daysCount; d++) {
+38563:                                 const dateKey = `${offlineAttendanceMonth}-${String(d).padStart(2, "0")}`;
+38564:                                 const dayOfWeek = new Date(parseInt(y), parseInt(m) - 1, d).getDay();
+38565:                                 const status = log[dateKey];
+38566:                                 if (status === "present") {
+38567:                                   pCount++;
+38568:                                   dayValues.push("P");
+38569:                                 } else if (status === "absent") {
+38570:                                   aCount++;
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.
+
+=== STEP 273
+Created At: 2026-10-11T11:25:32+05:30
+Completed At: 2026-10-11T11:25:33+05:30
+File Path: `file:///d:/unistrix/NERMAI_IAS_ACADEMY/web_portal/App.tsx`
+Total Lines: 47824
+Total Bytes: 2846182
+Showing lines 38570 to 38630
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+38570:                                   aCount++;
+38571:                                   dayValues.push("A");
+38572:                                 } else if (dayOfWeek === 0) {
+38573:                                   dayValues.push("Sun");
+38574:                                 } else {
+38575:                                   dayValues.push("-");
+38576:                                 }
+38577:                               }
+38578:                               const totalMarked = pCount + aCount;
+38579:                               const pct = totalMarked > 0 ? `${Math.round((pCount / totalMarked) * 100)}%` : "0%";
+38580: 
+38581:                               return [roll, name, mode, st.batch || activeMonthlyBatch, ...dayValues, pCount, aCount, pct];
+38582:                             });
+38583: 
+38584:                             const worksheetData = [headers, ...dataRows];
+38585:                             const ws = XLSX.utils.aoa_to_sheet(worksheetData);
+38586:                             const wb = XLSX.utils.book_new();
+38587:                             XLSX.utils.book_append_sheet(wb, ws, "Monthly Register");
+38588:                             XLSX.writeFile(wb, `Attendance_${activeMonthlyBatch || "Batch"}_${offlineAttendanceMonth}.xlsx`);
+38589:                           } catch (err) {
+38590:                             console.error("Excel export error:", err);
+38591:                             Alert.alert("Export Error", "Failed to generate Excel export file.");
+38592:                           }
+38593:            
+<truncated 811 bytes>
+r: "#757575", fontSize: 13, marginTop: 2 }}>
+38605:                                     Track attendance for Online and Offline students. Live class attendance marks automatically.
+38606:                                   </Text>
+38607:                                 </View>
+38608:                                 {offlineAttendanceViewMode === "monthly" && (
+38609:                                   <TouchableOpacity
+38610:                                     onPress={handleExportMonthlyExcel}
+38611:                                     style={{
+38612:                                       flexDirection: "row",
+38613:                                       alignItems: "center",
+38614:                                       gap: 6,
+38615:                                       backgroundColor: "#e8f5e9",
+38616:                                       borderColor: "#2e7d32",
+38617:                                       borderWidth: 1,
+38618:                                       borderRadius: 8,
+38619:                                       paddingHorizontal: 12,
+38620:                                       paddingVertical: 7,
+38621:                                     }}
+38622:                                   >
+38623:                                     <Ionicons name="download-outline" size={16} color="#2e7d32" />
+38624:                                     <Text style={{ color: "#2e7d32", fontWeight: "bold", fontSize: 12 }}>Export Excel</Text>
+38625:                                   </TouchableOpacity>
+38626:                                 )}
+38627:                               </View>
+38628: 
+38629:                               {/* Student Mode Switcher: All | Online | Offline */}
+38630:                               <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.
+
+=== STEP 269
+Created At: 2026-10-11T11:25:16+05:30
+Completed At: 2026-10-11T11:25:16+05:30
+File Path: `file:///d:/unistrix/NERMAI_IAS_ACADEMY/web_portal/App.tsx`
+Total Lines: 47824
+Total Bytes: 2846182
+Showing lines 38630 to 38700
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+38630:                               <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+38631:                                 <Text style={{ fontSize: 12, fontWeight: "bold", color: "#616161", marginRight: 4 }}>STUDENT MODE:</Text>
+38632:                                 {[
+38633:                                   { key: "all" as const, label: `All Students (${totalAttendanceCount})` },
+38634:                                   { key: "online" as const, label: `🌐 Online Students (${onlineCount})` },
+38635:                                   { key: "offline" as const, label: `🏢 Offline Students (${offlineCount})` },
+38636:                                 ].map(filterTab => {
+38637:                                   const isSelected = attendanceModeFilter === filterTab.key;
+38638:                                   return (
+38639:                                     <TouchableOpacity
+38640:                                       key={filterTab.key}
+38641:                                       onPress={() => {
+38642:                                         setAttendanceModeFilter(filterTab.key);
+38643:                                         setOfflineAttendanceBatch(null);
+38644:                                         setOfflineAttendanceMarks({});
+38645:                                       }}
+38646:                                       style={{
+38647:                                         paddingHorizontal: 14,
+38648:                                         paddingVertical: 7,
+38649:                 
+<truncated 2057 bytes>
+                 elevation: offlineAttendanceViewMode === "daily" ? 2 : 0,
+38677:                                   }}
+38678:                                 >
+38679:                                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+38680:                                     <Ionicons name="create-outline" size={16} color={offlineAttendanceViewMode === "daily" ? "#c62828" : "#757575"} />
+38681:                                     <Text style={{ fontWeight: "bold", fontSize: 13, color: offlineAttendanceViewMode === "daily" ? "#c62828" : "#757575" }}>
+38682:                                       Daily Marking
+38683:                                     </Text>
+38684:                                   </View>
+38685:                                 </TouchableOpacity>
+38686: 
+38687:                                 <TouchableOpacity
+38688:                                   onPress={() => setOfflineAttendanceViewMode("monthly")}
+38689:                                   style={{
+38690:                                     flex: 1,
+38691:                                     paddingVertical: 9,
+38692:                                     borderRadius: 8,
+38693:                                     backgroundColor: offlineAttendanceViewMode === "monthly" ? (darkMode ? "#1e1e1e" : "#fff") : "transparent",
+38694:                                     alignItems: "center",
+38695:                                     shadowColor: "#000",
+38696:                                     shadowOpacity: offlineAttendanceViewMode === "monthly" ? 0.08 : 0,
+38697:                                     shadowRadius: 3,
+38698:                                     elevation: offlineAttendanceViewMode === "monthly" ? 2 : 0,
+38699:                                   }}
+38700:                                 >
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.
+
+=== STEP 271
+Created At: 2026-10-11T11:25:26+05:30
+Completed At: 2026-10-11T11:25:26+05:30
+File Path: `file:///d:/unistrix/NERMAI_IAS_ACADEMY/web_portal/App.tsx`
+Total Lines: 47824
+Total Bytes: 2846182
+Showing lines 38700 to 38760
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+38700:                                 >
+38701:                                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+38702:                                     <Ionicons name="calendar" size={16} color={offlineAttendanceViewMode === "monthly" ? "#c62828" : "#757575"} />
+38703:                                     <Text style={{ fontWeight: "bold", fontSize: 13, color: offlineAttendanceViewMode === "monthly" ? "#c62828" : "#757575" }}>
+38704:                                       Monthly Register & History
+38705:                                     </Text>
+38706:                                   </View>
+38707:                                 </TouchableOpacity>
+38708:                               </View>
+38709:                             </View>
+38710: 
+38711:                             {/* ==================== VIEW 1: DAILY MARKING ==================== */}
+38712:                             {offlineAttendanceViewMode === "daily" && (
+38713:                               <View style={{ gap: 14 }}>
+38714:                                 {/* Date Selector Card */}
+38715:                                 <View style={[styles.card, { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 12 }]}>
+38716:                                   <Ionicons name="calendar-outline" size={18} color="#c62828" />
+38717:                                   <Text style={{ fontWeight: "bold", color: "#424242", fontSize: 13 }}>Marking Date:</Text>
+38718:                                   <TextInput
+38719:              
+<truncated 1517 bytes>
+                  onPress={() => {
+38739:                                       const todayStr = new Date().toISOString().slice(0, 10);
+38740:                                       setOfflineAttendanceDate(todayStr);
+38741:                                       if (offlineAttendanceBatch) {
+38742:                                         const initialMarks: Record<string, "present" | "absent" | null> = {};
+38743:                                         const batchStuds = attendanceStudents.filter((s: any) => (s.batch || "General / Unassigned") === offlineAttendanceBatch);
+38744:                                         batchStuds.forEach((s: any) => {
+38745:                                           if (s.attendanceLog && s.attendanceLog[todayStr]) {
+38746:                                             initialMarks[s.id] = s.attendanceLog[todayStr];
+38747:                                           }
+38748:                                         });
+38749:                                         setOfflineAttendanceMarks(initialMarks);
+38750:                                       }
+38751:                                     }}
+38752:                                     style={{ backgroundColor: "#ffebee", borderRadius: 6, paddingHorizontal: 12, paddingVertical: 8 }}
+38753:                                   >
+38754:                                     <Text style={{ color: "#c62828", fontSize: 12, fontWeight: "bold" }}>Today</Text>
+38755:                                   </TouchableOpacity>
+38756:                                 </View>
+38757: 
+38758:                                 {attendanceBatchNames.length === 0 ? (
+38759:                                   <View style={[styles.card, styles.emptyContainer]}>
+38760:                                     <Ionicons name="people-outline" size={48} color="#bdbdbd" />
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.
+
+=== STEP 290
+Created At: 2026-10-11T11:26:40+05:30
+Completed At: 2026-10-11T11:26:41+05:30
+File Path: `file:///d:/unistrix/NERMAI_IAS_ACADEMY/web_portal/App.tsx`
+Total Lines: 47824
+Total Bytes: 2846182
+Showing lines 38755 to 38790
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+38755:                                   </TouchableOpacity>
+38756:                                 </View>
+38757: 
+38758:                                 {attendanceBatchNames.length === 0 ? (
+38759:                                   <View style={[styles.card, styles.emptyContainer]}>
+38760:                                     <Ionicons name="people-outline" size={48} color="#bdbdbd" />
+38761:                                     <Text style={styles.emptyText}>No students found for this mode filter.</Text>
+38762:                                     <Text style={{ color: "#999", fontSize: 12, textAlign: "center" }}>
+38763:                                       Switch the student mode filter or enroll students to view and mark attendance.
+38764:                                     </Text>
+38765:                                   </View>
+38766:                                 ) : !offlineAttendanceBatch ? (
+38767:                                   // Show batch list
+38768:                                   <View style={{ gap: 10 }}>
+38769:                                     <Text style={{ fontWeight: "bold", color: "#212121", fontSize: 14, marginBottom: 4 }}>Select a Batch to Mark</Text>
+38770:                                     {attendanceBatchNames.map((batchName: string) => {
+38771:                                       const batchStuds = attendanceStudents.filter((s: any) => (s.batch || "General / Unassigned") === batchName);
+38772:                                       const count = batchStuds.length;
+38773:                                       const batchInfo = batches.find((b: any) => b.batchName === batchName);
+38774:                                       const onlineInBatch = batchStuds.filter(isStudentOnline).length;
+38775:                                       const offlineInBatch = count - onlineInBatch;
+38776:                                       return (
+38777:                                         <TouchableOpacity
+38778:                                           key={batchName}
+38779:                                           onPress={() => {
+38780:                                             setOfflineAttendanceBatch(batchName);
+38781:                                             const initialMarks: Record<string, "present" | "absent" | null> = {};
+38782:                                             batchStuds.forEach((s: any) => {
+38783:                                               if (s.attendanceLog && s.attendanceLog[offlineAttendanceDate]) {
+38784:                                                 initialMarks[s.id] = s.attendanceLog[offlineAttendanceDate];
+38785:                                               }
+38786:                                             });
+38787:                                             setOfflineAttendanceMarks(initialMarks);
+38788:                                           }}
+38789:                                           style={[styles.card, {
+38790:                                             flexDirection: "row",
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.

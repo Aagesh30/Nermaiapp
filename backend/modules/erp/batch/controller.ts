@@ -50,7 +50,7 @@ export class BatchController {
      */
     static async create(req: Request, res: Response) {
         try {
-            const { batchName, course, year, description, isSpecial, subBatches, createdBy } = req.body;
+            const { batchName, course, year, description, isSpecial, subBatches, createdBy, startingRollNo, lastAssignedRollNo, orderedBatches, studentRollMap, enableSpecialRollNo } = req.body;
 
             if (!batchName || !course) {
                 return res.status(400).json({ success: false, message: "Batch name and course are required" });
@@ -76,6 +76,11 @@ export class BatchController {
                 description: description || "",
                 isSpecial: !!isSpecial,
                 subBatches: Array.isArray(subBatches) ? subBatches : [],
+                orderedBatches: Array.isArray(orderedBatches) ? orderedBatches : (Array.isArray(subBatches) ? subBatches : []),
+                startingRollNo: startingRollNo || "182026",
+                lastAssignedRollNo: lastAssignedRollNo !== undefined ? lastAssignedRollNo : null,
+                studentRollMap: (studentRollMap && typeof studentRollMap === "object") ? studentRollMap : {},
+                enableSpecialRollNo: enableSpecialRollNo !== undefined ? !!enableSpecialRollNo : (!!isSpecial),
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
                 createdBy: createdBy || "admin",
@@ -102,7 +107,7 @@ export class BatchController {
     static async update(req: Request, res: Response) {
         try {
             const { id } = req.params;
-            const { batchName, course, year, description, isSpecial, subBatches, updatedBy } = req.body;
+            const { batchName, course, year, description, isSpecial, subBatches, updatedBy, startingRollNo, lastAssignedRollNo, orderedBatches, studentRollMap, enableSpecialRollNo } = req.body;
 
             const docRef = db.collection(COLLECTION).doc(id);
             const doc = await docRef.get();
@@ -121,6 +126,11 @@ export class BatchController {
             if (description !== undefined) updateData.description = description;
             if (isSpecial !== undefined) updateData.isSpecial = !!isSpecial;
             if (subBatches !== undefined) updateData.subBatches = Array.isArray(subBatches) ? subBatches : [];
+            if (orderedBatches !== undefined) updateData.orderedBatches = Array.isArray(orderedBatches) ? orderedBatches : [];
+            if (startingRollNo !== undefined) updateData.startingRollNo = startingRollNo;
+            if (lastAssignedRollNo !== undefined) updateData.lastAssignedRollNo = lastAssignedRollNo;
+            if (studentRollMap !== undefined) updateData.studentRollMap = studentRollMap;
+            if (enableSpecialRollNo !== undefined) updateData.enableSpecialRollNo = !!enableSpecialRollNo;
 
             await docRef.update(updateData);
             return res.status(200).json({ success: true, message: "Batch updated successfully" });

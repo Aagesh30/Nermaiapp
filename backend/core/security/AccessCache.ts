@@ -113,21 +113,30 @@ async function buildAccessContext(userId: string, rawTenantId: string): Promise<
   const studentTypes = Array.from(new Set(rawStudentTypes)).filter(Boolean);
 
   // Resolve batch UUIDs for any string batch names (e.g. batch name '43' -> batch UUID) AND vice versa
+  let activeBatches: any[] = [];
+  try {
+    const snap = await db.collection('batches').where('isDeleted', '==', false).get();
+    activeBatches = snap.docs;
+  } catch (_) { }
+
   const currentBatchIdentifiers = [...batchIds];
   for (const bIdentifier of currentBatchIdentifiers) {
     try {
-      // 1. Try matching by batchName
-      const byNameSnap = await db.collection('batches')
-        .where('batchName', '==', String(bIdentifier).trim())
-        .where('isDeleted', '==', false)
-        .limit(1)
-        .get();
-      if (!byNameSnap.empty) {
-        const bDoc = byNameSnap.docs[0];
-        const bId = bDoc.id;
-        const bName = bDoc.data()?.batchName;
+      const bStr = String(bIdentifier).trim().toLowerCase();
+      // 1. In-memory match against active batches
+      const matched = activeBatches.find(d => {
+        const dData = d.data() || {};
+        const n1 = String(dData.batchName || '').trim().toLowerCase();
+        const n2 = String(dData.name || '').trim().toLowerCase();
+        return n1 === bStr || n2 === bStr || d.id === bIdentifier || d.id.toLowerCase() === bStr;
+      });
+
+      if (matched) {
+        const bId = matched.id;
+        const bName = matched.data()?.batchName || matched.data()?.name;
         if (bId && !batchIds.includes(bId)) batchIds.push(bId);
         if (bName && !batchIds.includes(String(bName))) batchIds.push(String(bName));
+        if (bName && !batchIds.includes(String(bName).trim())) batchIds.push(String(bName).trim());
       } else {
         // 2. Try fetching by doc ID directly to get batchName
         const bDoc = await db.collection('batches').doc(String(bIdentifier).trim()).get();

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, RefreshCw, ShieldCheck, AlertTriangle } from 'lucide-react';
 import api from '../core/api';
+import { db } from '../../firebaseConfig';
+import { collection, onSnapshot } from 'firebase/firestore';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -68,6 +70,24 @@ export default function ZoomAccountsPage() {
 
   useEffect(() => {
     fetchAccounts();
+
+    let unsub: (() => void) | null = null;
+    let isInitial = true;
+    try {
+      unsub = onSnapshot(collection(db, 'zoom_accounts'), () => {
+        if (isInitial) {
+          isInitial = false;
+          return;
+        }
+        fetchAccounts();
+      }, (err) => console.log('Zoom accounts onSnapshot note:', err?.message));
+    } catch (e) {
+      console.warn('Real-time zoom accounts listener error:', e);
+    }
+
+    return () => {
+      if (unsub) unsub();
+    };
   }, []);
 
   // ── Handlers ──────────────────────────────────────────────────────────────

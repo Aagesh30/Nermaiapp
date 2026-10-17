@@ -952,24 +952,25 @@ export default function MergedLeadsAdmissionsPage() {
   };
 
   return (
-    <View style={[styles.container, isMobile && { padding: 14 }]}>
+    <View style={[styles.container, isMobile && { paddingHorizontal: 0, paddingVertical: 4 }]}>
       {/* Top Header */}
-      <View style={[styles.header, isMobile && { flexDirection: 'column', alignItems: 'stretch', gap: 12, padding: 16 }]}>
-        <View style={{ flex: 1, minWidth: 260, paddingRight: 10 }}>
+      <View style={[styles.header, isMobile && { flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start', gap: 10, padding: 12, marginBottom: 12 }]}>
+        <View style={{ minWidth: isMobile ? '100%' : 260, paddingRight: isMobile ? 0 : 10 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <MaterialCommunityIcons name="book-account-outline" size={26} color="#b91c1c" />
-            <Text style={[styles.headerTitle, isMobile && { fontSize: 20 }]}>NERMAI IAS ACADEMY G ENQUIRY 2026</Text>
+            <MaterialCommunityIcons name="book-account-outline" size={22} color="#b91c1c" />
+            <Text style={[styles.headerTitle, isMobile && { fontSize: 17 }]}>NERMAI IAS ACADEMY — ENQUIRIES 2026</Text>
           </View>
-          <Text style={styles.headerSubtitle}>
+          <Text style={[styles.headerSubtitle, isMobile && { fontSize: 12, marginTop: 2 }]}>
             Consolidated management of Academy Admissions, Walk-in Enquiries, and Social Leads.
           </Text>
         </View>
 
         <ScrollView
-          horizontal={isMobile}
+          horizontal={true}
           showsHorizontalScrollIndicator={false}
+          style={{ width: '100%' }}
           contentContainerStyle={[
-            { flexDirection: 'row', alignItems: 'center', gap: 8 },
+            { flexDirection: 'row', alignItems: 'center', gap: 6 },
             !isMobile && { flexWrap: 'wrap', justifyContent: 'flex-start' }
           ]}
         >
@@ -985,7 +986,7 @@ export default function MergedLeadsAdmissionsPage() {
           )}
 
           <TouchableOpacity
-            style={styles.addBtn}
+            style={[styles.addBtn, isMobile && { paddingHorizontal: 12, paddingVertical: 8 }]}
             onPress={() => {
               setNewCourse('');
               setIsCustomCourse(false);
@@ -997,89 +998,90 @@ export default function MergedLeadsAdmissionsPage() {
               setShowAddModal(true);
             }}
           >
-            <MaterialCommunityIcons name="plus-circle-outline" size={17} color="#fff" />
-            <Text style={styles.addBtnText}>New Enquiry</Text>
+            <MaterialCommunityIcons name="plus-circle-outline" size={16} color="#fff" />
+            <Text style={[styles.addBtnText, isMobile && { fontSize: 13 }]}>New Enquiry</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.uploadBtn}
+            style={[styles.uploadBtn, isMobile && { paddingHorizontal: 12, paddingVertical: 8 }]}
             onPress={handlePickExcel}
             disabled={importing}
           >
             {importing ? (
               <ActivityIndicator size="small" color="#1d4ed8" />
             ) : (
-              <MaterialCommunityIcons name="file-upload-outline" size={18} color="#1d4ed8" />
+              <MaterialCommunityIcons name="file-upload-outline" size={17} color="#1d4ed8" />
             )}
-            <Text style={styles.uploadBtnText}>{importing ? 'Importing...' : 'Upload Excel'}</Text>
+            <Text style={[styles.uploadBtnText, isMobile && { fontSize: 13 }]}>{importing ? 'Importing...' : 'Upload Excel'}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.notifyBtn}
+            style={[styles.notifyBtn, isMobile && { paddingHorizontal: 12, paddingVertical: 8 }]}
             onPress={() => setShowNotifyModal(true)}
           >
-            <MaterialCommunityIcons name="send-outline" size={16} color="#1d4ed8" />
-            <Text style={styles.notifyBtnText}>Notify Leads</Text>
+            <MaterialCommunityIcons name="send-outline" size={15} color="#1d4ed8" />
+            <Text style={[styles.notifyBtnText, isMobile && { fontSize: 13 }]}>Notify Leads</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.refreshBtn}
+            style={[styles.refreshBtn, isMobile && { paddingHorizontal: 12, paddingVertical: 8 }]}
             onPress={fetchData}
             disabled={loading}
           >
-            <MaterialCommunityIcons name="refresh" size={18} color="#475569" />
-            <Text style={styles.refreshBtnText}>Refresh</Text>
+            <MaterialCommunityIcons name="refresh" size={16} color="#475569" />
+            <Text style={[styles.refreshBtnText, isMobile && { fontSize: 13 }]}>Refresh</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.exportBtn}
+            style={[styles.exportBtn, isMobile && { paddingHorizontal: 12, paddingVertical: 8 }]}
             onPress={handleExportExcel}
           >
-            <MaterialCommunityIcons name="file-excel-outline" size={18} color="#15803d" />
-            <Text style={styles.exportBtnText}>Export Excel</Text>
+            <MaterialCommunityIcons name="file-excel-outline" size={16} color="#15803d" />
+            <Text style={[styles.exportBtnText, isMobile && { fontSize: 13 }]}>Export Excel</Text>
           </TouchableOpacity>
         </ScrollView>
       </View>
 
       {/* 4 Stat Metric Cards */}
-      <View style={[styles.metricsRow, isMobile && { flexWrap: 'wrap', gap: 8 }]}>
+      <View style={[styles.metricsRow, isMobile && { flexWrap: 'wrap', gap: 8, justifyContent: 'space-between', marginBottom: 12 }]}>
         <TouchableOpacity
           activeOpacity={0.7}
           onPress={() => setStatusFilter('all')}
-          style={[styles.metricCard, isMobile && { minWidth: '47%', flex: undefined, padding: 14 }, statusFilter === 'all' && { borderColor: '#1d4ed8', borderWidth: 1.5 }]}
+          style={[styles.metricCard, isMobile && { width: '48.5%', minWidth: 0, flex: undefined, padding: 10 }, statusFilter === 'all' && { borderColor: '#1d4ed8', borderWidth: 1.5 }]}
         >
-          <Text style={[styles.metricLabel, isMobile && { fontSize: 11 }]} numberOfLines={1}>TOTAL ENQUIRIES</Text>
-          <Text style={[styles.metricValue, { color: '#0f172a' }, isMobile && { fontSize: 22, marginTop: 2 }]}>{metrics.total}</Text>
+          <Text style={[styles.metricLabel, isMobile && { fontSize: 10 }]} numberOfLines={1}>TOTAL ENQUIRIES</Text>
+          <Text style={[styles.metricValue, { color: '#0f172a' }, isMobile && { fontSize: 18, marginTop: 2 }]}>{metrics.total}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           activeOpacity={0.7}
           onPress={() => setStatusFilter('pending')}
-          style={[styles.metricCard, isMobile && { minWidth: '47%', flex: undefined, padding: 14 }, statusFilter === 'pending' && { borderColor: '#d97706', borderWidth: 1.5 }]}
+          style={[styles.metricCard, isMobile && { width: '48.5%', minWidth: 0, flex: undefined, padding: 10 }, statusFilter === 'pending' && { borderColor: '#d97706', borderWidth: 1.5 }]}
         >
-          <Text style={[styles.metricLabel, isMobile && { fontSize: 11 }]} numberOfLines={1}>PENDING FOLLOW-UPS</Text>
-          <Text style={[styles.metricValue, { color: '#d97706' }, isMobile && { fontSize: 22, marginTop: 2 }]}>{metrics.pendingCount}</Text>
+          <Text style={[styles.metricLabel, isMobile && { fontSize: 10 }]} numberOfLines={1}>PENDING FOLLOW-UPS</Text>
+          <Text style={[styles.metricValue, { color: '#d97706' }, isMobile && { fontSize: 18, marginTop: 2 }]}>{metrics.pendingCount}</Text>
         </TouchableOpacity>
-        <View style={[styles.metricCard, isMobile && { minWidth: '47%', flex: undefined, padding: 14 }]}>
-          <Text style={[styles.metricLabel, isMobile && { fontSize: 11 }]} numberOfLines={1}>DIRECT VISITS</Text>
-          <Text style={[styles.metricValue, { color: '#b91c1c' }, isMobile && { fontSize: 22, marginTop: 2 }]}>{metrics.visitCount}</Text>
+        <View style={[styles.metricCard, isMobile && { width: '48.5%', minWidth: 0, flex: undefined, padding: 10 }]}>
+          <Text style={[styles.metricLabel, isMobile && { fontSize: 10 }]} numberOfLines={1}>DIRECT VISITS</Text>
+          <Text style={[styles.metricValue, { color: '#b91c1c' }, isMobile && { fontSize: 18, marginTop: 2 }]}>{metrics.visitCount}</Text>
         </View>
         <TouchableOpacity
           activeOpacity={0.7}
           onPress={() => setStatusFilter('joined')}
-          style={[styles.metricCard, isMobile && { minWidth: '47%', flex: undefined, padding: 14 }, statusFilter === 'joined' && { borderColor: '#16a34a', borderWidth: 1.5 }]}
+          style={[styles.metricCard, isMobile && { width: '48.5%', minWidth: 0, flex: undefined, padding: 10 }, statusFilter === 'joined' && { borderColor: '#16a34a', borderWidth: 1.5 }]}
         >
-          <Text style={[styles.metricLabel, isMobile && { fontSize: 11 }]} numberOfLines={1}>JOINED / ADMITTED</Text>
-          <Text style={[styles.metricValue, { color: '#16a34a' }, isMobile && { fontSize: 22, marginTop: 2 }]}>{metrics.joinedCount}</Text>
+          <Text style={[styles.metricLabel, isMobile && { fontSize: 10 }]} numberOfLines={1}>JOINED / ADMITTED</Text>
+          <Text style={[styles.metricValue, { color: '#16a34a' }, isMobile && { fontSize: 18, marginTop: 2 }]}>{metrics.joinedCount}</Text>
         </TouchableOpacity>
       </View>
 
       {/* Clean Toolbar with Search & Nature Filter Pills */}
-      <View style={[styles.toolbar, isMobile && { flexDirection: 'column', alignItems: 'stretch', gap: 10, padding: 12 }]}>
-        <View style={[styles.searchBox, isMobile && { width: '100%' }]}>
-          <MaterialCommunityIcons name="magnify" size={18} color="#94a3b8" />
+      <View style={[styles.toolbar, isMobile && { flexDirection: 'column', alignItems: 'stretch', gap: 8, padding: 10, marginBottom: 12 }]}>
+        <View style={[styles.searchBox, isMobile && { width: '100%', paddingVertical: 4, paddingHorizontal: 12, minHeight: 44 }]}>
+          <MaterialCommunityIcons name="magnify" size={20} color="#64748b" />
           <TextInput
-            style={styles.searchInput}
-            placeholder="Search by name, contact, staff, reference, or remarks..."
+            style={[styles.searchInput, isMobile && { fontSize: 13, height: 40 }]}
+            placeholder="Search by name, contact, staff, remarks..."
+            placeholderTextColor="#64748b"
             value={searchTerm}
             onChangeText={setSearchTerm}
           />
@@ -1091,7 +1093,7 @@ export default function MergedLeadsAdmissionsPage() {
         </View>
 
         {/* Filter Pills for Type (All / Admissions / Guest Leads) & Status */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterPillsRow}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ width: '100%' }} contentContainerStyle={[styles.filterPillsRow, isMobile && { gap: 6 }]}>
           {[
             { key: 'all', label: 'ALL' },
             { key: 'admission', label: 'ADMISSIONS' },
@@ -1101,6 +1103,7 @@ export default function MergedLeadsAdmissionsPage() {
               key={tab.key}
               style={[
                 styles.filterPill,
+                isMobile && { paddingHorizontal: 10, paddingVertical: 6 },
                 typeFilter === tab.key && styles.filterPillActive
               ]}
               onPress={() => setTypeFilter(tab.key as any)}
@@ -1108,6 +1111,7 @@ export default function MergedLeadsAdmissionsPage() {
               <Text
                 style={[
                   styles.filterPillText,
+                  isMobile && { fontSize: 11 },
                   typeFilter === tab.key && styles.filterPillTextActive
                 ]}
               >
@@ -1116,7 +1120,7 @@ export default function MergedLeadsAdmissionsPage() {
             </TouchableOpacity>
           ))}
 
-          <View style={{ width: 1, height: 20, backgroundColor: '#e2e8f0', marginHorizontal: 4 }} />
+          <View style={{ width: 1, height: 18, backgroundColor: '#e2e8f0', marginHorizontal: 2 }} />
 
           {/* Status Filter */}
           {[
@@ -1128,6 +1132,7 @@ export default function MergedLeadsAdmissionsPage() {
               key={tab.key}
               style={[
                 styles.filterPill,
+                isMobile && { paddingHorizontal: 10, paddingVertical: 6 },
                 statusFilter === tab.key && styles.filterPillActive
               ]}
               onPress={() => setStatusFilter(tab.key as any)}
@@ -1135,6 +1140,7 @@ export default function MergedLeadsAdmissionsPage() {
               <Text
                 style={[
                   styles.filterPillText,
+                  isMobile && { fontSize: 11 },
                   statusFilter === tab.key && styles.filterPillTextActive
                 ]}
               >
@@ -1160,65 +1166,65 @@ export default function MergedLeadsAdmissionsPage() {
           </Text>
         </View>
       ) : isMobile ? (
-        <ScrollView style={{ gap: 10 }} showsVerticalScrollIndicator={false}>
+        <View style={{ gap: 10, width: '100%' }}>
           {filteredList.map((record, idx) => {
             const natureBadge = getNatureBadge(record.natureOfEnquiry);
             const statusBadge = getJoinStatusBadge(record.joinStatus);
 
             return (
-              <View key={record.id + idx} style={{ backgroundColor: '#fff', borderRadius: 10, borderWidth: 1, borderColor: '#e2e8f0', padding: 16, marginBottom: 8 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <View style={{ flex: 1, paddingRight: 8 }}>
+              <View key={record.id + idx} style={{ backgroundColor: '#fff', borderRadius: 10, borderWidth: 1, borderColor: '#e2e8f0', padding: 14, marginBottom: 8, width: '100%' }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 6 }}>
+                  <View style={{ flex: 1, minWidth: 160, paddingRight: 6 }}>
                     {/* DROPDOWN 1: NATURE OF ENQUIRY (MOBILE) */}
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
                       <TouchableOpacity
-                        style={[styles.natureBadgePill, { backgroundColor: natureBadge.bg, flexDirection: 'row', alignItems: 'center', gap: 4 }]}
+                        style={[styles.natureBadgePill, { backgroundColor: natureBadge.bg, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 9, paddingVertical: 4 }]}
                         onPress={() => setActivePicker({ recordId: record.id, field: 'nature', currentVal: record.natureOfEnquiry })}
                       >
-                        <Text style={[styles.natureBadgeText, { color: natureBadge.color }]}>{natureBadge.label}</Text>
+                        <Text style={[styles.natureBadgeText, { color: natureBadge.color, fontSize: 12 }]}>{natureBadge.label}</Text>
                         <MaterialCommunityIcons name="chevron-down" size={12} color={natureBadge.color} />
                       </TouchableOpacity>
-                      <Text style={{ fontSize: 13, color: '#94a3b8' }}>{record.dateStr}</Text>
+                      <Text style={{ fontSize: 12, color: '#94a3b8' }}>{record.dateStr}</Text>
                     </View>
-                    <Text style={{ fontSize: 17, fontWeight: '700', color: '#0f172a' }}>{record.name}</Text>
-                    {record.contact ? <Text style={{ fontSize: 15, color: '#1e293b', fontWeight: '600', marginTop: 2 }}>📞 {record.contact}</Text> : null}
+                    <Text style={{ fontSize: 16, fontWeight: '700', color: '#0f172a' }}>{record.name}</Text>
+                    {record.contact ? <Text style={{ fontSize: 14, color: '#1e293b', fontWeight: '600', marginTop: 2 }}>📞 {record.contact}</Text> : null}
                     
                     {/* DROPDOWN 4: ATTEN STAFF NAME (MOBILE) */}
                     <TouchableOpacity
                       style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}
                       onPress={() => setActivePicker({ recordId: record.id, field: 'atten', currentVal: record.atten })}
                     >
-                      <Text style={{ fontSize: 13, color: '#475569', fontWeight: '500' }}>👤 Atten: <Text style={{ color: '#1d4ed8', fontWeight: '700' }}>{record.atten || 'Admin Staff'}</Text></Text>
+                      <Text style={{ fontSize: 12, color: '#475569', fontWeight: '500' }}>👤 Atten: <Text style={{ color: '#1d4ed8', fontWeight: '700' }}>{record.atten || 'Admin Staff'}</Text></Text>
                       <MaterialCommunityIcons name="pencil-outline" size={12} color="#1d4ed8" />
                     </TouchableOpacity>
                   </View>
 
                   {/* DROPDOWN 3: JOIN STATUS (MOBILE) */}
                   <TouchableOpacity
-                    style={[styles.statusBadge, { backgroundColor: statusBadge.bg }]}
+                    style={[styles.statusBadge, { width: 'auto', minWidth: 95, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: statusBadge.bg }]}
                     onPress={() => setActivePicker({ recordId: record.id, field: 'joinStatus', currentVal: record.joinStatus })}
                   >
-                    <Text style={[styles.statusBadgeText, { color: statusBadge.color }]}>{statusBadge.label}</Text>
-                    <MaterialCommunityIcons name="chevron-down" size={14} color={statusBadge.color} />
+                    <Text style={[styles.statusBadgeText, { color: statusBadge.color, fontSize: 12 }]}>{statusBadge.label}</Text>
+                    <MaterialCommunityIcons name="chevron-down" size={13} color={statusBadge.color} />
                   </TouchableOpacity>
                 </View>
 
                 {/* Reminders / Reference snippet */}
                 {(record.reminder1 || record.reference || record.remarks1) && (
-                  <View style={{ backgroundColor: '#f8fafc', padding: 10, borderRadius: 6, marginTop: 8 }}>
-                    {record.reminder1 ? <Text style={{ fontSize: 13, color: '#b45309' }}>⏰ Rem: {record.reminder1}</Text> : null}
-                    {record.reference ? <Text style={{ fontSize: 13, color: '#475569' }}>🔗 Ref: {record.reference}</Text> : null}
-                    {record.remarks1 ? <Text style={{ fontSize: 13, color: '#334155' }} numberOfLines={2}>💬 {record.remarks1}</Text> : null}
+                  <View style={{ backgroundColor: '#f8fafc', padding: 9, borderRadius: 6, marginTop: 8 }}>
+                    {record.reminder1 ? <Text style={{ fontSize: 12, color: '#b45309' }}>⏰ Rem: {record.reminder1}</Text> : null}
+                    {record.reference ? <Text style={{ fontSize: 12, color: '#475569' }}>🔗 Ref: {record.reference}</Text> : null}
+                    {record.remarks1 ? <Text style={{ fontSize: 12, color: '#334155' }} numberOfLines={2}>💬 {record.remarks1}</Text> : null}
                   </View>
                 )}
 
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#f1f5f9' }}>
                   {/* DROPDOWN 2: MODE (MOBILE) */}
                   <TouchableOpacity
-                    style={[styles.modeBadge, { flexDirection: 'row', alignItems: 'center', gap: 4 }]}
+                    style={[styles.modeBadge, { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 5 }]}
                     onPress={() => setActivePicker({ recordId: record.id, field: 'mode', currentVal: record.mode })}
                   >
-                    <Text style={styles.modeBadgeText}>{record.mode}</Text>
+                    <Text style={[styles.modeBadgeText, { fontSize: 12 }]}>{record.mode}</Text>
                     <MaterialCommunityIcons name="chevron-down" size={12} color="#475569" />
                   </TouchableOpacity>
 
@@ -1255,7 +1261,7 @@ export default function MergedLeadsAdmissionsPage() {
               </View>
             );
           })}
-        </ScrollView>
+        </View>
       ) : (
         <>
           {Platform.OS === 'web' && (
@@ -2834,18 +2840,26 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#ffffff',
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#cbd5e1',
     borderRadius: 8,
     paddingHorizontal: 14,
-    paddingVertical: 10,
-    gap: 8
+    paddingVertical: Platform.OS === 'android' ? 2 : 8,
+    minHeight: 44,
+    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   searchInput: {
     flex: 1,
     fontSize: 15,
-    color: '#0f172a'
+    color: '#0f172a',
+    paddingVertical: 0,
+    height: '100%',
   },
   filterPillsRow: {
     flexDirection: 'row',

@@ -219,13 +219,14 @@ export class AccessRulesService {
     } else if (entityType === 'live_session' && hasOnlineStudentType) {
       defaultCapabilityAllows = true;
     } else if (accessCtx.batchIds.length > 0) {
-      // Start pessimistic — will be set true if any batch allows it
-      defaultCapabilityAllows = false;
+      let foundAnyCapsDoc = false;
+      let hasPermissiveCap = false;
 
       for (const batchId of accessCtx.batchIds) {
         const caps = await repo.getBatchCapabilities(batchId);
         if (!caps) continue; // No capabilities doc for this identifier — try next
 
+        foundAnyCapsDoc = true;
         const batchType: BatchType = caps.batchType ?? 'free';
         const defaults = DEFAULT_CAPABILITIES[batchType];
         const effectiveCaps = { ...defaults, ...caps };
@@ -238,10 +239,17 @@ export class AccessRulesService {
         }
 
         if (thisIdAllows) {
-          // At least one enrolled batch grants access — no need to check further
-          defaultCapabilityAllows = true;
+          hasPermissiveCap = true;
           break;
         }
+      }
+
+      if (foundAnyCapsDoc) {
+        defaultCapabilityAllows = hasPermissiveCap;
+      } else {
+        // No explicit restricting batch capability document exists for enrolled batches
+        // Default to allowing enrolled students access to enrolled batch classes/sessions
+        defaultCapabilityAllows = true;
       }
     } else {
       // Unenrolled student: Only sees 'public' content

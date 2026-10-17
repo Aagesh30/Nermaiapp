@@ -283,14 +283,25 @@ export class DailyContentController {
                     contentList = contentList.filter(c => {
                         const aud = c.targetAudience || "all";
                         if (aud === "all" || aud === "guest" || aud === "free") return true;
-                        // All enrolled students get full access to daily content
-                        if (isPaidBool) return true;
+
+                        // Enroll / Paid only
+                        if (aud === "paid") {
+                            return isPaidBool;
+                        }
+
+                        // Batch-specific
                         if (aud === "batch") {
-                            if (!c.targetBatch || !c.targetBatch.trim()) return true;
-                            const targetBatches = c.targetBatch.split(",").map((b: string) => b.trim().toLowerCase()).filter(Boolean);
-                            if (targetBatches.length === 0) return true;
-                            if (studentBatches.length > 0 && studentBatches.some(sb => targetBatches.includes(sb))) return true;
-                            return batchStr ? targetBatches.includes(batchStr) : false;
+                            if (!c.targetBatch || !String(c.targetBatch).trim()) return isPaidBool;
+                            const targetBatches: string[] = String(c.targetBatch).split(",").map((b: string) => b.trim().toLowerCase()).filter(Boolean);
+                            if (targetBatches.length === 0) return isPaidBool;
+
+                            // Check against student's resolved batches
+                            const matchesAnyBatch = studentBatches.some((sb: string) =>
+                                targetBatches.some((tb: string) => tb === sb || tb.includes(sb) || sb.includes(tb))
+                            );
+                            if (matchesAnyBatch) return true;
+
+                            return batchStr ? targetBatches.some((tb: string) => tb === batchStr || tb.includes(batchStr) || batchStr.includes(tb)) : false;
                         }
                         return false;
                     });

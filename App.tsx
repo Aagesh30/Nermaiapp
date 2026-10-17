@@ -13,7 +13,9 @@ import {
   Image,
   ActivityIndicator,
   useWindowDimensions,
-  NativeModules
+  NativeModules,
+  Linking,
+  StatusBar as RNStatusBar
 } from "react-native";
 import Constants from "expo-constants";
 
@@ -31,20 +33,26 @@ const Alert = {
   }
 };
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as ScreenCapture from "expo-screen-capture";
 import * as Notifications from "expo-notifications";
+import {
+  initNotifications,
+  registerForPushNotificationsAsync,
+  setupNotificationClickListener,
+} from "./web_portal/notifications";
 import * as Sharing from "expo-sharing";
 import * as Print from "expo-print";
 import * as XLSX from "xlsx";
 
-// Configure your Host IP address for local network connections
-const DEFAULT_HOST_IP = "192.168.0.120";
-// Timeout in ms for all API calls — 20s gives plenty of room on mobile Wi-Fi / LAN
-const API_TIMEOUT_MS = 20000;
+// Configure your Host IP address for local network connections or production server
+const DEFAULT_HOST_IP = "nermaiiasacademy-519c8.web.app";
+// Timeout in ms for all API calls — 30s gives plenty of room on mobile Wi-Fi / Cloud Functions cold start
+const API_TIMEOUT_MS = 30000;
 
 // Performance Status Helper for Results / Leaderboard
 const getDirectImageUrl = (url: string): string => {
@@ -311,6 +319,174 @@ function DateTimePickerSelect({
         </Modal>
       )}
     </View>
+function DatePickerField({
+  value,
+  onChange,
+  placeholder = "Filter by date...",
+  darkMode = false,
+  containerStyle
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  placeholder?: string;
+  darkMode?: boolean;
+  containerStyle?: any;
+}) {
+  const [showModal, setShowModal] = useState(false);
+  let initDate = new Date();
+  if (value) {
+    const p = new Date(value);
+    if (!isNaN(p.getTime())) initDate = p;
+  }
+  const [viewYear, setViewYear] = useState(initDate.getFullYear());
+  const [viewMonth, setViewMonth] = useState(initDate.getMonth());
+
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const firstDayOfWeek = new Date(viewYear, viewMonth, 1).getDay();
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+  return (
+    <View style={[{ position: "relative" }, containerStyle]}>
+      {Platform.OS === "web" ? (
+        <View style={{ position: "relative", flexDirection: "row", alignItems: "center" }}>
+          <input
+            type="date"
+            value={value || ""}
+            onChange={(e: any) => onChange(e.target.value)}
+            style={{
+              padding: "7px 10px",
+              fontSize: "13px",
+              borderRadius: "8px",
+              border: darkMode ? "1px solid #444" : "1px solid #ccc",
+              backgroundColor: darkMode ? "#222" : "#ffffff",
+              color: darkMode ? "#ffffff" : "#212121",
+              outline: "none",
+              cursor: "pointer",
+              boxSizing: "border-box",
+              height: "36px"
+            }}
+          />
+          {value ? (
+            <TouchableOpacity onPress={() => onChange("")} style={{ marginLeft: 6, padding: 4 }}>
+              <Ionicons name="close-circle" size={18} color="#c62828" />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      ) : (
+        <TouchableOpacity
+          onPress={() => {
+            if (value) {
+              const p = new Date(value);
+              if (!isNaN(p.getTime())) {
+                setViewYear(p.getFullYear());
+                setViewMonth(p.getMonth());
+              }
+            }
+            setShowModal(true);
+          }}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            paddingHorizontal: 10,
+            paddingVertical: 7,
+            borderRadius: 8,
+            borderWidth: 1,
+            borderColor: darkMode ? "#444" : "#ccc",
+            backgroundColor: darkMode ? "#222" : "#ffffff",
+            minHeight: 36,
+            minWidth: 120
+          }}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <Ionicons name="calendar-outline" size={15} color={value ? "#c62828" : "#888"} />
+            <Text style={{ fontSize: 12, color: value ? (darkMode ? "#fff" : "#212121") : "#999", fontWeight: value ? "600" : "normal" }}>
+              {value || placeholder}
+            </Text>
+          </View>
+          {value ? (
+            <TouchableOpacity onPress={() => onChange("")} style={{ padding: 2 }}>
+              <Ionicons name="close-circle" size={15} color="#c62828" />
+            </TouchableOpacity>
+          ) : (
+            <Ionicons name="chevron-down" size={13} color="#888" />
+          )}
+        </TouchableOpacity>
+      )}
+
+      {showModal && Platform.OS !== "web" && (
+        <Modal visible={true} transparent={true} animationType="fade" onRequestClose={() => setShowModal(false)}>
+          <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center", padding: 20 }}>
+            <View style={{ width: "100%", maxWidth: 320, backgroundColor: darkMode ? "#1e1e1e" : "#ffffff", borderRadius: 14, padding: 16 }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <TouchableOpacity onPress={() => {
+                  if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y - 1); }
+                  else { setViewMonth(m => m - 1); }
+                }} style={{ padding: 6 }}>
+                  <Ionicons name="chevron-back" size={18} color={darkMode ? "#fff" : "#212121"} />
+                </TouchableOpacity>
+                <Text style={{ fontSize: 14, fontWeight: "bold", color: darkMode ? "#fff" : "#212121" }}>
+                  {monthNames[viewMonth]} {viewYear}
+                </Text>
+                <TouchableOpacity onPress={() => {
+                  if (viewMonth === 11) { setViewMonth(0); setViewYear(y => y + 1); }
+                  else { setViewMonth(m => m + 1); }
+                }} style={{ padding: 6 }}>
+                  <Ionicons name="chevron-forward" size={18} color={darkMode ? "#fff" : "#212121"} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
+                {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map(d => (
+                  <Text key={d} style={{ width: 36, textAlign: "center", fontSize: 11, fontWeight: "bold", color: "#888" }}>{d}</Text>
+                ))}
+              </View>
+
+              <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+                {Array.from({ length: firstDayOfWeek }).map((_, i) => (
+                  <View key={`empty-${i}`} style={{ width: 36, height: 36 }} />
+                ))}
+                {Array.from({ length: daysInMonth }).map((_, i) => {
+                  const day = i + 1;
+                  const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+                  const isSel = value === dateStr;
+                  return (
+                    <TouchableOpacity
+                      key={`day-${day}`}
+                      onPress={() => {
+                        onChange(dateStr);
+                        setShowModal(false);
+                      }}
+                      style={{
+                        width: 36,
+                        height: 36,
+                        justifyContent: "center",
+                        alignItems: "center",
+                        borderRadius: 18,
+                        backgroundColor: isSel ? "#c62828" : "transparent"
+                      }}
+                    >
+                      <Text style={{ fontSize: 12, color: isSel ? "#fff" : (darkMode ? "#ddd" : "#212121"), fontWeight: isSel ? "bold" : "normal" }}>
+                        {day}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 14, paddingTop: 10, borderTopWidth: 1, borderTopColor: darkMode ? "#333" : "#eee" }}>
+                <TouchableOpacity onPress={() => { onChange(""); setShowModal(false); }} style={{ padding: 6 }}>
+                  <Text style={{ fontSize: 12, color: "#c62828", fontWeight: "bold" }}>Clear</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setShowModal(false)} style={{ padding: 6 }}>
+                  <Text style={{ fontSize: 12, color: darkMode ? "#aaa" : "#666" }}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+    </View>
   );
 }
 
@@ -339,6 +515,7 @@ export default function App() {
     message: "",
     buttons: []
   });
+  const [showLegalModal, setShowLegalModal] = useState<'privacy' | 'terms' | null>(null);
 
   // Screen capture blocking guard for student and guest (FLAG_SECURE on mobile APK)
   useEffect(() => {
@@ -587,6 +764,10 @@ export default function App() {
   const changeLmsSub = (sub: string) => {
     setLmsSub(sub);
     setLmsTabsCollapsed(true);
+    if (sub === "quiz" || sub === "all-quizzes") {
+      loadTodayQuiz();
+      loadAllQuizzes();
+    }
   };
   const changeCrmSub = (sub: string) => {
     setCrmSub(sub);
@@ -670,6 +851,9 @@ export default function App() {
       return `http://${autoIp}:5000/api`;
     }
     // 3. Last resort: use DEFAULT_HOST_IP directly
+    if (DEFAULT_HOST_IP.includes(".") && !/^\d+\.\d+\.\d+\.\d+$/.test(DEFAULT_HOST_IP)) {
+      return `https://${DEFAULT_HOST_IP}/api`;
+    }
     return `http://${DEFAULT_HOST_IP}:5000/api`;
   };
   const extractionAbortRef = useRef<AbortController | null>(null);
@@ -1343,10 +1527,48 @@ export default function App() {
     };
     checkPersistedGuest();
 
-    // ── Request notification permission on Android (one-time prompt) ──────────
+    // ── Initialise push notifications (Android channel + foreground handler) ──
     if (Platform.OS !== "web") {
-      Notifications.requestPermissionsAsync().catch(() => {});
+      initNotifications().catch(() => {});
+      // Register device push token for unauthenticated app start (guest / cold boot)
+      registerForPushNotificationsAsync(null).catch(() => {});
     }
+
+    // ── Deep-link navigation when user taps any notification ─────────────────
+    const unsubscribeClick = setupNotificationClickListener((data: Record<string, any>) => {
+      try {
+        const rawTab  = String(data?.targetTab  || data?.screen  || "").toLowerCase();
+        const rawSub  = String(data?.targetSub  || data?.subTab  || "").toLowerCase();
+
+        // Map notification targetTab → APK tab names
+        if (rawTab === "lms" || rawTab === "classes" || rawTab === "resources" || rawTab === "recorded" || rawTab === "live" || rawSub === "daily-content" || rawSub === "resources" || rawSub === "recorded" || rawSub === "live-classes") {
+          setActiveTab("lms");
+          if (rawSub === "daily-content" || rawSub === "dailycontent") setLmsSub("daily-content");
+          else if (rawSub === "resources")                              setLmsSub("resources");
+          else if (rawSub === "live-classes" || rawSub === "live")     setLmsSub("live-classes");
+          else if (rawSub === "recorded")                              setLmsSub("recorded");
+        } else if (rawTab === "test" || rawTab === "tests") {
+          setActiveTab("test");
+          if (rawSub === "available" || rawSub === "") setTestSub("available");
+          else if (rawSub === "results")               setTestSub("results");
+        } else if (rawTab === "erp") {
+          setActiveTab("erp");
+          if (rawSub === "my-profile" || rawSub === "profile")         setErpSub("my-profile");
+          else if (rawSub === "id-card" || rawSub === "idcard")        setErpSub("id-card");
+          else if (rawSub === "hall-ticket" || rawSub === "hallticket") setErpSub("hall-ticket");
+          else if (rawSub === "fees" || rawSub === "pay-fees")         setErpSub("fees");
+          else if (rawSub === "analytics")                             setErpSub("analytics");
+        } else if (rawTab === "dashboard" || rawTab === "notices" || rawSub === "notices") {
+          setActiveTab("dashboard");
+        } else if (rawTab === "crm") {
+          setActiveTab("crm");
+        }
+      } catch (_) {}
+    });
+
+    return () => {
+      if (typeof unsubscribeClick === "function") unsubscribeClick();
+    };
   }, []);
 
   // Fetch initial data — only runs when user identity changes
@@ -1402,6 +1624,11 @@ export default function App() {
       loadTests();
     }
     loadCourses();
+
+    // ── Register / refresh push token whenever user logs in or changes ────────
+    if (Platform.OS !== "web" && user) {
+      registerForPushNotificationsAsync(user).catch(() => {});
+    }
   }, [user, hostIp]);
 
   // Auto-resolve student profile and load my profile request on login/data load
@@ -1410,6 +1637,9 @@ export default function App() {
     const myStudent = getLoggedInStudent(user, students);
     if (myStudent) {
       loadMyProfileRequest(myStudent.id);
+      if (Platform.OS !== "web") {
+        registerForPushNotificationsAsync({ ...user, studentId: myStudent.id, batch: myStudent.batch || user.batch }).catch(() => {});
+      }
     }
   }, [user, students]);
 
@@ -1477,8 +1707,11 @@ export default function App() {
 
   const [playedNoticeIds, setPlayedNoticeIds] = useState<string[]>(() => {
     try {
-      const saved = localStorage.getItem("played_notice_ids");
-      return saved ? JSON.parse(saved) : [];
+      if (typeof localStorage !== "undefined") {
+        const saved = localStorage.getItem("played_notice_ids");
+        return saved ? JSON.parse(saved) : [];
+      }
+      return [];
     } catch {
       return [];
     }
@@ -3006,12 +3239,14 @@ export default function App() {
         correctOptionIndex: newQuizQ.correctIdx
       };
       await api.post("/lms/daily-quiz", {
+        title: newPdfTest.title?.trim() || `Daily Quiz - ${quizDateInput}`,
         quizDate: quizDateInput,
         questions: [qPayload],
         createdBy: user.name
       });
       Alert.alert("Success", `Daily Quiz question published for ${quizDateInput}!`);
       setNewQuizQ({ questionText: "", opt0: "", opt1: "", opt2: "", opt3: "", correctIdx: 0 });
+      setNewPdfTest({ ...newPdfTest, title: "" });
       loadTodayQuiz();
       loadAllQuizzes();
       setLmsSub("quiz");
@@ -3907,6 +4142,171 @@ export default function App() {
     );
   }
 
+  const renderLegalModal = () => {
+    if (showLegalModal === null) return null;
+    const openWebPage = (section: 'privacy' | 'terms') => {
+      try {
+        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+          window.open(`/privacy.html#${section}`, '_blank');
+        } else {
+          Linking.openURL(`https://nermaiiasacademy-519c8.web.app/privacy.html#${section}`).catch(() => {});
+        }
+      } catch (_) {}
+    };
+
+    return (
+      <Modal
+        visible={true}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowLegalModal(null)}
+      >
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.65)", justifyContent: Platform.OS === "web" ? "center" : "flex-end", alignItems: "center", padding: Platform.OS === "web" ? 16 : 0 }}>
+          <View style={{
+            backgroundColor: "#ffffff",
+            width: "100%",
+            maxWidth: 680,
+            maxHeight: Platform.OS === "web" ? "90%" : "85%",
+            borderTopLeftRadius: 24,
+            borderTopRightRadius: 24,
+            borderRadius: Platform.OS === "web" ? 20 : 0,
+            overflow: "hidden",
+            elevation: 25,
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 10 },
+            shadowOpacity: 0.3,
+            shadowRadius: 20
+          }}>
+            {/* Modal Header */}
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingTop: 18, paddingBottom: 14, borderBottomWidth: 1, borderColor: "#f0f0f0" }}>
+              <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
+                <View style={{ width: 4, height: 24, backgroundColor: "#7b0000", borderRadius: 2 }} />
+                <Text style={{ fontSize: 17, fontWeight: "900", color: "#1a237e" }}>
+                  {showLegalModal === 'privacy' ? 'Privacy Policy' : 'Terms of Service'}
+                </Text>
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <TouchableOpacity
+                  onPress={() => openWebPage(showLegalModal)}
+                  style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#e8f0fe", paddingVertical: 6, paddingHorizontal: 12, borderRadius: 16 }}
+                >
+                  <Ionicons name="open-outline" size={14} color="#1565c0" />
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: "#1565c0" }}>Full Page ↗</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setShowLegalModal(null)} style={{ backgroundColor: "#f5f5f5", borderRadius: 20, padding: 8 }}>
+                  <Ionicons name="close" size={20} color="#424242" />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Tab Switcher */}
+            <View style={{ flexDirection: "row", paddingHorizontal: 20, paddingTop: 14, gap: 8 }}>
+              <TouchableOpacity
+                onPress={() => setShowLegalModal('privacy')}
+                style={{ paddingVertical: 7, paddingHorizontal: 16, borderRadius: 20, backgroundColor: showLegalModal === 'privacy' ? "#7b0000" : "#f5f5f5" }}
+              >
+                <Text style={{ fontSize: 12, fontWeight: "700", color: showLegalModal === 'privacy' ? "#ffffff" : "#616161" }}>Privacy Policy</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setShowLegalModal('terms')}
+                style={{ paddingVertical: 7, paddingHorizontal: 16, borderRadius: 20, backgroundColor: showLegalModal === 'terms' ? "#1565c0" : "#f5f5f5" }}
+              >
+                <Text style={{ fontSize: 12, fontWeight: "700", color: showLegalModal === 'terms' ? "#ffffff" : "#616161" }}>Terms of Service</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Modal Content */}
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, gap: 14 }} showsVerticalScrollIndicator={false}>
+              {showLegalModal === 'privacy' ? (
+                <>
+                  <Text style={{ fontSize: 12, color: "#757575", marginBottom: 4 }}>Last updated: October 2026</Text>
+                  <Text style={{ fontSize: 15, fontWeight: "800", color: "#1a237e", marginTop: 4 }}>1. Information We Collect</Text>
+                  <Text style={{ fontSize: 13, color: "#424242", lineHeight: 20 }}>
+                    NERMAI IAS Academy collects your name, phone number, and Google account information when you register. For students, we also collect academic performance data such as test scores, attendance records, and study progress.
+                  </Text>
+                  <Text style={{ fontSize: 15, fontWeight: "800", color: "#1a237e", marginTop: 4 }}>2. How We Use Your Information</Text>
+                  <Text style={{ fontSize: 13, color: "#424242", lineHeight: 20 }}>
+                    Your information is used to provide educational services, manage your student account, send academic notifications and push notifications, conduct live online classes (which require microphone and camera access), and improve our platform.
+                  </Text>
+                  <Text style={{ fontSize: 15, fontWeight: "800", color: "#1a237e", marginTop: 4 }}>3. Camera & Microphone Access</Text>
+                  <Text style={{ fontSize: 13, color: "#424242", lineHeight: 20 }}>
+                    Camera and microphone permissions are requested solely for participation in live interactive online classes. We do not record or store audio/video from your device beyond the scope of the live session.
+                  </Text>
+                  <Text style={{ fontSize: 15, fontWeight: "800", color: "#1a237e", marginTop: 4 }}>4. Push Notifications</Text>
+                  <Text style={{ fontSize: 13, color: "#424242", lineHeight: 20 }}>
+                    With your permission, we send push notifications for class schedules, test reminders, result announcements, and important academy updates. You may disable notifications at any time from your device settings.
+                  </Text>
+                  <Text style={{ fontSize: 15, fontWeight: "800", color: "#1a237e", marginTop: 4 }}>5. Data Sharing</Text>
+                  <Text style={{ fontSize: 13, color: "#424242", lineHeight: 20 }}>
+                    We do not sell or rent your personal data to third parties. Your data is stored securely on Google Firebase and is accessible only to authorized NERMAI IAS Academy staff.
+                  </Text>
+                  <Text style={{ fontSize: 15, fontWeight: "800", color: "#1a237e", marginTop: 4 }}>6. Data Security</Text>
+                  <Text style={{ fontSize: 13, color: "#424242", lineHeight: 20 }}>
+                    We use industry-standard encryption and Firebase security rules to protect your data. Access to your account information is strictly limited to you and authorized academy administrators.
+                  </Text>
+                  <Text style={{ fontSize: 15, fontWeight: "800", color: "#1a237e", marginTop: 4 }}>7. Contact Us</Text>
+                  <Text style={{ fontSize: 13, color: "#424242", lineHeight: 20 }}>
+                    For privacy-related concerns, contact us at: nermaiiasacademy@gmail.com{"\n"}NERMAI IAS Academy, Tamil Nadu, India.
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text style={{ fontSize: 12, color: "#757575", marginBottom: 4 }}>Last updated: October 2026</Text>
+                  <Text style={{ fontSize: 15, fontWeight: "800", color: "#1a237e", marginTop: 4 }}>1. Acceptance of Terms</Text>
+                  <Text style={{ fontSize: 13, color: "#424242", lineHeight: 20 }}>
+                    By accessing or using the NERMAI IAS Academy mobile app or web portal, you agree to be bound by these Terms of Service. If you do not agree, please do not use our services.
+                  </Text>
+                  <Text style={{ fontSize: 15, fontWeight: "800", color: "#1a237e", marginTop: 4 }}>2. User Accounts</Text>
+                  <Text style={{ fontSize: 13, color: "#424242", lineHeight: 20 }}>
+                    You are responsible for maintaining the confidentiality of your login credentials. You must not share your account with others. Guest users may access limited public content with consent.
+                  </Text>
+                  <Text style={{ fontSize: 15, fontWeight: "800", color: "#1a237e", marginTop: 4 }}>3. Educational Content</Text>
+                  <Text style={{ fontSize: 13, color: "#424242", lineHeight: 20 }}>
+                    All study materials, PDFs, recorded classes, live sessions, and test content are the intellectual property of NERMAI IAS Academy. Unauthorized copying, distribution, or screen recording is strictly prohibited.
+                  </Text>
+                  <Text style={{ fontSize: 15, fontWeight: "800", color: "#1a237e", marginTop: 4 }}>4. Prohibited Conduct</Text>
+                  <Text style={{ fontSize: 13, color: "#424242", lineHeight: 20 }}>
+                    Users must not attempt to bypass security measures, share copyrighted materials, use the platform for any unlawful purpose, or interfere with other users' experience.
+                  </Text>
+                  <Text style={{ fontSize: 15, fontWeight: "800", color: "#1a237e", marginTop: 4 }}>5. Fees & Payments</Text>
+                  <Text style={{ fontSize: 13, color: "#424242", lineHeight: 20 }}>
+                    Course fees are non-refundable once access has been granted unless otherwise stated. Fee structures and batch details are communicated by the academy administration.
+                  </Text>
+                  <Text style={{ fontSize: 15, fontWeight: "800", color: "#1a237e", marginTop: 4 }}>6. Changes to Terms</Text>
+                  <Text style={{ fontSize: 13, color: "#424242", lineHeight: 20 }}>
+                    NERMAI IAS Academy reserves the right to modify these terms at any time. Continued use of the app after changes constitutes acceptance of the new terms.
+                  </Text>
+                  <Text style={{ fontSize: 15, fontWeight: "800", color: "#1a237e", marginTop: 4 }}>7. Contact</Text>
+                  <Text style={{ fontSize: 13, color: "#424242", lineHeight: 20 }}>
+                    For any questions about these Terms, contact: nermaiiasacademy@gmail.com{"\n"}NERMAI IAS Academy, Tamil Nadu, India.
+                  </Text>
+                </>
+              )}
+              <View style={{ height: 30 }} />
+            </ScrollView>
+
+            {/* Bottom Buttons */}
+            <View style={{ padding: 18, borderTopWidth: 1, borderColor: "#f0f0f0", flexDirection: "row", gap: 10 }}>
+              <TouchableOpacity
+                onPress={() => openWebPage(showLegalModal)}
+                style={{ flex: 1, backgroundColor: "#f5f5f5", paddingVertical: 13, borderRadius: 12, alignItems: "center", borderWidth: 1, borderColor: "#e0e0e0", flexDirection: "row", justifyContent: "center", gap: 6 }}
+              >
+                <Ionicons name="globe-outline" size={16} color="#424242" />
+                <Text style={{ color: "#424242", fontWeight: "700", fontSize: 13 }}>Open Web Page ↗</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setShowLegalModal(null)}
+                style={{ flex: 1, backgroundColor: "#7b0000", paddingVertical: 13, borderRadius: 12, alignItems: "center" }}
+              >
+                <Text style={{ color: "#ffffff", fontWeight: "800", fontSize: 13 }}>I Understand</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    );
+  };
+
   // Render Login
   if (!user) {
     return (
@@ -4013,9 +4413,26 @@ export default function App() {
                   </TouchableOpacity>
                 </>
               )}
+
+              {/* Privacy Policy & Terms of Service Footer (Common for both Sign In & Guest) */}
+              <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "center", alignItems: "center", marginTop: 18, paddingTop: 14, borderTopWidth: 1, borderColor: "#f0f0f0", gap: 5 }}>
+                <Text style={{ fontSize: 11, color: "#757575" }}>By continuing, you agree to our</Text>
+                <TouchableOpacity onPress={() => setShowLegalModal('terms')} activeOpacity={0.7}>
+                  <Text style={{ fontSize: 11, color: "#1565c0", fontWeight: "700", textDecorationLine: "underline" }}>Terms of Service</Text>
+                </TouchableOpacity>
+                <Text style={{ fontSize: 11, color: "#757575" }}>&</Text>
+                <TouchableOpacity onPress={() => setShowLegalModal('privacy')} activeOpacity={0.7}>
+                  <Text style={{ fontSize: 11, color: "#1565c0", fontWeight: "700", textDecorationLine: "underline" }}>Privacy Policy</Text>
+                </TouchableOpacity>
+                <Text style={{ fontSize: 11, color: "#9e9e9e" }}>•</Text>
+                <TouchableOpacity onPress={() => setShowLegalModal('privacy')} activeOpacity={0.7}>
+                  <Text style={{ fontSize: 11, color: "#7b0000", fontWeight: "700" }}>Learn more →</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
+        {renderLegalModal()}
       </SafeAreaView>
     );
   }
@@ -4023,8 +4440,8 @@ export default function App() {
   // ================== GUEST USER DASHBOARD ==================
   if (user?.role === "guest") {
     return (
-      <SafeAreaView style={styles.container}>
-        <StatusBar style="light" />
+      <SafeAreaView style={[styles.container, { paddingTop: Platform.OS === "android" ? (RNStatusBar.currentHeight || 0) : 0 }]}>
+        <StatusBar style="dark" />
         {renderServerSettingsModal()}
 
         {/* Hamburger Drawer Overlay */}
@@ -4035,7 +4452,7 @@ export default function App() {
             {/* Drawer Panel */}
             <View style={[styles.drawerPanel, darkMode && styles.drawerPanelDark]}>
               {/* Drawer Header */}
-              <View style={[styles.drawerHeader, darkMode && styles.drawerHeaderDark]}>
+              <View style={[styles.drawerHeader, darkMode && styles.drawerHeaderDark, { paddingTop: (insets.top > 0 ? insets.top : (Platform.OS === "android" ? (RNStatusBar.currentHeight || 24) : 24)) + 10 }]}>
                 <View style={styles.drawerAvatarCircle}>
                   <Text style={{ color: "#ffffff", fontWeight: "bold", fontSize: 22 }}>{user.name?.[0]?.toUpperCase() || "G"}</Text>
                 </View>
@@ -4191,18 +4608,18 @@ export default function App() {
           </Modal>
         )}
 
-        <View style={styles.header}>
+        <View style={[styles.header, { backgroundColor: "#c62828" }]}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
             <Image source={APP_INSIDE_LOGO} style={{ width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: "#fff" }} />
             <View>
-              <Text style={styles.headerTitle}>NERMAI IAS ACADEMY</Text>
-              <Text style={{ color: "#fff", opacity: 0.8, fontSize: 11 }}>Welcome, {user.name} (Free Access)</Text>
+              <Text style={[styles.headerTitle, { color: "#ffffff" }]}>NERMAI IAS ACADEMY</Text>
+              <Text style={{ color: "#fff", opacity: 0.85, fontSize: 11 }}>Welcome, {user.name} (Free Access)</Text>
             </View>
           </View>
-          <TouchableOpacity onPress={() => setShowHamburger(true)} style={styles.hamburgerBtn}>
-            <View style={styles.hamburgerLine} />
-            <View style={[styles.hamburgerLine, { width: 18 }]} />
-            <View style={[styles.hamburgerLine, { width: 22 }]} />
+          <TouchableOpacity onPress={() => setShowHamburger(true)} style={[styles.hamburgerBtn, { backgroundColor: "rgba(255,255,255,0.18)" }]}>
+            <View style={[styles.hamburgerLine, { backgroundColor: "#ffffff" }]} />
+            <View style={[styles.hamburgerLine, { width: 18, backgroundColor: "#ffffff" }]} />
+            <View style={[styles.hamburgerLine, { width: 22, backgroundColor: "#ffffff" }]} />
           </TouchableOpacity>
         </View>
 
@@ -4815,7 +5232,7 @@ export default function App() {
       <SafeAreaView style={[styles.modalContainer, { flex: 1, backgroundColor: "#ffffff" }]}>
         <StatusBar style="light" />
         <View style={[styles.header, { backgroundColor: "#c62828" }]}>
-          <Text style={styles.headerTitle}>{activeAttempt.title || "Examination in Progress"}</Text>
+          <Text style={[styles.headerTitle, { color: "#ffffff", flex: 1, marginRight: 10 }]} numberOfLines={1}>{activeAttempt.title || "Examination in Progress"}</Text>
           <Text style={{ color: "#ffffff", fontWeight: "bold", fontSize: 18 }}>
             {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, "0")}
           </Text>
@@ -4990,7 +5407,7 @@ export default function App() {
       <SafeAreaView style={[styles.modalContainer, { flex: 1, backgroundColor: "#ffffff" }]}>
         <StatusBar style="light" />
         <View style={[styles.header, { backgroundColor: "#2e7d32" }]}>
-          <Text style={styles.headerTitle}>{reviewData.testTitle || "Review Answers"}</Text>
+          <Text style={[styles.headerTitle, { color: "#ffffff", flex: 1, marginRight: 10 }]} numberOfLines={1}>{reviewData.testTitle || "Review Answers"}</Text>
           <TouchableOpacity onPress={() => { setReviewMode(false); setReviewData(null); }} style={{ padding: 8 }}>
             <Ionicons name="close-circle-outline" size={26} color="#ffffff" />
           </TouchableOpacity>
@@ -5926,7 +6343,7 @@ export default function App() {
             {/* Collapsible Tabs Selector */}
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: "#ffffff", padding: 8, borderRadius: 8, borderWidth: 1, borderColor: "#e0e0e0", marginBottom: 10 }}>
               <Text style={{ fontSize: 13, fontWeight: "bold", color: "#c62828" }}>
-                Menu: {testSub === "available" ? "Available Exams" : testSub === "pdf-create" ? "AI Create" : "Results Log"}
+                Menu: {testSub === "available" ? "Available Exams" : testSub === "pdf-create" ? "Create test" : "Results Log"}
               </Text>
               <TouchableOpacity onPress={() => setTestTabsCollapsed(!testTabsCollapsed)} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
                 <Text style={{ fontSize: 11, color: "#757575" }}>{testTabsCollapsed ? "Expand Menu" : "Collapse Menu"}</Text>
@@ -5942,7 +6359,7 @@ export default function App() {
                 {(user.role === "admin" || user.role === "staff") && (
                   <>
                     <TouchableOpacity onPress={() => setTestSub("pdf-create")} style={[styles.rectTab, testSub === "pdf-create" && styles.rectTabActive]}>
-                      <Text style={[styles.rectTabTxt, testSub === "pdf-create" && styles.rectTabTxtActive]}>AI Create</Text>
+                      <Text style={[styles.rectTabTxt, testSub === "pdf-create" && styles.rectTabTxtActive]}>Create test</Text>
                     </TouchableOpacity>
                   </>
                 )}
@@ -10972,25 +11389,25 @@ export default function App() {
                   <Ionicons name="arrow-back-outline" size={20} color="#c62828" />
                 </TouchableOpacity>
 
-                <TouchableOpacity onPress={() => changeLmsSub("quiz")} style={[styles.sidebarTab, (lmsSub === "quiz" || lmsSub === "all-quizzes" || lmsSub === "create-quiz") && styles.sidebarTabActive, (lmsSub === "quiz" || lmsSub === "all-quizzes" || lmsSub === "create-quiz") && darkMode && styles.sidebarTabActiveDark]}>
-                  <Ionicons name="help-circle-outline" size={22} color={(lmsSub === "quiz" || lmsSub === "all-quizzes" || lmsSub === "create-quiz") ? "#c62828" : darkMode ? "#9e9e9e" : "#757575"} />
-                  <Text style={[styles.sidebarTabTxt, (lmsSub === "quiz" || lmsSub === "all-quizzes" || lmsSub === "create-quiz") && styles.sidebarTabTxtActive, darkMode && styles.sidebarTabTxtDark]}>Quiz</Text>
+                <TouchableOpacity onPress={() => changeLmsSub("live-classes")} style={[styles.sidebarTab, lmsSub === "live-classes" && styles.sidebarTabActive, lmsSub === "live-classes" && darkMode && styles.sidebarTabActiveDark]}>
+                  <Ionicons name="videocam-outline" size={22} color={lmsSub === "live-classes" ? "#c62828" : darkMode ? "#9e9e9e" : "#757575"} />
+                  <Text style={[styles.sidebarTabTxt, lmsSub === "live-classes" && styles.sidebarTabTxtActive, darkMode && styles.sidebarTabTxtDark]}>Live Classes</Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => changeLmsSub("daily-content")} style={[styles.sidebarTab, lmsSub === "daily-content" && styles.sidebarTabActive, lmsSub === "daily-content" && darkMode && styles.sidebarTabActiveDark]}>
                   <Ionicons name="calendar-outline" size={22} color={lmsSub === "daily-content" ? "#c62828" : darkMode ? "#9e9e9e" : "#757575"} />
                   <Text style={[styles.sidebarTabTxt, lmsSub === "daily-content" && styles.sidebarTabTxtActive, darkMode && styles.sidebarTabTxtDark]}>Daily Content</Text>
                 </TouchableOpacity>
+                <TouchableOpacity onPress={() => changeLmsSub("recorded")} style={[styles.sidebarTab, lmsSub === "recorded" && styles.sidebarTabActive, lmsSub === "recorded" && darkMode && styles.sidebarTabActiveDark]}>
+                  <Ionicons name="play-circle-outline" size={22} color={lmsSub === "recorded" ? "#c62828" : darkMode ? "#9e9e9e" : "#757575"} />
+                  <Text style={[styles.sidebarTabTxt, lmsSub === "recorded" && styles.sidebarTabTxtActive, darkMode && styles.sidebarTabTxtDark]}>Recorded</Text>
+                </TouchableOpacity>
                 <TouchableOpacity onPress={() => changeLmsSub("resources")} style={[styles.sidebarTab, lmsSub === "resources" && styles.sidebarTabActive, lmsSub === "resources" && darkMode && styles.sidebarTabActiveDark]}>
                   <Ionicons name="folder-outline" size={22} color={lmsSub === "resources" ? "#c62828" : darkMode ? "#9e9e9e" : "#757575"} />
                   <Text style={[styles.sidebarTabTxt, lmsSub === "resources" && styles.sidebarTabTxtActive, darkMode && styles.sidebarTabTxtDark]}>Resources</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => changeLmsSub("live-classes")} style={[styles.sidebarTab, lmsSub === "live-classes" && styles.sidebarTabActive, lmsSub === "live-classes" && darkMode && styles.sidebarTabActiveDark]}>
-                  <Ionicons name="videocam-outline" size={22} color={lmsSub === "live-classes" ? "#c62828" : darkMode ? "#9e9e9e" : "#757575"} />
-                  <Text style={[styles.sidebarTabTxt, lmsSub === "live-classes" && styles.sidebarTabTxtActive, darkMode && styles.sidebarTabTxtDark]}>Live</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => changeLmsSub("recorded")} style={[styles.sidebarTab, lmsSub === "recorded" && styles.sidebarTabActive, lmsSub === "recorded" && darkMode && styles.sidebarTabActiveDark]}>
-                  <Ionicons name="play-circle-outline" size={22} color={lmsSub === "recorded" ? "#c62828" : darkMode ? "#9e9e9e" : "#757575"} />
-                  <Text style={[styles.sidebarTabTxt, lmsSub === "recorded" && styles.sidebarTabTxtActive, darkMode && styles.sidebarTabTxtDark]}>Recorded</Text>
+                <TouchableOpacity onPress={() => changeLmsSub("quiz")} style={[styles.sidebarTab, (lmsSub === "quiz" || lmsSub === "all-quizzes" || lmsSub === "create-quiz") && styles.sidebarTabActive, (lmsSub === "quiz" || lmsSub === "all-quizzes" || lmsSub === "create-quiz") && darkMode && styles.sidebarTabActiveDark]}>
+                  <Ionicons name="help-circle-outline" size={22} color={(lmsSub === "quiz" || lmsSub === "all-quizzes" || lmsSub === "create-quiz") ? "#c62828" : darkMode ? "#9e9e9e" : "#757575"} />
+                  <Text style={[styles.sidebarTabTxt, (lmsSub === "quiz" || lmsSub === "all-quizzes" || lmsSub === "create-quiz") && styles.sidebarTabTxtActive, darkMode && styles.sidebarTabTxtDark]}>Quiz</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -11421,9 +11838,18 @@ export default function App() {
                     <View style={styles.card}>
                       <Text style={styles.sectionTitle}>Admissions Received</Text>
                       {/* Date Filter */}
-                      <Text style={styles.label}>Filter by Date (YYYY-MM-DD):</Text>
+                      <Text style={styles.label}>Filter by Date:</Text>
                       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12, alignItems: "center" }}>
-                        <TextInput style={[styles.input, { flex: 1, minWidth: 120, marginBottom: 0, height: 40 }]} placeholder="From Date" placeholderTextColor="#999" value={admissionDateFilter} onChangeText={setAdmissionDateFilter} />
+                        <DatePickerField
+                          value={admissionDateFilter}
+                          onChange={(val: string) => {
+                            setAdmissionDateFilter(val);
+                            loadAdmissions(val);
+                          }}
+                          placeholder="Pick date..."
+                          darkMode={darkMode}
+                          containerStyle={{ flex: 1, minWidth: 140 }}
+                        />
                         <View style={{ flexDirection: "row", gap: 8 }}>
                           <TouchableOpacity onPress={() => loadAdmissions(admissionDateFilter)} style={[styles.primaryBtn, { minWidth: 60, paddingVertical: 0, paddingHorizontal: 12, height: 40, justifyContent: "center" }]}>
                             <Text style={[styles.primaryBtnTxt, { fontSize: 13 }]}>Filter</Text>
@@ -11727,7 +12153,11 @@ export default function App() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => setActiveTab("lms")}
+          onPress={() => {
+            setActiveTab("lms");
+            loadTodayQuiz();
+            loadAllQuizzes();
+          }}
           style={[styles.bottomTab, activeTab === "lms" && styles.bottomTabSelected, activeTab === "lms" && darkMode && styles.sidebarTabActiveDark]}
         >
           <Ionicons
@@ -11863,7 +12293,7 @@ export default function App() {
           <Modal visible={true} animationType="slide">
             <SafeAreaView style={styles.modalContainer}>
               <View style={[styles.header, { backgroundColor: "#c62828" }]}>
-                <Text style={styles.headerTitle}>Live Proctoring & Leaderboard</Text>
+                <Text style={[styles.headerTitle, { color: "#ffffff", flex: 1, marginRight: 10 }]} numberOfLines={1}>Live Proctoring & Leaderboard</Text>
                 <TouchableOpacity onPress={() => { setSelectedMonitorTestId(""); setLiveCount(null); setLeaderboard([]); setMonitorActiveTab("leaderboard"); setMonitorBatchFilter("all"); setMonitorAbsentSearch(""); }} style={{ padding: 8 }}>
                   <Ionicons name="close-circle-outline" size={26} color="#ffffff" />
                 </TouchableOpacity>
@@ -12949,7 +13379,8 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: "#ffffff",
-    paddingVertical: 12,
+    paddingTop: Platform.OS === "android" ? Math.max((RNStatusBar.currentHeight || 0), 12) + 6 : 12,
+    paddingBottom: 12,
     paddingHorizontal: 18,
     flexDirection: "row",
     justifyContent: "space-between",
@@ -13312,6 +13743,7 @@ const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
     backgroundColor: "#ffffff",
+    paddingTop: Platform.OS === "android" ? (RNStatusBar.currentHeight || 0) : 0,
   },
   modalOptionBtn: {
     borderWidth: 1,

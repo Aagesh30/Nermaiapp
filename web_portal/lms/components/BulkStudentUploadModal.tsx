@@ -410,6 +410,11 @@ export const BulkStudentUploadModal: React.FC<BulkStudentUploadModalProps> = ({
                       <td className="py-2 px-3 whitespace-nowrap">
                         <span className="font-bold text-emerald-600">₹{s.feesPaid.toLocaleString()}</span>
                         <span className="text-gray-400"> / ₹{s.totalFees.toLocaleString()}</span>
+                        {s.dueFees > 0 ? (
+                          <span className="block text-[10px] text-amber-600 font-semibold">Due: ₹{s.dueFees.toLocaleString()}</span>
+                        ) : (
+                          <span className="block text-[10px] text-emerald-600 font-semibold">Cleared</span>
+                        )}
                       </td>
                       <td className="py-2 px-3 text-gray-600 dark:text-gray-400 whitespace-nowrap">{s.courseDuration}</td>
                       <td className="py-2 px-3 text-gray-600 dark:text-gray-400 whitespace-nowrap">{s.joiningDate}</td>

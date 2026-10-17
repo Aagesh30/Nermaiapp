@@ -35,7 +35,7 @@ const getRNPersistence = (): any => {
 // Firebase App Configuration for NERMAI IAS ACADEMY — Project: nermaiiasacademy-519c8
 const firebaseConfig = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || "AIzaSyBZ07n1v6D7ZT5O0nIcut6JuSb0GMtM0fo",
-  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || "nermaiiasacademy-519c8.firebaseapp.com",
+  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || "nermaiias.in",
   projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || "nermaiiasacademy-519c8",
   storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || "nermaiiasacademy-519c8.firebasestorage.app",
   messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "587850155187",
@@ -102,6 +102,13 @@ export const handleFirebaseGoogleSignIn = async (fallbackName?: string, fallback
     
     console.log("[DEBUG] Platform is web. Triggering signInWithPopup");
     
+    // Pre-flight offline check on web
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      const netErr: any = new Error("No internet connection detected. Please check your network and try again.");
+      netErr.code = "auth/network-request-failed";
+      throw netErr;
+    }
+
     try {
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
@@ -114,6 +121,19 @@ export const handleFirebaseGoogleSignIn = async (fallbackName?: string, fallback
       };
     } catch (error: any) {
       console.error("[DEBUG] Firebase Google Sign-In error:", error);
+      const isNetwork =
+        error?.code === "auth/network-request-failed" ||
+        (typeof navigator !== "undefined" && navigator.onLine === false) ||
+        error?.message?.toLowerCase().includes("network") ||
+        error?.message?.toLowerCase().includes("unreachable host") ||
+        error?.message?.toLowerCase().includes("interrupted connection");
+
+      if (isNetwork) {
+        const netErr: any = new Error("Unable to connect to Google authentication. Please check your internet connection and try again.");
+        netErr.code = "auth/network-request-failed";
+        throw netErr;
+      }
+
       if (
         error?.code === "auth/popup-blocked" || 
         error?.code === "auth/popup-closed-by-user" || 
@@ -182,6 +202,18 @@ export const handleFirebaseGoogleSignIn = async (fallbackName?: string, fallback
           };
         } catch (nativeErr: any) {
           console.warn("[DEBUG] GoogleSignin native error:", nativeErr?.code, nativeErr?.message);
+          const isNetwork =
+            nativeErr?.code === statusCodes?.NETWORK_ERROR ||
+            nativeErr?.code === "7" ||
+            nativeErr?.code === 7 ||
+            nativeErr?.code === "auth/network-request-failed" ||
+            nativeErr?.message?.toLowerCase().includes("network") ||
+            nativeErr?.message?.toLowerCase().includes("unreachable host");
+
+          if (isNetwork) {
+            throw new Error("Unable to connect to Google authentication. Please check your internet connection and try again.");
+          }
+
           if (
             nativeErr?.code === statusCodes?.SIGN_IN_CANCELLED ||
             nativeErr?.message?.includes("cancelled") ||

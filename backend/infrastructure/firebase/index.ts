@@ -27,7 +27,7 @@ let _auth: Auth | null = null;
 let _messaging: Messaging | null = null;
 let _storage: Storage | null = null;
 
-function getFirebaseApp(): App {
+export function getFirebaseApp(): App {
   if (_app) return _app;
 
   const existing = getApps();
@@ -68,7 +68,7 @@ function getFirebaseApp(): App {
       });
     } else {
       // Cloud Functions / ADC: use Application Default Credentials
-      _app = initializeApp({ storageBucket });
+      _app = initializeApp({ storageBucket, projectId: projectId || process.env.GCLOUD_PROJECT || "nermaiiasacademy-519c8" });
     }
     logger.info(`Firebase Admin initialized successfully. Bucket: ${storageBucket}`);
   } catch (error: any) {

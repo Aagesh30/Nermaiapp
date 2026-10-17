@@ -251,6 +251,7 @@ const RequestAccessModal = ({
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
   // A rejected or revoked request allows re-submission — treat as non-blocking
   const isRejected = existingRequest?.status === 'REJECTED';
@@ -260,9 +261,17 @@ const RequestAccessModal = ({
   const handleSubmit = async () => {
     if (!reason.trim()) return;
     setSubmitting(true);
+    setErrorMsg('');
     try {
       await onSubmit(cls.classId || cls.id, cls.title || cls.className || 'Unknown Class', reason.trim());
       setSubmitted(true);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || '';
+      if (msg.toLowerCase().includes('already') || msg.toLowerCase().includes('pending')) {
+        setSubmitted(true);
+      } else {
+        setErrorMsg(msg || 'Failed to submit request.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -327,6 +336,10 @@ const RequestAccessModal = ({
             />
             <p className="text-xs text-gray-400 text-right mt-1">{reason.length}/500</p>
           </>
+        )}
+
+        {errorMsg && (
+          <p className="text-xs text-red-500 mt-2 text-center">{errorMsg}</p>
         )}
 
         <div className="flex justify-end gap-3 mt-4">
@@ -522,7 +535,7 @@ const SessionCard = ({
   const accessDenied = !!cls.accessDenied && existingRequest?.status !== 'APPROVED';
 
   const renderRequestButton = (label: string) => {
-    if (!accessDenied) return null;
+    if (!accessDenied && cls.hasRecordedAccess !== false) return null;
     if (existingRequest) {
       return (
         <button
@@ -725,7 +738,7 @@ const SessionCard = ({
         )}
 
         {/* ENDED — access denied (recording locked) */}
-        {isEnded && accessDenied && (
+        {isEnded && (accessDenied || cls.hasRecordedAccess === false) && (
           <div className="space-y-2 mt-4">
             <div className="w-full py-2 px-4 text-center text-xs font-medium text-orange-700 bg-orange-100 border border-orange-300 rounded-lg dark:text-orange-400 dark:bg-orange-900/30 dark:border-orange-700/50">
               🔒 Recording access restricted for your batch
@@ -801,6 +814,12 @@ export const StudentLiveClassesPage = () => {
         // Signal doc exists and is reachable — stop fallback polling if running
         stopFallbackPolling();
         queryClient.invalidateQueries({ queryKey: ['studentDashboard'] });
+        LiveClassesApi.getMyAccessRequests()
+          .then((res: any) => {
+            const data = res?.data?.data || res?.data || [];
+            setMyRequests(Array.isArray(data) ? data : []);
+          })
+          .catch(() => {});
       },
       (error) => {
         console.warn('[LiveDashboard] Firestore signal listener error:', error.code);

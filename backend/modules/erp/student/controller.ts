@@ -998,6 +998,9 @@ export class StudentController {
             if (hallTicketVenue !== undefined) updateData.hallTicketVenue = hallTicketVenue;
             if (hallTicketTime !== undefined) updateData.hallTicketTime = hallTicketTime;
             if (hallTicketInstructions !== undefined) updateData.hallTicketInstructions = hallTicketInstructions;
+            if (req.body.specialRollNumbers !== undefined) updateData.specialRollNumbers = req.body.specialRollNumbers;
+            if (req.body.specialRollNo !== undefined) updateData.specialRollNo = req.body.specialRollNo;
+            if (req.body.mockRollNumber !== undefined) updateData.mockRollNumber = req.body.mockRollNumber;
             if (feeBlocked !== undefined) {
                 updateData.feeBlocked = Boolean(feeBlocked);
             } else if (feesPaid !== undefined) {
@@ -1294,12 +1297,24 @@ export class StudentController {
 
             if (targetGroup) {
                 // targetGroup can be 'free' (leads), 'paid' (students), 'all' (both), or 'mock' (special mock)
-                if (targetGroup === "mock") {
-                    const { mockTestId } = req.body;
+                if (targetGroup === "mock" || targetGroup === "special_batch") {
+                    const { mockTestId, specialBatchId, specialBatchName } = req.body;
                     let mockRollNumbers = req.body.mockRollNumbers;
                     let targetStudentIds: string[] = [];
 
-                    if (mockTestId && (!mockRollNumbers || Object.keys(mockRollNumbers).length === 0)) {
+                    if (specialBatchId) {
+                        const batchDoc = await db.collection("batches").doc(specialBatchId).get();
+                        if (batchDoc.exists) {
+                            const bData = batchDoc.data();
+                            mockRollNumbers = bData?.studentRollMap || mockRollNumbers || {};
+                        }
+                    } else if (specialBatchName) {
+                        const batchSnap = await db.collection("batches").where("batchName", "==", specialBatchName).limit(1).get();
+                        if (!batchSnap.empty) {
+                            const bData = batchSnap.docs[0].data();
+                            mockRollNumbers = bData?.studentRollMap || mockRollNumbers || {};
+                        }
+                    } else if (mockTestId && (!mockRollNumbers || Object.keys(mockRollNumbers).length === 0)) {
                         const testDoc = await db.collection("tests").doc(mockTestId).get();
                         if (testDoc.exists) {
                             const tData = testDoc.data();
@@ -1311,6 +1326,63 @@ export class StudentController {
                         targetStudentIds = Object.keys(mockRollNumbers);
                     }
 
+                    // Dynamic fallback: If studentRollMap was not pre-populated on the batch, build it live from the ordered batches
+                    if (targetStudentIds.length === 0) {
+                        let bDocData: any = null;
+                        let bRef: any = null;
+                        if (specialBatchId) {
+                            bRef = db.collection("batches").doc(specialBatchId);
+                            const bDoc = await bRef.get();
+                            if (bDoc.exists) bDocData = bDoc.data();
+                        } else if (specialBatchName) {
+                            const bSnap = await db.collection("batches").where("batchName", "==", specialBatchName).limit(1).get();
+                            if (!bSnap.empty) {
+                                bRef = bSnap.docs[0].ref;
+                                bDocData = bSnap.docs[0].data();
+                            }
+                        }
+
+                        if (bDocData) {
+                            const ordered = Array.isArray(bDocData.orderedBatches) && bDocData.orderedBatches.length > 0
+                                ? bDocData.orderedBatches
+                                : (Array.isArray(bDocData.subBatches) ? bDocData.subBatches : []);
+                            let currentRoll = parseInt(String(bDocData.startingRollNo || "7000").replace(/\D/g, ""), 10);
+                            if (isNaN(currentRoll)) currentRoll = 7000;
+
+                            const computedRollMap: Record<string, string> = {};
+
+                            for (const bName of ordered) {
+                                const studentsSnap = await db.collection("students")
+                                    .where("batch", "==", bName)
+                                    .where("isDeleted", "==", false)
+                                    .get();
+
+                                const batchStudents = studentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
+                                batchStudents.sort((a, b) => {
+                                    const rA = String(a.rollNumber || a.loginUsername || "");
+                                    const rB = String(b.rollNumber || b.loginUsername || "");
+                                    const numA = parseInt(rA.replace(/\D/g, ""), 10);
+                                    const numB = parseInt(rB.replace(/\D/g, ""), 10);
+                                    if (!isNaN(numA) && !isNaN(numB) && numA !== numB) return numA - numB;
+                                    const nameA = `${a.firstName || ""} ${a.lastName || ""}`.trim().toLowerCase();
+                                    const nameB = `${b.firstName || ""} ${b.lastName || ""}`.trim().toLowerCase();
+                                    return nameA.localeCompare(nameB);
+                                });
+
+                                for (const st of batchStudents) {
+                                    computedRollMap[st.id] = String(currentRoll++);
+                                }
+                            }
+
+                            mockRollNumbers = computedRollMap;
+                            targetStudentIds = Object.keys(mockRollNumbers);
+
+                            if (bRef && targetStudentIds.length > 0) {
+                                await bRef.set({ studentRollMap: computedRollMap, lastAssignedRollNo: currentRoll - 1 }, { merge: true });
+                            }
+                        }
+                    }
+
                     if (targetStudentIds.length > 0) {
                         for (let i = 0; i < targetStudentIds.length; i += 400) {
                             const chunk = targetStudentIds.slice(i, i + 400);
@@ -1320,7 +1392,11 @@ export class StudentController {
                                 const studentRef = db.collection("students").doc(sId);
                                 const sUpdate: any = {
                                     ...updateData,
+                                    hallTicketIsSpecial: true,
+                                    hallTicketSpecialBatch: specialBatchName || null,
+                                    specialRollNo: assignedMockRoll,
                                     mockRollNumber: assignedMockRoll,
+                                    lastSpecialBatchId: specialBatchId || null,
                                     lastMockTestId: mockTestId || null
                                 };
                                 firestoreBatch.set(studentRef, sUpdate, { merge: true });
@@ -1352,8 +1428,9 @@ export class StudentController {
                     const studentsSnapshot = await query.get();
                     if (!studentsSnapshot.empty) {
                         const firestoreBatch = db.batch();
+                        const generalStudentUpdate = { ...updateData, hallTicketIsSpecial: false };
                         studentsSnapshot.docs.forEach(doc => {
-                            firestoreBatch.update(doc.ref, updateData);
+                            firestoreBatch.update(doc.ref, generalStudentUpdate);
                         });
                         await firestoreBatch.commit();
                         totalUpdated += studentsSnapshot.size;

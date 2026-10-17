@@ -77,6 +77,9 @@ router.use(requireDeveloperOrSuperAdmin);
 // Collection overview
 router.get("/collections", DeveloperController.listCollections);
 
+// Comprehensive Student Data Backup (Student + Fees + Tests/Marks + Drive URLs)
+router.get("/backup/students-comprehensive", DeveloperController.getComprehensiveStudentBackup);
+
 // CRUD on any collection
 router.get("/collection/:name", DeveloperController.getDocuments);
 router.get("/collection/:name/:docId", DeveloperController.getDocument);

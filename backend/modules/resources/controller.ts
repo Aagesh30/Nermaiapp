@@ -27,20 +27,55 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
 
     const data = await service.createResource(normalizedBody, req.file, userId, tenantId);
 
-    const targetBatchVal = Array.isArray(normalizedBody.targetBatchIds)
-      ? normalizedBody.targetBatchIds[0]
-      : (normalizedBody.targetBatchIds || normalizedBody.batchId || null);
+    const rawBatches = Array.isArray(normalizedBody.targetBatchIds)
+      ? normalizedBody.targetBatchIds
+      : (normalizedBody.targetBatchIds ? String(normalizedBody.targetBatchIds).split(',').map(s => s.trim()).filter(Boolean) : []);
+    const cleanBatches = rawBatches.filter((b: string) => b && b !== 'all' && b !== 'all_paid' && b !== 'all_free');
 
-    const isBatchSpecific = !!targetBatchVal && targetBatchVal !== 'all';
     const resourceTitle = normalizedBody.title || (data as any)?.title || 'New study resource';
     const resourceId = (data as any)?.id || '';
+    const visibility = String(normalizedBody.visibility || 'public').trim().toLowerCase();
+    const isBatchSpecific = visibility === 'batch' && cleanBatches.length > 0;
 
-    // Dispatch background push notification to target batch or all (students + guests included)
+    if (isBatchSpecific) {
+      sendPushNotification({
+        title: "📚 New Study Material Added",
+        body: `${resourceTitle} is now available in your LMS library.`,
+        targetRole: "student",
+        targetBatch: cleanBatches,
+        excludeUserId: userId,
+        data: {
+          targetTab: "lms",
+          targetSub: "resources",
+          screen: "lms",
+          subTab: "resources",
+          resourceId,
+          dedupeId: `resource_${resourceId}_batches`
+        }
+      }).catch(err => console.log("[Push] Resource creation push note:", err?.message));
+    } else {
+      sendPushNotification({
+        title: "📚 New Study Material Added",
+        body: `${resourceTitle} is now available in your LMS library.`,
+        targetRole: visibility === 'premium' ? "student" : "all",
+        targetBatch: null,
+        excludeUserId: userId,
+        data: {
+          targetTab: "lms",
+          targetSub: "resources",
+          screen: "lms",
+          subTab: "resources",
+          resourceId,
+          dedupeId: `resource_${resourceId}`
+        }
+      }).catch(err => console.log("[Push] Resource creation push note:", err?.message));
+    }
+
+    // Dispatch admin notification for new study resource
     sendPushNotification({
-      title: "📚 New Study Material Added",
-      body: `${resourceTitle} is now available in your LMS library.`,
-      targetRole: isBatchSpecific ? "student" : "all",
-      targetBatch: isBatchSpecific ? targetBatchVal : null,
+      title: "📚 New Study Material Published",
+      body: `"${resourceTitle}" has been added to LMS resources.`,
+      targetRole: "admin",
       excludeUserId: userId,
       data: {
         targetTab: "lms",
@@ -48,9 +83,9 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
         screen: "lms",
         subTab: "resources",
         resourceId,
-        dedupeId: `resource_${resourceId}`
+        dedupeId: `resource_admin_${resourceId}_${Date.now()}`
       }
-    }).catch(err => console.log("[Push] Resource creation push note:", err?.message));
+    }).catch(err => console.log("[Push] Resource admin push note:", err?.message));
 
     res.status(201).json({ success: true, data });
   } catch (error) {

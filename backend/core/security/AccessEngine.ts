@@ -65,27 +65,37 @@ export class AccessEngine {
 
       switch (visibility) {
         case 'batch': {
-          const isEnrolledStudent = accessCtx.accessProfiles.includes('batch') || accessCtx.batchIds.length > 0 || accessCtx.role === 'student';
-          const hasBatchAccess = 
-            !targetBatchIds ||
-            targetBatchIds.length === 0 ||
-            targetBatchIds.includes('all') ||
-            (targetBatchIds.includes('all_paid') && isEnrolledStudent) ||
-            (targetBatchIds.includes('all_free') && !isEnrolledStudent) ||
-            isEnrolledStudent ||
-            accessCtx.batchIds.some(id => targetBatchIds.some(tb => String(tb).trim().toLowerCase() === String(id).trim().toLowerCase()));
+          const isEnrolledStudent = accessCtx.batchIds.length > 0 || (accessCtx.accessProfiles || []).includes('batch');
+          const cleanTargets = (targetBatchIds || []).map(tb => String(tb).trim().toLowerCase()).filter(Boolean);
+          const specificTargets = cleanTargets.filter(t => t !== 'all' && t !== 'all_paid' && t !== 'all_free');
+
+          let hasBatchAccess = false;
+          if (cleanTargets.length === 0 || cleanTargets.includes('all')) {
+            hasBatchAccess = true;
+          } else if (cleanTargets.includes('all_paid') && isEnrolledStudent) {
+            hasBatchAccess = true;
+          } else if (cleanTargets.includes('all_free') && !isEnrolledStudent) {
+            hasBatchAccess = true;
+          } else if (specificTargets.length > 0) {
+            hasBatchAccess = isEnrolledStudent && accessCtx.batchIds.some(id => {
+              const cleanId = String(id).trim().toLowerCase();
+              return specificTargets.some(st => st === cleanId || cleanId.includes(st) || st.includes(cleanId));
+            });
+          } else {
+            hasBatchAccess = isEnrolledStudent;
+          }
 
           if (!hasBatchAccess) {
-            throw new AppError('Access denied: You are not enrolled to access this resource', 403);
+            throw new AppError('Access denied: You are not enrolled in the required batch to access this resource', 403);
           }
           break;
         }
 
         case 'premium': {
-          // Any student who has paid or is enrolled in any batch gets premium access
-          const isEnrolledStudent = accessCtx.accessProfiles.includes('batch') || accessCtx.batchIds.length > 0 || accessCtx.role === 'student';
+          // Any student who is enrolled in any batch gets premium access
+          const isEnrolledStudent = accessCtx.batchIds.length > 0 || (accessCtx.accessProfiles || []).includes('batch');
           if (!isEnrolledStudent) {
-            throw new AppError('Access denied: You must be enrolled in a batch to access premium resources', 403);
+            throw new AppError('Access denied: You must be enrolled in an academy batch to access premium resources', 403);
           }
           break;
         }

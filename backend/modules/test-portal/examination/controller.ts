@@ -218,10 +218,11 @@ export class ExaminationController {
             // Resolve student name and roll number for O(1) reads later
             let studentName = "";
             let rollNumber = "";
+            let sData: any = null;
             try {
                 const studentDoc = await db.collection("students").doc(studentId).get();
                 if (studentDoc.exists) {
-                    const sData = studentDoc.data()!;
+                    sData = studentDoc.data()!;
                     studentName = `${sData.firstName || ""} ${sData.lastName || ""}`.trim() || sData.fullName || sData.name || "";
                     rollNumber = sData.rollNumber || sData.rollNo || sData.admissionNumber || sData.loginUsername || "";
                 }
@@ -252,12 +253,45 @@ export class ExaminationController {
             if (!studentName || studentName === "Student") studentName = "Guest User";
             if (!rollNumber || rollNumber === "N/A" || rollNumber === "Guest" || rollNumber === "Student") rollNumber = studentName;
 
+            // Check if this test is targeted to a Special Batch
+            let isSpecialBatchTest = false;
+            let specialRollNumber: string | null = null;
+            if (test.targetAudience === "batch" && test.targetBatch) {
+                const targetBatchNames = String(test.targetBatch).split(",").map(b => b.trim().toLowerCase());
+                try {
+                    const specialBatchesSnap = await db.collection("batches").where("isSpecial", "==", true).get();
+                    for (const sbDoc of specialBatchesSnap.docs) {
+                        const sbData = sbDoc.data();
+                        const sbName = String(sbData.batchName || "").trim().toLowerCase();
+                        if (targetBatchNames.includes(sbName)) {
+                            isSpecialBatchTest = true;
+                            if (sbData.studentRollMap && sbData.studentRollMap[studentId]) {
+                                specialRollNumber = String(sbData.studentRollMap[studentId]);
+                            } else if (sData && sData.specialRollNumbers && sData.specialRollNumbers[sbData.batchName]) {
+                                specialRollNumber = String(sData.specialRollNumbers[sbData.batchName]);
+                            } else if (sData && sData.specialRollNo) {
+                                specialRollNumber = String(sData.specialRollNo);
+                            }
+                            break;
+                        }
+                    }
+                } catch (e) {
+                    console.log("Error checking special batch mapping during startTest:", e);
+                }
+            }
+
+            if (isSpecialBatchTest && specialRollNumber) {
+                rollNumber = specialRollNumber;
+            }
+
             const attemptPayload = {
                 id: attemptId,
                 testId,
                 studentId,
                 studentName,
                 rollNumber,
+                isSpecialBatchTest,
+                specialRollNo: specialRollNumber || null,
                 status: "started",
                 isSubmitted: false,
                 submittedAt: null,

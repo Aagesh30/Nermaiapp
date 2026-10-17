@@ -494,6 +494,7 @@ export const ResourceViewer: React.FC<ResourceViewerProps> = ({ resourceId, onCl
         }>
           <SecurePDFViewer
             url={documentUrl}
+            fallbackUrl={resource?.sourceUrl || access?.signedUrl || access?.viewerUrl || ''}
             onClose={onClose}
             title={resource?.title || 'Resource Document'}
             onDownload={handleDownload}

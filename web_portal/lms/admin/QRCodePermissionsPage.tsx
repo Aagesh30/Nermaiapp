@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StudentApi, BatchApi, CourseApi } from '../core/services';
 import { AdminTable, AdminInput, AdminSelect, AdminButton, AdminModal } from '../components/admin-ui';
-import { Upload, Trash2, ShieldCheck, QrCode, Search, Users, Clock, CheckCircle2, XCircle, AlertCircle, Eye, Check, X, Download } from 'lucide-react';
+import { Upload, Trash2, ShieldCheck, QrCode, Search, Users, Clock, CheckCircle, CheckCircle2, XCircle, AlertCircle, Eye, Check, X, Download } from 'lucide-react';
 import { db } from '../../firebaseConfig';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 
@@ -449,34 +449,102 @@ export const QRCodePermissionsPage: React.FC<QRCodePermissionsPageProps> = ({
         </div>
       </div>
 
+      {/* Pending Requests Quick Action Banner if any requests */}
+      {requestCount > 0 && (
+        <div className="bg-red-50 dark:bg-[#2a1215] border-2 border-red-300 dark:border-red-800 rounded-2xl p-5 shadow-sm mb-6">
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-3">
+            <div className="flex items-center gap-2.5">
+              <span className="w-3 h-3 rounded-full bg-red-600 animate-ping" />
+              <h3 className="text-base font-extrabold text-red-700 dark:text-red-400">
+                Pending QR Access Requests ({requestCount})
+              </h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleBulkEnable('requested')}
+              disabled={bulkActionLoading}
+              className="px-4 py-2 bg-red-700 hover:bg-red-800 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-2 transition-colors"
+            >
+              <CheckCircle size={14} />
+              Approve All Pending ({requestCount})
+            </button>
+          </div>
+          <p className="text-xs text-gray-600 dark:text-gray-300 mb-3">
+            Students waiting to scan the fee payment QR code. Tap "Enable" next to their name or click "Approve All Pending".
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5 max-h-56 overflow-y-auto pr-1">
+            {students.filter(s => s.qrCodeRequested === true).map(s => {
+              const sName = s.displayName || `${s.firstName || ''} ${s.lastName || ''}`.trim() || s.name || 'Student';
+              const roll = s.rollNo || s.rollNumber || s.loginUsername || '—';
+              return (
+                <div key={`pending-${s.id}`} className="flex items-center justify-between bg-white dark:bg-[#1a1a2e] p-3 rounded-xl border border-red-200 dark:border-red-900/50 shadow-xs">
+                  <div className="truncate pr-2">
+                    <div className="text-sm font-bold text-gray-900 dark:text-white truncate">{sName}</div>
+                    <div className="text-xs text-gray-500">Roll: {roll}{s.batch ? ` • ${s.batch}` : ''}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleSinglePermission(s.id, true)}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shrink-0 flex items-center gap-1 transition-colors"
+                  >
+                    <CheckCircle size={12} />
+                    Approve
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* Left Column: QR Code Configuration */}
         <div className="lg:col-span-1 bg-white dark:bg-[#1a1a2e] border border-gray-200 dark:border-[#8B0000]/30 rounded-2xl p-6 shadow-sm">
-          <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+          <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-1 flex items-center gap-2">
             <Upload size={18} className="text-[#8B0000] dark:text-[#ff8a80]" />
             Upload Payment QR Code
           </h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+            Official UPI QR code displayed to students during fee payment
+          </p>
           
           <form onSubmit={handleSaveSettings} className="space-y-4">
             
             {/* QR Image Viewport */}
-            <div className="relative border border-dashed border-gray-300 dark:border-[#8B0000]/30 bg-gray-50 dark:bg-[#0f0f1a] rounded-xl p-4 flex flex-col items-center justify-center min-h-[220px]">
+            <div className="relative border-2 border-dashed border-gray-300 dark:border-[#8B0000]/30 bg-gray-50 dark:bg-[#0f0f1a] rounded-xl p-4 flex flex-col items-center justify-center min-h-[220px]">
               {qrCodeUrl ? (
                 <div className="space-y-3 w-full text-center">
-                  <img 
-                    src={qrCodeUrl} 
-                    alt="Uploaded Payment QR Code" 
-                    className="max-h-[160px] mx-auto object-contain bg-white rounded-lg p-2"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleDeleteQrCode}
-                    className="text-red-500 hover:text-red-650 text-xs font-semibold flex items-center gap-1.5 mx-auto transition-colors"
-                  >
-                    <Trash2 size={14} />
-                    Remove Image
-                  </button>
+                  <div className="inline-block p-2 bg-white rounded-xl shadow-xs border border-gray-200">
+                    <img 
+                      src={qrCodeUrl} 
+                      alt="Uploaded Payment QR Code" 
+                      className="max-h-[170px] max-w-[170px] mx-auto object-contain rounded-lg"
+                    />
+                  </div>
+                  <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-emerald-600">
+                    <CheckCircle size={14} /> Active Payment QR Code
+                  </div>
+                  <div className="flex items-center justify-center gap-2">
+                    <label className="cursor-pointer px-3 py-1.5 bg-[#8B0000] hover:bg-[#8B0000]/90 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5">
+                      <Upload size={13} />
+                      Change QR
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        onChange={handleImageUpload} 
+                        className="hidden" 
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleDeleteQrCode}
+                      className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5"
+                    >
+                      <Trash2 size={13} />
+                      Remove
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <label className="cursor-pointer flex flex-col items-center text-center p-4">
@@ -484,7 +552,7 @@ export const QRCodePermissionsPage: React.FC<QRCodePermissionsPageProps> = ({
                     <Upload size={24} />
                   </div>
                   <span className="text-sm font-semibold text-gray-900 dark:text-white">Choose QR Code image</span>
-                  <span className="text-xs text-gray-500 mt-1">PNG, JPG or SVG</span>
+                  <span className="text-xs text-gray-500 mt-1">PNG, JPG or WebP (Square recommended)</span>
                   <input 
                     type="file" 
                     accept="image/*" 
@@ -493,6 +561,39 @@ export const QRCodePermissionsPage: React.FC<QRCodePermissionsPageProps> = ({
                   />
                 </label>
               )}
+            </div>
+
+            {/* Quick Presets */}
+            <div>
+              <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Quick Validity Presets</div>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { label: '15m', dur: 15, unit: 'minutes' },
+                  { label: '30m', dur: 30, unit: 'minutes' },
+                  { label: '1h', dur: 1, unit: 'hours' },
+                  { label: '2h', dur: 2, unit: 'hours' },
+                  { label: '24h', dur: 24, unit: 'hours' },
+                ].map(p => {
+                  const isSelected = timerDuration === p.dur && timerUnit === p.unit;
+                  return (
+                    <button
+                      key={p.label}
+                      type="button"
+                      onClick={() => {
+                        setTimerDuration(p.dur);
+                        setTimerUnit(p.unit);
+                      }}
+                      className={`px-3 py-1 text-xs font-bold rounded-lg border transition-colors ${
+                        isSelected 
+                          ? 'bg-[#8B0000] text-white border-[#8B0000]' 
+                          : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-250 dark:border-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Timer Config */}
@@ -517,12 +618,16 @@ export const QRCodePermissionsPage: React.FC<QRCodePermissionsPageProps> = ({
               />
             </div>
 
+            <p className="text-[11px] text-gray-500 italic">
+              ℹ️ Students can view the payment QR code for {timerDuration} {timerUnit} once permission is granted.
+            </p>
+
             <AdminButton 
               type="submit" 
               className="w-full font-bold bg-[#8B0000] hover:bg-[#8B0000]/95" 
               isLoading={settingsSaving}
             >
-              Save Settings
+              Save QR Settings
             </AdminButton>
           </form>
         </div>

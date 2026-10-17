@@ -614,8 +614,8 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 });
 
 // Middleware
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ limit: "50mb", extended: true }));
+app.use(express.json({ limit: "150mb" }));
+app.use(express.urlencoded({ limit: "150mb", extended: true }));
 app.use((req: Request, res: Response, next: NextFunction) => {
     // Log non-GET non-OPTIONS or key test requests
     if ((req.method !== "GET" && req.method !== "OPTIONS") || req.url.includes("/test-portal")) {

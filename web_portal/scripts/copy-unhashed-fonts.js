@@ -61,6 +61,12 @@ if (fs.existsSync(distDir)) {
     fs.copyFileSync(workerSrc, workerDest);
     console.log('Successfully copied pdf.worker.min.mjs to dist');
   }
+
+  // Emit auto-generated version.json to dist root so mobile phones can detect fresh builds automatically
+  const nowVersion = Date.now().toString();
+  const versionData = JSON.stringify({ version: nowVersion, builtAt: new Date().toISOString() }, null, 2);
+  fs.writeFileSync(path.resolve(distDir, 'version.json'), versionData, 'utf8');
+  console.log(`Generated dist/version.json (version: ${nowVersion})`);
 }
 
 console.log('--- Font processing completed ---');

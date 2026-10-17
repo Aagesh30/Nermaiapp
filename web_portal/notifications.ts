@@ -30,9 +30,16 @@ const ensureCacheLoaded = async () => {
 export const initNotifications = async () => {
   if (Platform.OS === "web") return;
   try {
+    const Constants = require("expo-constants").default || require("expo-constants");
+    if (Constants?.appOwnership === "expo" || Constants?.executionEnvironment === "storeClient") {
+      console.log("[Notifications] Push notifications are skipped in Expo Go (SDK 53+ limitation). Use development build or APK.");
+      await ensureCacheLoaded();
+      return;
+    }
+
     const Notifications = require("expo-notifications");
     if (!Notifications || !Notifications.setNotificationHandler) {
-      console.log("[Notifications] Native notification module not available (e.g. running in Expo Go)");
+      console.log("[Notifications] Native notification module not available");
       return;
     }
 
@@ -67,6 +74,11 @@ export const initNotifications = async () => {
 export const requestNotificationPermission = async (): Promise<boolean> => {
   if (Platform.OS === "web") return true;
   try {
+    const Constants = require("expo-constants").default || require("expo-constants");
+    if (Constants?.appOwnership === "expo" || Constants?.executionEnvironment === "storeClient") {
+      return false;
+    }
+
     const Notifications = require("expo-notifications");
     if (!Notifications || !Notifications.getPermissionsAsync) return false;
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
@@ -389,15 +401,37 @@ export const sendRemotePushNotification = async (payload: RemotePushPayload): Pr
 export const showPhoneNotification = async (title: string, body: string, data?: Record<string, any>) => {
   if (Platform.OS === "web") {
     try {
+      await ensureCacheLoaded();
+      const dedupeKey = data?.dedupeId || data?.id || `${title}::${body}`;
+      if (dedupeKey) {
+        if (recentNotificationsCache.has(dedupeKey)) return;
+        recentNotificationsCache.add(dedupeKey);
+        if (recentNotificationsCache.size > 500) {
+          const oldest = recentNotificationsCache.values().next().value;
+          if (oldest) recentNotificationsCache.delete(oldest);
+        }
+        AsyncStorage.setItem(
+          DELIVERED_NOTIFICATIONS_STORAGE_KEY,
+          JSON.stringify(Array.from(recentNotificationsCache))
+        ).catch(() => {});
+      }
+
       if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+        const notifTag = data?.dedupeId || (dedupeKey || `nermai_fg_${Date.now()}`);
         const notif = new Notification(title, {
           body,
           icon: "/favicon.png",
           badge: "/favicon.png",
+          tag: notifTag,
           data: data || {}
         });
         notif.onclick = () => {
           window.focus();
+          if (data && typeof window !== "undefined") {
+            try {
+              window.dispatchEvent(new CustomEvent("nermai_notification_click", { detail: data }));
+            } catch (_) {}
+          }
           if (data?.targetTab && typeof window.location !== "undefined") {
             const sub = data.targetSub ? `/${data.targetSub}` : "";
             window.location.hash = `#${data.targetTab}${sub}`;
@@ -472,8 +506,36 @@ export const showPhoneNotification = async (title: string, body: string, data?: 
 export const setupNotificationClickListener = (
   onNavigate: (data: Record<string, any>) => void
 ): (() => void) => {
-  if (Platform.OS === "web") return () => {};
+  if (Platform.OS === "web") {
+    if (typeof window === "undefined") return () => {};
+    const handleWebClick = (event: any) => {
+      const detail = event?.detail || event?.data;
+      if (detail) {
+        onNavigate(detail);
+      }
+    };
+    const handleSwMessage = (event: any) => {
+      if (event?.data?.type === "NOTIFICATION_CLICK" && event?.data?.data) {
+        onNavigate(event.data.data);
+      }
+    };
+    window.addEventListener("nermai_notification_click", handleWebClick);
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.addEventListener("message", handleSwMessage);
+    }
+    return () => {
+      window.removeEventListener("nermai_notification_click", handleWebClick);
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.removeEventListener("message", handleSwMessage);
+      }
+    };
+  }
   try {
+    const Constants = require("expo-constants").default || require("expo-constants");
+    if (Constants?.appOwnership === "expo" || Constants?.executionEnvironment === "storeClient") {
+      return () => {};
+    }
+
     const Notifications = require("expo-notifications");
     if (!Notifications || !Notifications.addNotificationResponseReceivedListener) return () => {};
 

@@ -1,11 +1,12 @@
 import admin from "firebase-admin";
-import { db, messaging } from "../infrastructure/firebase";
+import { getMessaging } from "firebase-admin/messaging";
+import { db, messaging, getFirebaseApp } from "../infrastructure/firebase";
 
 export interface PushNotificationPayload {
   title: string;
   body: string;
   targetRole?: "all" | "student" | "guest" | "admin" | "staff" | "super_admin";
-  targetBatch?: string | null;
+  targetBatch?: string | string[] | null;
   targetUserId?: string | null;
   targetAudience?: string | null;
   data?: Record<string, any>;
@@ -165,9 +166,52 @@ export async function sendPushNotification(
       return result;
     }
 
-    const expoTokenDocMap = new Map<string, string>(); // token -> docId
+    // Parse and resolve targetBatch filter
+    let resolvedTargetBatches: Set<string> | null = null;
+    if (targetBatch && targetBatch !== "all" && targetBatch !== "all_paid") {
+      const rawBatchItems: string[] = Array.isArray(targetBatch)
+        ? targetBatch.map((s) => String(s || "")).filter(Boolean)
+        : String(targetBatch).split(",");
+
+      const candidateBatches = rawBatchItems
+        .map((b) => b.trim().toLowerCase())
+        .filter((b) => b && b !== "all" && b !== "all_paid");
+
+      if (candidateBatches.length > 0) {
+        resolvedTargetBatches = new Set<string>();
+
+        // Fetch batches collection once per send to map doc ID -> batchName / name
+        let batchIdToNameMap = new Map<string, string>();
+        try {
+          const [bSnap, sbSnap] = await Promise.all([
+            db.collection("batches").get().catch(() => ({ docs: [] })),
+            db.collection("student_batches").get().catch(() => ({ docs: [] }))
+          ]);
+          const allDocs = [...(bSnap.docs || []), ...(sbSnap.docs || [])];
+          allDocs.forEach((doc) => {
+            const data = doc.data();
+            const bName = (data.batchName || data.name || data.code || "").toString().trim().toLowerCase();
+            if (bName) {
+              batchIdToNameMap.set(doc.id.trim().toLowerCase(), bName);
+            }
+          });
+        } catch (lookupErr: any) {
+          console.warn("[PushService] Batch lookup warning (falling back to direct names):", lookupErr?.message);
+        }
+
+        for (const item of candidateBatches) {
+          resolvedTargetBatches.add(item);
+          if (batchIdToNameMap.has(item)) {
+            resolvedTargetBatches.add(batchIdToNameMap.get(item)!);
+          }
+        }
+      }
+    }
+
+    const tokenDocMap = new Map<string, string>(); // token -> docId
     const tokenRoleMap = new Map<string, string>(); // token -> role
-    const webTokens: string[] = [];
+    const expoTokens: string[] = [];
+    const fcmTokens: string[] = [];
 
     docsMap.forEach((docSnap) => {
       const d = docSnap.data();
@@ -184,31 +228,30 @@ export async function sendPushNotification(
       }
 
       // Filter by targetBatch if specified and user is student
-      if (
-        targetBatch &&
-        targetBatch !== "all" &&
-        targetBatch !== "all_paid" &&
-        String(targetBatch).trim() !== ""
-      ) {
-        if (d.role !== "student" || !d.batch || String(d.batch).trim().toLowerCase() !== String(targetBatch).trim().toLowerCase()) {
+      if (resolvedTargetBatches && resolvedTargetBatches.size > 0) {
+        if (d.role !== "student" || !d.batch) {
+          return;
+        }
+        const tokenBatchLower = String(d.batch).trim().toLowerCase();
+        if (!resolvedTargetBatches.has(tokenBatchLower)) {
           return;
         }
       }
 
       const roleStr = String(d.role || "").toLowerCase();
       tokenRoleMap.set(token, roleStr);
+      tokenDocMap.set(token, docSnap.id);
 
+      // Route tokens accurately: ExponentPushToken -> Expo API, everything else (Native Android FCM & Web FCM) -> Direct Google FCM
       if (token.startsWith("ExponentPushToken") || token.startsWith("ExpoPushToken")) {
-        expoTokenDocMap.set(token, docSnap.id);
-      } else if (d.platform === "web" || token.length > 50) {
-        webTokens.push(token);
+        expoTokens.push(token);
       } else {
-        expoTokenDocMap.set(token, docSnap.id);
+        fcmTokens.push(token);
       }
     });
 
-    const uniqueExpo = Array.from(expoTokenDocMap.keys());
-    const uniqueWeb = Array.from(new Set(webTokens));
+    const uniqueExpo = Array.from(new Set(expoTokens));
+    const uniqueWeb = Array.from(new Set(fcmTokens));
     result.tokensFound = uniqueExpo.length + uniqueWeb.length;
     result.totalTokens = result.tokensFound;
 
@@ -232,10 +275,7 @@ export async function sendPushNotification(
         const isAdmin = ["admin", "super_admin", "staff", "developer"].includes(tokenRole);
         const isGuest = tokenRole === "guest";
         const tokenData = { ...cleanData };
-        if (isAdmin && tokenData.targetTab === "test" && tokenData.targetSub === "available") {
-          tokenData.targetSub = "test-list";
-          tokenData.subTab = "test-list";
-        } else if (isGuest) {
+        if (isGuest) {
           if (tokenData.targetTab === "test" || tokenData.targetTab === "tests" || tokenData.targetSub === "tests" || tokenData.targetSub === "available") {
             tokenData.targetTab = "guest";
             tokenData.targetSub = "tests";
@@ -285,7 +325,7 @@ export async function sendPushNotification(
                 const ticket = tickets[tIdx];
                 const targetToken = chunk[tIdx]?.to || "";
                 const masked = maskToken(targetToken);
-                const docId = expoTokenDocMap.get(targetToken);
+                const docId = tokenDocMap.get(targetToken);
 
                 if (ticket.status === "ok") {
                   result.ticketsOk++;
@@ -367,8 +407,8 @@ export async function sendPushNotification(
           if (isTestAvailable) {
             subChunks.push({
               tokens: adminTokens,
-              payloadData: { ...cleanData, targetSub: "test-list", subTab: "test-list" },
-              link: `https://nermaiiasacademy-519c8.web.app/#test/test-list`,
+              payloadData: { ...cleanData, targetSub: "available", subTab: "available" },
+              link: `https://nermaiiasacademy-519c8.web.app/#test/available`,
             });
           } else {
             const adminPath = cleanData.targetTab ? `/#${cleanData.targetTab}${cleanData.targetSub ? `/${cleanData.targetSub}` : ''}` : "/";
@@ -392,7 +432,9 @@ export async function sendPushNotification(
 
         for (const sub of subChunks) {
           try {
-            const response = await messaging.sendEachForMulticast({
+            const firebaseApp = getFirebaseApp();
+            const activeMessaging = getMessaging(firebaseApp);
+            const response = await activeMessaging.sendEachForMulticast({
               tokens: sub.tokens,
               notification: {
                 title,
@@ -438,26 +480,35 @@ export async function sendPushNotification(
               const targetToken = chunk[idx] || "";
               const masked = maskToken(targetToken);
               if (!resp.success && resp.error) {
-                const code = resp.error.code || "unknown";
-                const msg = resp.error.message || "Unknown error";
-                console.warn(`[PushService] Web FCM error for token ${masked}: [${code}] ${msg}`);
-                result.ticketDetails?.push({ token: masked, status: "error", error: `${code}: ${msg}` });
+                const code = resp.error.code || (resp.error as any).status || "unknown";
+                const msg = resp.error.message || JSON.stringify(resp.error) || "Unknown error";
+                const fullErr = `[${code}] ${msg}${resp.error.stack ? ` | stack: ${resp.error.stack}` : ""}`;
+                console.warn(`[PushService] Web FCM error for token ${masked}: ${fullErr}`);
+                result.ticketDetails?.push({ token: masked, status: "error", error: `${code}: ${msg}`, rawError: resp.error });
 
                 if (
                   code === "messaging/registration-token-not-registered" ||
                   code === "messaging/invalid-registration-token"
                 ) {
                   if (targetToken) {
-                    const cleanDocId = "web_" + targetToken.slice(-24).replace(/[^a-zA-Z0-9_-]/g, "_");
-                    batch.delete(db.collection("device_push_tokens").doc(cleanDocId));
-                    staleWebCount++;
+                    const knownDocId = tokenDocMap.get(targetToken);
+                    if (knownDocId) {
+                      batch.delete(db.collection("device_push_tokens").doc(knownDocId));
+                      staleWebCount++;
+                    } else {
+                      const cleanDocId = targetToken.replace(/[^a-zA-Z0-9_-]/g, "_");
+                      batch.delete(db.collection("device_push_tokens").doc(cleanDocId));
+                      const webCleanDocId = "web_" + targetToken.slice(-24).replace(/[^a-zA-Z0-9_-]/g, "_");
+                      batch.delete(db.collection("device_push_tokens").doc(webCleanDocId));
+                      staleWebCount++;
+                    }
                   }
                 }
               }
             });
             if (staleWebCount > 0) {
               await batch.commit().catch(() => {});
-              console.log(`[PushService] Cleaned up ${staleWebCount} stale/invalid Web FCM token docs.`);
+              console.log(`[PushService] Cleaned up ${staleWebCount} stale/invalid FCM token docs.`);
             }
           }
         } catch (e: any) {

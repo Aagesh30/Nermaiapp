@@ -1,4 +1,4 @@
-﻿import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { AccessRequestApi } from '../../core/services';
 import { Lock, CheckCircle2, ChevronRight, MessageSquare, AlertCircle, Video, Film, Radio, FileWarning } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -40,6 +40,8 @@ const DENIAL_CONFIG: Record<string, {
 }> = {
   NOT_ENROLLED: { icon: FileWarning, iconColor: 'text-red-500', title: 'Not Enrolled', subtitle: 'You are not registered as a student. Please contact the institute to enroll.', showRequest: false },
   FREE_PLAN: { icon: Lock, iconColor: 'text-yellow-500', title: 'Premium Content', subtitle: 'This class is available only for enrolled students. View our plans to get access.', showRequest: false },
+  ONLINE_RECORDED: { icon: Film, iconColor: 'text-yellow-500', title: 'Recorded Video', subtitle: 'Your batch does not include recorded access by default. You can request temporary access.', showRequest: true },
+  OFFLINE_RECORDED: { icon: Film, iconColor: 'text-yellow-500', title: 'Recorded Video', subtitle: 'Your batch does not include recorded access by default. You can request temporary access.', showRequest: true },
   RECORDED_REQUIRES_APPROVAL: { icon: Film, iconColor: 'text-yellow-500', title: 'Recorded Video', subtitle: 'Your batch does not include recorded access by default. You can request temporary access.', showRequest: true },
   LIVE_REQUIRES_APPROVAL: { icon: Radio, iconColor: 'text-red-500', title: 'Live Class', subtitle: 'Live classes require special approval for your batch.', showRequest: true },
   COURSE_NOT_ASSIGNED: { icon: Lock, iconColor: 'text-red-500', title: 'Course Not Assigned', subtitle: 'This course is not assigned to any of your active batches.', showRequest: false },
@@ -55,8 +57,25 @@ export const AccessRequestCard: React.FC<AccessRequestCardProps> = ({ classId, d
   const [errorMessage, setErrorMessage] = useState('');
   const navigate = useNavigate();
 
-  const config = DENIAL_CONFIG[deniedPayload.reason] ?? DENIAL_CONFIG['NO_CAPABILITY'];
+  const rawReason = (deniedPayload.reason || '').replace(/^SAPE:\s*/, '').replace(/^SACS:\s*/, '');
+  const config = DENIAL_CONFIG[rawReason] ?? DENIAL_CONFIG['RECORDED_REQUIRES_APPROVAL'] ?? DENIAL_CONFIG['NO_CAPABILITY'];
   const Icon = config.icon;
+
+  const scopes: RequestScope[] = (deniedPayload.allowedRequestScopes && deniedPayload.allowedRequestScopes.length > 0)
+    ? deniedPayload.allowedRequestScopes.map((s: any) => {
+        if (typeof s === 'string') {
+          return { type: 'CLASS' as const, contentId: classId, count: 1, units: 1, allowed: true };
+        }
+        return {
+          ...s,
+          type: s.type || 'CLASS',
+          contentId: s.contentId || classId,
+          count: s.count ?? 1,
+          units: s.units ?? 1,
+          allowed: s.allowed !== false
+        };
+      })
+    : [{ type: 'CLASS' as const, contentId: classId, count: 1, units: 1, allowed: true }];
 
   const handleRequestAccess = useCallback(async (scope: RequestScope) => {
     if (!scope.allowed || submitting) return;
@@ -65,18 +84,24 @@ export const AccessRequestCard: React.FC<AccessRequestCardProps> = ({ classId, d
     
     try {
       await AccessRequestApi.createRequest({
-        requestType: scope.type,
-        contentId: scope.contentId,
+        requestType: scope.type || 'CLASS',
+        contentId: scope.contentId || classId,
         contentName: 'Requested Content',
-        reason: `Student requested ${scope.type.toLowerCase()} access`
+        reason: `Student requested ${(scope.type || 'class').toLowerCase()} access`
       });
       setSubmitted(scope.type);
     } catch (err: any) {
-      setErrorMessage(err.response?.data?.message || err.response?.data?.error || 'Failed to submit request.');
+      const msg = err.response?.data?.message || err.response?.data?.error || err.message || '';
+      if (msg.toLowerCase().includes('already') || msg.toLowerCase().includes('pending')) {
+        setSubmitted(scope.type);
+        setErrorMessage('');
+      } else {
+        setErrorMessage(msg || 'Failed to submit request.');
+      }
     } finally {
       setSubmitting(null);
     }
-  }, [submitting]);
+  }, [submitting, classId]);
 
   return (
     <div className="flex flex-col items-center justify-center h-full bg-[#0A0D14] text-white p-8 rounded-2xl relative overflow-hidden overflow-y-auto">
@@ -94,24 +119,24 @@ export const AccessRequestCard: React.FC<AccessRequestCardProps> = ({ classId, d
           </div>
         )}
 
-        {config.showRequest && deniedPayload.allowedRequestScopes && deniedPayload.allowedRequestScopes.length > 0 && (
+        {config.showRequest && scopes.length > 0 && (
           <div className="w-full mt-4">
             <div className="bg-[#111] border border-[#222] rounded-xl p-4 mb-6">
               <div className="flex justify-between mb-2 text-sm">
                 <span className="text-slate-400">Monthly Units</span>
-                <span className="font-semibold">{deniedPayload.remainingRecordedUnits} / {deniedPayload.monthlyLimit} remaining</span>
+                <span className="font-semibold">{deniedPayload.remainingRecordedUnits ?? 10} / {deniedPayload.monthlyLimit ?? 10} remaining</span>
               </div>
               <div className="h-1.5 bg-[#222] rounded-full overflow-hidden">
                 <div 
-                  className={`h-full ${deniedPayload.remainingRecordedUnits! > 0 ? 'bg-yellow-500' : 'bg-red-500'}`} 
-                  style={{ width: `${Math.max(4, (deniedPayload.remainingRecordedUnits! / (deniedPayload.monthlyLimit || 1)) * 100)}%` }}
+                  className={`h-full ${(deniedPayload.remainingRecordedUnits ?? 10) > 0 ? 'bg-yellow-500' : 'bg-red-500'}`} 
+                  style={{ width: `${Math.max(4, ((deniedPayload.remainingRecordedUnits ?? 10) / (deniedPayload.monthlyLimit || 10)) * 100)}%` }}
                 />
               </div>
             </div>
 
             <h4 className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-3">Request Access</h4>
             
-            {deniedPayload.allowedRequestScopes.map((scope) => (
+            {scopes.map((scope) => (
               <div key={scope.type} className={`flex items-center justify-between p-4 bg-[#111] border border-[#222] rounded-xl mb-3 ${!scope.allowed && 'opacity-50'}`}>
                 <div className="flex flex-col">
                   <span className="font-semibold text-white">{SCOPE_LABELS[scope.type]}</span>

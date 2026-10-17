@@ -60,7 +60,19 @@ service cloud.firestore {
     // profile_requests
     match /profile_requests/{docId} {
       allow read: if true;
-      allow write: if true;
+      allow write: if isSignedIn();
+    }
+
+    // access_requests (LMS recording, live class, and content access requests)
+    match /access_requests/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // content_access (Grants issued by admin)
+    match /content_access/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
 
     // leads / CRM
@@ -72,7 +84,7 @@ service cloud.firestore {
     // admissions
     match /admissions/{docId} {
       allow read: if true;
-      allow write: if true;
+      allow write: if isSignedIn();
     }
 
     // campaigns
@@ -285,7 +297,8 @@ service cloud.firestore {
 
     // offlineTestPermissionRequests
     match /offlineTestPermissionRequests/{docId} {
-      allow read, write: if true;
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
     }
 
     // live_class_index signal doc
@@ -306,6 +319,46 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // zoom_accounts
+    match /zoom_accounts/{accountId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // device_alerts
+    match /device_alerts/{alertId} {
+      allow read: if isAdmin();
+      allow write: if isSignedIn();
+    }
+
+    // feePayments
+    match /feePayments/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // alumniFeedback
+    match /alumniFeedback/{docId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // leaderboards, results, student_attempts
+    match /leaderboards/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /results/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /student_attempts/{docId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
     // access_rules & SACS requests
     match /access_rules/{ruleId} {
       allow read: if true;
@@ -313,6 +366,12 @@ service cloud.firestore {
     }
 
     match /access_requests/{requestId} {
+      allow read: if true;
+      allow write: if isSignedIn() || isAdmin();
+    }
+
+    // offlineTestPermissionRequests - Offline student test permission requests & approvals
+    match /offlineTestPermissionRequests/{requestId} {
       allow read: if true;
       allow write: if isSignedIn() || isAdmin();
     }
@@ -334,7 +393,8 @@ service cloud.firestore {
     }
 
     match /payment_acknowledgements/{ackId} {
-      allow read, write: if true;
+      allow read: if isSelf(resource.data.studentId) || isAdmin();
+      allow write: if isSignedIn();
     }
 
     match /page_locks/{lockId} {
@@ -359,17 +419,20 @@ service cloud.firestore {
 
     // admin_alerts - Live student requests and activity notifications for Admin Dashboard
     match /admin_alerts/{alertId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if true;
     }
 
     // system_activity_logs - Permanent audit logs filtered date-wise for Super Admin
     match /system_activity_logs/{logId} {
-      allow read, write: if true;
+      allow read: if isAdmin();
+      allow write: if isSignedIn();
     }
 
     // device_push_tokens - Remote push notification tokens for Android / iOS APK
     match /device_push_tokens/{tokenId} {
-      allow read, write: if true;
+      allow read: if isAdmin();
+      allow write: if isSignedIn();
     }
 
     // ─── CATCH-ALL: Deny everything else ────────────────────

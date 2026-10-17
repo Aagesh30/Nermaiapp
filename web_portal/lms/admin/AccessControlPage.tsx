@@ -8,7 +8,7 @@ import { AdminButton as Button } from '../components/admin-ui';
 import { Badge } from '../components/ui/Badge';
 import { AccessRulesApi, BatchApi } from '../core/services';
 import { db } from '../../firebaseConfig';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
 
 /* ─── Sub-tabs ─────────────────────────────────────────────────────────────── */
 const SUB_TABS = [
@@ -602,21 +602,26 @@ const RequestsTab: React.FC = () => {
   useEffect(() => {
     load();
     let unsub: (() => void) | null = null;
+    let unsubIndex: (() => void) | null = null;
     try {
       unsub = onSnapshot(collection(db, 'access_requests'), (snapshot) => {
-        if (!snapshot.empty) {
-          const list = snapshot.docs
-            .map(doc => ({ id: doc.id, ...doc.data() }))
-            .filter((r: any) => !r.isDeleted && r.status === 'PENDING');
-          if (list.length > 0) {
-            setRequests(list);
-          }
-        }
+        const list = snapshot.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter((r: any) => !r.isDeleted && String(r.status || '').toUpperCase() === 'PENDING');
+        setRequests(list);
       }, (err) => console.log('Access requests onSnapshot note:', err?.message));
+
+      // Signal doc listener: re-triggers load() when student creates a request or admin approves
+      unsubIndex = onSnapshot(doc(db, 'live_class_index', 'current'), () => {
+        load();
+      }, (err) => console.log('Signal listener note:', err?.message));
     } catch (e) {
       console.warn('Real-time access requests listener error:', e);
     }
-    return () => { if (unsub) unsub(); };
+    return () => {
+      if (unsub) unsub();
+      if (unsubIndex) unsubIndex();
+    };
   }, []);
 
   const batches = [...new Set([
@@ -658,7 +663,14 @@ const RequestsTab: React.FC = () => {
         setSelectedIds(prev => { const n = new Set(prev); n.delete(reqId); return n; });
       }
     } catch (e: any) {
-      alert(e?.response?.data?.message || 'Approval failed');
+      const msg = e?.response?.data?.message || e?.message || '';
+      if (msg.toLowerCase().includes('not pending') || msg.toLowerCase().includes('already')) {
+        alert('This request was already processed by another administrator.');
+        setRequests(prev => prev.filter(r => r.id !== reqId));
+        setSelectedIds(prev => { const n = new Set(prev); n.delete(reqId); return n; });
+      } else {
+        alert(msg || 'Approval failed');
+      }
     } finally {
       setProcessingIds(prev => { const s = new Set(prev); s.delete(reqId); return s; });
     }
@@ -672,7 +684,14 @@ const RequestsTab: React.FC = () => {
       setRequests(prev => prev.filter(r => r.id !== reqId));
       setSelectedIds(prev => { const n = new Set(prev); n.delete(reqId); return n; });
     } catch (e: any) {
-      alert(e?.response?.data?.message || 'Rejection failed');
+      const msg = e?.response?.data?.message || e?.message || '';
+      if (msg.toLowerCase().includes('not pending') || msg.toLowerCase().includes('already')) {
+        alert('This request was already processed by another administrator.');
+        setRequests(prev => prev.filter(r => r.id !== reqId));
+        setSelectedIds(prev => { const n = new Set(prev); n.delete(reqId); return n; });
+      } else {
+        alert(msg || 'Rejection failed');
+      }
     } finally {
       setProcessingIds(prev => { const s = new Set(prev); s.delete(reqId); return s; });
     }

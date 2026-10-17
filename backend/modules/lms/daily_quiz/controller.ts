@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import admin from "firebase-admin";
 import { randomUUID } from "crypto";
 import { generalCache } from "../../../shared/utils/cache";
+import { sendPushNotification } from "../../../services/pushService";
 
 const db = admin.firestore();
 const QUIZ_COLLECTION = "dailyQuizzes";
@@ -38,9 +39,8 @@ export class DailyQuizController {
             const quizId = randomUUID();
             const now = admin.firestore.FieldValue.serverTimestamp();
 
-            // Auto-disable time: 24 hours after published date midnight
-            const publishedDate = new Date(date + "T00:00:00.000Z");
-            const autoDisableAt = new Date(publishedDate.getTime() + 24 * 60 * 60 * 1000).toISOString();
+            // Auto-disable time: full 24 hours from publication time
+            const autoDisableAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
             await db.collection(QUIZ_COLLECTION).doc(quizId).set({
                 id: quizId,
@@ -50,6 +50,7 @@ export class DailyQuizController {
                 status: "active",         // "active" | "disabled" | "unattended"
                 publishedAt: now,
                 autoDisableAt,            // ISO string - auto disabled after 24h
+                attemptCount: 0,
                 createdAt: now,
                 updatedAt: now,
                 createdBy: createdBy || "admin",
@@ -58,6 +59,25 @@ export class DailyQuizController {
                 deletedAt: null,
                 deletedBy: null
             });
+
+            // Dispatch push notification to students
+            try {
+                sendPushNotification({
+                    title: '📝 Daily Quiz Published',
+                    body: `"${quizTitle}" is now live! Test your knowledge today.`,
+                    targetRole: 'student',
+                    excludeUserId: createdBy || null,
+                    data: {
+                        targetTab: 'lms',
+                        targetSub: 'quiz',
+                        screen: 'lms',
+                        subTab: 'quiz',
+                        quizId,
+                        quizDate: date,
+                        dedupeId: `daily_quiz_${quizId}`
+                    }
+                }).catch(err => console.log('[Push] Daily quiz push note error:', err?.message));
+            } catch (_) {}
 
             return res.status(200).json({
                 success: true,
@@ -141,7 +161,13 @@ export class DailyQuizController {
                 }
 
                 const attempt = attemptsMap[quizId];
-                const attemptCount = attemptCountMap[quizId] || 0;
+                const attemptCount = (typeof data.attemptCount === "number" && data.attemptCount > 0)
+                    ? data.attemptCount
+                    : (attemptCountMap[quizId] || 0);
+
+                if (data.attemptCount === undefined && attemptCount > 0) {
+                    doc.ref.update({ attemptCount }).catch(() => {});
+                }
 
                 return {
                     id: quizId,
@@ -457,6 +483,12 @@ export class DailyQuizController {
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 createdBy: submittedBy || studentId
             });
+
+            // Keep attemptCount on the quiz document in sync for real-time listeners
+            await db.collection(QUIZ_COLLECTION).doc(quizId).update({
+                attemptCount: admin.firestore.FieldValue.increment(1),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            }).catch(() => {});
 
             // Fetch updated stats
             const attemptsSnapshot = await db.collection(QUIZ_ATTEMPT_COLLECTION).where("quizId", "==", quizId).get();

@@ -211,6 +211,7 @@ function parseStudentWorkbook(workbook: XLSX.WorkBook, fileName: string, availab
   let modeCol = -1;
   let totalFeeCol = -1;
   let paidFeeCol = -1;
+  let installmentCols: number[] = [];
   let durationCol = -1;
   let joiningDateCol = -1;
   let phoneCol = -1;
@@ -254,12 +255,17 @@ function parseStudentWorkbook(workbook: XLSX.WorkBook, fileName: string, availab
         headersFound['Class Mode'] = cell;
       }
       // 5. Total Fees
-      else if (/^(total\s*)?(course\s*)?fees?(\s*amount)?$/i.test(h) || (h.includes('total') && h.includes('fee'))) {
+      else if (/^(total\s*)?(course\s*)?fees?(\s*amount)?$/i.test(h) || (h.includes('total') && h.includes('fee')) || h === 'total course fee' || h === 'course fee') {
         totalFeeCol = idx;
         headersFound['Total Fees'] = cell;
         matchedCount++;
       }
-      // 6. Paid Fees
+      // 6. Paid Fees or Installments
+      else if (/installment|instalment|\b(1st|2nd|3rd|4th|5th|6th|first|second|third|fourth)\b/i.test(h)) {
+        installmentCols.push(idx);
+        headersFound[`Installment (${cell})`] = cell;
+        matchedCount++;
+      }
       else if (/^(fees?\s*)?paid(\s*amount)?|paid\s*(fees?|amount)?$/i.test(h) || (h.includes('paid') && h.includes('fee'))) {
         paidFeeCol = idx;
         headersFound['Paid Fees'] = cell;
@@ -330,7 +336,22 @@ function parseStudentWorkbook(workbook: XLSX.WorkBook, fileName: string, availab
     const rawBatch = batchCol !== -1 ? String(row[batchCol] || '').trim() : '';
     const rawMode = modeCol !== -1 ? String(row[modeCol] || '').trim() : 'offline';
     const rawTotalFee = totalFeeCol !== -1 ? Number(row[totalFeeCol]) || 0 : 0;
-    const rawPaidFee = paidFeeCol !== -1 ? Number(row[paidFeeCol]) || 0 : 0;
+    
+    // If client Excel has installment columns (1st, 2nd, 3rd, 4th, etc.), sum them up dynamically!
+    let rawPaidFee = 0;
+    if (installmentCols.length > 0) {
+      installmentCols.forEach(cIdx => {
+        const val = row[cIdx];
+        if (val !== undefined && val !== null && val !== '') {
+          const num = Number(val);
+          if (!isNaN(num)) {
+            rawPaidFee += num;
+          }
+        }
+      });
+    } else if (paidFeeCol !== -1) {
+      rawPaidFee = Number(row[paidFeeCol]) || 0;
+    }
     const rawDuration = durationCol !== -1 ? normalizeDuration(row[durationCol]) : '12 Months';
     const rawJoiningDate = joiningDateCol !== -1 ? normalizeDate(row[joiningDateCol]) : new Date().toISOString().split('T')[0];
     const rawPaymentMode = paymentModeCol !== -1 ? normalizePaymentMode(row[paymentModeCol]) : 'cash';

@@ -315,7 +315,7 @@ export default function ResourceForm({ onClose, onSuccess, initialData }: Resour
                     <input type="file" onChange={e => setFile(e.target.files?.[0] || null)} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
                     <UploadCloud className="w-8 h-8 text-gray-500 mb-2 group-hover:text-red-400 transition-colors" />
                     <p className="text-gray-300 text-sm font-medium">{file ? file.name : 'Click or drag file to upload'}</p>
-                    <p className="text-gray-500 text-xs mt-1">Maximum file size 50MB</p>
+                    <p className="text-gray-500 text-xs mt-1">Maximum file size 100MB (For &gt;50MB, Drive URL is recommended)</p>
                   </div>
                 ) : (
                   <div>

@@ -6,7 +6,7 @@ importScripts('https://www.gstatic.com/firebasejs/10.13.0/firebase-messaging-com
 
 const firebaseConfig = {
   apiKey: "AIzaSyBZ07n1v6D7ZT5O0nIcut6JuSb0GMtM0fo",
-  authDomain: "nermaiiasacademy-519c8.firebaseapp.com",
+  authDomain: "nermaiias.in",
   projectId: "nermaiiasacademy-519c8",
   storageBucket: "nermaiiasacademy-519c8.firebasestorage.app",
   messagingSenderId: "587850155187",
@@ -58,6 +58,7 @@ self.addEventListener('notificationclick', (event) => {
           if (targetTab && client.navigate) {
             client.navigate(urlToOpen.href);
           }
+          client.postMessage({ type: 'NOTIFICATION_CLICK', data });
           return client.focus();
         }
       }

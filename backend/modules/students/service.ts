@@ -457,10 +457,36 @@ export class StudentService {
     };
     await db.collection('students').doc(resolvedStudentId).update(updatePayload);
 
+    const sData = doc.data() as any;
+    const studentName = sData?.displayName || `${sData?.firstName || ''} ${sData?.lastName || ''}`.trim() || sData?.loginUsername || sData?.rollNumber || 'A student';
+    const rollNumber = sData?.rollNumber || sData?.loginUsername || '—';
+
+    // 1. Create realtime admin alert in admin_alerts collection
+    try {
+      const alertId = `qr_req_${resolvedStudentId}`;
+      await db.collection('admin_alerts').doc(alertId).set({
+        id: alertId,
+        type: 'qr_permission',
+        title: 'QR Code Permission Request',
+        subtitle: `${studentName} (${rollNumber})`,
+        message: `${studentName} requested temporary QR code scanner access to pay fees.`,
+        studentId: resolvedStudentId,
+        studentName,
+        rollNumber,
+        sourceDocId: resolvedStudentId,
+        sourceCollection: 'students',
+        targetTab: 'erp',
+        targetSub: 'qr-permissions',
+        createdAt: new Date().toISOString(),
+        isDismissed: false
+      }, { merge: true });
+    } catch (alertErr: any) {
+      console.log('[Alert] Failed to write QR admin_alerts doc:', alertErr?.message);
+    }
+
+    // 2. Dispatch push notification to admins
     try {
       const { sendPushNotification } = await import('../../services/pushService');
-      const sData = doc.data() as any;
-      const studentName = sData?.displayName || `${sData?.firstName || ''} ${sData?.lastName || ''}`.trim() || sData?.loginUsername || sData?.rollNumber || 'A student';
       sendPushNotification({
         title: '📱 QR Page Permission Request',
         body: `${studentName} requested QR page access permission.`,
@@ -493,6 +519,33 @@ export class StudentService {
       qrCodeRequested: false,
     };
     await db.collection('students').doc(resolvedStudentId).update(updatePayload);
+
+    // 1. Clean up alert from admin_alerts collection
+    try {
+      await db.collection('admin_alerts').doc(`qr_req_${resolvedStudentId}`).delete();
+    } catch (_) {}
+
+    // 2. If enabled, send instant push notification to student
+    if (enabled) {
+      try {
+        const { sendPushNotification } = await import('../../services/pushService');
+        sendPushNotification({
+          title: '✅ QR Access Approved',
+          body: 'Your temporary QR code payment access has been granted. You can now pay your fees.',
+          targetUserId: resolvedStudentId,
+          excludeUserId: adminId,
+          data: {
+            targetTab: 'erp',
+            targetSub: 'pay-fees',
+            screen: 'erp',
+            subTab: 'pay-fees',
+            studentId: resolvedStudentId,
+            dedupeId: `qr_appr_${resolvedStudentId}_${Date.now()}`
+          }
+        }).catch(err => console.log('[Push] QR permission approve push note:', err?.message));
+      } catch (_) {}
+    }
+
     return { success: true };
   }
 

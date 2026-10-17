@@ -28,7 +28,7 @@ export class ResourceService {
     let finalStoragePath = '';
     let checksum = '';
     let fileSize = data.fileSize ? parseInt(data.fileSize) : 0;
-    let resolvedProvider = 'firebase_storage';
+    let resolvedProvider = '';
 
     // 1. Direct Local File Upload (Multipart)
     if (file) {
@@ -74,6 +74,7 @@ export class ResourceService {
       } else {
         finalStoragePath = data.googleDriveUrl;
       }
+      resolvedProvider = 'google_drive';
 
       // Compute a fake checksum for Google Drive based on fileId if we don't download it
       checksum = crypto.createHash('sha256').update(finalStoragePath).digest('hex');
@@ -81,6 +82,9 @@ export class ResourceService {
     // 3. Existing Firebase Asset or External Link
     else if (data.externalUrl || data.sourceUrl) {
       finalStoragePath = data.externalUrl || data.sourceUrl;
+      if (finalStoragePath.includes('drive.google.com') || finalStoragePath.includes('docs.google.com')) {
+        resolvedProvider = 'google_drive';
+      }
       checksum = crypto.createHash('sha256').update(finalStoragePath).digest('hex');
     } else {
       throw new AppError('Must provide a file, googleDriveUrl, or externalUrl', 400);
@@ -162,8 +166,14 @@ export class ResourceService {
   async getResource(id: string) {
     const resource = await this.repo.findById(id);
     if (!resource) throw new AppError('Resource not found', 404);
-    if (resource.provider === 'google_drive' || resource.provider === 'external_link' || resource.provider === 'firebase_asset') {
-      (resource as any).sourceUrl = decrypt(resource.storagePath);
+    const decrypted = decrypt(resource.storagePath);
+    if (
+      resource.provider === 'google_drive' || 
+      resource.provider === 'external_link' || 
+      resource.provider === 'firebase_asset' ||
+      (decrypted && decrypted.startsWith('http'))
+    ) {
+      (resource as any).sourceUrl = decrypted;
     }
     return resource;
   }
@@ -199,14 +209,16 @@ export class ResourceService {
 
           if (visibility === 'batch' || hasSpecificBatch) {
             if (!isEnrolledInAnyBatch) return false;
-            if (actualSpecificBatches.length === 0) return false;
-            return studentBatchIds.some(id => actualSpecificBatches.includes(id));
+            if (actualSpecificBatches.length === 0) return true;
+            return studentBatchIds.some(id =>
+              actualSpecificBatches.some(ab => ab === id || ab.includes(id) || id.includes(ab))
+            );
           }
 
           if (visibility === 'public' || visibility === 'free') return true;
 
           if (visibility === 'premium' || visibility === 'paid') {
-            return isEnrolledInAnyBatch || (accessCtx?.role || '').toLowerCase() === 'student';
+            return isEnrolledInAnyBatch;
           }
 
           if (visibility === 'selected') {
@@ -350,7 +362,7 @@ export class ResourceService {
       tenantId: user.tenantId,
       resourceType: 'resource',
       resourceId,
-      storagePath: resource.provider === 'firebase_storage' ? decryptedPath : undefined,
+      storagePath: (resource.provider === 'firebase_storage' && !decryptedPath.startsWith('http')) ? decryptedPath : undefined,
       tokenPayload: {
         role: user.role,
         resourceType: resource.type,
@@ -373,7 +385,10 @@ export class ResourceService {
                             resource.type?.toLowerCase() === 'jpg' || 
                             resource.mimeType?.toLowerCase()?.startsWith('image/');
 
-    if (resource.provider === 'google_drive' && decryptedPath) {
+    const isDriveResource = resource.provider === 'google_drive' || 
+      (decryptedPath && (decryptedPath.includes('drive.google.com') || decryptedPath.includes('docs.google.com') || decryptedPath.includes('googleusercontent.com')));
+
+    if (isDriveResource && decryptedPath) {
       let fileId = decryptedPath;
       if (decryptedPath.startsWith('http')) {
         const match = decryptedPath.match(/[-\w]{25,}/);
@@ -425,7 +440,31 @@ export class ResourceService {
     };
   }
 
-  private getProvider(providerName: string): IResourceProvider {
+  private getProvider(resourceOrName: IResource | string): IResourceProvider {
+    if (typeof resourceOrName === 'object' && resourceOrName) {
+      const resource = resourceOrName;
+      let decryptedPath = '';
+      try {
+        decryptedPath = decrypt(resource.storagePath) || '';
+      } catch (e) {
+        decryptedPath = '';
+      }
+
+      if (
+        resource.provider === 'google_drive' ||
+        decryptedPath.includes('drive.google.com') ||
+        decryptedPath.includes('docs.google.com') ||
+        decryptedPath.includes('googleusercontent.com')
+      ) {
+        return new GoogleDriveProvider();
+      }
+
+      if (resource.provider === 'firebase_storage') {
+        return new FirebaseStorageProvider();
+      }
+    }
+
+    const providerName = typeof resourceOrName === 'string' ? resourceOrName : resourceOrName.provider;
     switch (providerName) {
       case 'firebase_storage': return new FirebaseStorageProvider();
       case 'google_drive': return new GoogleDriveProvider();
@@ -470,18 +509,18 @@ export class ResourceService {
 
     logger.recordTiming('Permission', Date.now() - timeAfterLookup);
 
-    const provider = this.getProvider(resource.provider);
+    const provider = this.getProvider(resource);
     const rangeHeader = req.headers.range;
 
     let streamOptions: any = {};
     const fileSize = resource.fileSize;
     let start = 0;
-    let end = fileSize - 1;
+    let end = fileSize ? fileSize - 1 : undefined;
 
-    if (rangeHeader && fileSize) {
+    if (rangeHeader) {
       const parts = rangeHeader.replace(/bytes=/, "").split("-");
       start = parseInt(parts[0], 10);
-      end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      end = parts[1] ? parseInt(parts[1], 10) : (fileSize ? fileSize - 1 : undefined);
       streamOptions = { start, end };
     }
 
@@ -584,41 +623,41 @@ YES
       throw new AppError('Invalid Google Drive ID', 400);
     }
 
-    const downloadUrl = `https://drive.google.com/uc?export=download&id=${driveId}&confirm=t`;
-    const upstreamHeaders: any = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+    const provider = new GoogleDriveProvider();
+    const fakeResource: any = {
+      storagePath: encrypt(driveId),
+      provider: 'google_drive',
+      mimeType: 'application/pdf',
+      fileSize: 0,
+      checksum: ''
     };
+
+    let streamOptions: any = {};
     if (req.headers.range) {
-      upstreamHeaders['Range'] = req.headers.range;
+      const parts = req.headers.range.replace(/bytes=/, "").split("-");
+      streamOptions.start = parseInt(parts[0], 10);
+      if (parts[1]) streamOptions.end = parseInt(parts[1], 10);
     }
 
-    const response = await axios({
-      url: downloadUrl,
-      method: 'GET',
-      responseType: 'stream',
-      headers: upstreamHeaders,
-      maxRedirects: 5,
-      timeout: 30000
-    });
-
+    const result = await provider.getStream(fakeResource, streamOptions);
     const responseHeaders: any = {
-      'Content-Type': 'application/pdf',
+      'Content-Type': result.mimeType || 'application/pdf',
       'Accept-Ranges': 'bytes',
       'Access-Control-Allow-Origin': '*',
       'Cross-Origin-Resource-Policy': 'cross-origin',
       'Cache-Control': 'public, max-age=3600'
     };
 
-    if (response.headers['content-range']) {
-      responseHeaders['Content-Range'] = response.headers['content-range'];
+    if (result.contentRange) {
+      responseHeaders['Content-Range'] = result.contentRange;
     }
-    if (response.headers['content-length']) {
-      responseHeaders['Content-Length'] = response.headers['content-length'];
+    if (result.size) {
+      responseHeaders['Content-Length'] = result.size;
     }
 
-    res.writeHead(response.status || 200, responseHeaders);
-    response.data.pipe(res);
-    response.data.on('error', (err: any) => {
+    res.writeHead(result.contentRange ? 206 : 200, responseHeaders);
+    result.stream.pipe(res);
+    result.stream.on('error', (err: any) => {
       console.error('[DriveStream] stream pipe error:', err);
       if (!res.headersSent) {
         res.status(500).end();
@@ -653,14 +692,16 @@ YES
 
           if (visibility === 'batch' || hasSpecificBatch) {
             if (!isEnrolledInAnyBatch) return false;
-            if (actualSpecificBatches.length === 0) return false;
-            return studentBatchIds.some(id => actualSpecificBatches.includes(id));
+            if (actualSpecificBatches.length === 0) return true;
+            return studentBatchIds.some(id =>
+              actualSpecificBatches.some(ab => ab === id || ab.includes(id) || id.includes(ab))
+            );
           }
 
           if (visibility === 'public' || visibility === 'free') return true;
 
           if (visibility === 'premium' || visibility === 'paid') {
-            return isEnrolledInAnyBatch || (accessCtx?.role || '').toLowerCase() === 'student';
+            return isEnrolledInAnyBatch;
           }
 
           if (visibility === 'selected') {

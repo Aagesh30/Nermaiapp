@@ -1,0 +1,549 @@
+Total calls found: 32
+
+=================== CALL #1 ===================
+Location: backend/modules/access-requests/service.ts:79
+      sendPushNotification({
+        title: '🔑 New Access Request',
+        body: `${label || 'A student'} requested access to ${newRequest.contentName || 'course content'}.`,
+        targetRole: 'admin',
+        excludeUserId: newRequest.studentId,
+        data: {
+          targetTab: 'lms',
+          targetSub: 'lms-access',
+          screen: 'lms',
+          subTab: 'lms-access',
+          requestId: newRequest.id,
+          studentId: newRequest.studentId,
+          contentId: newRequest.contentId || '',
+          dedupeId: `access_req_${newRequest.id}`
+        }
+      }).catch(err => console.log('[Push] Access request push note:', err?.message));
+
+=================== CALL #2 ===================
+Location: backend/modules/access-requests/service.ts:334
+      sendPushNotification({
+        title: 'Access Request Approved',
+        body: `Your request for ${request.contentName || 'content'} has been approved!`,
+        targetUserId: request.studentId,
+        excludeUserId: adminId,
+        data: {
+          targetTab: 'lms',
+          targetSub: 'courses',
+          screen: 'lms',
+          subTab: 'courses',
+          contentId: request.contentId || '',
+          requestId: requestId,
+          dedupeId: `access_req_approved_${requestId}`
+        }
+      }).catch(() => {});
+
+=================== CALL #3 ===================
+Location: backend/modules/access-requests/service.ts:372
+      sendPushNotification({
+        title: '❌ Access Request Rejected',
+        body: `Your request for ${request.contentName || 'content'} was declined${reason ? `: ${reason}` : '.'}`,
+        targetUserId: request.studentId,
+        excludeUserId: adminId,
+        data: {
+          targetTab: 'lms',
+          targetSub: 'courses',
+          screen: 'lms',
+          subTab: 'courses',
+          contentId: request.contentId || '',
+          requestId: requestId,
+          dedupeId: `access_req_rejected_${requestId}`
+        }
+      }).catch(err => console.log('[Push] Access reject push note:', err?.message));
+
+=================== CALL #4 ===================
+Location: backend/modules/admin-approvals/service.ts:76
+      sendPushNotification({
+        title: '🛡️ New Approval Request',
+        body: `${requester} submitted an edit-by-approval request for ${feature}.`,
+        targetRole: 'super_admin',
+        excludeUserId: params.requestedByUserId || null,
+        data: {
+          targetTab: 'erp',
+          targetSub: 'approvals',
+          screen: 'erp',
+          subTab: 'approvals',
+          approvalId: id,
+          featureKey: params.featureKey,
+          actionType: params.actionType,
+          dedupeId: `approval_req_${id}`
+        }
+      }).catch(err => console.log('[Push] Admin approval push note:', err?.message));
+
+=================== CALL #5 ===================
+Location: backend/modules/announcement/controller.ts:77
+                sendPushNotification({
+                    title: title.trim(),
+                    body: content.trim(),
+                    targetRole: targetRole as any,
+                    targetBatch: isBatchSpecific ? (targetBatch || null) : null,
+                    excludeUserId: (req as any).user?.userId || createdBy || null,
+                    data: {
+                        targetTab: targetDashboard === "free" ? "home" : "dashboard",
+                        targetSub: "notices",
+                        screen: targetDashboard === "free" ? "home" : "dashboard",
+                        subTab: "notices",
+                        announcementId: id,
+                        dedupeId: `announcement_${id}`
+                    }
+                }).catch(e => console.log("[AnnouncementController] Push note:", e?.message));
+
+=================== CALL #6 ===================
+Location: backend/modules/announcements/service.ts:107
+    await sendPushNotification({
+      title: 'New Announcement: ' + (announcement.title || 'Academy Notice'),
+      body: announcement.content || announcement.title || 'Please view the latest announcement.',
+      targetRole: targetRole as any,
+      targetBatch,
+      excludeUserId: announcement.authorId || null,
+      data: {
+        targetTab: 'dashboard',
+        targetSub: 'notices',
+        screen: 'dashboard',
+        subTab: 'notices',
+        type: 'announcement',
+        announcementId: announcement.id,
+        dedupeId: `announcement_svc_${announcement.id}`
+      }
+    }).catch(err => {
+      console.warn('[AnnouncementService] Push dispatch note:', err?.message);
+    });
+
+=================== CALL #7 ===================
+Location: backend/modules/courses/service.ts:413
+        sendPushNotification({
+          title: '🎥 New Recorded Class Added',
+          body: `"${classTitle}" has been added to LMS.`,
+          targetRole: 'admin',
+          excludeUserId: userId,
+          data: {
+            targetTab: 'lms',
+            targetSub: 'classes',
+            screen: 'lms',
+            subTab: 'classes',
+            classId: createdClass.id,
+            courseId: course.id,
+            dedupeId: `recorded_class_${createdClass.id}`
+          }
+        }).catch(err => console.log('[Push] Recorded class push note:', err?.message));
+
+=================== CALL #8 ===================
+Location: backend/modules/courses/service.ts:578
+      sendPushNotification({
+        title: '🎥 Recorded Class Uploaded',
+        body: `Recording for "${classTitle}" is now available.`,
+        targetRole: 'admin',
+        excludeUserId: userId,
+        data: {
+          targetTab: 'lms',
+          targetSub: 'classes',
+          screen: 'lms',
+          subTab: 'classes',
+          classId: id,
+          courseId: course?.id || '',
+          dedupeId: `recorded_class_upload_${id}`
+        }
+      }).catch(err => console.log('[Push] Class recording upload push note:', err?.message));
+
+=================== CALL #9 ===================
+Location: backend/modules/crm/admission/controller.ts:96
+            sendPushNotification({
+                title: "🎓 New Admission Application",
+                body: `${name} (${phone}) submitted an application for ${preferredCourse || course || 'Academy Course'}.`,
+                targetRole: "admin",
+                data: {
+                    targetTab: "crm",
+                    targetSub: "admissions",
+                    admissionId: id
+                }
+            }).catch(err => console.log("[Push] Admission push note:", err?.message));
+
+=================== CALL #10 ===================
+Location: backend/modules/crm/fee-reminders/controller.ts:30
+                    sendPushNotification({
+                        title: "⚠️ Fee Payment Reminder",
+                        body: message || "You have a pending tuition fee reminder. Please check your fee details.",
+                        targetUserId: studentId,
+                        excludeUserId: createdBy || (req as any).user?.userId || null,
+                        data: {
+                            targetTab: "erp",
+                            targetSub: "pay-fees",
+                            screen: "erp",
+                            subTab: "pay-fees",
+                            studentId: studentId,
+                            reminderId: id,
+                            dueDate: dueDate || "",
+                            dedupeId: `fee_reminder_${id}`
+                        }
+                    }).catch(err => console.log("[Push] Fee reminder push note:", err?.message));
+
+=================== CALL #11 ===================
+Location: backend/modules/crm/leads/controller.ts:74
+            sendPushNotification({
+                title: "💬 New Student Inquiry",
+                body: `${name} (${phone}) registered as a new prospect.`,
+                targetRole: "admin",
+                data: {
+                    targetTab: "crm",
+                    targetSub: "leads",
+                    leadId: id
+                }
+            }).catch(err => console.log("[Push] Lead push note:", err?.message));
+
+=================== CALL #12 ===================
+Location: backend/modules/developer/controller.ts:854
+            const result = await sendPushNotification({
+                title: title || "Push Test 🔔",
+                body: body || "Test push notification payload from admin panel",
+                targetUserId: targetUserId || null,
+                targetRole: targetUserId ? undefined : "all",
+                data: { targetTab: "dashboard", screen: "dashboard" }
+            });
+
+=================== CALL #13 ===================
+Location: backend/modules/erp/profile-request/controller.ts:292
+                sendPushNotification({
+                    title: "📝 New Profile Request Submitted",
+                    body: `${senderName} submitted a profile completion request for verification.`,
+                    targetRole: "admin",
+                    excludeUserId: studentId || username || null,
+                    data: {
+                        targetTab: "erp",
+                        targetSub: "profile-requests",
+                        screen: "erp",
+                        subTab: "profile-requests",
+                        requestId: id,
+                        studentId: studentId,
+                        dedupeId: `profile_req_${id}`
+                    }
+                }).catch(err => console.log("[Push] Profile submit push note:", err?.message));
+
+=================== CALL #14 ===================
+Location: backend/modules/erp/profile-request/controller.ts:555
+                    sendPushNotification({
+                        title: "✅ Profile Approved",
+                        body: "Your profile details have been approved and updated successfully.",
+                        targetUserId: data.studentId,
+                        excludeUserId: (req as any).user?.userId || null,
+                        data: {
+                            targetTab: "erp",
+                            targetSub: "profile-requests",
+                            screen: "erp",
+                            subTab: "profile-requests",
+                            requestId: id,
+                            studentId: data.studentId,
+                            status: "approved",
+                            dedupeId: `profile_appr_${id}`
+                        }
+                    }).catch(err => console.log("[Push] Profile approve push note:", err?.message));
+
+=================== CALL #15 ===================
+Location: backend/modules/erp/profile-request/controller.ts:629
+                    sendPushNotification({
+                        title: "❌ Profile Request Rejected",
+                        body: `Your profile request was rejected: ${reasonText}`,
+                        targetUserId: data.studentId,
+                        excludeUserId: reviewedBy || (req as any).user?.userId || null,
+                        data: {
+                            targetTab: "erp",
+                            targetSub: "profile-requests",
+                            screen: "erp",
+                            subTab: "profile-requests",
+                            requestId: id,
+                            studentId: data.studentId,
+                            status: "rejected",
+                            dedupeId: `profile_rej_${id}`
+                        }
+                    }).catch(err => console.log("[Push] Profile reject push note:", err?.message));
+
+=================== CALL #16 ===================
+Location: backend/modules/erp/staff/controller.ts:157
+                    sendPushNotification({
+                        title: "👨‍🏫 New Teacher Added",
+                        body: `${teacherName} (${designation || 'Faculty'}) has been registered.`,
+                        targetRole: "admin",
+                        excludeUserId: (req as any).user?.userId || createdBy || null,
+                        data: {
+                            targetTab: "erp",
+                            targetSub: "staff",
+                            screen: "erp",
+                            subTab: "staff",
+                            staffId: id,
+                            teacherId: id,
+                            dedupeId: `teacher_added_${id}`
+                        }
+                    }).catch(err => console.log("[Push] Teacher creation push note:", err?.message));
+
+=================== CALL #17 ===================
+Location: backend/modules/erp/student/controller.ts:281
+                sendPushNotification({
+                    title: "👨‍🎓 New Student Added",
+                    body: `${studentFullName}${studentIdentifier ? ` (${studentIdentifier})` : ""} has been enrolled.`,
+                    targetRole: "admin",
+                    excludeUserId: currentUserId || null,
+                    data: {
+                        targetTab: "erp",
+                        targetSub: "student-management",
+                        screen: "erp",
+                        subTab: "student-management",
+                        studentId: id,
+                        dedupeId: `student_added_${id}`
+                    }
+                }).catch(err => console.log("[Push] Student create push note:", err?.message));
+
+=================== CALL #18 ===================
+Location: backend/modules/erp/student/controller.ts:1026
+                    sendPushNotification({
+                        title: "🪪 ID Card Generated",
+                        body: "Your Student Identity Card has been generated and is ready to view.",
+                        targetUserId: id,
+                        excludeUserId: (req as any).user?.userId || null,
+                        data: {
+                            targetTab: "erp",
+                            targetSub: "id-card",
+                            screen: "erp",
+                            subTab: "id-card",
+                            studentId: id,
+                            dedupeId: `id_card_${id}`
+                        }
+                    }).catch(err => console.log("[Push] ID card push note:", err?.message));
+
+=================== CALL #19 ===================
+Location: backend/modules/erp/student/controller.ts:1044
+                    sendPushNotification({
+                        title: "🎟️ Hall Ticket Generated",
+                        body: `Your Hall Ticket for "${examName}" has been generated.`,
+                        targetUserId: id,
+                        excludeUserId: (req as any).user?.userId || null,
+                        data: {
+                            targetTab: "erp",
+                            targetSub: "id-card",
+                            screen: "erp",
+                            subTab: "id-card",
+                            studentId: id,
+                            dedupeId: `hall_ticket_${id}`
+                        }
+                    }).catch(err => console.log("[Push] Hall ticket push note:", err?.message));
+
+=================== CALL #20 ===================
+Location: backend/modules/erp/student/controller.ts:1061
+                    sendPushNotification({
+                        title: "⚠️ Fee Payment Reminder",
+                        body: feeAlertNote || "You have a pending tuition fee payment. Please check your fee details.",
+                        targetUserId: id,
+                        excludeUserId: (req as any).user?.userId || null,
+                        data: {
+                            targetTab: "erp",
+                            targetSub: "pay-fees",
+                            screen: "erp",
+                            subTab: "pay-fees",
+                            studentId: id,
+                            dedupeId: `fee_alert_${id}`
+                        }
+                    }).catch(err => console.log("[Push] Fee alert push note:", err?.message));
+
+=================== CALL #21 ===================
+Location: backend/modules/erp/student/controller.ts:1379
+                    sendPushNotification({
+                        title: "🪪 ID Card Generated",
+                        body: "Student Identity Cards have been generated and are now available.",
+                        targetRole: "student",
+                        targetBatch: batch || null,
+                        excludeUserId: (req as any).user?.userId || null,
+                        data: {
+                            targetTab: "erp",
+                            targetSub: "id-card",
+                            screen: "erp",
+                            subTab: "id-card",
+                            dedupeId: `id_card_bulk_${batch || 'all'}_${Date.now()}`
+                        }
+                    }).catch(err => console.log("[Push] Bulk ID card push note:", err?.message));
+
+=================== CALL #22 ===================
+Location: backend/modules/erp/student/controller.ts:1394
+                    sendPushNotification({
+                        title: "🎟️ Hall Ticket Generated",
+                        body: `Hall Tickets for "${hallTicketExamName || 'Upcoming Examination'}" have been generated.`,
+                        targetRole: "student",
+                        targetBatch: batch || null,
+                        excludeUserId: (req as any).user?.userId || null,
+                        data: {
+                            targetTab: "erp",
+                            targetSub: "id-card",
+                            screen: "erp",
+                            subTab: "id-card",
+                            dedupeId: `hall_ticket_bulk_${batch || 'all'}_${Date.now()}`
+                        }
+                    }).catch(err => console.log("[Push] Bulk hall ticket push note:", err?.message));
+
+=================== CALL #23 ===================
+Location: backend/modules/erp/student/controller.ts:1810
+                    sendPushNotification({
+                        title: "🎟️ Hall Ticket Generated",
+                        body: `Your Hall Ticket for "${htExamName || 'UPSC Special Mock Examination'}" has been issued.`,
+                        targetRole: "student",
+                        excludeUserId: (req as any).user?.userId || null,
+                        data: {
+                            targetTab: "erp",
+                            targetSub: "id-card",
+                            screen: "erp",
+                            subTab: "id-card",
+                            dedupeId: `mock_ht_gen_${Date.now()}`
+                        }
+                    }).catch(err => console.log("[Push] Mock hall ticket push note:", err?.message));
+
+=================== CALL #24 ===================
+Location: backend/modules/live-sessions/service.ts:1096
+          sendPushNotification({
+            title: 'Live Class Started 🔴',
+            body: `${clsData?.title || 'Live Session'} is now live! Tap to join.`,
+            targetRole: 'student',
+            targetBatch: clsData?.targetBatchIds?.[0] || null,
+            data: {
+              targetTab: 'lms',
+              targetSub: 'live-classes',
+              classId: session.classId,
+              sessionId: session.id
+            }
+          }).catch(() => {});
+
+=================== CALL #25 ===================
+Location: backend/modules/lms/daily_content/controller.ts:144
+            sendPushNotification({
+                title: "📰 Daily Study Content Released",
+                body: `${title} (${date}) is now available in your LMS daily content.`,
+                targetRole: "student",
+                targetBatch: payload.targetBatch,
+                data: {
+                    targetTab: "lms",
+                    targetSub: "daily-content",
+                    contentId
+                }
+            }).catch(err => console.log("[Push] Daily content creation push note:", err?.message));
+
+=================== CALL #26 ===================
+Location: backend/modules/notification/controller.ts:32
+        return await sendPushNotification({
+            title: targets.title,
+            body: targets.body,
+            targetRole,
+            targetUserId: targets.targetStudentId || null,
+            targetBatch: targets.targetBatch || null,
+            data: targets.data
+        });
+
+=================== CALL #27 ===================
+Location: backend/modules/resources/controller.ts:39
+    sendPushNotification({
+      title: "📚 New Study Material Added",
+      body: `${resourceTitle} is now available in your LMS library.`,
+      targetRole: isBatchSpecific ? "student" : "all",
+      targetBatch: isBatchSpecific ? targetBatchVal : null,
+      excludeUserId: userId,
+      data: {
+        targetTab: "lms",
+        targetSub: "resources",
+        screen: "lms",
+        subTab: "resources",
+        resourceId,
+        dedupeId: `resource_${resourceId}`
+      }
+    }).catch(err => console.log("[Push] Resource creation push note:", err?.message));
+
+=================== CALL #28 ===================
+Location: backend/modules/students/service.ts:464
+      sendPushNotification({
+        title: '📱 QR Page Permission Request',
+        body: `${studentName} requested QR page access permission.`,
+        targetRole: 'admin',
+        excludeUserId: resolvedStudentId,
+        data: {
+          targetTab: 'lms',
+          targetSub: 'qr-permissions',
+          screen: 'lms',
+          subTab: 'qr-permissions',
+          studentId: resolvedStudentId,
+          dedupeId: `qr_req_${resolvedStudentId}`
+        }
+      }).catch(err => console.log('[Push] QR permission request push note:', err?.message));
+
+=================== CALL #29 ===================
+Location: backend/modules/test-portal/test-creation/controller.ts:881
+                    sendPushNotification({
+                        title: `📝 New Test Available: ${tTitle}`,
+                        body: `Test "${tTitle}" is now available. Click to start your attempt!`,
+                        targetRole: isBatch ? "student" : "all",
+                        targetBatch: isBatch ? payload.targetBatch : null,
+                        excludeUserId: createdBy || (req as any).user?.userId || null,
+                        data: {
+                            targetTab: "test",
+                            targetSub: "available",
+                            screen: "test",
+                            subTab: "available",
+                            testId: id,
+                            dedupeId: `test_pub_${id}`
+                        }
+                    }).catch(err => console.log("[Push] Test create push note:", err?.message));
+
+=================== CALL #30 ===================
+Location: backend/modules/test-portal/test-creation/controller.ts:1097
+                sendPushNotification({
+                    title: `📝 New Test Available: ${tTitle}`,
+                    body: `Test "${tTitle}" is now published and available. Click to start your attempt!`,
+                    targetRole: isBatch ? "student" : "all",
+                    targetBatch: isBatch ? testData.targetBatch : null,
+                    excludeUserId: (req as any).user?.userId || null,
+                    data: {
+                        targetTab: "test",
+                        targetSub: "available",
+                        screen: "test",
+                        subTab: "available",
+                        testId: id,
+                        dedupeId: `test_pub_${id}`
+                    }
+                }).catch(err => console.log("[Push] Test publish push note:", err?.message));
+
+=================== CALL #31 ===================
+Location: backend/modules/test-portal/test-creation/controller.ts:1626
+                sendPushNotification({
+                    title: "✋ New Test Entry Request",
+                    body: `${senderName} requested permission to enter test: "${tTitle}".`,
+                    targetRole: "admin",
+                    excludeUserId: studentId || username || null,
+                    data: {
+                        targetTab: "test",
+                        targetSub: "offline-requests",
+                        screen: "test",
+                        subTab: "offline-requests",
+                        requestId: reqId,
+                        testId: testId,
+                        studentId: studentId || "",
+                        dedupeId: `test_req_${reqId}`
+                    }
+                }).catch(err => console.log("[Push] Test request push note:", err?.message));
+
+=================== CALL #32 ===================
+Location: backend/modules/test-portal/test-creation/controller.ts:1806
+                        sendPushNotification({
+                            title: isApp ? "✅ Test Entry Request Accepted" : "❌ Test Entry Request Rejected",
+                            body: isApp
+                                ? `Your request to attend "${tTitle}" has been accepted! You can now take the test.`
+                                : `Your request to attend "${tTitle}" was declined.`,
+                            targetUserId: studentTarget,
+                            excludeUserId: (req as any).user?.userId || null,
+                            data: {
+                                targetTab: "test",
+                                targetSub: "available",
+                                screen: "test",
+                                subTab: "available",
+                                requestId: id,
+                                testId: reqData.testId || "",
+                                studentId: studentTarget,
+                                status,
+                                dedupeId: `test_req_status_${id}_${status}`
+                            }
+                        }).catch(err => console.log("[Push] Test request status push note:", err?.message));

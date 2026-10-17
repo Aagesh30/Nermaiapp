@@ -5,16 +5,46 @@ import { Card, CardContent } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { CardGridSkeleton } from '../components/ui/Skeleton';
 import { BookOpen } from 'lucide-react';
+import { db } from '../../firebaseConfig';
+import { collection, onSnapshot } from 'firebase/firestore';
 
 export const StudentCoursesPage = () => {
   const [courses, setCourses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    DashboardApi.getStudentOverview()
-      .then(res => setCourses(res.data?.data?.myCourses || []))
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    let isMounted = true;
+    const loadCourses = () => {
+      DashboardApi.getStudentOverview()
+        .then(res => {
+          if (isMounted) setCourses(res.data?.data?.myCourses || []);
+        })
+        .catch(console.error)
+        .finally(() => {
+          if (isMounted) setLoading(false);
+        });
+    };
+
+    loadCourses();
+
+    let unsubCourses: (() => void) | null = null;
+    let unsubEnrollments: (() => void) | null = null;
+    try {
+      unsubCourses = onSnapshot(collection(db, 'courses'), () => {
+        loadCourses();
+      });
+      unsubEnrollments = onSnapshot(collection(db, 'enrollments'), () => {
+        loadCourses();
+      });
+    } catch (e) {
+      console.warn('[StudentCoursesPage] Real-time listener error:', e);
+    }
+
+    return () => {
+      isMounted = false;
+      if (unsubCourses) unsubCourses();
+      if (unsubEnrollments) unsubEnrollments();
+    };
   }, []);
 
   return (

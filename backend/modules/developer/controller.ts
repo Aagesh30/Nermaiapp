@@ -867,4 +867,320 @@ export class DeveloperController {
             return res.status(500).json({ success: false, message: error.message || "Push test failed" });
         }
     }
+
+    /**
+     * COMPREHENSIVE STUDENT BACKUP
+     * GET /developer/backup/students-comprehensive
+     * Returns:
+     * - All students
+     * - Fee details & installments breakdown
+     * - Attended test names, marks, ranks, percentages
+     * - Formatted Google Drive URLs for student photo and ID proof
+     * - Formatted sheets data ready for multi-tab Excel export
+     */
+    static async getComprehensiveStudentBackup(req: Request, res: Response) {
+        try {
+            // Helper to extract Google Drive file links
+            const resolveDriveUrl = (rawUrlOrId?: string) => {
+                if (!rawUrlOrId || typeof rawUrlOrId !== "string") {
+                    return { driveViewUrl: "", directImgUrl: "", fileId: "" };
+                }
+                const str = rawUrlOrId.trim();
+                if (!str) return { driveViewUrl: "", directImgUrl: "", fileId: "" };
+
+                const m1 = str.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+                const m2 = str.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+                const m3 = str.match(/\/d\/([a-zA-Z0-9_-]+)/);
+                const fileId = m1 ? m1[1] : (m2 ? m2[1] : (m3 ? m3[1] : (str.length > 20 && !str.includes("/") && !str.startsWith("data:") ? str : "")));
+
+                if (fileId) {
+                    return {
+                        driveViewUrl: `https://drive.google.com/file/d/${fileId}/view`,
+                        directImgUrl: `https://lh3.googleusercontent.com/d/${fileId}`,
+                        fileId
+                    };
+                }
+
+                if (str.startsWith("http://") || str.startsWith("https://")) {
+                    return { driveViewUrl: str, directImgUrl: str, fileId: "" };
+                }
+
+                if (str.startsWith("data:") || str.length > 100) {
+                    return { driveViewUrl: "[Embedded Base64 Image]", directImgUrl: "[Base64]", fileId: "" };
+                }
+
+                return { driveViewUrl: str, directImgUrl: str, fileId: "" };
+            };
+
+            const parseIsoDate = (val: any): string => {
+                if (!val) return "";
+                if (typeof val.toDate === "function") {
+                    try { return val.toDate().toISOString(); } catch (_) { }
+                }
+                if (val instanceof Date) return val.toISOString();
+                if (typeof val === "string") return val;
+                return "";
+            };
+
+            // 1. Fetch Students
+            const studentsSnap = await db.collection("students").get();
+            const rawStudents: any[] = [];
+            studentsSnap.forEach(doc => {
+                const data = doc.data();
+                if (!data.isDeleted) {
+                    rawStudents.push({ id: doc.id, ...data });
+                }
+            });
+
+            // 2. Fetch Tests map
+            const testsSnap = await db.collection("tests").get();
+            const testMap: Record<string, any> = {};
+            testsSnap.forEach(doc => {
+                testMap[doc.id] = { id: doc.id, ...doc.data() };
+            });
+
+            // 3. Fetch Test Results & Attempts
+            const resultsSnap = await db.collection("results").get();
+            const resultsByStudent: Record<string, any[]> = {};
+            const resultsByRoll: Record<string, any[]> = {};
+
+            resultsSnap.forEach(doc => {
+                const r = doc.data();
+                if (r && !r.isDeleted) {
+                    const resObj = {
+                        id: doc.id,
+                        testId: r.testId || "",
+                        testTitle: testMap[r.testId]?.title || r.testTitle || r.testName || "Mock Test",
+                        obtainedMarks: r.obtainedMarks !== undefined ? Number(r.obtainedMarks) : (r.totalScore !== undefined ? Number(r.totalScore) : 0),
+                        totalMarks: r.totalMarks !== undefined ? Number(r.totalMarks) : (testMap[r.testId]?.totalMarks || 100),
+                        percentage: r.percentage !== undefined ? Number(r.percentage) : (r.totalMarks ? Math.round(((r.obtainedMarks || 0) / r.totalMarks) * 100) : 0),
+                        rank: r.rank !== undefined ? r.rank : "N/A",
+                        percentile: r.percentile !== undefined ? r.percentile : "N/A",
+                        status: r.status || "evaluated",
+                        evaluatedAt: parseIsoDate(r.evaluatedAt || r.createdAt),
+                    };
+
+                    if (r.studentId) {
+                        if (!resultsByStudent[r.studentId]) resultsByStudent[r.studentId] = [];
+                        resultsByStudent[r.studentId].push(resObj);
+                    }
+                    if (r.rollNumber) {
+                        if (!resultsByRoll[r.rollNumber]) resultsByRoll[r.rollNumber] = [];
+                        resultsByRoll[r.rollNumber].push(resObj);
+                    }
+                }
+            });
+
+            // 4. Fetch Fee Payments
+            const feePaymentsSnap = await db.collection("feePayments").get().catch(() => null);
+            const feePaymentsByStudent: Record<string, any[]> = {};
+            if (feePaymentsSnap) {
+                feePaymentsSnap.forEach(doc => {
+                    const f = doc.data();
+                    if (f && !f.isDeleted && f.studentId) {
+                        if (!feePaymentsByStudent[f.studentId]) feePaymentsByStudent[f.studentId] = [];
+                        feePaymentsByStudent[f.studentId].push({
+                            id: doc.id,
+                            amount: Number(f.amount || 0),
+                            paymentDate: parseIsoDate(f.paymentDate || f.createdAt),
+                            paymentMethod: f.paymentMethod || "N/A",
+                            transactionId: f.transactionId || "N/A",
+                            status: f.status || "Paid"
+                        });
+                    }
+                });
+            }
+
+            // 5. Build Aggregated Student Records
+            const studentsSummarySheet: any[] = [];
+            const feeLedgerSheet: any[] = [];
+            const testMarksSheet: any[] = [];
+            const comprehensiveStudents: any[] = [];
+
+            for (const s of rawStudents) {
+                const sId = s.id || s._id;
+                const rollNo = s.rollNumber || s.loginUsername || s.admissionNumber || "N/A";
+                const studentName = s.name || (s.firstName ? `${s.firstName} ${s.lastName || ""}`.trim() : "") || s.displayName || rollNo;
+
+                // Photo and ID Proof Google Drive Links
+                const photoRaw = s.photoUrl || s.passportPhotoUrl || s.photoPublicId || s.passportPhoto || s.photoBase64 || "";
+                const photoLinks = resolveDriveUrl(photoRaw);
+
+                const idProofRaw = s.photoIdUrl || s.photoIdPublicId || s.idProofUrl || s.idProof || s.photoId || s.photoIdBase64 || "";
+                const idProofLinks = resolveDriveUrl(idProofRaw);
+
+                // Fee Details
+                const totalFees = Number(s.totalFees || 0);
+                const feesPaid = Number(s.feesPaid || 0);
+                const balanceDue = Math.max(0, totalFees - feesPaid);
+                const installments: any[] = Array.isArray(s.feeInstallments) ? s.feeInstallments : [];
+                const extraPayments: any[] = feePaymentsByStudent[sId] || [];
+
+                // Tests Attended & Scores
+                const studentResults = resultsByStudent[sId] || resultsByRoll[rollNo] || [];
+                // Sort tests by evaluatedAt / date desc
+                studentResults.sort((a, b) => new Date(b.evaluatedAt || 0).getTime() - new Date(a.evaluatedAt || 0).getTime());
+
+                const testsSummaryStr = studentResults.map(t =>
+                    `${t.testTitle}: ${t.obtainedMarks}/${t.totalMarks} (${t.percentage}%)`
+                ).join(" | ");
+
+                const batchesStr = Array.isArray(s.batches) ? s.batches.join(", ") : (s.batch || "N/A");
+
+                const studentObj = {
+                    id: sId,
+                    rollNumber: rollNo,
+                    admissionNumber: s.admissionNumber || "N/A",
+                    name: studentName,
+                    email: s.email || "N/A",
+                    phone: s.phone || s.phoneNumber || "N/A",
+                    altPhone: s.altPhone || "N/A",
+                    gender: s.gender || "N/A",
+                    dob: s.dob || s.dateOfBirth || "N/A",
+                    bloodGroup: s.bloodGroup || "N/A",
+                    community: s.community || "N/A",
+                    batch: s.batch || "N/A",
+                    batches: batchesStr,
+                    course: s.course || "N/A",
+                    joiningDate: s.joiningDate || "N/A",
+                    status: s.status || "active",
+                    address: s.address || "N/A",
+                    city: s.city || "N/A",
+                    state: s.state || "N/A",
+                    qualification: s.qualification || "N/A",
+                    college: s.college || "N/A",
+                    fatherName: s.fatherName || "N/A",
+                    motherName: s.motherName || "N/A",
+                    guardianName: s.guardianName || "N/A",
+                    // Fees
+                    totalFees,
+                    feesPaid,
+                    balanceDue,
+                    modeOfPayment: s.modeOfPayment || "N/A",
+                    transactionId: s.transactionId || "N/A",
+                    installmentsCount: installments.length,
+                    installments,
+                    extraPayments,
+                    // Photos & Drive links
+                    photoDriveUrl: photoLinks.driveViewUrl,
+                    photoDirectCdnUrl: photoLinks.directImgUrl,
+                    idProofDriveUrl: idProofLinks.driveViewUrl,
+                    idProofDirectCdnUrl: idProofLinks.directImgUrl,
+                    photoIdType: s.photoIdType || "N/A",
+                    // Tests
+                    totalTestsAttended: studentResults.length,
+                    testsSummary: testsSummaryStr || "No tests attended",
+                    tests: studentResults
+                };
+
+                comprehensiveStudents.push(studentObj);
+
+                // Row for Sheet 1: Students Summary
+                studentsSummarySheet.push({
+                    "Student ID": sId,
+                    "Roll Number": rollNo,
+                    "Admission Number": s.admissionNumber || "",
+                    "Full Name": studentName,
+                    "Email": s.email || "",
+                    "Phone": s.phone || s.phoneNumber || "",
+                    "Batches": batchesStr,
+                    "Course": s.course || "",
+                    "Joining Date": s.joiningDate || "",
+                    "Status": s.status || "active",
+                    "Total Fees (INR)": totalFees,
+                    "Fees Paid (INR)": feesPaid,
+                    "Balance Due (INR)": balanceDue,
+                    "Payment Mode": s.modeOfPayment || "",
+                    "Transaction ID": s.transactionId || "",
+                    "Photo Google Drive URL": photoLinks.driveViewUrl,
+                    "ID Proof Google Drive URL": idProofLinks.driveViewUrl,
+                    "ID Proof Type": s.photoIdType || "",
+                    "Tests Attended Count": studentResults.length,
+                    "Attended Tests & Scores Summary": testsSummaryStr || "None",
+                    "Father Name": s.fatherName || "",
+                    "Address": s.address || "",
+                    "City": s.city || ""
+                });
+
+                // Rows for Sheet 2: Fee Ledger
+                if (installments.length > 0) {
+                    installments.forEach((inst, idx) => {
+                        feeLedgerSheet.push({
+                            "Student ID": sId,
+                            "Roll Number": rollNo,
+                            "Student Name": studentName,
+                            "Batch": batchesStr,
+                            "Total Course Fee": totalFees,
+                            "Installment Number": inst.installmentNo || idx + 1,
+                            "Installment Amount": Number(inst.amount || 0),
+                            "Payment Date": inst.paymentDate || "",
+                            "Payment Mode": inst.modeOfPayment || inst.mode || s.modeOfPayment || "",
+                            "Transaction ID": inst.transactionId || s.transactionId || "",
+                            "Receipt No": inst.receiptNo || "",
+                            "Notes": inst.notes || ""
+                        });
+                    });
+                } else if (feesPaid > 0) {
+                    feeLedgerSheet.push({
+                        "Student ID": sId,
+                        "Roll Number": rollNo,
+                        "Student Name": studentName,
+                        "Batch": batchesStr,
+                        "Total Course Fee": totalFees,
+                        "Installment Number": 1,
+                        "Installment Amount": feesPaid,
+                        "Payment Date": s.joiningDate || "",
+                        "Payment Mode": s.modeOfPayment || "",
+                        "Transaction ID": s.transactionId || "",
+                        "Receipt No": "",
+                        "Notes": "Initial payment"
+                    });
+                }
+
+                // Rows for Sheet 3: Test Marks
+                if (studentResults.length > 0) {
+                    studentResults.forEach(tr => {
+                        testMarksSheet.push({
+                            "Student ID": sId,
+                            "Roll Number": rollNo,
+                            "Student Name": studentName,
+                            "Batch": batchesStr,
+                            "Test ID": tr.testId,
+                            "Test Name": tr.testTitle,
+                            "Marks Obtained": tr.obtainedMarks,
+                            "Total Marks": tr.totalMarks,
+                            "Percentage": `${tr.percentage}%`,
+                            "Rank": tr.rank,
+                            "Status": tr.status,
+                            "Date Attended": tr.evaluatedAt || ""
+                        });
+                    });
+                }
+            }
+
+            return res.status(200).json({
+                success: true,
+                summary: {
+                    totalStudents: comprehensiveStudents.length,
+                    totalTestsAttendedCount: testMarksSheet.length,
+                    totalFeeRecordsCount: feeLedgerSheet.length,
+                    timestamp: new Date().toISOString()
+                },
+                data: {
+                    students: comprehensiveStudents,
+                    sheets: {
+                        studentsSummary: studentsSummarySheet,
+                        feeLedger: feeLedgerSheet,
+                        testMarks: testMarksSheet
+                    }
+                }
+            });
+
+        } catch (error: any) {
+            return res.status(500).json({
+                success: false,
+                message: error.message || "Failed to generate comprehensive student backup"
+            });
+        }
+    }
 }
