@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "587850155187-gl9lnsrvqad8rpmcajtpk59aqmeqn6vc.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.nermai.iasacademy",
+            "certificate_hash": "bf591ab6b79c4dd90d976384e6c4a866289083d5"
+          }
+        },
+        {
           "client_id": "587850155187-o8bufqm2hoidjgj9q71lhuic7pu4sgk5.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {

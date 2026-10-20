@@ -59,7 +59,7 @@ export const LiveSessionControlPanel: React.FC = () => {
       const tokenRes = await LiveSessionApi.generateJoinToken(session.id);
       const freshToken = tokenRes.data?.token || tokenRes.data;
       
-      meetingLauncher.preparePopup();
+      meetingLauncher.preparePopup(session.id);
       // 2. Launch with fresh token, bypassing startSession() state initialization
       meetingLauncher.launch({
         provider: provider || 'zoom',

@@ -8,7 +8,7 @@ export const TeacherLobby: React.FC = () => {
   const { session, startSession } = useLiveSessionContext();
 
   const handleStartClass = () => {
-    meetingLauncher.preparePopup();
+    meetingLauncher.preparePopup(session?.id);
     startSession();
   };
 

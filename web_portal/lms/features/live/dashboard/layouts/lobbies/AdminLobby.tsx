@@ -9,7 +9,7 @@ export const AdminLobby: React.FC = () => {
   const { session, provider, startSession } = useLiveSessionContext();
 
   const handleStartClass = () => {
-    meetingLauncher.preparePopup();
+    meetingLauncher.preparePopup(session?.id);
     startSession();
   };
 

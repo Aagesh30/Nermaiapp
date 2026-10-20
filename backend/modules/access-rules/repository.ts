@@ -94,19 +94,26 @@ export class AccessRulesRepository {
   }): Promise<IAccessRequest[]> {
     let query: FirebaseFirestore.Query = db
       .collection(COL_REQUESTS)
-      .where('tenantId', '==', tenantId)
-      .orderBy('createdAt', 'desc');
+      .where('tenantId', '==', tenantId);
 
     if (filters.status)   query = query.where('status', '==', filters.status);
     if (filters.entityId) query = query.where('entityId', '==', filters.entityId);
     if (filters.studentId) query = query.where('studentId', '==', filters.studentId);
-    if (filters.startAfter) {
-      const cursor = await db.collection(COL_REQUESTS).doc(filters.startAfter).get();
-      if (cursor.exists) query = query.startAfter(cursor);
-    }
 
-    const snap = await query.limit(filters.limit ?? 50).get();
-    return snap.docs.map(d => ({ id: d.id, ...(d.data() as IAccessRequest) }));
+    try {
+      let orderedQuery = query.orderBy('createdAt', 'desc');
+      if (filters.startAfter) {
+        const cursor = await db.collection(COL_REQUESTS).doc(filters.startAfter).get();
+        if (cursor.exists) orderedQuery = orderedQuery.startAfter(cursor);
+      }
+      const snap = await orderedQuery.limit(filters.limit ?? 50).get();
+      return snap.docs.map(d => ({ id: d.id, ...(d.data() as IAccessRequest) }));
+    } catch (err: any) {
+      console.warn('[AccessRulesRepository] listAccessRequests index missing, sorting in memory:', err?.message);
+      const snap = await query.limit(filters.limit ?? 100).get();
+      const list = snap.docs.map(d => ({ id: d.id, ...(d.data() as IAccessRequest) }));
+      return list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    }
   }
 
   async updateAccessRequest(requestId: string, data: Partial<IAccessRequest>): Promise<void> {

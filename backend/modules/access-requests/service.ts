@@ -33,7 +33,8 @@ export class AccessRequestService {
     contentName: string,
     reason: string,
     studentName?: string,
-    studentRegNo?: string
+    studentRegNo?: string,
+    isLiveClass?: boolean
   ): Promise<IAccessRequest> {
 
     // 1. Duplicate prevention
@@ -64,6 +65,21 @@ export class AccessRequestService {
       ? `${studentRegNo} ${studentName}`
       : studentName || studentRegNo || '';
 
+    // Detect if this request is for a live class
+    let isLive = isLiveClass;
+    if (isLive === undefined) {
+      if (requestType === 'LIVE_SESSION' || (contentName || '').toLowerCase().includes('live')) {
+        isLive = true;
+      } else if (contentId && contentId !== 'general') {
+        try {
+          const clsDoc = await db.collection('classes').doc(contentId).get();
+          if (clsDoc.exists && ['live', 'zoom_live', 'youtube_live'].includes(clsDoc.data()?.classType)) {
+            isLive = true;
+          }
+        } catch (_) {}
+      }
+    }
+
     // 4. Create the request document — store name at creation so admin view
     //    never needs a cross-collection lookup.
     const newRequest: IAccessRequest = {
@@ -75,6 +91,7 @@ export class AccessRequestService {
       contentId,
       contentName,
       reason,
+      isLiveClass: !!isLive,
       requestedAt: new Date().toISOString(),
       status: 'PENDING',
       createdAt: new Date().toISOString(),
@@ -252,6 +269,16 @@ export class AccessRequestService {
     const expiresAt = durationHours ? new Date(Date.now() + durationHours * 3600000).toISOString() : null;
     const accessType = durationHours ? 'TEMPORARY' : 'PERMANENT';
 
+    let isLiveClass = request.isLiveClass === true || request.requestType === 'LIVE_SESSION' || (request.contentName || '').toLowerCase().includes('live');
+    if (!isLiveClass && request.contentId && request.contentId !== 'general') {
+      try {
+        const clsDoc = await db.collection('classes').doc(request.contentId).get();
+        if (clsDoc.exists && ['live', 'zoom_live', 'youtube_live'].includes(clsDoc.data()?.classType)) {
+          isLiveClass = true;
+        }
+      } catch (_) {}
+    }
+
     await db.runTransaction(async (t) => {
       const usageDoc = await t.get(usageRef);
       let recordedUnitsUsed = 0;
@@ -321,7 +348,24 @@ export class AccessRequestService {
           entityId: request.contentId
         });
       }
+
+      // If this is a live class request, also grant a live session pass covering ALL live classes during the period
+      if (isLiveClass) {
+        const livePassId = `live_pass_${request.studentId}`;
+        t.set(db.collection('content_access').doc(livePassId), {
+          id: livePassId,
+          ...grantBase,
+          entityType: 'LIVE_SESSION',
+          entityId: 'ALL_LIVE_CLASSES'
+        });
+      }
     });
+
+    try {
+      const { LiveSessionService } = await import('../live-sessions/service');
+      LiveSessionService.invalidateStudentSessionsCache(request.studentId);
+      LiveSessionService.invalidateListSessionsCache();
+    } catch (_) {}
 
     // Bridge grant to entity_permissions so SACS and real-time listeners update instantly
     const entitiesToUpdate = (partialSelection && partialSelection.length > 0)
@@ -493,6 +537,16 @@ export class AccessRequestService {
           ? new Date(Date.now() + durationHours * 3600000).toISOString() 
           : null;
 
+        let isLiveClass = request.isLiveClass === true || requestType === 'LIVE_SESSION' || (request.contentName || '').toLowerCase().includes('live');
+        if (!isLiveClass && contentId && contentId !== 'general') {
+          try {
+            const clsDoc = await db.collection('classes').doc(contentId).get();
+            if (clsDoc.exists && ['live', 'zoom_live', 'youtube_live'].includes(clsDoc.data()?.classType)) {
+              isLiveClass = true;
+            }
+          } catch (_) {}
+        }
+
         await db.runTransaction(async (t) => {
           const usageDoc = await t.get(usageRef);
           let recordedUnitsUsed = 0;
@@ -543,7 +597,31 @@ export class AccessRequestService {
             entityType: requestType,
             entityId: contentId
           });
+
+          // If this is a live class request, also grant a live session pass covering ALL live classes during the period
+          if (isLiveClass) {
+            const livePassId = `live_pass_${request.studentId}`;
+            t.set(db.collection('content_access').doc(livePassId), {
+              id: livePassId,
+              studentId: request.studentId,
+              accessType: grantType,
+              grantedBy: adminId,
+              grantedAt: new Date().toISOString(),
+              expiresAt,
+              status: 'ACTIVE',
+              sourceRequestId: id,
+              permissionVersion: 1,
+              entityType: 'LIVE_SESSION',
+              entityId: 'ALL_LIVE_CLASSES'
+            });
+          }
         });
+
+        try {
+          const { LiveSessionService } = await import('../live-sessions/service');
+          LiveSessionService.invalidateStudentSessionsCache(request.studentId);
+          LiveSessionService.invalidateListSessionsCache();
+        } catch (_) {}
 
         // ─── Also write to entity_permissions.temporaryGrants ─────────────────
         // The SACS access evaluator (evaluateEntityAccess) reads temporaryGrants
@@ -670,6 +748,19 @@ export class AccessRequestService {
       await this.addTemporaryGrantToEntity(grant.entityId, grant.studentId, adminId, (grant as any).sourceRequestId || grantId, newExpiry);
     }
 
+    if (grant.studentId) {
+      await db.collection('content_access').doc(`live_pass_${grant.studentId}`).update({
+        expiresAt: newExpiry,
+        updatedAt: new Date().toISOString(),
+        updatedBy: adminId
+      }).catch(() => {});
+      try {
+        const { LiveSessionService } = await import('../live-sessions/service');
+        LiveSessionService.invalidateStudentSessionsCache(grant.studentId);
+        LiveSessionService.invalidateListSessionsCache();
+      } catch (_) {}
+    }
+
     return { success: true, newExpiry };
   }
 
@@ -749,6 +840,15 @@ export class AccessRequestService {
     // Clean up temporaryGrants in entity_permissions document so SACS denies access
     if (studentId && entityId) {
       await this.removeTemporaryGrantFromEntity(entityId, studentId, adminId);
+    }
+
+    if (studentId) {
+      await db.collection('content_access').doc(`live_pass_${studentId}`).update(revokePayload).catch(() => {});
+      try {
+        const { LiveSessionService } = await import('../live-sessions/service');
+        LiveSessionService.invalidateStudentSessionsCache(studentId);
+        LiveSessionService.invalidateListSessionsCache();
+      } catch (_) {}
     }
 
     return { success: true };

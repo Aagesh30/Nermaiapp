@@ -11,6 +11,21 @@ export const createCourse = async (req: Request, res: Response, next: NextFuncti
     const { userId, tenantId } = req.user!;
     const course = await courseService.createCourse(parsedData, userId, tenantId);
     res.status(201).json({ status: 'success', data: course });
+    // Notify admins about the new course (fire-and-forget)
+    try {
+      const { sendPushNotification } = await import('../../services/pushService');
+      sendPushNotification({
+        title: '📚 New Course Created',
+        body: `Course "${course?.name || parsedData?.name || 'New Course'}" has been created.`,
+        targetRole: 'admin',
+        excludeUserId: userId,
+        data: {
+          targetTab: 'lms', targetSub: 'courses', screen: 'lms', subTab: 'courses',
+          courseId: course?.id || '',
+          dedupeId: `course_created_${course?.id || Date.now()}`
+        }
+      }).catch(() => {});
+    } catch (_) {}
   } catch (error) { next(error); }
 };
 
@@ -85,6 +100,21 @@ export const createSubject = async (req: Request, res: Response, next: NextFunct
     const { userId, tenantId } = req.user!;
     const subject = await courseService.createSubject(parsedData, userId, tenantId);
     res.status(201).json({ status: 'success', data: subject });
+    // Notify admins about the new subject (fire-and-forget)
+    try {
+      const { sendPushNotification } = await import('../../services/pushService');
+      sendPushNotification({
+        title: '📖 New Subject Added',
+        body: `Subject "${subject?.name || parsedData?.name || 'New Subject'}" has been added.`,
+        targetRole: 'admin',
+        excludeUserId: userId,
+        data: {
+          targetTab: 'lms', targetSub: 'courses', screen: 'lms', subTab: 'courses',
+          subjectId: subject?.id || '',
+          dedupeId: `subject_created_${subject?.id || Date.now()}`
+        }
+      }).catch(() => {});
+    } catch (_) {}
   } catch (error) { next(error); }
 };
 
@@ -130,6 +160,21 @@ export const createTopic = async (req: Request, res: Response, next: NextFunctio
     const { userId, tenantId } = req.user!;
     const topic = await courseService.createTopic(parsedData, userId, tenantId);
     res.status(201).json({ status: 'success', data: topic });
+    // Notify admins about the new topic (fire-and-forget)
+    try {
+      const { sendPushNotification } = await import('../../services/pushService');
+      sendPushNotification({
+        title: '🗂️ New Topic Added',
+        body: `Topic "${topic?.name || parsedData?.name || 'New Topic'}" has been added.`,
+        targetRole: 'admin',
+        excludeUserId: userId,
+        data: {
+          targetTab: 'lms', targetSub: 'courses', screen: 'lms', subTab: 'courses',
+          topicId: topic?.id || '',
+          dedupeId: `topic_created_${topic?.id || Date.now()}`
+        }
+      }).catch(() => {});
+    } catch (_) {}
   } catch (error) { next(error); }
 };
 
@@ -242,6 +287,21 @@ export const createSubtopic = async (req: Request, res: Response, next: NextFunc
     const { userId, tenantId } = req.user!;
     const subtopic = await courseService.createSubtopic(parsedData, userId, tenantId);
     res.status(201).json({ status: 'success', data: subtopic });
+    // Notify admins about the new subtopic (fire-and-forget)
+    try {
+      const { sendPushNotification } = await import('../../services/pushService');
+      sendPushNotification({
+        title: '📝 New Subtopic Added',
+        body: `Subtopic "${subtopic?.name || parsedData?.name || 'New Subtopic'}" has been added.`,
+        targetRole: 'admin',
+        excludeUserId: userId,
+        data: {
+          targetTab: 'lms', targetSub: 'courses', screen: 'lms', subTab: 'courses',
+          subtopicId: subtopic?.id || '',
+          dedupeId: `subtopic_created_${subtopic?.id || Date.now()}`
+        }
+      }).catch(() => {});
+    } catch (_) {}
   } catch (error) { next(error); }
 };
 

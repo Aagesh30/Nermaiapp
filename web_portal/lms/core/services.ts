@@ -17,7 +17,7 @@ export const CourseApi = {
   createCourse: (data: any) => api.post('/courses', data),
   updateCourse: (id: string, data: any) => api.put(`/courses/${id}`, data),
   deleteCourse: (id: string) => api.delete(`/courses/${id}`),
-  syncSyllabus: (courseId: string, data?: any) => api.post('/courses/syllabus/sync', { courseId, ...(data || {}) }),
+  syncSyllabus: (courseId: string, data?: any) => api.post('/courses/syllabus/sync', { courseId, ...(data || {}) }, { timeout: 120000 }),
 
   // Subjects
   listAllSubjects: () => api.get('/subjects'),
@@ -101,7 +101,7 @@ export const LiveClassesApi = {
   leaveSession: (sessionId: string) => api.post(`/live-sessions/${sessionId}/participants/leave`),
   // Student requests access to a live class they are not enrolled in
   requestLiveClassAccess: (classId: string, className: string, reason: string) =>
-    api.post('/access-requests', { requestType: 'CLASS', contentId: classId, contentName: className, reason }),
+    api.post('/access-requests', { requestType: 'CLASS', contentId: classId, contentName: className, reason, isLiveClass: true }),
   // Student checks their own access request status for a class
   getMyAccessRequests: () => api.get('/access-requests/my-requests'),
   // Student requests temporary access (live or recorded) for N days — no permanent option

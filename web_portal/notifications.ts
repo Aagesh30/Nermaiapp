@@ -8,7 +8,7 @@ let isCacheLoaded = false;
 
 // Sliding window rate limiter to guarantee NO notification bombs / bursts
 const recentNotificationTimestamps: number[] = [];
-const MAX_NOTIFICATIONS_BURST = 2;
+const MAX_NOTIFICATIONS_BURST = 10;  // Allow up to 10 notifications per window
 const BURST_WINDOW_MS = 30000;
 
 // Load persisted notification IDs on module load
@@ -32,7 +32,7 @@ export const initNotifications = async () => {
   try {
     const Constants = require("expo-constants").default || require("expo-constants");
     if (Constants?.appOwnership === "expo" || Constants?.executionEnvironment === "storeClient") {
-      console.log("[Notifications] Push notifications are skipped in Expo Go (SDK 53+ limitation). Use development build or APK.");
+      console.log("[Notifications] Push notifications are skipped in Expo Go. Use standalone APK.");
       await ensureCacheLoaded();
       return;
     }
@@ -43,6 +43,7 @@ export const initNotifications = async () => {
       return;
     }
 
+    // Show notifications even when app is in foreground
     Notifications.setNotificationHandler({
       handleNotification: async () => ({
         shouldShowAlert: true,
@@ -53,6 +54,7 @@ export const initNotifications = async () => {
       }),
     });
 
+    // Create the Android notification channel (required for Android 8+)
     if (Platform.OS === "android" && Notifications.setNotificationChannelAsync) {
       await Notifications.setNotificationChannelAsync("default", {
         name: "NERMAI Academy Notifications",
@@ -94,31 +96,42 @@ export const requestNotificationPermission = async (): Promise<boolean> => {
   }
 };
 
-// Register device for remote push notifications (Expo Push API / FCM)
-// Saves token to Firestore so notifications reach the user even when app is closed / killed
+/**
+ * Register device for remote push via NATIVE FCM (Android) or Firebase Messaging (Web).
+ *
+ * APK:  Uses expo-notifications getDevicePushTokenAsync() → returns a raw FCM registration token.
+ *       This is the SAME token type as the web. Backend sends it via Firebase Admin SDK directly.
+ *       No Expo Push Token / Expo Push API is used anywhere in the stack.
+ *
+ * Web:  Uses firebase/messaging getToken() with VAPID key and service worker.
+ *
+ * Token is saved to Firestore collection `device_push_tokens` with role/batch/userId fields.
+ */
 export const registerForPushNotificationsAsync = async (user?: any, forcePrompt: boolean = false): Promise<string | null> => {
+  // ─── WEB ───────────────────────────────────────────────────────────────────
   if (Platform.OS === "web") {
     try {
       if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("Notification" in window)) {
-        console.warn("[WebNotifications] Push registration skipped: Service Worker or Notification API not supported by browser.");
+        console.warn("[WebNotifications] Push registration skipped: Service Worker or Notification API not supported.");
         return null;
       }
 
       let currentPermission = Notification.permission;
       if (currentPermission === "denied") {
-        console.warn("[WebNotifications] Notification permission is DENIED by user. Unblock notifications in browser site settings.");
+        console.warn("[WebNotifications] Notification permission is DENIED. Unblock in browser site settings.");
         return null;
       }
 
       if (currentPermission === "default") {
-        if (!forcePrompt) {
-          console.log("[WebNotifications] Notification permission is DEFAULT. Awaiting explicit user click to request permission.");
+        try {
+          const requestRes = await Notification.requestPermission();
+          currentPermission = requestRes;
+        } catch (permErr: any) {
+          console.warn("[WebNotifications] Permission request note:", permErr?.message);
           return null;
         }
-        const requestRes = await Notification.requestPermission();
-        currentPermission = requestRes;
-        if (requestRes !== "granted") {
-          console.warn("[WebNotifications] Notification permission request DENIED or dismissed by user.");
+        if (currentPermission !== "granted") {
+          console.warn("[WebNotifications] Permission denied or dismissed.");
           return null;
         }
       }
@@ -128,7 +141,7 @@ export const registerForPushNotificationsAsync = async (user?: any, forcePrompt:
         reg = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
         await navigator.serviceWorker.ready;
       } catch (swErr: any) {
-        console.error("[WebNotifications] Service Worker registration failed for /firebase-messaging-sw.js:", swErr?.message || swErr);
+        console.error("[WebNotifications] Service Worker registration failed:", swErr?.message || swErr);
         return null;
       }
 
@@ -140,7 +153,7 @@ export const registerForPushNotificationsAsync = async (user?: any, forcePrompt:
       const vapidKey = (globalThis as any).process?.env?.EXPO_PUBLIC_FIREBASE_VAPID_KEY || undefined;
 
       if (!vapidKey) {
-        console.warn("[WebNotifications] Missing VAPID Key: EXPO_PUBLIC_FIREBASE_VAPID_KEY is not set in build environment. Web push token generation may fail.");
+        console.warn("[WebNotifications] Missing VAPID Key: EXPO_PUBLIC_FIREBASE_VAPID_KEY not set.");
       }
 
       let webToken: string | null = null;
@@ -150,7 +163,7 @@ export const registerForPushNotificationsAsync = async (user?: any, forcePrompt:
           ...(vapidKey ? { vapidKey } : {})
         });
       } catch (tokenErr: any) {
-        console.error("[WebNotifications] Failed to obtain FCM web push token from Firebase:", tokenErr?.message || tokenErr);
+        console.error("[WebNotifications] Failed to obtain FCM web token:", tokenErr?.message || tokenErr);
         return null;
       }
 
@@ -159,20 +172,18 @@ export const registerForPushNotificationsAsync = async (user?: any, forcePrompt:
         return null;
       }
 
-      // Store local reference for unregistering on logout
-      try {
-        await AsyncStorage.setItem("nermai_device_push_token", webToken);
-      } catch (_) {}
+      // Cache locally for unregister on logout
+      try { await AsyncStorage.setItem("nermai_device_push_token", webToken); } catch (_) {}
 
       const cleanDocId = "web_" + webToken.slice(-24).replace(/[^a-zA-Z0-9_-]/g, "_");
       const docRef = doc(db, "device_push_tokens", cleanDocId);
 
-      const userId = user?.userId || user?.studentId || user?.id || user?.leadId || ((user?.role === "guest" || !user) ? `guest_${cleanDocId.slice(-6)}` : "anonymous");
+      const userId = user?.userId || user?.studentId || user?.id || user?.leadId ||
+        ((user?.role === "guest" || !user) ? `guest_${cleanDocId.slice(-6)}` : "anonymous");
       const studentId = user?.studentId || user?.id || user?.userId || null;
       const role = user?.role || "guest";
       const batch = user?.batch || (Array.isArray(user?.batches) ? user.batches[0] : null) || null;
 
-      // Rewrite ownership fields on every login
       await setDoc(docRef, {
         token: webToken,
         userId: String(userId),
@@ -181,38 +192,34 @@ export const registerForPushNotificationsAsync = async (user?: any, forcePrompt:
         batch: batch ? String(batch) : null,
         platform: "web",
         updatedAt: serverTimestamp(),
+        // assignedBatches: for admin users, which batches they manage.
+        // Empty array = super admin (receives all batch notifications).
+        assignedBatches: Array.isArray(user?.assignedBatches)
+          ? user.assignedBatches.map(String)
+          : (Array.isArray(user?.batches) ? user.batches.map(String) : []),
       }, { merge: true });
 
-      // Listen for foreground FCM push notifications when site is open & focused
+      // Attach foreground FCM listener (shows notification when tab is open & focused)
       try {
         const { onMessage } = require("firebase/messaging");
         if (typeof window !== "undefined" && !(window as any).__nermai_fcm_listener_attached) {
           (window as any).__nermai_fcm_listener_attached = true;
           onMessage(messaging, (payload: any) => {
-            console.log("[WebNotifications] Foreground FCM push received:", payload);
             const title = payload?.notification?.title || payload?.data?.title || "NERMAI IAS ACADEMY";
-            const body = payload?.notification?.body || payload?.data?.body || "New notification available.";
+            const body  = payload?.notification?.body  || payload?.data?.body  || "New notification available.";
             const notifData = payload?.data || {};
             if (reg && reg.showNotification) {
               reg.showNotification(title, {
-                body,
-                icon: "/favicon.png",
-                badge: "/favicon.png",
-                data: notifData,
-                tag: notifData.dedupeId || `nermai_fg_${Date.now()}`
+                body, icon: "/favicon.png", badge: "/favicon.png",
+                data: notifData, tag: notifData.dedupeId || `nermai_fg_${Date.now()}`
               });
             } else if ("Notification" in window && Notification.permission === "granted") {
-              new Notification(title, {
-                body,
-                icon: "/favicon.png",
-                badge: "/favicon.png",
-                data: notifData
-              });
+              new Notification(title, { body, icon: "/favicon.png", badge: "/favicon.png", data: notifData });
             }
           });
         }
       } catch (fgErr: any) {
-        console.warn("[WebNotifications] Note while attaching foreground FCM listener:", fgErr?.message);
+        console.warn("[WebNotifications] Foreground FCM listener note:", fgErr?.message);
       }
 
       return webToken;
@@ -221,10 +228,12 @@ export const registerForPushNotificationsAsync = async (user?: any, forcePrompt:
       return null;
     }
   }
+
+  // ─── ANDROID APK — Native FCM via expo-notifications ─────────────────────
   try {
     const Constants = require("expo-constants").default || require("expo-constants");
     if (Constants?.appOwnership === "expo" || Constants?.executionEnvironment === "storeClient") {
-      console.log("[Notifications] Remote push token skipped (running in Expo Go SDK 53). Use Standalone APK for remote push.");
+      console.log("[Notifications] Remote push token skipped in Expo Go. Use standalone APK.");
       return null;
     }
 
@@ -234,46 +243,41 @@ export const registerForPushNotificationsAsync = async (user?: any, forcePrompt:
     const Notifications = require("expo-notifications");
     if (!Notifications) return null;
 
+    // Get native FCM device token (same token type as web — sent via Firebase Admin SDK)
+    // This works for background AND killed-app delivery without going through Expo's relay servers.
     let pushToken: string | null = null;
-
-    // Prioritize direct Google FCM Device Token (pure native, no Expo servers needed)
-    if (Notifications.getDevicePushTokenAsync) {
-      try {
-        const deviceTokenObj = await Notifications.getDevicePushTokenAsync();
-        if (deviceTokenObj?.data && typeof deviceTokenObj.data === "string") {
-          pushToken = deviceTokenObj.data;
-          console.log("[Notifications] Acquired native FCM Device Push Token directly (No Expo middleman)");
-        }
-      } catch (fcmErr: any) {
-        console.warn("[Notifications] Direct FCM token fetch fallback:", fcmErr?.message || fcmErr);
-      }
+    if (!Notifications.getDevicePushTokenAsync) {
+      console.warn("[Notifications] getDevicePushTokenAsync not available in this build.");
+      return null;
     }
 
-    // Fallback to Expo Push Token if device push token is unavailable
-    if (!pushToken && Notifications.getExpoPushTokenAsync) {
-      try {
-        const projectId = Constants?.expoConfig?.extra?.eas?.projectId || Constants?.easConfig?.projectId || "7b9009b2-f209-4d9b-8e24-21f04e78de96";
-        const tokenObj = await Notifications.getExpoPushTokenAsync({ projectId });
-        pushToken = tokenObj?.data || null;
-      } catch (expoTokenErr: any) {
-        console.warn("[Notifications] Expo token fetch error:", expoTokenErr?.message || expoTokenErr);
+    try {
+      const deviceTokenObj = await Notifications.getDevicePushTokenAsync();
+      if (deviceTokenObj?.data && typeof deviceTokenObj.data === "string") {
+        pushToken = deviceTokenObj.data;
+        console.log("[Notifications] Native FCM token acquired successfully.");
+      } else {
+        console.warn("[Notifications] getDevicePushTokenAsync returned empty data.");
       }
+    } catch (fcmErr: any) {
+      console.warn("[Notifications] Native FCM token fetch failed:", fcmErr?.message || fcmErr);
     }
 
     if (!pushToken) return null;
 
-    // Cache push token locally
+    // Cache locally for unregister on logout
     await AsyncStorage.setItem("nermai_device_push_token", pushToken);
 
-    // Persist to Firestore device_push_tokens collection
+    // Save to Firestore device_push_tokens so backend can target this device
     try {
       const { doc, setDoc, serverTimestamp } = require("firebase/firestore");
       const { db } = require("./firebaseConfig");
 
       const cleanDocId = pushToken.replace(/[^a-zA-Z0-9_-]/g, "_");
       const docRef = doc(db, "device_push_tokens", cleanDocId);
-      
-      const userId = user?.userId || user?.studentId || user?.id || user?.leadId || ((user?.role === "guest" || !user) ? `guest_${cleanDocId.slice(-6)}` : "anonymous");
+
+      const userId = user?.userId || user?.studentId || user?.id || user?.leadId ||
+        ((user?.role === "guest" || !user) ? `guest_${cleanDocId.slice(-6)}` : "anonymous");
       const studentId = user?.studentId || user?.id || user?.userId || null;
       const role = user?.role || "guest";
       const batch = user?.batch || (Array.isArray(user?.batches) ? user.batches[0] : null) || null;
@@ -284,11 +288,18 @@ export const registerForPushNotificationsAsync = async (user?: any, forcePrompt:
         studentId: studentId ? String(studentId) : null,
         role: String(role),
         batch: batch ? String(batch) : null,
-        platform: Platform.OS,
+        platform: Platform.OS,  // "android" or "ios"
         updatedAt: serverTimestamp(),
+        // assignedBatches: for admin users, which batches they manage.
+        // Empty array = super admin / manages all batches.
+        assignedBatches: Array.isArray(user?.assignedBatches)
+          ? user.assignedBatches.map(String)
+          : (Array.isArray(user?.batches) && role !== "student"
+              ? user.batches.map(String)
+              : []),
       }, { merge: true });
     } catch (dbErr) {
-      console.log("[Notifications] Failed saving push token to Firestore:", dbErr);
+      console.log("[Notifications] Failed saving FCM token to Firestore:", dbErr);
     }
 
     return pushToken;
@@ -306,99 +317,21 @@ export const unregisterPushTokenAsync = async (token?: string | null): Promise<v
     const { db } = require("./firebaseConfig");
     const cleanDocId = savedToken.replace(/[^a-zA-Z0-9_-]/g, "_");
     await deleteDoc(doc(db, "device_push_tokens", cleanDocId)).catch(() => {});
+    // Also try the web-prefixed doc ID format (in case user switched platforms)
     const webCleanDocId = "web_" + savedToken.slice(-24).replace(/[^a-zA-Z0-9_-]/g, "_");
     await deleteDoc(doc(db, "device_push_tokens", webCleanDocId)).catch(() => {});
     await AsyncStorage.removeItem("nermai_device_push_token");
   } catch (err: any) {
-    console.log("[Notifications] Token unregister notice:", err?.message);
+    console.log("[Notifications] Token unregister note:", err?.message);
   }
 };
 
-export interface RemotePushPayload {
-  title: string;
-  body: string;
-  targetRole?: "all" | "student" | "admin" | "super_admin" | "guest";
-  targetUserId?: string;
-  targetBatch?: string;
-  data?: Record<string, any>;
-}
-
-// Dispatches a remote push notification via Expo Push API
-// This reaches physical Android devices EVEN WHEN THE APK IS KILLED / CLOSED!
-export const sendRemotePushNotification = async (payload: RemotePushPayload): Promise<void> => {
-  try {
-    const { collection, getDocs, query, where } = require("firebase/firestore");
-    const { db } = require("./firebaseConfig");
-
-    let q = query(collection(db, "device_push_tokens"));
-    if (payload.targetUserId) {
-      q = query(collection(db, "device_push_tokens"), where("userId", "==", String(payload.targetUserId)));
-    } else if (payload.targetRole && payload.targetRole !== "all") {
-      if (payload.targetRole === "admin") {
-        q = query(collection(db, "device_push_tokens"), where("role", "in", ["admin", "super_admin", "staff", "developer"]));
-      } else if (payload.targetRole === "super_admin") {
-        q = query(collection(db, "device_push_tokens"), where("role", "in", ["super_admin", "developer"]));
-      } else {
-        q = query(collection(db, "device_push_tokens"), where("role", "==", payload.targetRole));
-      }
-    }
-
-    const snap = await getDocs(q);
-    if (snap.empty) return;
-
-    const tokens: string[] = [];
-    snap.forEach((d: any) => {
-      const data = d.data();
-      if (data?.token) {
-        if (payload.targetBatch && data.role === "student" && data.batch && data.batch.toLowerCase() !== payload.targetBatch.toLowerCase()) {
-          return;
-        }
-        tokens.push(data.token);
-      }
-    });
-
-    const uniqueTokens = Array.from(new Set(tokens));
-    if (uniqueTokens.length === 0) return;
-
-    const cleanData = {
-      ...payload.data,
-      targetTab: payload.data?.targetTab || payload.data?.screen || "dashboard",
-      targetSub: payload.data?.targetSub || payload.data?.subTab || "",
-      screen: payload.data?.screen || payload.data?.targetTab || "dashboard",
-      subTab: payload.data?.subTab || payload.data?.targetSub || "",
-    };
-
-    const messages = uniqueTokens.map(to => ({
-      to,
-      sound: "default",
-      title: payload.title,
-      body: payload.body,
-      priority: "high",
-      channelId: "default",
-      data: cleanData,
-    }));
-
-    // Send in chunks of 100
-    for (let i = 0; i < messages.length; i += 100) {
-      const chunk = messages.slice(i, i + 100);
-      await fetch("https://exp.host/--/api/v2/push/send", {
-        method: "POST",
-        headers: {
-          "Accept": "application/json",
-          "Accept-encoding": "gzip, deflate",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(chunk),
-      }).catch(err => console.log("[PushSend] Chunk delivery error:", err));
-    }
-  } catch (e) {
-    console.log("[PushSend] Failed to dispatch remote push notification:", e);
-  }
-};
-
-// Trigger an immediate system status bar notification
-// data.targetTab / data.targetSub are used for in-app navigation on tap
+// Trigger an immediate system status bar notification on the device.
+// data.targetTab / data.targetSub are used for in-app navigation on tap.
+// Note: This is for LOCAL (foreground-trigger) notifications only.
+// Remote push notifications (killed app delivery) are sent from the backend via Firebase Admin SDK.
 export const showPhoneNotification = async (title: string, body: string, data?: Record<string, any>) => {
+  // ─── WEB ───────────────────────────────────────────────────────────────────
   if (Platform.OS === "web") {
     try {
       await ensureCacheLoaded();
@@ -419,18 +352,12 @@ export const showPhoneNotification = async (title: string, body: string, data?: 
       if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
         const notifTag = data?.dedupeId || (dedupeKey || `nermai_fg_${Date.now()}`);
         const notif = new Notification(title, {
-          body,
-          icon: "/favicon.png",
-          badge: "/favicon.png",
-          tag: notifTag,
-          data: data || {}
+          body, icon: "/favicon.png", badge: "/favicon.png", tag: notifTag, data: data || {}
         });
         notif.onclick = () => {
           window.focus();
           if (data && typeof window !== "undefined") {
-            try {
-              window.dispatchEvent(new CustomEvent("nermai_notification_click", { detail: data }));
-            } catch (_) {}
+            try { window.dispatchEvent(new CustomEvent("nermai_notification_click", { detail: data })); } catch (_) {}
           }
           if (data?.targetTab && typeof window.location !== "undefined") {
             const sub = data.targetSub ? `/${data.targetSub}` : "";
@@ -442,6 +369,8 @@ export const showPhoneNotification = async (title: string, body: string, data?: 
     } catch (_) {}
     return;
   }
+
+  // ─── ANDROID APK ───────────────────────────────────────────────────────────
   try {
     await ensureCacheLoaded();
 
@@ -450,23 +379,18 @@ export const showPhoneNotification = async (title: string, body: string, data?: 
     if (dedupeKey) {
       if (recentNotificationsCache.has(dedupeKey)) return;
       recentNotificationsCache.add(dedupeKey);
-
-      // Keep cache size bounded to last 500 items
       if (recentNotificationsCache.size > 500) {
         const oldest = recentNotificationsCache.values().next().value;
         if (oldest) recentNotificationsCache.delete(oldest);
       }
-
-      // Async write-back to persistent storage
       AsyncStorage.setItem(
         DELIVERED_NOTIFICATIONS_STORAGE_KEY,
         JSON.stringify(Array.from(recentNotificationsCache))
       ).catch(() => {});
     }
 
-    // 2. Anti-Bomb Rate Limiter: Drop bursts exceeding MAX_NOTIFICATIONS_BURST within window
+    // 2. Anti-Bomb Rate Limiter
     const now = Date.now();
-    // Prune old timestamps
     while (recentNotificationTimestamps.length > 0 && now - recentNotificationTimestamps[0] > BURST_WINDOW_MS) {
       recentNotificationTimestamps.shift();
     }
@@ -510,9 +434,7 @@ export const setupNotificationClickListener = (
     if (typeof window === "undefined") return () => {};
     const handleWebClick = (event: any) => {
       const detail = event?.detail || event?.data;
-      if (detail) {
-        onNavigate(detail);
-      }
+      if (detail) onNavigate(detail);
     };
     const handleSwMessage = (event: any) => {
       if (event?.data?.type === "NOTIFICATION_CLICK" && event?.data?.data) {
@@ -539,31 +461,21 @@ export const setupNotificationClickListener = (
     const Notifications = require("expo-notifications");
     if (!Notifications || !Notifications.addNotificationResponseReceivedListener) return () => {};
 
-    // Handle tap when app is foregrounded or backgrounded (but not killed)
+    // Handle tap when app is foregrounded or backgrounded (but not killed).
+    // FCM delivers the notification to the OS. When user taps it, expo-notifications
+    // fires this listener with the FCM data payload.
     const subscription = Notifications.addNotificationResponseReceivedListener((response: any) => {
       try {
         const data = response?.notification?.request?.content?.data;
-        if (data) {
-          onNavigate(data);
-        }
+        if (data) onNavigate(data);
       } catch (e) {
         console.log("[Notifications] Click handler error:", e);
       }
     });
 
-    // Handle tap when app was completely killed and relaunched via notification
-    Notifications.getLastNotificationResponseAsync().then((response: any) => {
-      try {
-        if (response && response.notification) {
-          const data = response.notification.request?.content?.data;
-          if (data) {
-            onNavigate(data);
-          }
-        }
-      } catch (e) {
-        console.log("[Notifications] Cold-start click handler error:", e);
-      }
-    }).catch(() => {});
+    // Cold-start navigation is intentionally NOT handled here.
+    // It is handled by App.tsx via getLastNotificationData() in a useEffect([user]) hook,
+    // which ensures navigation only fires AFTER user auth resolves (preventing white screen).
 
     return () => {
       try {
@@ -573,5 +485,30 @@ export const setupNotificationClickListener = (
   } catch (e) {
     console.log("[Notifications] Click listener setup error:", e);
     return () => {};
+  }
+};
+
+/**
+ * Returns the FCM notification data from the last tap that launched the app from a killed state.
+ * Call this from a useEffect([user]) hook AFTER user auth resolves to avoid white-screen navigation.
+ * Returns null if there is no pending cold-start notification.
+ */
+export const getLastNotificationData = async (): Promise<Record<string, any> | null> => {
+  if (Platform.OS === "web") return null;
+  try {
+    const Constants = require("expo-constants").default || require("expo-constants");
+    if (Constants?.appOwnership === "expo" || Constants?.executionEnvironment === "storeClient") {
+      return null;
+    }
+    const Notifications = require("expo-notifications");
+    if (!Notifications || !Notifications.getLastNotificationResponseAsync) return null;
+    const response = await Notifications.getLastNotificationResponseAsync();
+    if (response?.notification) {
+      return response.notification.request?.content?.data || null;
+    }
+    return null;
+  } catch (e) {
+    console.log("[Notifications] getLastNotificationData error:", e);
+    return null;
   }
 };

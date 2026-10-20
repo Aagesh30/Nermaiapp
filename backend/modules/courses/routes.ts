@@ -48,7 +48,7 @@ topicRoutes.post('/:topicId/classes', requireRole(['super_admin', 'admin', 'staf
 
 export const subtopicRoutes = Router();
 subtopicRoutes.use(requireAuth);
-subtopicRoutes.get('/', requireRole(['super_admin', 'admin', 'staff', 'teacher']), CourseController.listAllSubtopics);
+subtopicRoutes.get('/', requireRole(['super_admin', 'admin', 'staff', 'teacher', 'student']), CourseController.listAllSubtopics);
 subtopicRoutes.get('/:subtopicId/classes', requireRole(['super_admin', 'staff', 'teacher', 'student']), CourseController.listClassesBySubtopic);
 subtopicRoutes.put('/:id', requireRole(['super_admin', 'admin', 'staff', 'teacher']), CourseController.updateSubtopic);
 subtopicRoutes.delete('/:id', requireRole(['super_admin', 'admin', 'staff', 'teacher']), CourseController.deleteSubtopic);

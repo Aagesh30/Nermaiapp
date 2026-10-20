@@ -5,35 +5,68 @@
   <title>Meeting Ended</title>
   <style>
     body { font-family: sans-serif; background: #0a0a0a; color: white; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-    .box { text-align: center; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); padding: 2rem; border-radius: 12px; }
+    .box { text-align: center; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); padding: 2rem; border-radius: 12px; max-width: 420px; }
+    h3 { margin-top: 0; color: #10b981; }
+    p { color: rgba(255, 255, 255, 0.7); font-size: 14px; line-height: 1.5; }
+    .btn-group { margin-top: 20px; display: flex; justify-content: center; gap: 12px; }
+    button { padding: 10px 20px; border-radius: 6px; font-weight: 500; cursor: pointer; transition: all 0.2s; }
+    .btn-rejoin { background: #10b981; color: white; border: none; }
+    .btn-rejoin:hover:not(:disabled) { background: #059669; }
+    .btn-rejoin:disabled { opacity: 0.6; cursor: not-allowed; }
+    .btn-close { background: #27272a; color: white; border: 1px solid #3f3f46; }
+    .btn-close:hover { background: #3f3f46; }
   </style>
   <script>
-    function notifyAndClose() {
-      // 1. Notify parent via window opener
-      if (window.opener && !window.opener.closed) {
-        var sessionId = new URLSearchParams(window.location.search).get("sessionId");
-        var msg = JSON.stringify({ type: "MEETING_ENDED", provider: "zoom", sessionId: sessionId });
-        try { window.opener.postMessage(msg, "*"); } catch (e) {}
-      }
-      // 2. Notify parent via iframe parent
-      if (window.parent && window.parent !== window) {
-        var msg2 = JSON.stringify({ type: "MEETING_ENDED", provider: "zoom" });
-        try { window.parent.postMessage(msg2, "*"); } catch (e) {}
-      }
-      
-      // 3. Close popup
-      setTimeout(function() {
-        window.close();
-      }, 500);
+    var urlParams = new URLSearchParams(window.location.search);
+    var sessionId = urlParams.get("sessionId");
+    var portalOrigin = urlParams.get("portalOrigin") || (window.location.origin || "*");
+    var rejoinTimeout = null;
+
+    function send(type) {
+      var msg = JSON.stringify({ type: type, provider: "zoom", sessionId: sessionId });
+      try { if (window.opener && !window.opener.closed) window.opener.postMessage(msg, portalOrigin); } catch (e) {}
+      try { if (window.parent && window.parent !== window) window.parent.postMessage(msg, portalOrigin); } catch (e) {}
     }
-    window.onload = notifyAndClose;
+
+    function rejoin() {
+      var btn = document.getElementById("btn-rejoin");
+      var statusEl = document.getElementById("status");
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Reconnecting...";
+      }
+      if (statusEl) {
+        statusEl.textContent = "Requesting new join session from LMS...";
+      }
+      send("RECONNECT_REQUESTED");
+
+      if (rejoinTimeout) clearTimeout(rejoinTimeout);
+      rejoinTimeout = setTimeout(function () {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = "Try again";
+        }
+        if (statusEl) {
+          statusEl.textContent = "Couldn't rejoin automatically. Please return to the class page and click Join.";
+        }
+      }, 10000);
+    }
+
+    function leave() {
+      if (rejoinTimeout) clearTimeout(rejoinTimeout);
+      send("MEETING_ENDED");
+      setTimeout(function () { window.close(); }, 300);
+    }
   </script>
 </head>
 <body>
   <div class="box">
-    <h3>Meeting Ended</h3>
-    <p>You can now close this window and return to the dashboard.</p>
-    <button onclick="window.close()" style="padding: 10px 20px; background: #10b981; color: white; border: none; border-radius: 6px; cursor: pointer;">Close Window</button>
+    <h3>You've left the meeting</h3>
+    <p id="status">If this was a temporary connection problem, you can rejoin the class directly.</p>
+    <div class="btn-group">
+      <button id="btn-rejoin" class="btn-rejoin" onclick="rejoin()">Rejoin class</button>
+      <button class="btn-close" onclick="leave()">Close window</button>
+    </div>
   </div>
 </body>
 </html>

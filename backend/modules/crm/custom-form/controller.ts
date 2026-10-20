@@ -76,6 +76,24 @@ export class CustomFormController {
         customFields: Array.isArray(customFields) ? customFields : []
       });
 
+      // Dispatch push notification to admins
+      try {
+        const { sendPushNotification } = await import("../../../services/pushService");
+        sendPushNotification({
+          title: "📋 CRM Application Form Updated",
+          body: `Form "${title}" configuration has been updated.`,
+          targetRole: "admin",
+          data: {
+            targetTab: "crm",
+            targetSub: "custom-form",
+            screen: "crm",
+            subTab: "custom-form",
+            formId: id || "mock_test_app",
+            dedupeId: `crm_form_${id || "mock_test_app"}_${Date.now()}`
+          }
+        }).catch(() => {});
+      } catch (_) {}
+
       return res.status(200).json({
         success: true,
         message: "Application form schema saved successfully",

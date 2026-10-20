@@ -44,6 +44,7 @@ import {
   initNotifications,
   registerForPushNotificationsAsync,
   setupNotificationClickListener,
+  getLastNotificationData,
 } from "./web_portal/notifications";
 import * as Sharing from "expo-sharing";
 import * as Print from "expo-print";
@@ -319,6 +320,9 @@ function DateTimePickerSelect({
         </Modal>
       )}
     </View>
+  );
+}
+
 function DatePickerField({
   value,
   onChange,
@@ -1535,41 +1539,98 @@ export default function App() {
     }
 
     // ── Deep-link navigation when user taps any notification ─────────────────
-    const unsubscribeClick = setupNotificationClickListener((data: Record<string, any>) => {
+    // handleNotifNavigation: navigates the app to the correct tab/sub when a notification is tapped.
+    // Stored in a ref so it can be called later (deferred cold-start) without closing over stale state.
+    const navigateFromNotif = (data: Record<string, any>) => {
       try {
-        const rawTab  = String(data?.targetTab  || data?.screen  || "").toLowerCase();
-        const rawSub  = String(data?.targetSub  || data?.subTab  || "").toLowerCase();
+        const rawTab = String(data?.targetTab || data?.screen || "").toLowerCase();
+        const rawSub = String(data?.targetSub || data?.subTab || "").toLowerCase();
 
-        // Map notification targetTab → APK tab names
-        if (rawTab === "lms" || rawTab === "classes" || rawTab === "resources" || rawTab === "recorded" || rawTab === "live" || rawSub === "daily-content" || rawSub === "resources" || rawSub === "recorded" || rawSub === "live-classes") {
+        // 1. LMS Notifications Routing
+        if (
+          rawTab === "lms" || rawTab === "classes" || rawTab === "resources" ||
+          rawTab === "recorded" || rawTab === "live" || rawTab === "quiz" ||
+          rawSub === "daily-content" || rawSub === "dailycontent" ||
+          rawSub === "resources" || rawSub === "recorded" ||
+          rawSub === "live-classes" || rawSub === "live" || rawSub === "quiz"
+        ) {
           setActiveTab("lms");
           if (rawSub === "daily-content" || rawSub === "dailycontent") setLmsSub("daily-content");
           else if (rawSub === "resources")                              setLmsSub("resources");
           else if (rawSub === "live-classes" || rawSub === "live")     setLmsSub("live-classes");
           else if (rawSub === "recorded")                              setLmsSub("recorded");
-        } else if (rawTab === "test" || rawTab === "tests") {
+          else if (rawSub === "quiz" || rawTab === "quiz")             setLmsSub("quiz");
+        } 
+        // 2. Test Portal Notifications Routing
+        else if (rawTab === "test" || rawTab === "tests" || rawTab === "test-portal") {
           setActiveTab("test");
-          if (rawSub === "available" || rawSub === "") setTestSub("available");
-          else if (rawSub === "results")               setTestSub("results");
-        } else if (rawTab === "erp") {
+          if (rawSub === "results" || rawSub === "evaluation")          setTestSub("results");
+          else if (rawSub === "creation" || rawSub === "create")       setTestSub("creation");
+          else                                                         setTestSub("available");
+        } 
+        // 3. ERP Notifications Routing
+        else if (rawTab === "erp") {
           setActiveTab("erp");
           if (rawSub === "my-profile" || rawSub === "profile")         setErpSub("my-profile");
           else if (rawSub === "id-card" || rawSub === "idcard")        setErpSub("id-card");
           else if (rawSub === "hall-ticket" || rawSub === "hallticket") setErpSub("hall-ticket");
           else if (rawSub === "fees" || rawSub === "pay-fees")         setErpSub("fees");
+          else if (rawSub === "qr-permissions" || rawSub === "qr")     setErpSub("qr-permissions");
           else if (rawSub === "analytics")                             setErpSub("analytics");
-        } else if (rawTab === "dashboard" || rawTab === "notices" || rawSub === "notices") {
-          setActiveTab("dashboard");
-        } else if (rawTab === "crm") {
+          else if (rawSub === "approvals")                             setErpSub("approvals");
+          else if (rawSub === "students")                              setErpSub("students");
+          else if (rawSub === "staff")                                 setErpSub("staff");
+          else if (rawSub === "batch")                                 setErpSub("batch");
+        } 
+        // 4. CRM Notifications Routing
+        else if (rawTab === "crm") {
           setActiveTab("crm");
+          if (rawSub === "feedback")                                   setCrmSub("feedback");
+          else if (rawSub === "campaigns")                             setCrmSub("campaigns");
+          else if (rawSub === "admissions")                            setCrmSub("admissions");
+          else if (rawSub === "custom-leads" || rawSub === "custom-form") setCrmSub("leads");
+          else if (rawSub === "courses")                               setCrmSub("courses");
+          else if (rawSub === "guest-posters" || rawSub === "posters") setCrmSub("posters");
+          else if (rawSub === "freebies")                              setCrmSub("freebies");
+          else                                                         setCrmSub("leads");
+        } 
+        // 5. Dashboard / Notice Routing
+        else if (rawTab === "dashboard" || rawTab === "notices" || rawSub === "notices") {
+          setActiveTab("dashboard");
         }
       } catch (_) {}
+    };
+
+    // Foreground / background tap: user is already set → navigate immediately.
+    const unsubscribeClick = setupNotificationClickListener((data: Record<string, any>) => {
+      navigateFromNotif(data);
     });
+
+    // Cold-start tap (app was killed): getLastNotificationData fires BEFORE auth resolves.
+    // FIXED: store the data in a ref and let the user useEffect handle it once auth is ready.
+    getLastNotificationData().then((data) => {
+      if (data && !coldStartHandledRef.current) {
+        pendingNotifNavRef.current = data;
+      }
+    }).catch(() => {});
 
     return () => {
       if (typeof unsubscribeClick === "function") unsubscribeClick();
     };
   }, []);
+
+  // FIXED WHITE SCREEN: Process deferred cold-start notification navigation once user auth resolves.
+  // If the app was opened by tapping a push notification while killed, pendingNotifNavRef holds the
+  // navigation data. We process it here — only after user is confirmed non-null — to avoid navigating
+  // to a tab that renders with user=null (which causes a blank/white screen).
+  useEffect(() => {
+    if (user && !coldStartHandledRef.current && pendingNotifNavRef.current) {
+      coldStartHandledRef.current = true;
+      const data = pendingNotifNavRef.current;
+      pendingNotifNavRef.current = null;
+      navigateFromNotif(data);
+    }
+  }, [user]);
 
   // Fetch initial data — only runs when user identity changes
   useEffect(() => {
@@ -1705,17 +1766,25 @@ export default function App() {
     return () => clearInterval(timer);
   }, [activeAttempt, examEndTime]);
 
-  const [playedNoticeIds, setPlayedNoticeIds] = useState<string[]>(() => {
-    try {
-      if (typeof localStorage !== "undefined") {
-        const saved = localStorage.getItem("played_notice_ids");
-        return saved ? JSON.parse(saved) : [];
-      }
-      return [];
-    } catch {
-      return [];
-    }
-  });
+  // playedNoticeIds: tracks which notice IDs have already triggered a sound in this session.
+  // FIXED: was using localStorage (broken on Android APK) → now uses AsyncStorage which works on all platforms.
+  const [playedNoticeIds, setPlayedNoticeIds] = useState<string[]>([]);
+  // Load persisted played-notice IDs from AsyncStorage on first mount (runs once, async-safe).
+  useEffect(() => {
+    AsyncStorage.getItem("nermai_played_notice_ids")
+      .then(saved => {
+        if (saved) {
+          try { setPlayedNoticeIds(JSON.parse(saved)); } catch (_) {}
+        }
+      })
+      .catch(() => {});
+  }, []);
+  // Timestamp of the current login session — used to filter out historical notices from blasting on login.
+  const loginTimestampRef = useRef<Date>(new Date());
+  // Ref to hold a pending cold-start notification navigation (deferred until user auth resolves).
+  const pendingNotifNavRef = useRef<Record<string, any> | null>(null);
+  // Ensures cold-start notification is only processed once per session.
+  const coldStartHandledRef = useRef<boolean>(false);
 
   const playNoticeSound = (priority: string) => {
     try {
@@ -1745,28 +1814,47 @@ export default function App() {
       setAnnouncements(notices);
 
       // Play sound for any newly retrieved notices
+      // FIXED: Only sound notices created AFTER current session start (loginTimestampRef) to prevent historical blast.
       if (notices.length > 0 && user) {
         let hasNewHigh = false;
         let hasNewNormal = false;
         const newlyPlayed: string[] = [];
+        const sessionStart = loginTimestampRef.current;
 
         notices.forEach((n: any) => {
-          if (!playedNoticeIds.includes(n.id)) {
-            newlyPlayed.push(n.id);
-            if (n.priority === "high") {
-              hasNewHigh = true;
-            } else {
-              hasNewNormal = true;
+          if (playedNoticeIds.includes(n.id)) return; // Already sounded in this session
+
+          // Determine notice creation time (handles Firestore Timestamp or ISO string)
+          let noticeTime: Date | null = null;
+          try {
+            if (n.createdAt) {
+              noticeTime = typeof n.createdAt.toDate === "function"
+                ? n.createdAt.toDate()
+                : new Date(n.createdAt);
+            } else if (n.publishedAt) {
+              noticeTime = typeof n.publishedAt.toDate === "function"
+                ? n.publishedAt.toDate()
+                : new Date(n.publishedAt);
             }
+          } catch (_) {}
+
+          // Only sound notices that were created AFTER this login session started.
+          // This prevents ALL historical notices from blasting on every app launch.
+          if (!noticeTime || noticeTime <= sessionStart) return;
+
+          newlyPlayed.push(n.id);
+          if (n.priority === "high") {
+            hasNewHigh = true;
+          } else {
+            hasNewNormal = true;
           }
         });
 
         if (newlyPlayed.length > 0) {
           setPlayedNoticeIds(prev => {
             const next = [...prev, ...newlyPlayed];
-            try {
-              localStorage.setItem("played_notice_ids", JSON.stringify(next));
-            } catch { }
+            // FIXED: use AsyncStorage (works on Android APK) instead of localStorage (web-only).
+            AsyncStorage.setItem("nermai_played_notice_ids", JSON.stringify(next)).catch(() => {});
             return next;
           });
 

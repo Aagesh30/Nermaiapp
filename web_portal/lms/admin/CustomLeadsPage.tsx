@@ -9,10 +9,13 @@ import {
   StyleSheet,
   Modal,
   Alert,
+  Platform,
   useWindowDimensions
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as XLSX from 'xlsx';
+import * as FileSystemLegacy from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import api from '../core/api';
 import { db } from '../../firebaseConfig';
 import { collection, onSnapshot } from 'firebase/firestore';
@@ -172,9 +175,9 @@ export default function CustomLeadsPage() {
   }, [leads]);
 
   // Export to Excel
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
     if (filteredLeads.length === 0) {
-      alert('No leads to export');
+      Alert.alert('Export', 'No leads to export.');
       return;
     }
 
@@ -204,7 +207,35 @@ export default function CustomLeadsPage() {
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(rows);
     XLSX.utils.book_append_sheet(wb, ws, 'Custom_Application_Leads');
-    XLSX.writeFile(wb, `Custom_Application_Leads_${new Date().toISOString().split('T')[0]}.xlsx`);
+    const fileName = `Custom_Application_Leads_${new Date().toISOString().split('T')[0]}.xlsx`;
+
+    try {
+      if (Platform.OS === 'web') {
+        XLSX.writeFile(wb, fileName);
+      } else {
+        const base64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+        const baseDir = FileSystemLegacy.documentDirectory || FileSystemLegacy.cacheDirectory || '';
+        const uri = (baseDir.endsWith('/') ? baseDir : baseDir + '/') + fileName;
+        const legacyWrite = (FileSystemLegacy as any).writeAsStringAsync || (FileSystemLegacy as any).default?.writeAsStringAsync;
+        if (typeof legacyWrite === 'function') {
+          await legacyWrite(uri, base64, { encoding: (FileSystemLegacy as any).EncodingType?.Base64 || 'base64' });
+        } else {
+          throw new Error('FileSystem writer not available');
+        }
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(uri, {
+            mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            dialogTitle: 'Export Custom Leads Excel',
+            UTI: 'com.microsoft.excel.xlsx'
+          });
+        } else {
+          Alert.alert('Excel Exported', `Saved successfully to ${fileName}`);
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to export excel:', err);
+      Alert.alert('Export Error', err?.message || 'Failed to export excel file.');
+    }
   };
 
   const getStatusBadge = (status: string) => {

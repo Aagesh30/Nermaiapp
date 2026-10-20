@@ -26,6 +26,11 @@ async function checkAndAlertNewDevice(
   currentSessionId: string
 ): Promise<void> {
   try {
+    // Super Admin exception: allow simultaneous logins across multiple devices without revoking or alerting
+    if (userRole === 'super_admin' || userRole === 'developer') {
+      return;
+    }
+
     // Fetch all currently active sessions for this user
     const priorSessions = await SessionService.listActiveSessions(userId);
 

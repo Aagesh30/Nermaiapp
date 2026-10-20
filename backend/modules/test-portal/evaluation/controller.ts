@@ -422,6 +422,45 @@ export class EvaluationController {
             // Retrieve updated result with rank & percentile
             const updatedDoc = await db.collection("results").doc(attemptId).get();
 
+            // Notify student that their test result is ready
+            try {
+                const { sendPushNotification } = await import("../../../services/pushService");
+                const testTitle = attempt.testTitle || attempt.testName || "Your Test";
+                const scoreText = `${finalObtainedMarks}/${totalMarks} (${Math.round(percentage)}%)`;
+                sendPushNotification({
+                    title: "✅ Test Result Ready",
+                    body: `"${testTitle}" is complete! You scored ${scoreText}. Tap to view your result.`,
+                    targetUserId: attempt.studentId,
+                    data: {
+                        targetTab: "test",
+                        targetSub: "results",
+                        screen: "test",
+                        subTab: "results",
+                        testId: attempt.testId,
+                        attemptId,
+                        dedupeId: `test_result_${attemptId}`
+                    }
+                }).catch(err => console.log("[Push] Test result push note:", err?.message));
+
+                // Notify admins & super admins that a student has finished the test
+                const displayName = studentName || attempt.studentName || attempt.username || "A student";
+                sendPushNotification({
+                    title: "📋 Test Submission Received",
+                    body: `${displayName} submitted "${testTitle}". Score: ${scoreText}.`,
+                    targetRole: "admin",
+                    data: {
+                        targetTab: "test",
+                        targetSub: "results",
+                        screen: "test",
+                        subTab: "results",
+                        testId: attempt.testId,
+                        attemptId,
+                        studentId: attempt.studentId,
+                        dedupeId: `test_submission_admin_${attemptId}`
+                    }
+                }).catch(err => console.log("[Push] Test submission admin push:", err?.message));
+            } catch (_) {}
+
             return res.status(200).json({
                 success: true,
                 message: "Attempt evaluated successfully",

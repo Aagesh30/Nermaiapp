@@ -236,7 +236,10 @@
         if (destroyed) return;
 
         if (!res.ok) {
-          throw new Error('Session token expired or invalid (HTTP ' + res.status + ').');
+          var errData = null;
+          try { errData = await res.json(); } catch(e) {}
+          var serverMsg = errData && errData.message ? errData.message : ('Session token expired or invalid (HTTP ' + res.status + ').');
+          throw new Error(serverMsg);
         }
 
         var contentType = res.headers.get('content-type') || '';
@@ -253,13 +256,110 @@
             (data.sdk && data.sdk.role === 0) ||
             data.role === 'student' ||
             data.userRole === 'student' ||
-            data.userType === 'student';
+            data.userType === 'student' ||
+            (!data.canPromote && !data.sdk?.zak);
             
         console.log('[NERMAI Security] isStudent evaluation:', isStudent, {
             participantRole: data.participantRole,
             sdkRole: data.sdk ? data.sdk.role : undefined,
             role: data.role
         });
+
+        // Solution A: Strictly hide Invite, Copy Link, and Meeting Info for Students
+        if (isStudent) {
+            try {
+                // 1. Inject immediate CSS rules (active from millisecond zero)
+                var style = document.createElement('style');
+                style.id = 'nermai-student-restrictions';
+                style.innerHTML = `
+                    .meeting-info-icon__icon-wrap,
+                    .meeting-info-icon,
+                    .meeting-app-head__info,
+                    .meeting-info-popover,
+                    .meeting-info-panel,
+                    .meeting-info-content,
+                    .meeting-info,
+                    .zm-btn[aria-label*="Meeting Information"],
+                    .zm-btn[aria-label*="Meeting Info"],
+                    [aria-label*="Meeting Information" i],
+                    [aria-label*="Meeting Info" i],
+                    [aria-label*="Invite" i],
+                    button[aria-label*="Invite" i],
+                    button[aria-label*="Copy" i],
+                    .participants-footer__invite-btn,
+                    .invite-button,
+                    .invitation-button,
+                    .copy-link-button,
+                    .copy-invite-link,
+                    div[class*="invite"],
+                    button[class*="invite"],
+                    div[class*="copy-link"],
+                    button[class*="copy-link"] {
+                        display: none !important;
+                        visibility: hidden !important;
+                        pointer-events: none !important;
+                        opacity: 0 !important;
+                        width: 0 !important;
+                        height: 0 !important;
+                        max-width: 0 !important;
+                        max-height: 0 !important;
+                        overflow: hidden !important;
+                        position: absolute !important;
+                        left: -9999px !important;
+                    }
+                `;
+                document.head.appendChild(style);
+
+                // 2. Active DOM cleaner: continuously remove any invite/copy buttons or popovers created dynamically
+                var removeInviteControls = function() {
+                    var elements = document.querySelectorAll(
+                        '.meeting-info-icon__icon-wrap, .meeting-info-icon, .meeting-app-head__info, ' +
+                        '.meeting-info-popover, .meeting-info-panel, .meeting-info-content, .meeting-info, ' +
+                        '[aria-label*="Meeting Info" i], [aria-label*="Meeting Information" i], ' +
+                        '[aria-label*="Invite" i], button[aria-label*="Invite" i], ' +
+                        '.participants-footer__invite-btn, .invite-button, .invitation-button, ' +
+                        '.copy-link-button, .copy-invite-link'
+                    );
+                    elements.forEach(function(el) {
+                        if (el && el.parentNode) el.parentNode.removeChild(el);
+                    });
+
+                    var clickables = document.querySelectorAll('button, a, div.zm-btn, div[role="button"], span');
+                    clickables.forEach(function(el) {
+                        var txt = (el.textContent || '').trim().toLowerCase();
+                        if (txt === 'invite' || txt === 'copy invite link' || txt === 'copy link' || txt === 'copy invitation') {
+                            var target = el.closest('button') || el.closest('.zm-btn') || el.closest('div[role="button"]') || el;
+                            if (target && target.parentNode) target.parentNode.removeChild(target);
+                        }
+                    });
+                };
+
+                var observer = new MutationObserver(removeInviteControls);
+                observer.observe(document.documentElement, { childList: true, subtree: true });
+                setInterval(removeInviteControls, 1000);
+
+                // 3. Clipboard guard: prevent students from copying Zoom meeting links
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    var origWriteText = navigator.clipboard.writeText;
+                    navigator.clipboard.writeText = function(text) {
+                        if (typeof text === 'string' && (text.includes('zoom.us') || text.includes('pwd=') || text.includes('meeting'))) {
+                            console.warn('[Security] Clipboard copy of meeting link blocked for students');
+                            return Promise.resolve();
+                        }
+                        return origWriteText.apply(this, arguments);
+                    };
+                }
+                document.addEventListener('copy', function(e) {
+                    var sel = window.getSelection() ? window.getSelection().toString() : '';
+                    if (sel.includes('zoom.us') || sel.includes('pwd=')) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }
+                }, true);
+            } catch(e) {
+                console.warn('[NERMAI Security] Failed to attach student restrictions:', e);
+            }
+        }
 
         if (!data || !data.sdk) {
           throw new Error('Invalid session payload from server.');
@@ -268,7 +368,8 @@
         // 2. Init Zoom SDK (Client View)
         setStatus('Initializing meeting…');
         
-        var leaveUrl = apiUrl + '/meeting-hosts/close.html?sessionId=' + sessionId;
+        var portalOrigin = window.location.origin;
+        var leaveUrl = portalOrigin + '/meeting-hosts/close.html?v=2&sessionId=' + encodeURIComponent(sessionId || '') + '&portalOrigin=' + encodeURIComponent(portalOrigin);
 
         ZoomMtg.init({
           leaveUrl: leaveUrl,
@@ -295,57 +396,11 @@
                     ZoomMtg.showJoinAudioFunction({ show: true });
                 } catch(e) { console.warn('Could not configure join audio function', e); }
 
-                // Hide Invite button for students
+                // Hide Invite button for students via SDK
                 if (isStudent) {
                     try {
                         ZoomMtg.showInviteFunction({ show: false });
-                    } catch(e) { console.warn('Could not hide invite', e); }
-
-                    // Surgical DOM/CSS hiding strictly for Meeting Info & Invite buttons (protecting audio/mic controls)
-                    try {
-                        var style = document.createElement('style');
-                        style.innerHTML = `
-                            .meeting-info-icon__icon-wrap,
-                            .meeting-info-icon,
-                            .zm-btn[aria-label*="Meeting Information"],
-                            .zm-btn[aria-label*="Meeting Info"],
-                            [aria-label="Meeting Information"],
-                            [aria-label="Meeting Info"],
-                            [aria-label="Invite"],
-                            button[aria-label="Invite"],
-                            .participants-footer__invite-btn,
-                            .invite-button {
-                                display: none !important;
-                                pointer-events: none !important;
-                                opacity: 0 !important;
-                                width: 0 !important;
-                                height: 0 !important;
-                                position: absolute !important;
-                                left: -9999px !important;
-                            }
-                        `;
-                        document.head.appendChild(style);
-
-                        var observer = new MutationObserver(function() {
-                            // 1. Remove by class / aria-label (strictly invite & info)
-                            var elements = document.querySelectorAll('.meeting-info-icon__icon-wrap, .meeting-info-icon, [aria-label*="Meeting Info"], [aria-label*="Meeting Information"], [aria-label="Invite"], .participants-footer__invite-btn, .invite-button');
-                            elements.forEach(function(el) {
-                                if (el && el.parentNode) {
-                                    el.parentNode.removeChild(el);
-                                }
-                            });
-                            
-                            // 2. Remove by text content strictly for Invite button
-                            var buttons = document.querySelectorAll('button, a, div.zm-btn');
-                            buttons.forEach(function(btn) {
-                                var txt = (btn.textContent || '').trim().toLowerCase();
-                                if (txt === 'invite') {
-                                    if (btn.parentNode) btn.parentNode.removeChild(btn);
-                                }
-                            });
-                        });
-                        observer.observe(document.body, { childList: true, subtree: true });
-                    } catch(e) { console.warn('Could not inject DOM restrictions', e); }
+                    } catch(e) { console.warn('Could not hide invite via SDK', e); }
                 }
 
                 postBridgeEvent('MEETING_STARTED');

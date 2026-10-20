@@ -20,7 +20,7 @@ export const createRequest = handle(async (req) => {
   const studentId = req.user?.userId;
   if (!studentId) throw new AppError('Unauthorized', 401);
 
-  const { batchId, requestType, contentId, contentName, reason } = req.body;
+  const { batchId, requestType, contentId, contentName, reason, isLiveClass } = req.body;
   if (!requestType || !contentId || !reason) throw new AppError('Missing required fields', 400);
 
   // Pull name and roll number directly from the verified JWT — no Firestore lookup needed
@@ -29,7 +29,7 @@ export const createRequest = handle(async (req) => {
 
   const result = await service.createRequest(
     studentId, batchId || null, requestType, contentId, contentName || '', reason,
-    studentName, studentRegNo
+    studentName, studentRegNo, isLiveClass
   );
   return { success: true, data: result };
 });

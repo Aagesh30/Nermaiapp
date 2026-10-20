@@ -129,6 +129,48 @@ export class CampaignsController {
             });
 
             return res.status(201).json({ success: true, message: "Campaign created", data: { campaignId } });
+
+            // Fire-and-forget pushes after response is sent
+            // 1. Notify admins about new campaign creation
+            try {
+              const { sendPushNotification } = await import("../../../services/pushService");
+              sendPushNotification({
+                title: "📢 New Campaign Created",
+                body: `Campaign "${title}" has been created and is now active.`,
+                targetRole: "admin",
+                excludeUserId: createdBy || (req as any).user?.userId || null,
+                data: {
+                  targetTab: "crm", targetSub: "campaigns",
+                  screen: "crm", subTab: "campaigns",
+                  campaignId,
+                  dedupeId: `campaign_created_${campaignId}`
+                }
+              }).catch(() => {});
+            } catch (_) {}
+
+            // 2. If sendNotification=true, push campaign message to targeted students/guests
+            if (sendNotification) {
+              try {
+                const { sendPushNotification } = await import("../../../services/pushService");
+                const msgBody = notificationMessage || description || `New update: ${title}`;
+                // targetUsers: "free" | "guest" | "paid" | "both" | "all"
+                const pushRole = (targetUsers === "free" || targetUsers === "guest")
+                  ? "guest"
+                  : (targetUsers === "paid") ? "student" : "all";
+
+                sendPushNotification({
+                  title: `📣 ${title}`,
+                  body: msgBody,
+                  targetRole: pushRole as any,
+                  data: {
+                    targetTab: "dashboard", targetSub: "",
+                    screen: "dashboard", subTab: "",
+                    campaignId,
+                    dedupeId: `campaign_notif_${campaignId}_${Date.now()}`
+                  }
+                }).catch(() => {});
+              } catch (_) {}
+            }
         } catch (error: any) {
             return res.status(500).json({ success: false, message: error.message });
         }

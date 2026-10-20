@@ -589,6 +589,45 @@ export class StudentService {
     }
     await batch.commit();
 
+    // Dispatch push notification to students about granted QR access
+    try {
+      const { sendPushNotification } = await import('../../services/pushService');
+      if (type === 'batch' && batchId) {
+        sendPushNotification({
+          title: '✅ QR Payment Access Granted',
+          body: 'Payment QR code access has been granted for your batch. You can now pay fees.',
+          targetRole: 'student',
+          targetBatch: batchId,
+          excludeUserId: adminId,
+          data: {
+            targetTab: 'erp',
+            targetSub: 'pay-fees',
+            screen: 'erp',
+            subTab: 'pay-fees',
+            dedupeId: `qr_bulk_batch_${batchId}_${Date.now()}`
+          }
+        }).catch(() => {});
+      } else {
+        // Notify each student in target list
+        for (const st of targetStudents) {
+          sendPushNotification({
+            title: '✅ QR Access Approved',
+            body: 'Your temporary QR code payment access has been granted. You can now pay your fees.',
+            targetUserId: st.id,
+            excludeUserId: adminId,
+            data: {
+              targetTab: 'erp',
+              targetSub: 'pay-fees',
+              screen: 'erp',
+              subTab: 'pay-fees',
+              studentId: st.id,
+              dedupeId: `qr_bulk_${st.id}_${Date.now()}`
+            }
+          }).catch(() => {});
+        }
+      }
+    } catch (_) {}
+
     return { success: true, count: targetStudents.length };
   }
 
@@ -596,7 +635,7 @@ export class StudentService {
   async submitPaymentAcknowledgement(studentId: string, data: any, tenantId: string, reqUser?: any) {
     const doc = await this.resolveStudentDoc(studentId, reqUser);
     const student = doc.data()!;
-    const studentName = student.displayName || `${student.firstName || ''} ${student.lastName || ''}`.trim();
+    const studentName = student.displayName || `${student.firstName || ''} ${student.lastName || ''}`.trim() || 'A student';
     const rollNumber = student.rollNumber || student.rollNo || student.loginUsername || '';
 
     const payload = {
@@ -613,6 +652,27 @@ export class StudentService {
     };
 
     await db.collection('payment_acknowledgements').doc(payload.id).set(payload);
+
+    // Notify admins about new payment submission
+    try {
+      const { sendPushNotification } = await import('../../services/pushService');
+      sendPushNotification({
+        title: '💰 New Fee Payment Submitted',
+        body: `${studentName} (${rollNumber}) submitted payment proof${data.transactionId ? ` (Txn: ${data.transactionId})` : ''}.`,
+        targetRole: 'admin',
+        excludeUserId: doc.id,
+        data: {
+          targetTab: 'erp',
+          targetSub: 'qr-permissions',
+          screen: 'erp',
+          subTab: 'qr-permissions',
+          studentId: doc.id,
+          acknowledgementId: payload.id,
+          dedupeId: `pay_ack_${payload.id}`
+        }
+      }).catch(() => {});
+    } catch (_) {}
+
     return payload;
   }
 
@@ -645,11 +705,40 @@ export class StudentService {
     if (!doc.exists) {
       throw new AppError('Payment acknowledgement not found', 404);
     }
+    const ackData = doc.data() as any;
+    const targetStudentId = ackData?.studentId;
+
     await ref.update({
       status,
       updatedAt: new Date().toISOString(),
       updatedBy: adminId,
     });
+
+    // Notify student about payment approval or rejection
+    if (targetStudentId) {
+      try {
+        const { sendPushNotification } = await import('../../services/pushService');
+        const isApproved = status === 'approved';
+        sendPushNotification({
+          title: isApproved ? '✅ Fee Payment Verified' : '❌ Fee Payment Not Verified',
+          body: isApproved 
+            ? 'Your fee payment has been verified and approved by the academy.' 
+            : 'Your fee payment proof could not be verified. Please contact administration.',
+          targetUserId: targetStudentId,
+          excludeUserId: adminId,
+          data: {
+            targetTab: 'erp',
+            targetSub: 'pay-fees',
+            screen: 'erp',
+            subTab: 'pay-fees',
+            studentId: targetStudentId,
+            acknowledgementId,
+            dedupeId: `pay_ack_status_${acknowledgementId}_${status}`
+          }
+        }).catch(() => {});
+      } catch (_) {}
+    }
+
     return { success: true };
   }
 }

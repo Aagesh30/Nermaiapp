@@ -40,7 +40,32 @@ export class LiveSessionResolver {
       .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
       
     // Prefer sessions that are genuinely active over scheduled/draft if multiple exist (cleanup scenarios)
-    const activeSession = sessions.find(s => ['JOINING', 'HOST_CONNECTED', 'LIVE'].includes(s.status)) || sessions[0] || null;
+    const activeSession = sessions.find(s => ['JOINING', 'HOST_CONNECTED', 'LIVE', 'ATTENDANCE_RUNNING'].includes(s.status)) || sessions[0] || null;
+
+    if (activeSession) {
+      const now = Date.now();
+      const isLiveStatus = ['JOINING', 'HOST_CONNECTED', 'LIVE', 'ATTENDANCE_RUNNING'].includes(activeSession.status);
+      const startMs = activeSession.actualStartTime
+        ? new Date(activeSession.actualStartTime).getTime()
+        : activeSession.scheduledStartTime
+          ? new Date(activeSession.scheduledStartTime).getTime()
+          : classDoc?.scheduledStartTime
+            ? new Date(classDoc.scheduledStartTime).getTime()
+            : 0;
+      const durMins = activeSession.expectedDurationMinutes || classDoc?.expectedDurationMinutes || 60;
+      const durationMs = durMins * 60 * 1000;
+      const graceMs = 30 * 60 * 1000; // 30-min grace period after expected class end time
+
+      if (isLiveStatus && startMs > 0 && now > startMs + durationMs + graceMs) {
+        // Auto-expire zombie live session in DB & memory
+        activeSession.status = 'ENDED';
+        db.collection('live_sessions').doc(activeSession.id).update({
+          status: 'ENDED',
+          actualEndTime: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }).catch(err => console.warn('[LiveSessionResolver] Failed to auto-expire zombie session doc:', err?.message));
+      }
+    }
 
     // 2. Base Fallback (No active session created yet)
     if (!activeSession) {

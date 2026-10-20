@@ -27,7 +27,7 @@ export const StudentLobby: React.FC = () => {
     // IMPORTANT: preparePopup() must run synchronously on the click event
     // to pre-open about:blank before the async join flow begins.
     // This bypasses browser popup blockers.
-    meetingLauncher.preparePopup();
+    meetingLauncher.preparePopup(sessionId);
     startSession();
   };
 

@@ -12,11 +12,11 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
 import * as FileSystemLegacy from 'expo-file-system/legacy';
 import * as XLSX from 'xlsx';
 import { parseSyllabusWorkbook, ParsedSyllabusResult } from '../utils/excelSyllabusParser';
 import { CourseApi } from '../core/services';
+import { UniversalDropdown } from '../components/UniversalDropdown';
 
 interface MobileExcelSyllabusModalProps {
   isOpen: boolean;
@@ -108,37 +108,26 @@ export const MobileExcelSyllabusModal: React.FC<MobileExcelSyllabusModalProps> =
 
       let workbook: XLSX.WorkBook;
 
-      if (Platform.OS === 'web') {
-        // Web: Fetch uri as ArrayBuffer
+      // Universal read for Web and Native (Android/iOS)
+      const readLegacyBase64 = async (uri: string) => {
+        const fn = (FileSystemLegacy as any)?.readAsStringAsync || (FileSystemLegacy as any)?.default?.readAsStringAsync;
+        if (typeof fn === 'function') {
+          return await fn(uri, { encoding: 'base64' });
+        }
+        throw new Error('readAsStringAsync unavailable');
+      };
+
+      try {
+        const base64 = await readLegacyBase64(asset.uri);
+        workbook = XLSX.read(base64, { type: 'base64' });
+      } catch (legacyErr) {
         const res = await fetch(asset.uri);
         const arrayBuf = await res.arrayBuffer();
-        workbook = XLSX.read(arrayBuf, { type: 'array' });
-      } else {
-        // Native APK (Android/iOS): Read via legacy FileSystem or modern File
-        let base64 = '';
-        try {
-          if (FileSystemLegacy && typeof FileSystemLegacy.readAsStringAsync === 'function') {
-            base64 = await FileSystemLegacy.readAsStringAsync(asset.uri, {
-              encoding: FileSystemLegacy.EncodingType.Base64,
-            });
-          } else {
-            throw new Error('legacy readAsStringAsync unavailable');
-          }
-        } catch (legacyErr) {
-          try {
-            const fsFile = new (FileSystem as any).File(asset.uri);
-            if (typeof fsFile.base64 === 'function') {
-              base64 = await fsFile.base64();
-            } else {
-              throw new Error('File.base64 unavailable');
-            }
-          } catch {
-            base64 = await FileSystem.readAsStringAsync(asset.uri, {
-              encoding: (FileSystem as any).EncodingType?.Base64 || 'base64',
-            });
-          }
+        if (arrayBuf && arrayBuf.byteLength > 0) {
+          workbook = XLSX.read(arrayBuf, { type: 'array' });
+        } else {
+          throw new Error('Unable to read selected Excel file.');
         }
-        workbook = XLSX.read(base64, { type: 'base64' });
       }
 
       const parsed = parseSyllabusWorkbook(workbook, pickedName);
@@ -220,28 +209,18 @@ export const MobileExcelSyllabusModal: React.FC<MobileExcelSyllabusModalProps> =
             {/* Target Course Selector */}
             <View style={{ gap: 6 }}>
               <Text style={[styles.sectionLabel, { color: textSecondary }]}>Target Course</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-                {courses.map((c) => {
-                  const isSelected = selectedCourseId === c.id;
-                  return (
-                    <TouchableOpacity
-                      key={c.id}
-                      onPress={() => setSelectedCourseId(c.id)}
-                      style={[
-                        styles.chip,
-                        {
-                          backgroundColor: isSelected ? themeRed : inputBg,
-                          borderColor: isSelected ? themeRed : borderColor,
-                        },
-                      ]}
-                    >
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: isSelected ? '#fff' : textPrimary }}>
-                        {c.name || c.title || 'Course'}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
+              <UniversalDropdown
+                value={selectedCourseId}
+                options={courses.map((c) => ({
+                  label: c.name || c.title || 'Course',
+                  value: c.id
+                }))}
+                onSelect={(val) => setSelectedCourseId(val)}
+                placeholder="-- Select Target Course --"
+                darkMode={darkMode}
+                themeColor={themeRed}
+                iconName="school-outline"
+              />
             </View>
 
             {/* File Picker Section */}

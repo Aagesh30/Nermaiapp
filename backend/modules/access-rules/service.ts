@@ -276,6 +276,26 @@ export class AccessRulesService {
       }
     }
 
+    if (!hasTemporaryGrant && entityType === 'live_session') {
+      try {
+        const livePassSnap = await db.collection('content_access')
+          .where('studentId', '==', userId)
+          .where('status', '==', 'ACTIVE')
+          .get();
+        const now = new Date();
+        for (const doc of livePassSnap.docs) {
+          const g = doc.data();
+          if (!g.expiresAt || new Date(g.expiresAt) > now) {
+            if (g.entityType === 'LIVE_SESSION' || g.entityId === 'ALL_LIVE_CLASSES') {
+              hasTemporaryGrant = true;
+              grantExpiresAt = g.expiresAt;
+              break;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
     // 5. Final capability resolution
     if (accessCtx.batchIds.length > 0 && (entityType === 'live_session' || entityType === 'class')) {
       if (!defaultCapabilityAllows) {

@@ -87,6 +87,25 @@ export class FreebiesController {
                     deletedBy: null
                 });
 
+                // Notify admins & super admins about the new freebie (fire-and-forget)
+                try {
+                    const { sendPushNotification } = await import("../../../services/pushService");
+                    sendPushNotification({
+                        title: "🎁 New Freebie Published",
+                        body: `"${title}" is now available as a freebie resource in the CRM.`,
+                        targetRole: "admin",
+                        excludeUserId: createdBy && createdBy !== "admin" ? createdBy : null,
+                        data: {
+                            targetTab: "crm",
+                            targetSub: "freebies",
+                            screen: "crm",
+                            subTab: "freebies",
+                            freebieId,
+                            dedupeId: `freebie_${freebieId}`
+                        }
+                    }).catch(err => console.log("[Push] Freebie push error:", err?.message));
+                } catch (_) {}
+
                 return res.status(201).json({
                     success: true,
                     message: "Freebie created successfully",

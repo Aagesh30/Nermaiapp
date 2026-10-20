@@ -193,6 +193,15 @@ export function parseStudentUploadFromBase64(base64: string, fileName: string, a
   return parseStudentWorkbook(workbook, fileName, availableBatches);
 }
 
+export function parseStudentUploadFromArrayBuffer(buffer: ArrayBuffer, fileName: string, availableBatches: Array<{ id: string; batchName: string; course?: string }>): ParsedStudentUploadResult {
+  const workbook = XLSX.read(buffer, { type: 'array' });
+  return parseStudentWorkbook(workbook, fileName, availableBatches);
+}
+
+export function parseStudentUploadFromWorkbook(workbook: XLSX.WorkBook, fileName: string, availableBatches: Array<{ id: string; batchName: string; course?: string }>): ParsedStudentUploadResult {
+  return parseStudentWorkbook(workbook, fileName, availableBatches);
+}
+
 function parseStudentWorkbook(workbook: XLSX.WorkBook, fileName: string, availableBatches: Array<{ id: string; batchName: string; course?: string }>): ParsedStudentUploadResult {
   // Use the first sheet or find sheet with student data
   const sheetName = workbook.SheetNames[0];

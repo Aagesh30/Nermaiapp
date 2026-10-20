@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, Suspense, useMemo } from "react";
 import {
   StyleSheet,
-  Text,
+  Text as RNText,
   View,
   ScrollView,
   TextInput,
@@ -31,6 +31,27 @@ const safeInitialMetrics = initialWindowMetrics || {
   insets: { top: androidStatusBarHeight, left: 0, right: 0, bottom: 0 },
 };
 const safeInitialInsets = safeInitialMetrics.insets;
+
+// ── Global Accessibility Text Font Delta for Native Mobile (APK) ────────────────
+let globalSiteFontSizeDelta = 0;
+
+// Universal Text component: scales dynamically on APK when user changes font size (A- / A / A+)
+const Text = React.forwardRef<any, any>((props: any, ref: any) => {
+  if (Platform.OS === "web" || !globalSiteFontSizeDelta) {
+    return <RNText ref={ref} {...props} />;
+  }
+  const flat = StyleSheet.flatten(props.style);
+  if (flat && typeof flat.fontSize === "number") {
+    return (
+      <RNText
+        ref={ref}
+        {...props}
+        style={[props.style, { fontSize: Math.max(7, flat.fontSize + globalSiteFontSizeDelta) }]}
+      />
+    );
+  }
+  return <RNText ref={ref} {...props} />;
+});
 
 // Dynamically load HashRouter only on Web to prevent React Native mobile app crashes on startup
 let HashRouter: any = React.Fragment;
@@ -68,6 +89,8 @@ const CustomLeadsPage = React.lazy(() => import('./lms/admin/CustomLeadsPage'));
 const MergedLeadsAdmissionsPage = React.lazy(() => import('./lms/admin/MergedLeadsAdmissionsPage'));
 const DynamicApplicationModal = React.lazy(() => import('./lms/components/DynamicApplicationModal'));
 const SpecialMockRollNumberPage = React.lazy(() => import('./lms/admin/SpecialMockRollNumberPage').then(m => ({ default: m.SpecialMockRollNumberPage })));
+const GuestRecordingsAdminPage = React.lazy(() => import('./lms/admin/GuestRecordingsAdminPage').then(m => ({ default: m.GuestRecordingsAdminPage })));
+const GuestRecordingsPage = React.lazy(() => import('./lms/student/GuestRecordingsPage').then(m => ({ default: m.GuestRecordingsPage })));
 import { RNSkeleton, RNDashboardSkeleton, RNTableSkeleton, RNCardGridSkeleton, RNProfileSkeleton, RNFormSkeleton, RNContainerSkeleton, RNNoticeCardSkeleton, RNNoticeSectionSkeleton, RNSystemAlertCardSkeleton, RNClosedTestCardSkeleton, RNClosedTestsSectionSkeleton } from './lms/components/ui/RNSkeleton';
 import { UniversalTime12Picker } from './lms/components/UniversalTime12Picker';
 import { StudentAnalyticsDashboard } from './lms/analytics/StudentAnalyticsDashboard';
@@ -77,6 +100,9 @@ const getDirectImageUrl = (url: string): string => {
   if (!url || typeof url !== "string") return "";
   const trimmed = url.trim();
   if (trimmed.startsWith("data:image")) return trimmed;
+  if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://") && trimmed.length > 50) {
+    return `data:image/jpeg;base64,${trimmed}`;
+  }
   const match = trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/) || trimmed.match(/\/d\/([a-zA-Z0-9_-]+)/);
   if (match && match[1]) {
     return `https://lh3.googleusercontent.com/d/${match[1]}`;
@@ -284,15 +310,18 @@ const renderFormattedQuestion = (text: string, isTamil: boolean = false, baseFon
   if (!text) return null;
 
   const textColor = isTamil ? "#455a64" : "#212121";
-
   const fontWeight = isTamil ? "500" : "bold";
   const fontSize = isTamil ? baseFontSize - 1 : baseFontSize;
 
-  return (
-    <Text style={{ fontSize, fontWeight, color: textColor, lineHeight: fontSize * 1.45, fontStyle: isTamil ? "italic" : "normal" }}>
-      {String(text).trim()}
-    </Text>
-  );
+  const webTextStyle = Platform.OS === "web" ? ({
+    wordBreak: "normal",
+    overflowWrap: "break-word",
+    wordWrap: "break-word",
+    hyphens: "none",
+    WebkitHyphens: "none",
+  } as any) : {};
+
+  let rawStr = String(text).trim();
   rawStr = rawStr.replace(/^\d+[\.\)]\s*/, '');
 
   // Regex to detect statement list item prefixes like "1)", "2)", "a)", "b)", "(a)", "(1)", "a."
@@ -310,7 +339,15 @@ const renderFormattedQuestion = (text: string, isTamil: boolean = false, baseFon
   // If no numbered/lettered list statements found (less than 2 items), render standard clean text
   if (matches.length < 2) {
     return (
-      <Text style={{ fontSize, fontWeight, color: textColor, lineHeight: fontSize * 1.45, marginTop: 4 }}>
+      <Text style={{
+        fontSize,
+        fontWeight,
+        color: textColor,
+        lineHeight: fontSize * 1.45,
+        marginTop: 4,
+        fontStyle: isTamil ? "italic" : "normal",
+        ...webTextStyle
+      }}>
         {rawStr}
       </Text>
     );
@@ -344,24 +381,24 @@ const renderFormattedQuestion = (text: string, isTamil: boolean = false, baseFon
   return (
     <View style={{ gap: 6, marginTop: 4, marginBottom: 4 }}>
       {Boolean(introHeader) && (
-        <Text style={{ fontSize, fontWeight, color: textColor, lineHeight: fontSize * 1.4, marginBottom: 2 }}>
+        <Text style={{ fontSize, fontWeight, color: textColor, lineHeight: fontSize * 1.4, marginBottom: 2, fontStyle: isTamil ? "italic" : "normal", ...webTextStyle }}>
           {introHeader}
         </Text>
       )}
 
       {items.map((item, idx) => (
         <View key={idx} style={{ flexDirection: "row", alignItems: "flex-start", paddingLeft: 6, paddingRight: 4 }}>
-          <Text style={{ fontSize: fontSize - 0.5, fontWeight: "800", color: "#c62828", minWidth: 26, marginRight: 4 }}>
+          <Text style={{ fontSize: fontSize - 0.5, fontWeight: "800", color: "#c62828", minWidth: 26, marginRight: 4, ...webTextStyle }}>
             {item.num}
           </Text>
-          <Text style={{ flex: 1, fontSize: fontSize - 0.5, fontWeight, color: textColor, lineHeight: (fontSize - 0.5) * 1.45 }}>
+          <Text style={{ flex: 1, fontSize: fontSize - 0.5, fontWeight, color: textColor, lineHeight: (fontSize - 0.5) * 1.45, fontStyle: isTamil ? "italic" : "normal", ...webTextStyle }}>
             {item.text}
           </Text>
         </View>
       ))}
 
       {Boolean(outroText) && (
-        <Text style={{ fontSize, fontWeight, color: textColor, lineHeight: fontSize * 1.4, marginTop: 4 }}>
+        <Text style={{ fontSize, fontWeight, color: textColor, lineHeight: fontSize * 1.4, marginTop: 4, fontStyle: isTamil ? "italic" : "normal", ...webTextStyle }}>
           {outroText}
         </Text>
       )}
@@ -403,220 +440,8 @@ import { doc, setDoc, onSnapshot, collection, deleteDoc, query, where, addDoc, g
 
 const USE_NATIVE_DRIVER = Platform.OS !== "web";
 
-interface UniversalDropdownOption {
-  label: string;
-  value: string;
-  disabled?: boolean;
-}
+import { UniversalDropdown, UniversalDropdownOption } from './lms/components/UniversalDropdown';
 
-interface UniversalDropdownProps {
-  value: string;
-  options: UniversalDropdownOption[];
-  onSelect: (val: string) => void;
-  placeholder?: string;
-  disabled?: boolean;
-  darkMode?: boolean;
-  style?: any;
-}
-
-const UniversalDropdown: React.FC<UniversalDropdownProps> = ({
-  value,
-  options,
-  onSelect,
-  placeholder = "-- Select --",
-  disabled = false,
-  darkMode = false,
-  style
-}) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const selectedOption = options.find(o => String(o.value) === String(value));
-
-  if (Platform.OS === 'web') {
-    return (
-      <select
-        disabled={disabled}
-        value={value}
-        onChange={e => onSelect((e.target as any).value)}
-        style={{
-          width: "100%",
-          height: 38,
-          borderRadius: 8,
-          padding: 8,
-          backgroundColor: darkMode ? "#2a2a2a" : "#fff",
-          color: darkMode ? "#fff" : "#212121",
-          border: "1px solid " + (darkMode ? "#444" : "#ccc"),
-          opacity: disabled ? 0.6 : 1,
-          ...style
-        }}
-      >
-        {placeholder && !options.some(o => o.value === "") ? <option value="">{placeholder}</option> : null}
-        {options.map(opt => (
-          <option key={opt.value} value={opt.value} disabled={opt.disabled}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
-    );
-  }
-
-  return (
-    <>
-      <TouchableOpacity
-        disabled={disabled}
-        onPress={() => setIsOpen(true)}
-        style={[styles?.input || {
-          width: "100%",
-          minHeight: 40,
-          borderRadius: 8,
-          paddingHorizontal: 12,
-          paddingVertical: 10,
-          backgroundColor: darkMode ? "#2a2a2a" : "#fff",
-          borderWidth: 1,
-          borderColor: darkMode ? "#444" : "#ccc",
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          opacity: disabled ? 0.6 : 1
-        }, {
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          opacity: disabled ? 0.6 : 1
-        }, style]}
-      >
-        <Text
-          numberOfLines={1}
-          style={{
-            fontSize: 13,
-            color: selectedOption ? (darkMode ? "#fff" : "#212121") : (darkMode ? "#888" : "#999"),
-            fontWeight: selectedOption ? "600" : "normal",
-            flex: 1,
-            marginRight: 6
-          }}
-        >
-          {selectedOption ? selectedOption.label : (placeholder || "-- Select --")}
-        </Text>
-        <Ionicons name="chevron-down" size={16} color={darkMode ? "#aaa" : "#666"} />
-      </TouchableOpacity>
-
-      {isOpen && (
-        <Modal
-          visible={true}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setIsOpen(false)}
-        >
-          <TouchableOpacity
-            activeOpacity={1}
-            onPress={() => setIsOpen(false)}
-            style={{
-              flex: 1,
-              backgroundColor: "rgba(0,0,0,0.6)",
-              justifyContent: "center",
-              alignItems: "center",
-              padding: 20
-            }}
-          >
-            <TouchableOpacity
-              activeOpacity={1}
-              style={{
-                width: "100%",
-                maxWidth: 360,
-                maxHeight: "75%",
-                backgroundColor: darkMode ? "#1e1e2d" : "#fff",
-                borderRadius: 14,
-                overflow: "hidden",
-                borderWidth: 1,
-                borderColor: darkMode ? "#333" : "#e0e0e0",
-                elevation: 10
-              }}
-            >
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  paddingHorizontal: 16,
-                  paddingVertical: 12,
-                  borderBottomWidth: 1,
-                  borderBottomColor: darkMode ? "#333" : "#eee",
-                  backgroundColor: darkMode ? "#161622" : "#f8f9fa"
-                }}
-              >
-                <Text style={{ fontWeight: "bold", fontSize: 14, color: darkMode ? "#fff" : "#111" }}>
-                  {placeholder ? placeholder.replace(/^[-\s+]+|[-\s+]+$/g, "") || "Select an option" : "Select an option"}
-                </Text>
-                <TouchableOpacity onPress={() => setIsOpen(false)} style={{ padding: 4 }}>
-                  <Ionicons name="close" size={20} color={darkMode ? "#aaa" : "#666"} />
-                </TouchableOpacity>
-              </View>
-
-              <ScrollView style={{ maxHeight: 320 }} contentContainerStyle={{ paddingVertical: 4 }}>
-                {placeholder && !options.some(o => o.value === "") && (
-                  <TouchableOpacity
-                    onPress={() => {
-                      onSelect("");
-                      setIsOpen(false);
-                    }}
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      paddingHorizontal: 16,
-                      paddingVertical: 12,
-                      borderBottomWidth: 1,
-                      borderBottomColor: darkMode ? "#282838" : "#f1f3f5",
-                      backgroundColor: value === "" ? (darkMode ? "#342232" : "#ffebee") : "transparent"
-                    }}
-                  >
-                    <Text style={{ fontSize: 13, color: darkMode ? "#888" : "#999", fontStyle: "italic" }}>
-                      {placeholder}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-                {options.map(opt => {
-                  const isSelected = String(opt.value) === String(value);
-                  return (
-                    <TouchableOpacity
-                      key={opt.value}
-                      disabled={opt.disabled}
-                      onPress={() => {
-                        onSelect(opt.value);
-                        setIsOpen(false);
-                      }}
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        paddingHorizontal: 16,
-                        paddingVertical: 12,
-                        borderBottomWidth: 1,
-                        borderBottomColor: darkMode ? "#282838" : "#f1f3f5",
-                        backgroundColor: isSelected ? (darkMode ? "#342232" : "#ffebee") : "transparent",
-                        opacity: opt.disabled ? 0.4 : 1
-                      }}
-                    >
-                      <Text
-                        style={{
-                          fontSize: 13,
-                          color: isSelected ? "#c62828" : (darkMode ? "#e0e0e0" : "#333"),
-                          fontWeight: isSelected ? "bold" : "normal",
-                          flex: 1
-                        }}
-                      >
-                        {opt.label}
-                      </Text>
-                      {isSelected && <Ionicons name="checkmark-circle" size={18} color="#c62828" />}
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </Modal>
-      )}
-    </>
-  );
-};
 
 const AppsScriptGuideCard = ({ darkMode }: { darkMode: boolean }) => {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
@@ -2098,14 +1923,15 @@ function SplashScreen({ onDone }: { onDone: () => void }) {
         {/* Logo ring */}
         <View style={{
           width: 120, height: 120, borderRadius: 60,
-          backgroundColor: "rgba(255,255,255,0.12)",
+          backgroundColor: "#FFFFFF",
           alignItems: "center", justifyContent: "center",
-          borderWidth: 2, borderColor: "rgba(255,255,255,0.25)",
-          shadowColor: "#000", shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.4, shadowRadius: 16, elevation: 10
+          borderWidth: 2, borderColor: "rgba(255,255,255,0.4)",
+          shadowColor: "#000", shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.4, shadowRadius: 16, elevation: 10,
+          overflow: "hidden"
         }}>
           <Image
             source={require("./assets/logo.png")}
-            style={{ width: 90, height: 90, borderRadius: 45 }}
+            style={{ width: 120, height: 120, borderRadius: 60 }}
             resizeMode="cover"
           />
         </View>
@@ -3965,11 +3791,129 @@ function MainApp() {
   const isMobile = screenWidth < 768;
   const insets = useSafeAreaInsets();
   const [user, setUser] = useState<any>(null);
-  const isAdmin = user && ["admin", "staff", "super_admin", "editor", "contributor", "developer"].includes(user.role);
+  const isAdmin = user && ["admin", "staff", "super_admin", "coordinator", "personal_admin", "contributor", "developer"].includes(user.role);
   const isTeacher = user && user.role === "teacher";
   const isProtectedRole = !isAdmin && !isTeacher;
   const [activeTab, setActiveTab] = useState(initialNav.activeTabVal);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
+
+  // Site-Wide & Exam Accessibility Font Size Delta (-4 to +8px)
+  const applyTextFontSizeDelta = (delta: number) => {
+    globalSiteFontSizeDelta = delta;
+    if (Platform.OS === "web" && typeof document !== "undefined") {
+      try {
+        // Strictly eliminate any browser / body / root zoom styles
+        if (document.body && (document.body.style as any).zoom) {
+          (document.body.style as any).zoom = "";
+        }
+        const rootEl = document.getElementById("root");
+        if (rootEl && (rootEl.style as any).zoom) {
+          (rootEl.style as any).zoom = "";
+        }
+
+        let styleTag = document.getElementById("nermai-font-override-sheet") as HTMLStyleElement;
+        if (!styleTag) {
+          styleTag = document.createElement("style");
+          styleTag.id = "nermai-font-override-sheet";
+          document.head.appendChild(styleTag);
+        }
+
+        if (delta === 0) {
+          styleTag.innerHTML = "";
+          return;
+        }
+
+        let css = "";
+        // 1. Direct inline styles on all React Native Text elements: override ONLY font-size
+        for (let s = 8; s <= 50; s++) {
+          const target = s + delta;
+          css += `[style*="font-size: ${s}px"], [style*="font-size:${s}px"] { font-size: ${target}px !important; }\n`;
+        }
+
+        // 2. React Native Web StyleSheet atomic rules (.r-fontSize-*)
+        try {
+          for (let i = 0; i < document.styleSheets.length; i++) {
+            const sheet = document.styleSheets[i];
+            if (sheet === styleTag.sheet) continue;
+            try {
+              const rules = sheet.cssRules || sheet.rules;
+              if (!rules) continue;
+              for (let j = 0; j < rules.length; j++) {
+                const rule = rules[j] as CSSStyleRule;
+                if (rule.selectorText && rule.selectorText.includes("r-fontSize-")) {
+                  const currentSizeStr = rule.style.fontSize;
+                  if (currentSizeStr && currentSizeStr.endsWith("px")) {
+                    const currentSize = parseFloat(currentSizeStr);
+                    if (!isNaN(currentSize)) {
+                      css += `${rule.selectorText} { font-size: ${currentSize + delta}px !important; }\n`;
+                    }
+                  }
+                }
+              }
+            } catch (_) {}
+          }
+        } catch (_) {}
+
+        styleTag.innerHTML = css;
+      } catch (_) {}
+    }
+  };
+
+  const [siteFontSizeDelta, setSiteFontSizeDelta] = useState<number>(() => {
+    try {
+      if (typeof localStorage !== "undefined") {
+        const saved = localStorage.getItem("site_font_size_delta");
+        if (saved !== null) {
+          const parsed = parseInt(saved, 10);
+          if (!isNaN(parsed)) {
+            globalSiteFontSizeDelta = parsed;
+            return parsed;
+          }
+        }
+      }
+    } catch {}
+    return 0;
+  });
+
+  const changeFontSizeDelta = (updater: number | ((prev: number) => number)) => {
+    setSiteFontSizeDelta(prev => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      const clamped = Math.max(-4, Math.min(8, next));
+      globalSiteFontSizeDelta = clamped;
+      try {
+        if (typeof localStorage !== "undefined") {
+          localStorage.setItem("site_font_size_delta", String(clamped));
+          localStorage.removeItem("nermai_font_size_delta");
+        }
+        AsyncStorage.setItem("site_font_size_delta", String(clamped)).catch(() => {});
+        applyTextFontSizeDelta(clamped);
+      } catch {}
+      return clamped;
+    });
+  };
+
+  useEffect(() => {
+    const initFontDelta = async () => {
+      try {
+        let savedVal: string | null = null;
+        if (typeof localStorage !== "undefined") {
+          savedVal = localStorage.getItem("site_font_size_delta");
+        }
+        if (!savedVal) {
+          savedVal = await AsyncStorage.getItem("site_font_size_delta");
+        }
+        if (savedVal !== null) {
+          const val = parseInt(savedVal, 10);
+          if (!isNaN(val)) {
+            globalSiteFontSizeDelta = val;
+            setSiteFontSizeDelta(val);
+            applyTextFontSizeDelta(val);
+          }
+        }
+      } catch (_) {}
+    };
+    initFontDelta();
+  }, []);
 
   // Root Session Gatekeeper & Splash Orchestrator
   const [authGate, setAuthGate] = useState<"checking" | "authenticated" | "unauthenticated">("checking");
@@ -5138,6 +5082,7 @@ function MainApp() {
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const [currentQuestionIdx, setCurrentQuestionIdx] = useState(0);
   const [answers, setAnswers] = useState<Record<string, number>>({});
+  const [examFontSizeDelta, setExamFontSizeDelta] = useState<number>(0);
   const [showCalendar, setShowCalendar] = useState(false);
   const [showIpConfig, setShowIpConfig] = useState(false);
   const [showHamburger, setShowHamburger] = useState(false);
@@ -5194,8 +5139,8 @@ function MainApp() {
   const [guestNameInput, setGuestNameInput] = useState("");
   const [guestPhoneInput, setGuestPhoneInput] = useState("");
   const [guestConsentChecked, setGuestConsentChecked] = useState(false);
-  const [guestContentTab, setGuestContentTab] = useState<"home" | "resources" | "tests" | "apply">(() => {
-    if (initialNav.guestTabVal === "resources" || initialNav.guestTabVal === "tests" || initialNav.guestTabVal === "apply") {
+  const [guestContentTab, setGuestContentTab] = useState<"home" | "recordings" | "resources" | "tests" | "apply">(() => {
+    if (initialNav.guestTabVal === "recordings" || initialNav.guestTabVal === "resources" || initialNav.guestTabVal === "tests" || initialNav.guestTabVal === "apply") {
       return initialNav.guestTabVal;
     }
     return "home";
@@ -5343,6 +5288,23 @@ function MainApp() {
         }
       }
     }
+
+    const unsubscribeClick = setupNotificationClickListener((data: Record<string, any>) => {
+      try {
+        const rawTab = String(data?.targetTab || data?.screen || "").toLowerCase();
+        const rawSub = String(data?.targetSub || data?.subTab || "").toLowerCase();
+        if (rawTab) {
+          setActiveTab(rawTab);
+          if (rawSub && typeof window !== "undefined") {
+            window.location.hash = `#${rawTab}/${rawSub}`;
+          }
+        }
+      } catch (_) {}
+    });
+
+    return () => {
+      if (typeof unsubscribeClick === "function") unsubscribeClick();
+    };
   }, [user]);
 
   const handleEnableWebPushClick = async () => {
@@ -6119,7 +6081,10 @@ function MainApp() {
 
       // ── 1. GUEST VIEW NAVIGATION ──
       if (role === "guest") {
-        if (rawTab === "test" || rawTab === "tests" || rawSub === "tests" || rawSub === "available") {
+        if (rawTab === "recordings" || rawSub === "recordings" || rawTab === "classes" || rawSub === "classes") {
+          setGuestTab("recordings");
+          setGuestContentTab("recordings");
+        } else if (rawTab === "test" || rawTab === "tests" || rawSub === "tests" || rawSub === "available") {
           setGuestTab("tests");
           setGuestContentTab("tests");
         } else if (rawTab === "resources" || rawSub === "resources" || rawTab === "lms" || rawSub === "daily-content") {
@@ -6314,7 +6279,10 @@ function MainApp() {
       const rawTab = String(data?.targetTab || data?.screen || data?.tab || "").trim().toLowerCase();
       const rawSub = String(data?.targetSub || data?.subTab || data?.sub || "").trim().toLowerCase();
       setTimeout(() => {
-        if (rawTab === "test" || rawTab === "tests" || rawSub === "tests" || rawSub === "available") {
+        if (rawTab === "recordings" || rawSub === "recordings" || rawTab === "classes" || rawSub === "classes") {
+          setGuestTab("recordings");
+          setGuestContentTab("recordings");
+        } else if (rawTab === "test" || rawTab === "tests" || rawSub === "tests" || rawSub === "available") {
           setGuestTab("tests");
           setGuestContentTab("tests");
         } else if (rawTab === "resources" || rawSub === "resources" || rawTab === "lms" || rawSub === "daily-content") {
@@ -7241,7 +7209,7 @@ function MainApp() {
   const [scriptCopied, setScriptCopied] = useState(false);
 
   const loadDriveConfig = async () => {
-    if (!user || !["admin", "super_admin", "developer", "staff"].includes(user.role)) return;
+    if (!user || !["admin", "super_admin", "developer", "staff", "coordinator", "personal_admin"].includes(user.role)) return;
     try {
       const res = await api.get("/developer/drive-config");
       // Backend returns { success: true, data: { appsScriptUrl, rootFolderId } }
@@ -7562,11 +7530,15 @@ function MainApp() {
     { key: "fees_management", label: "ERP — Tuition Fees & Ledger", icon: "cash-outline", category: "ERP" },
     { key: "id_card", label: "ERP — ID Card Generation", icon: "card-outline", category: "ERP" },
     { key: "hall_ticket", label: "ERP — Hall Ticket Generation", icon: "ticket-outline", category: "ERP" },
-    { key: "profile_requests", label: "ERP — Profile Edit Approvals", icon: "checkmark-circle-outline", category: "ERP" },
-    { key: "offline_attendance", label: "ERP — Offline Attendance Registry", icon: "clipboard-outline", category: "ERP" },
-    { key: "analytics", label: "ERP — Analytics & Reports", icon: "analytics-outline", category: "ERP" },
-    { key: "notices_announcements", label: "ERP — Create New Notice & Notification", icon: "notifications-outline", category: "ERP" },
+    { key: "profile_requests", label: "ERP — Profile Requests", icon: "person-add-outline", category: "ERP" },
+    { key: "profile_edit_permissions", label: "ERP — Profile Edit Permissions", icon: "shield-checkmark-outline", category: "ERP" },
+    { key: "security_alerts", label: "ERP — Security Alerts", icon: "alert-circle-outline", category: "ERP" },
+    { key: "offline_attendance", label: "ERP — Attendance Registry", icon: "clipboard-outline", category: "ERP" },
+    { key: "notices_announcements", label: "ERP — Notices & Announcements", icon: "notifications-outline", category: "ERP" },
     { key: "qr_permissions", label: "ERP — QR Code Permissions", icon: "qr-code-outline", category: "ERP" },
+    { key: "approvals_queue", label: "ERP — Approvals Queue", icon: "checkmark-circle-outline", category: "ERP" },
+    { key: "analytics", label: "ERP — Analytics & Reports", icon: "analytics-outline", category: "ERP" },
+    { key: "drive_storage", label: "ERP — Drive and Storage", icon: "cloud-upload-outline", category: "ERP" },
     // ── LMS ──────────────────────────────────────────────────────────────
     { key: "lms_sacs_access", label: "LMS — Access Control (SACS)", icon: "shield-checkmark-outline", category: "LMS", subCategory: "ACCESS CONTROL" },
     { key: "lms_live_classes", label: "LMS — Live & Scheduled Classes", icon: "videocam-outline", category: "LMS", subCategory: "LEARNING" },
@@ -7812,10 +7784,13 @@ function MainApp() {
       case "id-card": return "id_card";
       case "qr-permissions": return "qr_permissions";
       case "profile-requests": return "profile_requests";
-      case "edit-permissions": return "profile_requests";
+      case "edit-permissions": return "profile_edit_permissions";
       case "offline-attendance": return "offline_attendance";
       case "staff": return "staff_management";
+      case "device-alerts": return "security_alerts";
+      case "approvals": return "approvals_queue";
       case "analytics": return "analytics";
+      case "drive": return "drive_storage";
       default: return "";
     }
   };
@@ -8588,6 +8563,7 @@ function MainApp() {
     }
 
     // ── NATIVE (iOS / Android): Use React Native Modal ──
+    const imageUri = previewImageUri ? (getDirectImageUrl(previewImageUri) || previewImageUri) : "";
     return (
       <Modal
         visible={true}
@@ -8595,20 +8571,35 @@ function MainApp() {
         animationType="fade"
         onRequestClose={() => setPreviewImageUri(null)}
       >
-        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.85)", justifyContent: "center", alignItems: "center" }}>
-          <View style={{ width: "90%", backgroundColor: darkMode ? "#1e1e1e" : "#ffffff", borderRadius: 12, overflow: "hidden", padding: 16 }}>
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={() => setPreviewImageUri(null)}
+          style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.85)", justifyContent: "center", alignItems: "center", padding: 16 }}
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={(e) => e.stopPropagation()}
+            style={{ width: "94%", maxWidth: 420, backgroundColor: darkMode ? "#1e1e1e" : "#ffffff", borderRadius: 12, overflow: "hidden", padding: 16 }}
+          >
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <Text style={{ fontSize: 16, fontWeight: "bold", color: darkMode ? "#e0e0e0" : "#212121", flex: 1 }}>{previewImageTitle}</Text>
+              <Text style={{ fontSize: 15, fontWeight: "bold", color: darkMode ? "#e0e0e0" : "#212121", flex: 1, marginRight: 8 }} numberOfLines={1}>{previewImageTitle}</Text>
               <TouchableOpacity onPress={() => setPreviewImageUri(null)}>
                 <Ionicons name="close-circle" size={26} color="#c62828" />
               </TouchableOpacity>
             </View>
-            <Image
-              source={{ uri: previewImageUri }}
-              style={{ width: "100%", height: 350, resizeMode: "contain", borderRadius: 8 }}
-            />
-          </View>
-        </View>
+            <View style={{ width: "100%", height: 380, borderRadius: 8, overflow: "hidden", backgroundColor: darkMode ? "#121212" : "#f1f5f9", justifyContent: "center", alignItems: "center" }}>
+              {imageUri ? (
+                <Image
+                  source={{ uri: imageUri }}
+                  resizeMode="contain"
+                  style={{ width: "100%", height: "100%" }}
+                />
+              ) : (
+                <Text style={{ color: "#9e9e9e", fontSize: 13 }}>No image preview available</Text>
+              )}
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
     );
   };
@@ -9150,7 +9141,7 @@ function MainApp() {
             if (rawUser) savedUserObj = JSON.parse(rawUser);
           } catch { }
 
-          const isAdminOrDev = savedUserObj && ["admin", "super_admin", "developer", "staff"].includes(savedUserObj.role);
+          const isAdminOrDev = savedUserObj && ["admin", "super_admin", "developer", "staff", "coordinator", "personal_admin"].includes(savedUserObj.role);
 
           const keysToRemove: string[] = [];
           for (let i = 0; i < localStorage.length; i++) {
@@ -9386,7 +9377,7 @@ function MainApp() {
   // no manual page refresh needed.
   useEffect(() => {
     const userId = user?.userId || user?.user_id || user?.sub || user?.id;
-    const allowedStaffRoles = ["admin", "staff", "teacher", "editor", "contributor"];
+    const allowedStaffRoles = ["admin", "staff", "teacher", "coordinator", "personal_admin", "contributor"];
     if (!userId || !user || !user.role || !allowedStaffRoles.includes(user.role)) return;
 
     // Data-reload mapping: featureKey → loader function
@@ -10749,7 +10740,7 @@ function MainApp() {
 
   // True Real-Time (0-second delay) Snapshot Listener for Admin Profile Requests Queue
   useEffect(() => {
-    if (!user || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "staff")) return;
+    if (!user || !isAdmin) return;
 
     const requestsQuery = query(
       collection(db, "profile_requests")
@@ -10794,7 +10785,7 @@ function MainApp() {
 
   // True Real-Time (0-second delay) Snapshot Listener for Role Permissions Matrix
   useEffect(() => {
-    if (!user || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "staff" && user.role !== "developer")) return;
+    if (!user || !isAdmin) return;
 
     let unsub: (() => void) | null = null;
     try {
@@ -10805,7 +10796,7 @@ function MainApp() {
             perms[docSnap.id] = docSnap.data();
           });
           setRolePermissions(perms);
-          const defaultRoleKeys = ["super_admin", "admin", "editor", "contributor"];
+          const defaultRoleKeys = ["super_admin", "admin", "contributor"];
           const detected = Object.keys(perms).filter(k => !defaultRoleKeys.includes(k));
           if (detected.length > 0) setCustomRoles(detected);
         }
@@ -11051,7 +11042,7 @@ function MainApp() {
 
   // True Real-Time (0-second delay) Snapshot Listener for Admissions
   useEffect(() => {
-    if (!user || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "staff")) return;
+    if (!user || !isAdmin) return;
     let isFirstAdmissionSnapshot = true;
     try {
       const admissionsQuery = query(collection(db, "admissions"));
@@ -11095,7 +11086,7 @@ function MainApp() {
 
   // True Real-Time (0-second delay) Snapshot Listener for Leads & Custom Leads
   useEffect(() => {
-    if (!user || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "staff")) return;
+    if (!user || !isAdmin) return;
     let isFirstLeadSnapshot = true;
     try {
       const leadsQuery = query(collection(db, "leads"));
@@ -11176,7 +11167,7 @@ function MainApp() {
 
   // True Real-Time (0-second delay) Snapshot Listener for Website Inquiries
   useEffect(() => {
-    if (!user || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "staff")) return;
+    if (!user || !isAdmin) return;
     let isFirstInquirySnapshot = true;
     try {
       const inquiriesQuery = query(collection(db, "inquiries"));
@@ -16619,43 +16610,29 @@ function MainApp() {
                         <option value="__NEW_CUSTOM__">➕ Add New / Custom Subject...</option>
                       </select>
                     ) : (
-                      <View style={{ gap: 6 }}>
-                        <TouchableOpacity
-                          onPress={() => {
-                            const available = uniqueSubjects.length > 0 ? uniqueSubjects : ["History", "Geography", "Polity", "Economy", "Current Affairs", "General Science", "Aptitude & CSAT"];
-                            Alert.alert(
-                              "Select Subject",
-                              "Choose a subject or add a custom name:",
-                              [
-                                ...available.map((sName) => ({
-                                  text: sName,
-                                  onPress: () => updateSection(idx, { isCustom: false, subject: sName, customSubject: "" })
-                                })),
-                                {
-                                  text: "➕ Add Custom Subject...",
-                                  onPress: () => updateSection(idx, { isCustom: true, subject: sec.customSubject || "" })
-                                },
-                                { text: "Cancel", style: "cancel" }
-                              ]
-                            );
+                      <View style={{ gap: 6, zIndex: 100 - idx }}>
+                        <UniversalDropdown
+                          value={isCustom ? "__NEW_CUSTOM__" : (sec.subject || "")}
+                          options={[
+                            { label: "-- Select Subject --", value: "" },
+                            ...(uniqueSubjects.length > 0 ? uniqueSubjects : ["History", "Geography", "Polity", "Economy", "Current Affairs", "General Science", "Aptitude & CSAT"]).map((sName) => ({
+                              label: sName,
+                              value: sName
+                            })),
+                            { label: "➕ Add Custom Subject...", value: "__NEW_CUSTOM__" }
+                          ]}
+                          onSelect={(val) => {
+                            if (val === "__NEW_CUSTOM__") {
+                              updateSection(idx, { isCustom: true, subject: sec.customSubject || "" });
+                            } else {
+                              updateSection(idx, { isCustom: false, subject: val, customSubject: "" });
+                            }
                           }}
-                          style={{
-                            height: 40,
-                            borderRadius: 8,
-                            paddingHorizontal: 12,
-                            borderWidth: 1.5,
-                            borderColor: darkMode ? "#475569" : "#cbd5e1",
-                            backgroundColor: darkMode ? "#2d2d2d" : "#f8fafc",
-                            flexDirection: "row",
-                            alignItems: "center",
-                            justifyContent: "space-between"
-                          }}
-                        >
-                          <Text style={{ fontSize: 13, fontWeight: "600", color: sec.subject ? (darkMode ? "#f1f5f9" : "#1e293b") : "#999" }}>
-                            {isCustom ? (sec.subject ? sec.subject + " (Custom)" : "+ Custom Subject...") : (sec.subject || "-- Tap to Choose Subject --")}
-                          </Text>
-                          <Ionicons name="chevron-down" size={16} color={darkMode ? "#aaa" : "#64748b"} />
-                        </TouchableOpacity>
+                          placeholder="-- Select Subject --"
+                          darkMode={darkMode}
+                          themeColor="#c62828"
+                          iconName="book-outline"
+                        />
                       </View>
                     )}
 
@@ -22005,10 +21982,24 @@ function MainApp() {
   // 3. Unauthenticated Phase: Login / Register Form (Never rendered during 'checking')
   if (!user && !activeAttempt && !reviewMode && !studyModalVisible) {
     return (
-      <View style={{ flex: 1, width: "100%", height: "100%", backgroundColor: !isMobile ? "#f7f5f2" : "#7b0000", ...(Platform.OS === "web" && !isMobile ? { overflow: "hidden", maxHeight: "100vh" } : {}) } as any}>
-        <StatusBar style="dark" />
-        {Platform.OS === "web" && !isMobile && (
+      <View style={{
+        flex: 1,
+        width: "100%",
+        height: "100%",
+        backgroundColor: !isMobile ? "#f7f5f2" : "#7b0000",
+        overflow: "hidden",
+        ...(Platform.OS === "web" ? { maxHeight: "100vh", position: "fixed" as any, top: 0, left: 0, right: 0, bottom: 0 } : {})
+      } as any}>
+        <StatusBar style={!isMobile ? "dark" : "light"} />
+        {Platform.OS === "web" && (
           <style dangerouslySetInnerHTML={{ __html: `
+            html, body, #root {
+              overflow: hidden !important;
+              height: 100% !important;
+              max-height: 100vh !important;
+              overscroll-behavior: none !important;
+              touch-action: none !important;
+            }
             #login-laptop-bg,
             #login-laptop-bg > div,
             div[style*="login_bg_laptop"] {
@@ -22023,7 +22014,7 @@ function MainApp() {
           resizeMode="cover"
         >
           <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
             style={{ flex: 1, width: "100%" }}
           >
             <ScrollView
@@ -22031,12 +22022,15 @@ function MainApp() {
                 flexGrow: 1,
                 alignItems: "center",
                 justifyContent: "flex-start",
-                paddingTop: !isMobile ? 234 : Math.min(270, Math.max(240, (typeof screenHeight !== "undefined" ? screenHeight : 800) * 0.32)),
-                paddingBottom: !isMobile ? 12 : 40,
+                paddingTop: !isMobile ? 220 : Math.min(252, Math.max(228, (typeof screenHeight !== "undefined" ? screenHeight : 800) * 0.292)),
+                paddingBottom: !isMobile ? 12 : 12,
                 paddingHorizontal: 16
               }}
-              style={{ backgroundColor: "transparent", ...(Platform.OS === "web" && !isMobile && !showAuthFlip ? { overflow: "hidden" } : {}) } as any}
-              scrollEnabled={showAuthFlip}
+              style={{ backgroundColor: "transparent", overflow: "hidden" } as any}
+              scrollEnabled={Boolean(pendingGoogleUser)}
+              bounces={false}
+              overScrollMode="never"
+              alwaysBounceVertical={false}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
@@ -22045,26 +22039,26 @@ function MainApp() {
                 width: !isMobile ? 465 : "92%",
                 maxWidth: 440,
                 backgroundColor: "#ffffff",
-                borderRadius: 24,
-                paddingVertical: !isMobile ? 20 : 16,
-                paddingHorizontal: !isMobile ? 22 : 18,
+                borderRadius: 22,
+                paddingVertical: !isMobile ? 18 : 12,
+                paddingHorizontal: !isMobile ? 22 : 16,
                 shadowColor: "#000",
-                shadowOffset: { width: 0, height: 12 },
-                shadowOpacity: 0.18,
-                shadowRadius: 22,
-                elevation: 16,
+                shadowOffset: { width: 0, height: 10 },
+                shadowOpacity: 0.16,
+                shadowRadius: 18,
+                elevation: 14,
                 zIndex: 2,
                 marginTop: 0,
-                marginBottom: !isMobile ? 12 : 24
+                marginBottom: !isMobile ? 10 : 10
               }}>
               {/* Tab Switcher */}
-              <View style={{ flexDirection: "row", backgroundColor: "#f8f9fa", borderRadius: 14, padding: 4, marginBottom: 20, borderWidth: 1, borderColor: "#eeeeee" }}>
+              <View style={{ flexDirection: "row", backgroundColor: "#f8f9fa", borderRadius: 12, padding: 3, marginBottom: 10, borderWidth: 1, borderColor: "#eeeeee" }}>
                 <TouchableOpacity
                   onPress={() => { setShowAuthFlip(false); setLoginError(null); }}
                   style={{
                     flex: 1,
-                    paddingVertical: 12,
-                    borderRadius: 10,
+                    paddingVertical: 9,
+                    borderRadius: 9,
                     backgroundColor: !showAuthFlip ? "#c62828" : "transparent",
                     alignItems: "center",
                     flexDirection: "row",
@@ -22072,16 +22066,16 @@ function MainApp() {
                     gap: 6
                   }}
                 >
-                  <Ionicons name="person-outline" size={17} color={!showAuthFlip ? "#ffffff" : "#c62828"} />
-                  <Text style={{ color: !showAuthFlip ? "#ffffff" : "#2c3e50", fontWeight: "800", fontSize: 14 }}>Register</Text>
+                  <Ionicons name="person-outline" size={16} color={!showAuthFlip ? "#ffffff" : "#c62828"} />
+                  <Text style={{ color: !showAuthFlip ? "#ffffff" : "#2c3e50", fontWeight: "800", fontSize: 13.5 }}>Register</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   onPress={() => setShowAuthFlip(true)}
                   style={{
                     flex: 1,
-                    paddingVertical: 12,
-                    borderRadius: 10,
+                    paddingVertical: 9,
+                    borderRadius: 9,
                     backgroundColor: showAuthFlip ? "#c62828" : "transparent",
                     alignItems: "center",
                     flexDirection: "row",
@@ -22089,8 +22083,8 @@ function MainApp() {
                     gap: 6
                   }}
                 >
-                  <Ionicons name="log-in-outline" size={18} color={showAuthFlip ? "#ffffff" : "#c62828"} />
-                  <Text style={{ color: showAuthFlip ? "#ffffff" : "#2c3e50", fontWeight: "800", fontSize: 14 }}>Sign In</Text>
+                  <Ionicons name="log-in-outline" size={17} color={showAuthFlip ? "#ffffff" : "#c62828"} />
+                  <Text style={{ color: showAuthFlip ? "#ffffff" : "#2c3e50", fontWeight: "800", fontSize: 13.5 }}>Sign In</Text>
                 </TouchableOpacity>
               </View>
 
@@ -22218,7 +22212,7 @@ function MainApp() {
                 </View>
               ) : (
                 // SIGN IN PANEL (Exact match to Image 1)
-                <View style={{ gap: 14 }}>
+                <View style={{ gap: 8 }}>
                   {showIpConfig && (
                     <View style={styles.ipConfigBox}>
                       <Text style={styles.ipConfigLabel}>Host Server IP Address:</Text>
@@ -22230,12 +22224,12 @@ function MainApp() {
                   )}
 
                   {/* Username / Roll Number Field */}
-                  <View style={{ gap: 6 }}>
+                  <View style={{ gap: 4 }}>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                      <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: "#c62828", alignItems: "center", justifyContent: "center" }}>
-                        <Ionicons name="person" size={12} color="#ffffff" />
+                      <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: "#c62828", alignItems: "center", justifyContent: "center" }}>
+                        <Ionicons name="person" size={11} color="#ffffff" />
                       </View>
-                      <Text style={{ fontSize: 11, fontWeight: "900", color: "#263238", letterSpacing: 0.8, textTransform: "uppercase" }}>
+                      <Text style={{ fontSize: 10.5, fontWeight: "900", color: "#263238", letterSpacing: 0.8, textTransform: "uppercase" }}>
                         USERNAME / ROLL NUMBER
                       </Text>
                     </View>
@@ -22247,13 +22241,13 @@ function MainApp() {
                       borderColor: "#f2a8a8",
                       borderRadius: 10,
                       paddingHorizontal: 12,
-                      height: 48
+                      height: 44
                     }}>
-                      <Ionicons name="person" size={17} color="#9e9e9e" style={{ marginRight: 8 }} />
+                      <Ionicons name="person" size={16} color="#9e9e9e" style={{ marginRight: 8 }} />
                       <TextInput
                         style={{
                           flex: 1,
-                          fontSize: 14,
+                          fontSize: 13.5,
                           color: "#212121",
                           height: "100%",
                           paddingVertical: 0,
@@ -22271,12 +22265,12 @@ function MainApp() {
                   </View>
 
                   {/* Password Field */}
-                  <View style={{ gap: 6 }}>
+                  <View style={{ gap: 4 }}>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                      <View style={{ width: 22, height: 22, borderRadius: 6, backgroundColor: "#c62828", alignItems: "center", justifyContent: "center" }}>
-                        <Ionicons name="lock-closed" size={12} color="#ffffff" />
+                      <View style={{ width: 20, height: 20, borderRadius: 6, backgroundColor: "#c62828", alignItems: "center", justifyContent: "center" }}>
+                        <Ionicons name="lock-closed" size={11} color="#ffffff" />
                       </View>
-                      <Text style={{ fontSize: 11, fontWeight: "900", color: "#263238", letterSpacing: 0.8, textTransform: "uppercase" }}>
+                      <Text style={{ fontSize: 10.5, fontWeight: "900", color: "#263238", letterSpacing: 0.8, textTransform: "uppercase" }}>
                         PASSWORD
                       </Text>
                     </View>
@@ -22288,13 +22282,13 @@ function MainApp() {
                       borderColor: "#f2a8a8",
                       borderRadius: 10,
                       paddingHorizontal: 12,
-                      height: 48
+                      height: 44
                     }}>
-                      <Ionicons name="lock-closed" size={17} color="#9e9e9e" style={{ marginRight: 8 }} />
+                      <Ionicons name="lock-closed" size={16} color="#9e9e9e" style={{ marginRight: 8 }} />
                       <TextInput
                         style={{
                           flex: 1,
-                          fontSize: 14,
+                          fontSize: 13.5,
                           color: "#212121",
                           height: "100%",
                           paddingVertical: 0,
@@ -22309,16 +22303,16 @@ function MainApp() {
                         secureTextEntry={!showPassword}
                       />
                       <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{ padding: 6 }}>
-                        <Ionicons name={showPassword ? "eye" : "eye-off"} size={20} color="#757575" />
+                        <Ionicons name={showPassword ? "eye" : "eye-off"} size={19} color="#757575" />
                       </TouchableOpacity>
                     </View>
                   </View>
 
                   {/* Error Message */}
                   {loginError && (
-                    <View style={{ backgroundColor: "#ffebee", borderWidth: 1, borderColor: "#ef9a9a", borderRadius: 8, padding: 10, flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <View style={{ backgroundColor: "#ffebee", borderWidth: 1, borderColor: "#ef9a9a", borderRadius: 8, padding: 8, flexDirection: "row", alignItems: "center", gap: 8 }}>
                       <Ionicons name="alert-circle" size={16} color="#c62828" />
-                      <Text style={{ fontSize: 12, color: "#c62828", fontWeight: "bold", flex: 1 }}>{loginError}</Text>
+                      <Text style={{ fontSize: 11.5, color: "#c62828", fontWeight: "bold", flex: 1 }}>{loginError}</Text>
                     </View>
                   )}
 
@@ -22328,8 +22322,8 @@ function MainApp() {
                     disabled={authLoading}
                     style={{
                       backgroundColor: authLoading ? "#e53935" : "#c62828",
-                      borderRadius: 12,
-                      height: 50,
+                      borderRadius: 11,
+                      height: 46,
                       flexDirection: "row",
                       alignItems: "center",
                       justifyContent: "center",
@@ -22339,15 +22333,15 @@ function MainApp() {
                       shadowOpacity: 0.35,
                       shadowRadius: 8,
                       elevation: 6,
-                      marginTop: 4
+                      marginTop: 2
                     }}
                   >
                     {authLoading ? (
                       <ActivityIndicator size="small" color="#fff" />
                     ) : (
-                      <Ionicons name="log-in" size={20} color="#fff" />
+                      <Ionicons name="log-in" size={19} color="#fff" />
                     )}
-                    <Text style={{ color: "#ffffff", fontSize: 16, fontWeight: "900", letterSpacing: 1 }}>
+                    <Text style={{ color: "#ffffff", fontSize: 15, fontWeight: "900", letterSpacing: 1 }}>
                       {authLoading ? "SIGNING IN..." : "LOG IN"}
                     </Text>
                   </TouchableOpacity>
@@ -22355,30 +22349,30 @@ function MainApp() {
                   {/* Register as guest link */}
                   <TouchableOpacity
                     onPress={() => { setShowAuthFlip(false); setLoginError(null); }}
-                    style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 8 }}
+                    style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 4 }}
                   >
-                    <Ionicons name="person-add" size={16} color="#c62828" />
-                    <Text style={{ fontSize: 13, color: "#424242", fontWeight: "600" }}>New here? </Text>
-                    <Text style={{ fontSize: 13, color: "#c62828", fontWeight: "800" }}>Register as guest →</Text>
+                    <Ionicons name="person-add" size={15} color="#c62828" />
+                    <Text style={{ fontSize: 12.5, color: "#424242", fontWeight: "600" }}>New here? </Text>
+                    <Text style={{ fontSize: 12.5, color: "#c62828", fontWeight: "800" }}>Register as guest →</Text>
                   </TouchableOpacity>
                 </View>
               )}
 
               {/* Privacy Policy & Terms of Service Footer (Common for both Register & Sign In) */}
-              <View style={{ borderTopWidth: 1, borderColor: "#eeeeee", marginTop: 18, paddingTop: 14, alignItems: "center" }}>
-                <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "center", alignItems: "center", gap: 5 }}>
-                  <Text style={{ fontSize: 11, color: "#757575" }}>By continuing, you agree to our</Text>
+              <View style={{ borderTopWidth: 1, borderColor: "#eeeeee", marginTop: 8, paddingTop: 8, alignItems: "center" }}>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "center", alignItems: "center", gap: 4 }}>
+                  <Text style={{ fontSize: 10.5, color: "#757575" }}>By continuing, you agree to our</Text>
                   <TouchableOpacity onPress={() => setShowLegalModal('terms')} activeOpacity={0.7}>
-                    <Text style={{ fontSize: 11, color: "#c62828", fontWeight: "700", textDecorationLine: "underline" }}>Terms of Service</Text>
+                    <Text style={{ fontSize: 10.5, color: "#c62828", fontWeight: "700", textDecorationLine: "underline" }}>Terms of Service</Text>
                   </TouchableOpacity>
-                  <Text style={{ fontSize: 11, color: "#757575" }}>&</Text>
+                  <Text style={{ fontSize: 10.5, color: "#757575" }}>&</Text>
                   <TouchableOpacity onPress={() => setShowLegalModal('privacy')} activeOpacity={0.7}>
-                    <Text style={{ fontSize: 11, color: "#c62828", fontWeight: "700", textDecorationLine: "underline" }}>Privacy Policy</Text>
+                    <Text style={{ fontSize: 10.5, color: "#c62828", fontWeight: "700", textDecorationLine: "underline" }}>Privacy Policy</Text>
                   </TouchableOpacity>
-                  <Text style={{ fontSize: 11, color: "#9e9e9e" }}>•</Text>
+                  <Text style={{ fontSize: 10.5, color: "#9e9e9e" }}>•</Text>
                 </View>
-                <TouchableOpacity onPress={() => setShowLegalModal('privacy')} activeOpacity={0.7} style={{ marginTop: 6 }}>
-                  <Text style={{ fontSize: 12, color: "#c62828", fontWeight: "700" }}>— Learn more —</Text>
+                <TouchableOpacity onPress={() => setShowLegalModal('privacy')} activeOpacity={0.7} style={{ marginTop: 2 }}>
+                  <Text style={{ fontSize: 11, color: "#c62828", fontWeight: "700" }}>— Learn more —</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -22546,30 +22540,45 @@ function MainApp() {
         {renderLmsModals()}
 
         {/* ─── NEW GUEST PORTAL HEADER ───────────────────────────────────────── */}
-        <View style={[styles.header, darkMode && styles.headerDark, { paddingVertical: 10 }]}>
+        <View style={[
+          styles.header,
+          darkMode && styles.headerDark,
+          { paddingVertical: 10 },
+          isMobile && { paddingHorizontal: 10, paddingVertical: 8 }
+        ]}>
           {/* Left: Logo + Name */}
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-            <Image source={require("./assets/logo.png")} style={{ width: 36, height: 36, borderRadius: 18, borderWidth: 2, borderColor: darkMode ? "#c62828" : "#e0e0e0" }} />
-            <View>
-              <Text style={[styles.headerTitle, darkMode && { color: "#f5f5f5" }, { fontSize: 14 }]}>NERMAI IAS ACADEMY</Text>
-              <Text style={{ color: darkMode ? "#b0b0b0" : "#757575", fontSize: 10 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: isMobile ? 8 : 10, flex: 1, minWidth: 0, marginRight: 6 }}>
+            <Image source={require("./assets/logo.png")} style={{ width: 34, height: 34, borderRadius: 17, borderWidth: 1.5, borderColor: darkMode ? "#c62828" : "#e0e0e0", flexShrink: 0 }} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[styles.headerTitle, darkMode && { color: "#f5f5f5" }, { fontSize: isMobile ? 13 : 14 }]} numberOfLines={1}>NERMAI IAS ACADEMY</Text>
+              <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: darkMode ? "#b0b0b0" : "#757575", fontSize: isMobile ? 9.5 : 10 }}>
                 {user ? `Welcome, ${user.name}` : "Public Learning Portal"}
               </Text>
             </View>
           </View>
 
           {/* Right: Notices Bell + Contact Info + Hamburger */}
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: isMobile ? 4 : 6, flexShrink: 0 }}>
 
             {/* 🔔 Notices Bell */}
             <TouchableOpacity
               id="guest-notices-btn"
               onPress={() => { setShowNoticesPanel(!showNoticesPanel); setShowContactPanel(false); }}
-              style={{ position: "relative", width: 38, height: 38, borderRadius: 19, backgroundColor: darkMode ? "rgba(255,255,255,0.12)" : "rgba(198,40,40,0.08)", alignItems: "center", justifyContent: "center" }}
+              style={{
+                position: "relative",
+                width: isMobile ? 32 : 38,
+                height: isMobile ? 32 : 38,
+                borderRadius: isMobile ? 16 : 19,
+                backgroundColor: darkMode ? "rgba(255,255,255,0.12)" : "rgba(198,40,40,0.08)",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0
+              }}
+              hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
             >
-              <Ionicons name="notifications-outline" size={20} color={darkMode ? "#ffffff" : "#c62828"} />
+              <Ionicons name="notifications-outline" size={isMobile ? 18 : 20} color={darkMode ? "#ffffff" : "#c62828"} />
               {(guestNotifications.length > 0 || announcements.filter((a: any) => !a.read).length > 0) && (
-                <View style={{ position: "absolute", top: 4, right: 4, width: 14, height: 14, borderRadius: 7, backgroundColor: "#FFD700", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#c62828" }}>
+                <View style={{ position: "absolute", top: 2, right: 2, width: 14, height: 14, borderRadius: 7, backgroundColor: "#FFD700", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#c62828" }}>
                   <Text style={{ fontSize: 8, color: "#7b0000", fontWeight: "900" }}>
                     {Math.min(guestNotifications.length + announcements.filter((a: any) => !a.read).length, 9)}
                   </Text>
@@ -22581,18 +22590,83 @@ function MainApp() {
             <TouchableOpacity
               id="guest-contact-btn"
               onPress={() => { setShowContactPanel(!showContactPanel); setShowNoticesPanel(false); setContactFormType(null); }}
-              style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: darkMode ? "rgba(255,255,255,0.12)" : "rgba(198,40,40,0.08)", alignItems: "center", justifyContent: "center" }}
+              style={{
+                width: isMobile ? 32 : 38,
+                height: isMobile ? 32 : 38,
+                borderRadius: isMobile ? 16 : 19,
+                backgroundColor: darkMode ? "rgba(255,255,255,0.12)" : "rgba(198,40,40,0.08)",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0
+              }}
+              hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
             >
-              <Ionicons name="information-circle-outline" size={20} color={darkMode ? "#ffffff" : "#c62828"} />
+              <Ionicons name="information-circle-outline" size={isMobile ? 18 : 20} color={darkMode ? "#ffffff" : "#c62828"} />
             </TouchableOpacity>
+
+            {/* 🔤 Site Font Size Adjuster */}
+            <View style={{
+              flexDirection: "row",
+              alignItems: "center",
+              backgroundColor: darkMode ? "rgba(255,255,255,0.1)" : "rgba(198,40,40,0.06)",
+              borderRadius: 16,
+              paddingHorizontal: 2,
+              height: isMobile ? 30 : 38,
+              borderWidth: 1,
+              borderColor: darkMode ? "rgba(255,255,255,0.18)" : "rgba(198,40,40,0.15)",
+              flexShrink: 0
+            }}>
+              <TouchableOpacity
+                onPress={() => changeFontSizeDelta(prev => Math.max(-4, prev - 2))}
+                style={{ paddingHorizontal: isMobile ? 5 : 7, height: "100%", justifyContent: "center" }}
+                accessibilityLabel="Decrease font size"
+                hitSlop={{ top: 6, bottom: 6, left: 4, right: 2 }}
+              >
+                <Text style={{ fontSize: isMobile ? 10 : 11, fontWeight: "bold", color: darkMode ? "#e0e0e0" : "#424242" }}>A-</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => changeFontSizeDelta(0)}
+                style={{
+                  paddingHorizontal: isMobile ? 4 : 6,
+                  height: "100%",
+                  justifyContent: "center",
+                  borderLeftWidth: 1,
+                  borderRightWidth: 1,
+                  borderColor: darkMode ? "rgba(255,255,255,0.15)" : "rgba(198,40,40,0.15)"
+                }}
+                accessibilityLabel="Reset font size"
+                hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}
+              >
+                <Text style={{ fontSize: isMobile ? 11 : 12, fontWeight: "bold", color: siteFontSizeDelta === 0 ? (darkMode ? "#ffffff" : "#c62828") : (darkMode ? "#9e9e9e" : "#757575") }}>
+                  A
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => changeFontSizeDelta(prev => Math.min(8, prev + 2))}
+                style={{ paddingHorizontal: isMobile ? 5 : 7, height: "100%", justifyContent: "center" }}
+                accessibilityLabel="Increase font size"
+                hitSlop={{ top: 6, bottom: 6, left: 2, right: 4 }}
+              >
+                <Text style={{ fontSize: isMobile ? 11 : 13, fontWeight: "bold", color: darkMode ? "#e0e0e0" : "#424242" }}>A+</Text>
+              </TouchableOpacity>
+            </View>
 
             {/* ☰ Hamburger */}
             <TouchableOpacity
               id="guest-hamburger-btn"
               onPress={() => setShowHamburger(true)}
-              style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: darkMode ? "rgba(255,255,255,0.12)" : "rgba(198,40,40,0.08)", alignItems: "center", justifyContent: "center" }}
+              style={{
+                width: isMobile ? 32 : 38,
+                height: isMobile ? 32 : 38,
+                borderRadius: isMobile ? 16 : 19,
+                backgroundColor: darkMode ? "rgba(255,255,255,0.12)" : "rgba(198,40,40,0.08)",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0
+              }}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
-              <Ionicons name="menu-outline" size={22} color={darkMode ? "#ffffff" : "#c62828"} />
+              <Ionicons name="menu-outline" size={isMobile ? 20 : 22} color={darkMode ? "#ffffff" : "#c62828"} />
             </TouchableOpacity>
           </View>
         </View>
@@ -23000,39 +23074,75 @@ function MainApp() {
 
                   {/* Name Input */}
                   <View style={{ gap: 4 }}>
-                    <Text style={{ fontSize: 10, fontWeight: "800", color: darkMode ? "#ccc" : "#424242" }}>Full Name *</Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                      <Text style={{ fontSize: 10, fontWeight: "800", color: darkMode ? "#ccc" : "#424242" }}>Full Name *</Text>
+                      {Boolean(user?.name || admissionForm.name) && (
+                        <Text style={{ fontSize: 9, fontWeight: "700", color: "#9e9e9e" }}>🔒 Verified</Text>
+                      )}
+                    </View>
                     <TextInput
-                      style={[styles.input, { marginBottom: 0 }, darkMode && { backgroundColor: "#2a2a2a", color: "#fff", borderColor: "#444" }]}
+                      style={[
+                        styles.input, 
+                        { marginBottom: 0 }, 
+                        darkMode && { backgroundColor: "#2a2a2a", color: "#fff", borderColor: "#444" },
+                        Boolean(user?.name || admissionForm.name) && { backgroundColor: darkMode ? "#1c1c1c" : "#f1f5f9", color: darkMode ? "#9e9e9e" : "#64748b" }
+                      ]}
                       placeholder="Enter your full name"
                       placeholderTextColor={darkMode ? "#666" : "#bbb"}
                       value={admissionForm.name}
+                      editable={!Boolean(user?.name || admissionForm.name)}
+                      selectTextOnFocus={false}
                       onChangeText={v => setAdmissionForm({ ...admissionForm, name: v })}
                     />
                   </View>
 
                   {/* Phone Input */}
                   <View style={{ gap: 4 }}>
-                    <Text style={{ fontSize: 10, fontWeight: "800", color: darkMode ? "#ccc" : "#424242" }}>Phone Number *</Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                      <Text style={{ fontSize: 10, fontWeight: "800", color: darkMode ? "#ccc" : "#424242" }}>Phone Number *</Text>
+                      {Boolean(user?.phone || admissionForm.phone) && (
+                        <Text style={{ fontSize: 9, fontWeight: "700", color: "#9e9e9e" }}>🔒 Verified</Text>
+                      )}
+                    </View>
                     <TextInput
-                      style={[styles.input, { marginBottom: 0 }, darkMode && { backgroundColor: "#2a2a2a", color: "#fff", borderColor: "#444" }]}
+                      style={[
+                        styles.input, 
+                        { marginBottom: 0 }, 
+                        darkMode && { backgroundColor: "#2a2a2a", color: "#fff", borderColor: "#444" },
+                        Boolean(user?.phone || admissionForm.phone) && { backgroundColor: darkMode ? "#1c1c1c" : "#f1f5f9", color: darkMode ? "#9e9e9e" : "#64748b" }
+                      ]}
                       placeholder="Enter your mobile number"
                       placeholderTextColor={darkMode ? "#666" : "#bbb"}
                       keyboardType="phone-pad"
                       maxLength={10}
                       value={admissionForm.phone}
+                      editable={!Boolean(user?.phone || admissionForm.phone)}
+                      selectTextOnFocus={false}
                       onChangeText={v => setAdmissionForm({ ...admissionForm, phone: cleanPhone(v) })}
                     />
                   </View>
 
                   {/* Email Input */}
                   <View style={{ gap: 4 }}>
-                    <Text style={{ fontSize: 10, fontWeight: "800", color: darkMode ? "#ccc" : "#424242" }}>Email (Optional)</Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                      <Text style={{ fontSize: 10, fontWeight: "800", color: darkMode ? "#ccc" : "#424242" }}>Email (Optional)</Text>
+                      {Boolean(user?.email || admissionForm.email) && (
+                        <Text style={{ fontSize: 9, fontWeight: "700", color: "#9e9e9e" }}>🔒 Verified</Text>
+                      )}
+                    </View>
                     <TextInput
-                      style={[styles.input, { marginBottom: 0 }, darkMode && { backgroundColor: "#2a2a2a", color: "#fff", borderColor: "#444" }]}
+                      style={[
+                        styles.input, 
+                        { marginBottom: 0 }, 
+                        darkMode && { backgroundColor: "#2a2a2a", color: "#fff", borderColor: "#444" },
+                        Boolean(user?.email || admissionForm.email) && { backgroundColor: darkMode ? "#1c1c1c" : "#f1f5f9", color: darkMode ? "#9e9e9e" : "#64748b" }
+                      ]}
                       placeholder="Enter your email address"
                       placeholderTextColor={darkMode ? "#666" : "#bbb"}
                       keyboardType="email-address"
                       value={admissionForm.email}
+                      editable={!Boolean(user?.email || admissionForm.email)}
+                      selectTextOnFocus={false}
                       onChangeText={v => setAdmissionForm({ ...admissionForm, email: v })}
                     />
                   </View>
@@ -23455,37 +23565,73 @@ function MainApp() {
                 <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
                   {/* Full Name */}
                   <View style={{ gap: 4 }}>
-                    <Text style={{ fontSize: 10, fontWeight: "800", color: darkMode ? "#ccc" : "#424242", letterSpacing: 0.8 }}>FULL NAME *</Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                      <Text style={{ fontSize: 10, fontWeight: "800", color: darkMode ? "#ccc" : "#424242", letterSpacing: 0.8 }}>FULL NAME *</Text>
+                      {Boolean(user?.name || courseAdmissionForm.name) && (
+                        <Text style={{ fontSize: 9, fontWeight: "700", color: "#9e9e9e" }}>🔒 Verified</Text>
+                      )}
+                    </View>
                     <TextInput
-                      style={[styles.input, { marginBottom: 0 }, darkMode && { backgroundColor: "#2a2a2a", color: "#fff", borderColor: "#444" }]}
+                      style={[
+                        styles.input, 
+                        { marginBottom: 0 }, 
+                        darkMode && { backgroundColor: "#2a2a2a", color: "#fff", borderColor: "#444" },
+                        Boolean(user?.name || courseAdmissionForm.name) && { backgroundColor: darkMode ? "#1c1c1c" : "#f1f5f9", color: darkMode ? "#9e9e9e" : "#64748b" }
+                      ]}
                       placeholder="Enter your full name"
                       placeholderTextColor={darkMode ? "#666" : "#bbb"}
                       value={courseAdmissionForm.name}
+                      editable={!Boolean(user?.name || courseAdmissionForm.name)}
+                      selectTextOnFocus={false}
                       onChangeText={v => setCourseAdmissionForm({ ...courseAdmissionForm, name: v })}
                     />
                   </View>
                   {/* Phone */}
                   <View style={{ gap: 4 }}>
-                    <Text style={{ fontSize: 10, fontWeight: "800", color: darkMode ? "#ccc" : "#424242", letterSpacing: 0.8 }}>PHONE NUMBER *</Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                      <Text style={{ fontSize: 10, fontWeight: "800", color: darkMode ? "#ccc" : "#424242", letterSpacing: 0.8 }}>PHONE NUMBER *</Text>
+                      {Boolean(user?.phone || courseAdmissionForm.phone) && (
+                        <Text style={{ fontSize: 9, fontWeight: "700", color: "#9e9e9e" }}>🔒 Verified</Text>
+                      )}
+                    </View>
                     <TextInput
-                      style={[styles.input, { marginBottom: 0 }, darkMode && { backgroundColor: "#2a2a2a", color: "#fff", borderColor: "#444" }]}
+                      style={[
+                        styles.input, 
+                        { marginBottom: 0 }, 
+                        darkMode && { backgroundColor: "#2a2a2a", color: "#fff", borderColor: "#444" },
+                        Boolean(user?.phone || courseAdmissionForm.phone) && { backgroundColor: darkMode ? "#1c1c1c" : "#f1f5f9", color: darkMode ? "#9e9e9e" : "#64748b" }
+                      ]}
                       placeholder="10-digit mobile number"
                       placeholderTextColor={darkMode ? "#666" : "#bbb"}
                       keyboardType="phone-pad"
                       maxLength={10}
                       value={courseAdmissionForm.phone}
+                      editable={!Boolean(user?.phone || courseAdmissionForm.phone)}
+                      selectTextOnFocus={false}
                       onChangeText={v => setCourseAdmissionForm({ ...courseAdmissionForm, phone: cleanPhone(v) })}
                     />
                   </View>
                   {/* Email */}
                   <View style={{ gap: 4 }}>
-                    <Text style={{ fontSize: 10, fontWeight: "800", color: darkMode ? "#ccc" : "#424242", letterSpacing: 0.8 }}>EMAIL (OPTIONAL)</Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                      <Text style={{ fontSize: 10, fontWeight: "800", color: darkMode ? "#ccc" : "#424242", letterSpacing: 0.8 }}>EMAIL (OPTIONAL)</Text>
+                      {Boolean(user?.email || courseAdmissionForm.email) && (
+                        <Text style={{ fontSize: 9, fontWeight: "700", color: "#9e9e9e" }}>🔒 Verified</Text>
+                      )}
+                    </View>
                     <TextInput
-                      style={[styles.input, { marginBottom: 0 }, darkMode && { backgroundColor: "#2a2a2a", color: "#fff", borderColor: "#444" }]}
+                      style={[
+                        styles.input, 
+                        { marginBottom: 0 }, 
+                        darkMode && { backgroundColor: "#2a2a2a", color: "#fff", borderColor: "#444" },
+                        Boolean(user?.email || courseAdmissionForm.email) && { backgroundColor: darkMode ? "#1c1c1c" : "#f1f5f9", color: darkMode ? "#9e9e9e" : "#64748b" }
+                      ]}
                       placeholder="Enter your email"
                       placeholderTextColor={darkMode ? "#666" : "#bbb"}
                       keyboardType="email-address"
                       value={courseAdmissionForm.email}
+                      editable={!Boolean(user?.email || courseAdmissionForm.email)}
+                      selectTextOnFocus={false}
                       onChangeText={v => setCourseAdmissionForm({ ...courseAdmissionForm, email: v })}
                     />
                   </View>
@@ -23582,7 +23728,9 @@ function MainApp() {
                   {user ? `Welcome back, ${user.name.split(" ")[0]}! 👋` : "Explore NERMAI IAS 🎓"}
                 </Text>
                 <Text style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", marginTop: 4, lineHeight: 18 }}>
-                  {guestContentTab === "resources"
+                  {guestContentTab === "recordings"
+                    ? "Watch free demo lectures, strategy sessions & subject overviews"
+                    : guestContentTab === "resources"
                     ? (user ? "Browse daily study content & free reference materials" : "Register with Google to access all free study resources")
                     : guestContentTab === "tests"
                       ? (user ? "Attempt free mock tests & assess your preparation" : "Register with Google to attempt free mock tests")
@@ -23720,6 +23868,12 @@ function MainApp() {
                     </View>
                     <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
                       <TouchableOpacity
+                        onPress={() => { setGuestContentTab("recordings"); setGuestTab("recordings"); }}
+                        style={{ flex: 1, minWidth: 130, backgroundColor: "#8B0000", paddingVertical: 10, borderRadius: 10, alignItems: "center" }}
+                      >
+                        <Text style={{ color: "#fff", fontWeight: "800", fontSize: 12 }}>Free Classes 🎥</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
                         onPress={() => { setGuestContentTab("apply"); setGuestTab("apply"); }}
                         style={{ flex: 1, minWidth: 130, backgroundColor: "#c62828", paddingVertical: 10, borderRadius: 10, alignItems: "center" }}
                       >
@@ -23735,6 +23889,19 @@ function MainApp() {
                   </View>
                 </View>
               </View>
+            )}
+
+            {/* ── GUEST RECORDINGS / FREE DEMO CLASSES TAB ─────────────────────── */}
+            {guestContentTab === "recordings" && GuestRecordingsPage && (
+              <Suspense fallback={<RNCardGridSkeleton count={6} darkMode={darkMode} />}>
+                <GuestRecordingsPage
+                  darkMode={darkMode}
+                  onApplyClick={() => {
+                    setGuestContentTab("apply");
+                    setGuestTab("apply");
+                  }}
+                />
+              </Suspense>
             )}
 
             {/* ── FREE RESOURCES TAB ────────────────────────────────────────────── */}
@@ -24329,6 +24496,7 @@ function MainApp() {
         }}>
           {[
             { key: "home", label: "Home", icon: "home-outline", iconActive: "home", color: "#c62828" },
+            { key: "recordings", label: "Free Classes", icon: "videocam-outline", iconActive: "videocam", color: "#8b0000" },
             { key: "resources", label: "Free Resources", icon: "book-outline", iconActive: "book", color: "#d97706" },
             { key: "tests", label: "Free Tests", icon: "clipboard-outline", iconActive: "clipboard", color: "#1565c0" },
             { key: "apply", label: "Apply", icon: "school-outline", iconActive: "school", color: "#2e7d32" },
@@ -24706,6 +24874,59 @@ function MainApp() {
               );
             })()}
 
+            {/* Font Size Adjuster Controls (A- / A / A+) */}
+            <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 8, paddingHorizontal: 4, paddingVertical: 2, gap: 2 }}>
+              <TouchableOpacity
+                onPress={() => {
+                  const next = Math.max(-2, examFontSizeDelta - 2);
+                  setExamFontSizeDelta(next);
+                  applyTextFontSizeDelta(next);
+                }}
+                style={{
+                  backgroundColor: examFontSizeDelta < 0 ? "rgba(255,255,255,0.4)" : "#ffffff",
+                  paddingHorizontal: isMobile ? 6 : 8,
+                  paddingVertical: isMobile ? 3 : 5,
+                  borderRadius: 5
+                }}
+                hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+              >
+                <Text style={{ fontSize: isMobile ? 10 : 11, fontWeight: "900", color: "#c62828" }}>A-</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => {
+                  setExamFontSizeDelta(0);
+                  applyTextFontSizeDelta(0);
+                }}
+                style={{
+                  backgroundColor: examFontSizeDelta === 0 ? "rgba(255,255,255,0.4)" : "#ffffff",
+                  paddingHorizontal: isMobile ? 6 : 8,
+                  paddingVertical: isMobile ? 3 : 5,
+                  borderRadius: 5
+                }}
+                hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+              >
+                <Text style={{ fontSize: isMobile ? 11 : 12, fontWeight: "900", color: "#c62828" }}>A</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => {
+                  const next = Math.min(8, examFontSizeDelta + 2);
+                  setExamFontSizeDelta(next);
+                  applyTextFontSizeDelta(next);
+                }}
+                style={{
+                  backgroundColor: examFontSizeDelta > 0 ? "rgba(255,255,255,0.4)" : "#ffffff",
+                  paddingHorizontal: isMobile ? 6 : 8,
+                  paddingVertical: isMobile ? 3 : 5,
+                  borderRadius: 5
+                }}
+                hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+              >
+                <Text style={{ fontSize: isMobile ? 11 : 12, fontWeight: "900", color: "#c62828" }}>A+</Text>
+              </TouchableOpacity>
+            </View>
+
             {/* Countdown timer (Website view): Pinned on far right beside Info button */}
             {!isMobile && (
               <View style={{
@@ -24979,16 +25200,16 @@ function MainApp() {
                 return (
                   <View style={{ marginBottom: isMobile ? 10 : 14, gap: isMobile ? 6 : 10 }}>
                     {showEn && (currentQ.question || currentQ.questionEn) && (
-                      renderFormattedQuestion(currentQ.questionEn || currentQ.question, false, isMobile ? 14 : 17)
+                      renderFormattedQuestion(currentQ.questionEn || currentQ.question, false, (isMobile ? 14 : 17) + examFontSizeDelta)
                     )}
                     {showTa && currentQ.questionTa && (
-                      renderFormattedQuestion(currentQ.questionTa, true, isMobile ? 13 : 16)
+                      renderFormattedQuestion(currentQ.questionTa, true, (isMobile ? 13 : 16) + examFontSizeDelta)
                     )}
                     {showMl && currentQ.questionMl && (
-                      renderFormattedQuestion(currentQ.questionMl, true, isMobile ? 13 : 16)
+                      renderFormattedQuestion(currentQ.questionMl, true, (isMobile ? 13 : 16) + examFontSizeDelta)
                     )}
                     {showTe && currentQ.questionTe && (
-                      renderFormattedQuestion(currentQ.questionTe, true, isMobile ? 13 : 16)
+                      renderFormattedQuestion(currentQ.questionTe, true, (isMobile ? 13 : 16) + examFontSizeDelta)
                     )}
                   </View>
                 );
@@ -25036,24 +25257,72 @@ function MainApp() {
                       onPress={() => selectAnswer(opt)}
                       style={[styles.modalOptionBtn, selected && styles.modalOptionBtnSelected, { minHeight: isMobile ? 40 : 48, paddingVertical: isMobile ? 6 : 8 }]}
                     >
-                      <View style={{ flexDirection: "column", gap: 2 }}>
+                      <View style={{ flexDirection: "column", gap: 2, flex: 1 }}>
                         {showEn && (
-                          <Text style={{ color: selected ? "#ffffff" : "#212121", fontWeight: "bold", fontSize: isMobile ? 13 : 14 }}>
+                          <Text style={{
+                            color: selected ? "#ffffff" : "#212121",
+                            fontWeight: "bold",
+                            fontSize: (isMobile ? 13 : 14) + examFontSizeDelta,
+                            lineHeight: ((isMobile ? 13 : 14) + examFontSizeDelta) * 1.45,
+                            ...(Platform.OS === "web" ? ({
+                              wordBreak: "normal",
+                              overflowWrap: "break-word",
+                              wordWrap: "break-word",
+                              hyphens: "none",
+                              WebkitHyphens: "none",
+                            } as any) : {})
+                          }}>
                             {`${String.fromCharCode(65 + oIdx)}. ${opt}`}
                           </Text>
                         )}
                         {showTa && optTa && (
-                          <Text style={{ color: selected ? "#ffffff" : "#455a64", fontSize: isMobile ? 12 : 13, fontStyle: "italic" }}>
+                          <Text style={{
+                            color: selected ? "#ffffff" : "#455a64",
+                            fontSize: (isMobile ? 12 : 13) + examFontSizeDelta,
+                            lineHeight: ((isMobile ? 12 : 13) + examFontSizeDelta) * 1.45,
+                            fontStyle: "italic",
+                            ...(Platform.OS === "web" ? ({
+                              wordBreak: "normal",
+                              overflowWrap: "break-word",
+                              wordWrap: "break-word",
+                              hyphens: "none",
+                              WebkitHyphens: "none",
+                            } as any) : {})
+                          }}>
                             {!showEn ? `${String.fromCharCode(65 + oIdx)}. ${optTa}` : optTa}
                           </Text>
                         )}
                         {showMl && optMl && (
-                          <Text style={{ color: selected ? "#b2ebf2" : "#00838f", fontSize: isMobile ? 12 : 13, fontStyle: "italic" }}>
+                          <Text style={{
+                            color: selected ? "#b2ebf2" : "#00838f",
+                            fontSize: (isMobile ? 12 : 13) + examFontSizeDelta,
+                            lineHeight: ((isMobile ? 12 : 13) + examFontSizeDelta) * 1.45,
+                            fontStyle: "italic",
+                            ...(Platform.OS === "web" ? ({
+                              wordBreak: "normal",
+                              overflowWrap: "break-word",
+                              wordWrap: "break-word",
+                              hyphens: "none",
+                              WebkitHyphens: "none",
+                            } as any) : {})
+                          }}>
                             {!showEn && !showTa ? `${String.fromCharCode(65 + oIdx)}. ${optMl}` : optMl}
                           </Text>
                         )}
                         {showTe && optTe && (
-                          <Text style={{ color: selected ? "#fff9c4" : "#f57f17", fontSize: isMobile ? 12 : 13, fontStyle: "italic" }}>
+                          <Text style={{
+                            color: selected ? "#fff9c4" : "#f57f17",
+                            fontSize: (isMobile ? 12 : 13) + examFontSizeDelta,
+                            lineHeight: ((isMobile ? 12 : 13) + examFontSizeDelta) * 1.45,
+                            fontStyle: "italic",
+                            ...(Platform.OS === "web" ? ({
+                              wordBreak: "normal",
+                              overflowWrap: "break-word",
+                              wordWrap: "break-word",
+                              hyphens: "none",
+                              WebkitHyphens: "none",
+                            } as any) : {})
+                          }}>
                             {!showEn && !showTa && !showMl ? `${String.fromCharCode(65 + oIdx)}. ${optTe}` : optTe}
                           </Text>
                         )}
@@ -26992,15 +27261,16 @@ function MainApp() {
       <View style={[
         styles.header,
         darkMode && styles.headerDark,
+        isMobile && { paddingHorizontal: 10, paddingVertical: 8 },
         Platform.OS === "android" && insets.top === 0 && { paddingTop: (RNStatusBar.currentHeight || 28) + 8 }
       ]}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-          <View style={[styles.headerLogo, { backgroundColor: "transparent", borderWidth: 0 }]}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: isMobile ? 8 : 10, flex: 1, minWidth: 0, marginRight: 6 }}>
+          <View style={[styles.headerLogo, { backgroundColor: "transparent", borderWidth: 0, flexShrink: 0 }]}>
             <Image source={require("./assets/logo.png")} style={{ width: 34, height: 34, borderRadius: 17 }} />
           </View>
-          <View>
-            <Text style={[styles.headerTitle, darkMode && { color: "#f5f5f5" }]}>Nermai IAS</Text>
-            <Text style={{ color: darkMode ? "#9e9e9e" : "#9e9e9e", fontSize: 10 }}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={[styles.headerTitle, darkMode && { color: "#f5f5f5" }, isMobile && { fontSize: 14 }]} numberOfLines={1}>Nermai IAS</Text>
+            <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: darkMode ? "#9e9e9e" : "#9e9e9e", fontSize: isMobile ? 9.5 : 10 }}>
               {user?.role === "student" ? (() => {
                 const myStu = getLoggedInStudent(user, students);
                 const stuCourse = myStu?.course || user?.course || "";
@@ -27014,9 +27284,68 @@ function MainApp() {
             </Text>
           </View>
         </View>
-        <TouchableOpacity onPress={() => setShowHamburger(true)} style={[styles.hamburgerBtn, darkMode && { backgroundColor: "#303030" }]}>
-          <Ionicons name="ellipsis-vertical" size={20} color={darkMode ? "#ffffff" : "#424242"} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: isMobile ? 6 : 10, flexShrink: 0 }}>
+          {/* 🔤 Site Font Size Adjuster */}
+          <View style={{
+            flexDirection: "row",
+            alignItems: "center",
+            backgroundColor: darkMode ? "#262626" : "#f1f3f4",
+            borderRadius: 16,
+            paddingHorizontal: 2,
+            height: isMobile ? 30 : 34,
+            borderWidth: 1,
+            borderColor: darkMode ? "#404040" : "#e0e0e0",
+            flexShrink: 0
+          }}>
+            <TouchableOpacity
+              onPress={() => changeFontSizeDelta(prev => Math.max(-4, prev - 2))}
+              style={{ paddingHorizontal: isMobile ? 6 : 8, height: "100%", justifyContent: "center" }}
+              accessibilityLabel="Decrease font size"
+              hitSlop={{ top: 6, bottom: 6, left: 4, right: 2 }}
+            >
+              <Text style={{ fontSize: isMobile ? 10 : 11, fontWeight: "bold", color: darkMode ? "#e0e0e0" : "#424242" }}>A-</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => changeFontSizeDelta(0)}
+              style={{
+                paddingHorizontal: isMobile ? 5 : 7,
+                height: "100%",
+                justifyContent: "center",
+                borderLeftWidth: 1,
+                borderRightWidth: 1,
+                borderColor: darkMode ? "#404040" : "#e0e0e0"
+              }}
+              accessibilityLabel="Reset font size"
+              hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}
+            >
+              <Text style={{ fontSize: isMobile ? 11 : 12, fontWeight: "bold", color: siteFontSizeDelta === 0 ? (darkMode ? "#ffffff" : "#c62828") : (darkMode ? "#9e9e9e" : "#757575") }}>
+                A
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => changeFontSizeDelta(prev => Math.min(8, prev + 2))}
+              style={{ paddingHorizontal: isMobile ? 6 : 8, height: "100%", justifyContent: "center" }}
+              accessibilityLabel="Increase font size"
+              hitSlop={{ top: 6, bottom: 6, left: 2, right: 4 }}
+            >
+              <Text style={{ fontSize: isMobile ? 11 : 13, fontWeight: "bold", color: darkMode ? "#e0e0e0" : "#424242" }}>A+</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity
+            id="main-hamburger-btn"
+            onPress={() => setShowHamburger(true)}
+            style={[
+              styles.hamburgerBtn,
+              darkMode && { backgroundColor: "#303030" },
+              isMobile && { width: 34, height: 34, borderRadius: 10, paddingVertical: 0, paddingHorizontal: 0 },
+              { flexShrink: 0 }
+            ]}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          >
+            <Ionicons name="menu-outline" size={isMobile ? 22 : 22} color={darkMode ? "#ffffff" : "#424242"} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Main Content Body */}
@@ -30816,10 +31145,12 @@ SOURCE QUESTION PAPER:
                                                 Alert.alert("Prompt Ready", "Long-press the prompt text above to select and copy it.");
                                               }
                                             }}
-                                            style={{ backgroundColor: "#2e7d32", borderRadius: 8, paddingVertical: 11, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 8, marginBottom: 8 }}
+                                            style={{ backgroundColor: "#2e7d32", borderRadius: 8, paddingVertical: 11, paddingHorizontal: 10, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 6, marginBottom: 8 }}
                                           >
                                             <Ionicons name="copy-outline" size={16} color="#fff" />
-                                            <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 13 }}>Copy Prompt with Active Target Languages</Text>
+                                            <Text numberOfLines={1} style={{ color: "#fff", fontWeight: "bold", fontSize: isMobile ? 11.5 : 13, textAlign: "center" }}>
+                                              {isMobile ? "Copy Prompt (with Languages)" : "Copy Prompt with Active Target Languages"}
+                                            </Text>
                                           </TouchableOpacity>
                                         </View>
                                       );
@@ -32591,10 +32922,10 @@ SOURCE QUESTION PAPER:
                         <>
                           {!erpSidebarCollapsed || isMobile ? <Text style={styles.categoryHeader}>PERMISSIONS & REQUESTS</Text> : null}
                           {renderSidebarItem("profile-requests", erpSub, "Profile Requests", "person-add-outline", () => { changeErpSub("profile-requests"); loadProfileRequests(); }, undefined, profileRequests.filter((r: any) => r.status === "pending").length, erpSidebarCollapsed && !isMobile, "profile_requests")}
-                          {renderSidebarItem("qr-permissions", erpSub, "QR Code Permissions", "qr-code-outline", () => changeErpSub("qr-permissions"), "erp-qr-permissions", (students || []).filter((s: any) => s.qrCodeRequested === true).length || undefined, erpSidebarCollapsed && !isMobile, "id_card")}
-                          {renderSidebarItem("edit-permissions", erpSub, "Profile Edit Permissions", "shield-checkmark-outline", () => { changeErpSub("edit-permissions"); loadStudents(); }, "erp-edit-permissions", (students || []).filter((s: any) => s.profileEditRequested === true).length || undefined, erpSidebarCollapsed && !isMobile, "profile_requests")}
-                          {(user.role === "super_admin" || user.role === "developer" || user.role === "admin") && (
-                            renderSidebarItem("device-alerts", erpSub, "Security Alerts", "alert-circle-outline", () => { changeErpSub("device-alerts"); loadDeviceAlerts(); }, undefined, deviceAlerts.filter((a: any) => !a.acknowledged).length || undefined, erpSidebarCollapsed && !isMobile)
+                          {renderSidebarItem("qr-permissions", erpSub, "QR Code Permissions", "qr-code-outline", () => changeErpSub("qr-permissions"), "erp-qr-permissions", (students || []).filter((s: any) => s.qrCodeRequested === true).length || undefined, erpSidebarCollapsed && !isMobile, "qr_permissions")}
+                          {renderSidebarItem("edit-permissions", erpSub, "Profile Edit Permissions", "shield-checkmark-outline", () => { changeErpSub("edit-permissions"); loadStudents(); }, "erp-edit-permissions", (students || []).filter((s: any) => s.profileEditRequested === true).length || undefined, erpSidebarCollapsed && !isMobile, "profile_edit_permissions")}
+                          {(user.role === "super_admin" || user.role === "developer" || getFeatureAccess("security_alerts") !== "none") && (
+                            renderSidebarItem("device-alerts", erpSub, "Security Alerts", "alert-circle-outline", () => { changeErpSub("device-alerts"); loadDeviceAlerts(); }, undefined, deviceAlerts.filter((a: any) => !a.acknowledged).length || undefined, erpSidebarCollapsed && !isMobile, "security_alerts")
                           )}
 
                           {!erpSidebarCollapsed || isMobile ? <Text style={styles.categoryHeader}>ACADEMICS & DIRECTORY</Text> : null}
@@ -32605,16 +32936,16 @@ SOURCE QUESTION PAPER:
 
                           {!erpSidebarCollapsed || isMobile ? <Text style={styles.categoryHeader}>ADMINISTRATION & GROUPS</Text> : null}
                           {renderSidebarItem("staff", erpSub, "Admin", "shield-checkmark-outline", () => changeErpSub("staff"), "erp-staff", undefined, erpSidebarCollapsed && !isMobile, "staff_management")}
-                          {(user.role === "super_admin" || user.role === "developer") && (
-                            renderSidebarItem("approvals", erpSub, "Approvals Queue", "checkmark-circle-outline", () => { changeErpSub("approvals"); loadPendingApprovals(); }, "erp-approvals", pendingApprovals.length, erpSidebarCollapsed && !isMobile)
+                          {(user.role === "super_admin" || user.role === "developer" || getFeatureAccess("approvals_queue") !== "none") && (
+                            renderSidebarItem("approvals", erpSub, "Approvals Queue", "checkmark-circle-outline", () => { changeErpSub("approvals"); loadPendingApprovals(); }, "erp-approvals", pendingApprovals.length, erpSidebarCollapsed && !isMobile, "approvals_queue")
                           )}
                           {renderSidebarItem("id-card", erpSub, "ID Cards", "card-outline", () => changeErpSub("id-card"), "erp-id-card", undefined, erpSidebarCollapsed && !isMobile, "id_card")}
                           {renderSidebarItem("batch", erpSub, "Batches", "layers-outline", () => changeErpSub("batch"), "erp-batch", undefined, erpSidebarCollapsed && !isMobile, "batch_management")}
 
                           {!erpSidebarCollapsed || isMobile ? <Text style={styles.categoryHeader}>REPORTS & STORAGE</Text> : null}
                           {renderSidebarItem("analytics", erpSub, "Analytics", "analytics-outline", () => changeErpSub("analytics"), "erp-analytics", undefined, erpSidebarCollapsed && !isMobile, "analytics")}
-                          {(user.role === "super_admin" || user.role === "developer") && (
-                            renderSidebarItem("drive", erpSub, "Drive and Storage", "cloud-upload-outline", () => { changeErpSub("drive"); loadDriveConfig(); }, "erp-drive", undefined, erpSidebarCollapsed && !isMobile)
+                          {(user.role === "super_admin" || user.role === "developer" || getFeatureAccess("drive_storage") !== "none") && (
+                            renderSidebarItem("drive", erpSub, "Drive and Storage", "cloud-upload-outline", () => { changeErpSub("drive"); loadDriveConfig(); }, "erp-drive", undefined, erpSidebarCollapsed && !isMobile, "drive_storage")
                           )}
                         </>
                       ) : (
@@ -32687,9 +33018,9 @@ SOURCE QUESTION PAPER:
                           isInitialLoading ? (
                             <RNTableSkeleton rows={6} darkMode={darkMode} />
                           ) : (
-                            <View style={{ gap: 15 }}>
+                            <View style={{ gap: 15, paddingTop: isMobile ? 8 : 4 }}>
                               <View style={{ flexDirection: isMobile ? "column" : "row", justifyContent: "space-between", alignItems: isMobile ? "stretch" : "center", flexWrap: "wrap", gap: 10 }}>
-                                <Text style={styles.sectionTitle}>Student Management Portal</Text>
+                                <Text style={[styles.sectionTitle, { marginTop: isMobile ? 8 : 0, paddingTop: 4, fontSize: 16 }]}>Student Management Portal</Text>
                                 {!isReadOnly("student_management") && (
                                   <View style={{ flexDirection: isMobile ? "column" : "row", gap: 10, alignItems: "stretch", width: isMobile ? "100%" : "auto" }}>
                                     <TouchableOpacity
@@ -32751,11 +33082,14 @@ SOURCE QUESTION PAPER:
                                   animationType="fade"
                                   onRequestClose={() => { setEditingStudent(null); setShowStudentForm(false); }}
                                 >
-                                  <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", alignItems: "center", padding: 16, zIndex: 9999 }}>
+                                  <KeyboardAvoidingView
+                                    behavior={Platform.OS === "ios" ? "padding" : undefined}
+                                    style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", alignItems: "center", padding: isMobile ? 8 : 16, zIndex: 9999 }}
+                                  >
                                     <View style={{
                                       width: "100%",
                                       maxWidth: 640,
-                                      maxHeight: "90%",
+                                      maxHeight: isMobile ? "96%" : "90%",
                                       backgroundColor: darkMode ? "#1e1e1e" : "#ffffff",
                                       borderRadius: 16,
                                       borderWidth: 1,
@@ -32800,8 +33134,8 @@ SOURCE QUESTION PAPER:
 
                                       {/* Scrollable Form Body */}
                                       <ScrollView
-                                        style={{ padding: 20 }}
-                                        contentContainerStyle={{ paddingBottom: 24 }}
+                                        style={{ padding: isMobile ? 14 : 20 }}
+                                        contentContainerStyle={{ paddingBottom: isMobile ? 80 : 24 }}
                                         showsVerticalScrollIndicator={true}
                                         keyboardShouldPersistTaps="handled"
                                       >
@@ -32809,7 +33143,7 @@ SOURCE QUESTION PAPER:
                                           <>
                                             {/* Account Credentials */}
                                             <Text style={{ fontWeight: "bold", color: "#0288d1", marginBottom: 6, fontSize: 13 }}>Login Credentials</Text>
-                                            <TextInput style={styles.input} placeholder="Username / Roll Number *" placeholderTextColor="#999" value={editingStudent.loginUsername} onChangeText={u => setEditingStudent({ ...editingStudent, loginUsername: u })} autoCapitalize="none" />
+                                            <TextInput style={[styles.input, { textTransform: "uppercase" }]} placeholder="Username / Roll Number *" placeholderTextColor="#999" value={editingStudent.loginUsername} onChangeText={u => setEditingStudent({ ...editingStudent, loginUsername: u.toUpperCase() })} autoCapitalize="characters" />
                                             <TextInput style={styles.input} placeholder="Password (leave empty to keep current)" secureTextEntry placeholderTextColor="#999" value={editingStudent.loginPassword || ""} onChangeText={pw => setEditingStudent({ ...editingStudent, loginPassword: pw })} />
 
                                             {/* Contact Details */}
@@ -33030,11 +33364,11 @@ SOURCE QUESTION PAPER:
                                                 </View>
                                               </View>
                                             </View>
-                                            <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
+                                            <View style={{ flexDirection: "row", gap: 10, marginTop: 15, paddingBottom: isMobile ? 30 : 10 }}>
                                               <TouchableOpacity
                                                 onPress={updateStudentRecord}
                                                 disabled={isUpdatingStudent}
-                                                style={[styles.primaryBtn, { flex: 1, backgroundColor: isUpdatingStudent ? "#81d4fa" : "#0288d1", justifyContent: "center" }]}
+                                                style={[styles.primaryBtn, { flex: 1, backgroundColor: isUpdatingStudent ? "#81d4fa" : "#0288d1", justifyContent: "center", minHeight: 44 }]}
                                               >
                                                 {isUpdatingStudent ? (
                                                   <ActivityIndicator size="small" color="#ffffff" />
@@ -33042,7 +33376,7 @@ SOURCE QUESTION PAPER:
                                                   <Text style={styles.primaryBtnTxt}>Update Record</Text>
                                                 )}
                                               </TouchableOpacity>
-                                              <TouchableOpacity onPress={() => { setEditingStudent(null); setShowStudentForm(false); }} style={[styles.outlineBtn, { flex: 1, justifyContent: "center" }]}>
+                                              <TouchableOpacity onPress={() => { setEditingStudent(null); setShowStudentForm(false); }} style={[styles.outlineBtn, { flex: 1, justifyContent: "center", minHeight: 44 }]}>
                                                 <Text style={styles.outlineBtnTxt}>Cancel</Text>
                                               </TouchableOpacity>
                                             </View>
@@ -33051,8 +33385,8 @@ SOURCE QUESTION PAPER:
                                           <>
                                             {/* Account Credentials */}
                                             <Text style={{ fontWeight: "bold", color: "#c62828", marginBottom: 6, fontSize: 13 }}>Student Details & Login Credentials</Text>
-                                            <TextInput style={styles.input} placeholder="Student Full Name *" placeholderTextColor="#999" value={newStudent.firstName} onChangeText={n => setNewStudent({ ...newStudent, firstName: n, name: n })} />
-                                            <TextInput style={styles.input} placeholder="Username / Roll Number *" placeholderTextColor="#999" value={newStudent.loginUsername} onChangeText={u => setNewStudent({ ...newStudent, loginUsername: u })} autoCapitalize="none" />
+                                            <TextInput style={[styles.input, { textTransform: "uppercase" }]} placeholder="Student Full Name *" placeholderTextColor="#999" value={newStudent.firstName} onChangeText={n => setNewStudent({ ...newStudent, firstName: n.toUpperCase(), name: n.toUpperCase() })} autoCapitalize="characters" />
+                                            <TextInput style={[styles.input, { textTransform: "uppercase" }]} placeholder="Username / Roll Number *" placeholderTextColor="#999" value={newStudent.loginUsername} onChangeText={u => setNewStudent({ ...newStudent, loginUsername: u.toUpperCase() })} autoCapitalize="characters" />
                                             <View style={[styles.input, { justifyContent: "center", backgroundColor: "#fafafa", borderColor: "#e0e0e0", minHeight: 40, marginBottom: 12 }]}>
                                               <Text style={{ color: "#757575", fontSize: 13 }}>
                                                 🔑 Password: {newStudent.loginUsername && newStudent.phone ? (newStudent.loginUsername.trim() + newStudent.phone.trim().slice(-4)) : "(Generated from Username + Last 4 digits of Phone)"}
@@ -33296,8 +33630,8 @@ SOURCE QUESTION PAPER:
                                                   onPress={() => setNewStudent({ ...newStudent, modeOfPayment: pm, transactionId: pm === "cash" ? "" : newStudent.transactionId })}
                                                   style={{ flex: 1, padding: 10, borderRadius: 8, borderWidth: 2, borderColor: newStudent.modeOfPayment === pm ? "#c62828" : "#e0e0e0", backgroundColor: newStudent.modeOfPayment === pm ? "#ffebee" : "#f9f9f9", alignItems: "center" }}
                                                 >
-                                                  <Text style={{ color: newStudent.modeOfPayment === pm ? "#c62828" : "#757575", fontWeight: newStudent.modeOfPayment === pm ? "bold" : "normal", fontSize: 12 }}>
-                                                    {pm === "cash" ? "Cash" : pm === "gpay" ? "GPay" : "Others"}
+                                                  <Text style={{ color: newStudent.modeOfPayment === pm ? "#c62828" : "#757575", fontWeight: newStudent.modeOfPayment === pm ? "bold" : "normal", fontSize: 12, textAlign: "center" }}>
+                                                    {pm === "cash" ? "Cash" : pm === "gpay" ? "Online transaction" : "Others"}
                                                   </Text>
                                                 </TouchableOpacity>
                                               ))}
@@ -33312,9 +33646,10 @@ SOURCE QUESTION PAPER:
                                               />
                                             )}
 
-                                            <TouchableOpacity
-                                              onPress={createStudentRecord}
-                                              style={[styles.primaryBtn, { marginTop: 10 }]}
+                                            <View style={{ marginTop: 15, paddingBottom: isMobile ? 30 : 10 }}>
+                                              <TouchableOpacity
+                                                onPress={createStudentRecord}
+                                                style={[styles.primaryBtn, { minHeight: 44, justifyContent: "center" }]}
                                               disabled={isSavingStudent}
                                             >
                                               {isSavingStudent ? (
@@ -33324,16 +33659,17 @@ SOURCE QUESTION PAPER:
                                               )}
                                             </TouchableOpacity>
                                             <TouchableOpacity
-                                              onPress={() => { setEditingStudent(null); setShowStudentForm(false); }}
-                                              style={[styles.outlineBtn, { marginTop: 8, justifyContent: "center" }]}
-                                            >
-                                              <Text style={styles.outlineBtnTxt}>Cancel</Text>
-                                            </TouchableOpacity>
+                                                onPress={() => { setEditingStudent(null); setShowStudentForm(false); }}
+                                                style={[styles.outlineBtn, { marginTop: 8, justifyContent: "center", minHeight: 44 }]}
+                                              >
+                                                <Text style={styles.outlineBtnTxt}>Cancel</Text>
+                                              </TouchableOpacity>
+                                            </View>
                                           </>
                                         )}
                                       </ScrollView>
                                     </View>
-                                  </View>
+                                  </KeyboardAvoidingView>
                                 </Modal>
                               )}
 
@@ -33357,149 +33693,48 @@ SOURCE QUESTION PAPER:
                                     ) : null}
                                   </View>
 
-                                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, alignItems: "center", zIndex: 2000, position: "relative" }}>
+                                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
                                     {/* Batch Filter Dropdown */}
-                                    <View style={{ flex: 1, minWidth: 150, zIndex: showBatchFilterDropdown ? 99999 : 10, position: "relative" }}>
+                                    <View style={{ flex: 1, minWidth: 150 }}>
                                       <Text style={{ fontSize: 11, fontWeight: "bold", color: darkMode ? "#ccc" : "#555", marginBottom: 4 }}>Filter Batch:</Text>
-                                      <View style={{ zIndex: 2100, position: "relative" }}>
-                                        <TouchableOpacity
-                                          onPress={() => {
-                                            setShowBatchFilterDropdown(!showBatchFilterDropdown);
-                                            setShowTypeFilterDropdown(false);
-                                          }}
-                                          style={{
-                                            flexDirection: "row",
-                                            justifyContent: "space-between",
-                                            alignItems: "center",
-                                            borderWidth: 1,
-                                            borderColor: "#e0e0e0",
-                                            borderRadius: 8,
-                                            padding: 10,
-                                            backgroundColor: "#f9f9f9"
-                                          }}
-                                        >
-                                          <Text style={{ fontSize: 12, color: "#212121" }}>
-                                            {filterDirBatch === "all" ? "All Batches" : filterDirBatch}
-                                          </Text>
-                                          <Ionicons name={showBatchFilterDropdown ? "chevron-up" : "chevron-down"} size={14} color="#757575" />
-                                        </TouchableOpacity>
-                                        {showBatchFilterDropdown && (
-                                          <View style={{
-                                            position: "absolute",
-                                            top: "100%",
-                                            left: 0,
-                                            right: 0,
-                                            borderWidth: 1,
-                                            borderColor: "#e0e0e0",
-                                            borderRadius: 8,
-                                            backgroundColor: "#ffffff",
-                                            marginTop: 4,
-                                            overflow: "hidden",
-                                            zIndex: 99999, elevation: 20,
-                                            maxHeight: 130,
-                                            shadowColor: "#000",
-                                            shadowOffset: { width: 0, height: 2 },
-                                            shadowOpacity: 0.1,
-                                            shadowRadius: 2,
-                                            elevation: 3
-                                          }}>
-                                            <ScrollView nestedScrollEnabled={true} showsVerticalScrollIndicator={true}>
-                                              <TouchableOpacity
-                                                onPress={() => {
-                                                  setFilterDirBatch("all");
-                                                  setShowBatchFilterDropdown(false);
-                                                }}
-                                                style={{ padding: 10, borderBottomWidth: 1, borderBottomColor: "#f0f0f0", backgroundColor: filterDirBatch === "all" ? "#e3f2fd" : "#ffffff" }}
-                                              >
-                                                <Text style={{ fontSize: 12, color: filterDirBatch === "all" ? "#1976d2" : "#212121" }}>All Batches</Text>
-                                              </TouchableOpacity>
-                                              {batches.map((b: any) => (
-                                                <TouchableOpacity
-                                                  key={b.id}
-                                                  onPress={() => {
-                                                    setFilterDirBatch(b.batchName);
-                                                    setShowBatchFilterDropdown(false);
-                                                  }}
-                                                  style={{ padding: 10, borderBottomWidth: 1, borderBottomColor: "#f0f0f0", backgroundColor: filterDirBatch === b.batchName ? "#e3f2fd" : "#ffffff" }}
-                                                >
-                                                  <Text style={{ fontSize: 12, color: filterDirBatch === b.batchName ? "#1976d2" : "#212121" }}>{b.batchName}</Text>
-                                                </TouchableOpacity>
-                                              ))}
-                                            </ScrollView>
-                                          </View>
-                                        )}
-                                      </View>
+                                      <UniversalDropdown
+                                        value={filterDirBatch}
+                                        onSelect={(val) => {
+                                          setFilterDirBatch(val);
+                                          setDirCurrentPage(1);
+                                        }}
+                                        options={[
+                                          { label: "All Batches", value: "all" },
+                                          ...batches.map((b: any) => ({
+                                            label: b.batchName,
+                                            value: b.batchName
+                                          }))
+                                        ]}
+                                        placeholder="All Batches"
+                                        darkMode={darkMode}
+                                        themeColor="#1565c0"
+                                      />
                                     </View>
 
-                                    {/* Type Filter */}
-                                    <View style={{ flex: 1, minWidth: 140, zIndex: showTypeFilterDropdown ? 99999 : 9, position: "relative" }}>
-                                      <Text style={{ fontSize: 11, fontWeight: "bold", color: "#555", marginBottom: 4 }}>Filter Type:</Text>
-                                      <TouchableOpacity
-                                        onPress={() => {
-                                          setShowTypeFilterDropdown(!showTypeFilterDropdown);
-                                          setShowBatchFilterDropdown(false);
+                                    {/* Type Filter Dropdown */}
+                                    <View style={{ flex: 1, minWidth: 140 }}>
+                                      <Text style={{ fontSize: 11, fontWeight: "bold", color: darkMode ? "#ccc" : "#555", marginBottom: 4 }}>Filter Type:</Text>
+                                      <UniversalDropdown
+                                        value={filterDirType}
+                                        onSelect={(val) => {
+                                          setFilterDirType(val as any);
+                                          setDirCurrentPage(1);
                                         }}
-                                        style={{
-                                          flexDirection: "row",
-                                          justifyContent: "space-between",
-                                          alignItems: "center",
-                                          paddingHorizontal: 10,
-                                          paddingVertical: 8,
-                                          borderRadius: 6,
-                                          borderWidth: 1,
-                                          borderColor: "#e0e0e0",
-                                          backgroundColor: darkMode ? "#2a2a2a" : "#fdfdfd"
-                                        }}
-                                      >
-                                        <Text style={{ fontSize: 12, color: filterDirType === "all" ? (darkMode ? "#aaa" : "#757575") : (darkMode ? "#fff" : "#111"), fontWeight: filterDirType === "all" ? "normal" : "600" }}>
-                                          {filterDirType === "all" ? "All Types" : filterDirType.charAt(0).toUpperCase() + filterDirType.slice(1)}
-                                        </Text>
-                                        <Ionicons name={showTypeFilterDropdown ? "chevron-up" : "chevron-down"} size={14} color="#757575" />
-                                      </TouchableOpacity>
-                                      {showTypeFilterDropdown && (
-                                        <View style={{
-                                          position: "absolute",
-                                          top: "100%",
-                                          left: 0,
-                                          right: 0,
-                                          backgroundColor: darkMode ? "#2a2a2a" : "#ffffff",
-                                          borderWidth: 1,
-                                          borderColor: darkMode ? "#444" : "#e0e0e0",
-                                          borderRadius: 6,
-                                          marginTop: 2,
-                                          zIndex: 99999,
-                                          elevation: 5,
-                                          shadowColor: "#000",
-                                          shadowOffset: { width: 0, height: 2 },
-                                          shadowOpacity: 0.1,
-                                          shadowRadius: 2
-                                        }}>
-                                          {[
-                                            { key: "all", label: "All Types" },
-                                            { key: "offline", label: "Offline" },
-                                            { key: "online", label: "Online" },
-                                            { key: "recorded", label: "Recorded" }
-                                          ].map(item => (
-                                            <TouchableOpacity
-                                              key={item.key}
-                                              onPress={() => {
-                                                setFilterDirType(item.key as any);
-                                                setShowTypeFilterDropdown(false);
-                                              }}
-                                              style={{
-                                                padding: 10,
-                                                borderBottomWidth: 1,
-                                                borderBottomColor: darkMode ? "#333" : "#f0f0f0",
-                                                backgroundColor: filterDirType === item.key ? (darkMode ? "#333" : "#e3f2fd") : "transparent"
-                                              }}
-                                            >
-                                              <Text style={{ fontSize: 12, color: filterDirType === item.key ? "#1976d2" : (darkMode ? "#fff" : "#212121"), fontWeight: filterDirType === item.key ? "bold" : "normal" }}>
-                                                {item.label}
-                                              </Text>
-                                            </TouchableOpacity>
-                                          ))}
-                                        </View>
-                                      )}
+                                        options={[
+                                          { label: "All Types", value: "all" },
+                                          { label: "Offline", value: "offline" },
+                                          { label: "Online", value: "online" },
+                                          { label: "Recorded", value: "recorded" }
+                                        ]}
+                                        placeholder="All Types"
+                                        darkMode={darkMode}
+                                        themeColor="#1565c0"
+                                      />
                                     </View>
 
                                     {/* Status Filter Buttons */}
@@ -35279,31 +35514,34 @@ SOURCE QUESTION PAPER:
                                 return (
                                   <View style={{ gap: 10 }}>
                                     {/* Batch Filter & Pagination Bar */}
-                                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, backgroundColor: "#fff8e1", padding: 10, borderRadius: 8, borderWidth: 1, borderColor: "#ffe082" }}>
-                                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1, minWidth: 200 }}>
-                                        <Ionicons name="filter" size={16} color="#e65100" />
-                                        <Text style={{ fontSize: 12, fontWeight: "bold", color: "#e65100" }}>Filter Batch:</Text>
-                                        <View style={{ flex: 1, minWidth: 160 }}>
-                                          <UniversalDropdown
-                                            value={profileBatchFilter}
-                                            onSelect={(val) => {
-                                              setProfileBatchFilter(val);
-                                              setProfileDisplayLimit(20);
-                                            }}
-                                            options={[
-                                              { label: `All Batches (${incompleteStudents.length})`, value: "all" },
-                                              ...availableBatches.map((bName) => ({
-                                                label: `${bName} (${incompleteStudents.filter((s: any) => s.batch === bName).length})`,
-                                                value: bName
-                                              }))
-                                            ]}
-                                            style={{ height: 32, fontSize: 12, borderColor: "#ffb74d" }}
-                                          />
+                                    <View style={{ backgroundColor: "#fff8e1", padding: 12, borderRadius: 8, borderWidth: 1, borderColor: "#ffe082", gap: 10 }}>
+                                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                                          <Ionicons name="filter" size={16} color="#e65100" />
+                                          <Text style={{ fontSize: 12, fontWeight: "bold", color: "#e65100" }}>Filter Batch:</Text>
                                         </View>
+                                        <Text style={{ fontSize: 11, color: "#757575", fontWeight: "600" }}>
+                                          Showing {displayedIncomplete.length} of {batchFilteredIncomplete.length}
+                                        </Text>
                                       </View>
-                                      <Text style={{ fontSize: 11, color: "#757575", fontWeight: "600" }}>
-                                        Showing {displayedIncomplete.length} of {batchFilteredIncomplete.length}
-                                      </Text>
+                                      <View style={{ width: "100%" }}>
+                                        <UniversalDropdown
+                                          value={profileBatchFilter}
+                                          onSelect={(val) => {
+                                            setProfileBatchFilter(val);
+                                            setProfileDisplayLimit(20);
+                                          }}
+                                          options={[
+                                            { label: `All Batches (${incompleteStudents.length})`, value: "all" },
+                                            ...availableBatches.map((bName) => ({
+                                              label: `${bName} (${incompleteStudents.filter((s: any) => s.batch === bName).length})`,
+                                              value: bName
+                                            }))
+                                          ]}
+                                          darkMode={darkMode}
+                                          themeColor="#e65100"
+                                        />
+                                      </View>
                                     </View>
 
                                     <Text style={{ fontSize: 13, fontWeight: "bold", color: "#e65100" }}>
@@ -35469,11 +35707,11 @@ SOURCE QUESTION PAPER:
                                             <Text style={{ fontSize: 10, fontWeight: "bold", color: "#f57c00", textTransform: "uppercase" }}>{r.status}</Text>
                                           </View>
                                           <TouchableOpacity
-                                            onPress={() => setViewingProfileReqId(viewingProfileReqId === r.id ? null : r.id)}
+                                            onPress={() => setViewingProfileReqId(r.id)}
                                             style={{ backgroundColor: "#1976d2", borderRadius: 6, paddingHorizontal: 12, paddingVertical: 7 }}
                                           >
                                             <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 12 }}>
-                                              {viewingProfileReqId === r.id ? "Close" : "View Details"}
+                                              View Details
                                             </Text>
                                           </TouchableOpacity>
                                         </View>
@@ -35481,60 +35719,319 @@ SOURCE QUESTION PAPER:
                                     </View>
                                   )}
 
-                                  {/* Inline detail card */}
-                                  {viewing && (
-                                    <View style={[styles.card, { borderLeftWidth: 4, borderLeftColor: "#f57c00" }]}>
-                                      <Text style={{ fontWeight: "bold", fontSize: 15, color: "#212121", marginBottom: 4 }}>{viewing.name || viewing.username}</Text>
-                                      <Text style={{ color: "#757575", fontSize: 12, marginBottom: 2 }}>Roll No / Username: {viewing.username}</Text>
-                                      <Text style={{ color: "#757575", fontSize: 12, marginBottom: 2 }}>DOB: {formatDobForDisplay(viewing.dob || viewing.dateOfBirth)} | Gender: {viewing.gender || "—"} | Blood Group: {viewing.bloodGroup || "—"}</Text>
-                                      <Text style={{ color: "#757575", fontSize: 12, marginBottom: 2 }}>Community: {viewing.community || "—"} | Father: {viewing.fatherName || "—"}</Text>
-                                      <Text style={{ color: "#757575", fontSize: 12, marginBottom: 2 }}>Occupation: {viewing.occupation || "—"} | Alt Phone: {viewing.altPhone || "—"}</Text>
-                                      <Text style={{ color: "#757575", fontSize: 12, marginBottom: 2 }}>Email: {viewing.email || "—"}</Text>
-                                      <Text style={{ color: "#757575", fontSize: 12, marginBottom: 2 }}>Qualification: {viewing.qualification || "—"} | College: {viewing.college || "—"}</Text>
-                                      <Text style={{ color: "#757575", fontSize: 12, marginBottom: 2 }}>Referral: {viewing.referralSource || "—"}</Text>
-                                      <Text style={{ color: "#757575", fontSize: 12, marginBottom: 2 }}>ID Type: {viewing.photoIdType || "—"}</Text>
-                                      <Text style={{ color: "#757575", fontSize: 12, marginBottom: 8 }}>Address: {viewing.address || "—"}</Text>
-                                      {viewing.passportPhotoBase64 ? (
-                                        <View style={{ flexDirection: "row", gap: 10, marginBottom: 8 }}>
-                                          <View style={{ alignItems: "center" }}>
-                                            <Text style={{ fontSize: 10, color: "#999", marginBottom: 4 }}>Passport Photo</Text>
-                                            <Image source={{ uri: getDirectImageUrl(viewing.passportPhotoBase64) }} style={{ width: 80, height: 80, borderRadius: 8, borderWidth: 1, borderColor: "#e0e0e0" }} />
-                                          </View>
-                                          {viewing.photoIdBase64 && (
-                                            <View style={{ alignItems: "center" }}>
-                                              <Text style={{ fontSize: 10, color: "#999", marginBottom: 4 }}>{viewing.photoIdType || "Photo ID"}</Text>
-                                              <Image source={{ uri: getDirectImageUrl(viewing.photoIdBase64) }} style={{ width: 120, height: 80, borderRadius: 8, borderWidth: 1, borderColor: "#e0e0e0" }} />
+                                  {/* Pop-up Modal Window for Reviewing Profile Requests (Web, Mobile View & APK) */}
+                                  <Modal
+                                    visible={!!viewing}
+                                    transparent={true}
+                                    animationType="fade"
+                                    onRequestClose={() => setViewingProfileReqId(null)}
+                                  >
+                                    <View
+                                      style={{
+                                        flex: 1,
+                                        backgroundColor: "rgba(0, 0, 0, 0.65)",
+                                        justifyContent: "center",
+                                        alignItems: "center",
+                                        padding: isMobile ? 12 : 24
+                                      }}
+                                    >
+                                      {/* Backdrop click to dismiss */}
+                                      <TouchableOpacity
+                                        activeOpacity={1}
+                                        onPress={() => setViewingProfileReqId(null)}
+                                        style={StyleSheet.absoluteFillObject}
+                                      />
+
+                                      {viewing && (
+                                        <View
+                                          style={{
+                                            width: "100%",
+                                            maxWidth: 620,
+                                            maxHeight: isMobile ? "94%" : "88%",
+                                            backgroundColor: darkMode ? "#1e1e2d" : "#ffffff",
+                                            borderRadius: 16,
+                                            overflow: "hidden",
+                                            borderWidth: 1,
+                                            borderColor: darkMode ? "#33334d" : "#e0e0e0",
+                                            shadowColor: "#000",
+                                            shadowOffset: { width: 0, height: 10 },
+                                            shadowOpacity: 0.25,
+                                            shadowRadius: 20,
+                                            elevation: 12,
+                                            zIndex: 10
+                                          }}
+                                        >
+                                          {/* Modal Header */}
+                                          <View
+                                            style={{
+                                              flexDirection: "row",
+                                              alignItems: "center",
+                                              justifyContent: "space-between",
+                                              paddingHorizontal: 18,
+                                              paddingVertical: 14,
+                                              borderBottomWidth: 1,
+                                              borderBottomColor: darkMode ? "#2b2b3d" : "#f0f0f0",
+                                              backgroundColor: darkMode ? "#252538" : "#f8fafc"
+                                            }}
+                                          >
+                                            <View style={{ flex: 1, marginRight: 10 }}>
+                                              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                                <Text style={{ fontWeight: "bold", fontSize: 16, color: darkMode ? "#ffffff" : "#1a202c" }}>
+                                                  {viewing.name || viewing.username}
+                                                </Text>
+                                                <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, backgroundColor: "#fff3e0", borderWidth: 1, borderColor: "#ffe0b2" }}>
+                                                  <Text style={{ fontSize: 10, fontWeight: "bold", color: "#f57c00", textTransform: "uppercase" }}>
+                                                    {viewing.status || "Pending"}
+                                                  </Text>
+                                                </View>
+                                              </View>
+                                              <Text style={{ color: darkMode ? "#a0aec0" : "#718096", fontSize: 12, marginTop: 2 }}>
+                                                Roll No / Username: <Text style={{ fontWeight: "700", color: "#1976d2" }}>{viewing.username}</Text>
+                                              </Text>
                                             </View>
-                                          )}
+                                            <TouchableOpacity
+                                              onPress={() => setViewingProfileReqId(null)}
+                                              style={{
+                                                width: 32,
+                                                height: 32,
+                                                borderRadius: 16,
+                                                backgroundColor: darkMode ? "#323248" : "#e2e8f0",
+                                                alignItems: "center",
+                                                justifyContent: "center"
+                                              }}
+                                            >
+                                              <Ionicons name="close" size={20} color={darkMode ? "#cbd5e1" : "#4a5568"} />
+                                            </TouchableOpacity>
+                                          </View>
+
+                                          {/* Scrollable Content Body */}
+                                          <ScrollView
+                                            style={{ paddingHorizontal: 16, paddingVertical: 14 }}
+                                            contentContainerStyle={{ paddingBottom: 16, gap: 12 }}
+                                            showsVerticalScrollIndicator={true}
+                                          >
+                                            {/* Personal Details Section */}
+                                            <View style={{ backgroundColor: darkMode ? "#252538" : "#f9fafb", borderRadius: 10, padding: 12, borderWidth: 1, borderColor: darkMode ? "#33334d" : "#f0f0f0" }}>
+                                              <Text style={{ fontSize: 11, fontWeight: "700", color: "#1976d2", textTransform: "uppercase", marginBottom: 8, letterSpacing: 0.5 }}>
+                                                Personal Information
+                                              </Text>
+                                              <View style={{ flexDirection: "row", flexWrap: "wrap", rowGap: 8 }}>
+                                                <View style={{ width: isMobile ? "100%" : "50%", paddingRight: 8 }}>
+                                                  <Text style={{ fontSize: 11, color: "#888" }}>Date of Birth</Text>
+                                                  <Text style={{ fontSize: 13, fontWeight: "600", color: darkMode ? "#eee" : "#212121" }}>
+                                                    {formatDobForDisplay(viewing.dob || viewing.dateOfBirth)}
+                                                  </Text>
+                                                </View>
+                                                <View style={{ width: isMobile ? "100%" : "50%", paddingRight: 8 }}>
+                                                  <Text style={{ fontSize: 11, color: "#888" }}>Gender</Text>
+                                                  <Text style={{ fontSize: 13, fontWeight: "600", color: darkMode ? "#eee" : "#212121" }}>
+                                                    {viewing.gender || "—"}
+                                                  </Text>
+                                                </View>
+                                                <View style={{ width: isMobile ? "100%" : "50%", paddingRight: 8 }}>
+                                                  <Text style={{ fontSize: 11, color: "#888" }}>Blood Group</Text>
+                                                  <Text style={{ fontSize: 13, fontWeight: "600", color: darkMode ? "#eee" : "#212121" }}>
+                                                    {viewing.bloodGroup || "—"}
+                                                  </Text>
+                                                </View>
+                                                <View style={{ width: isMobile ? "100%" : "50%", paddingRight: 8 }}>
+                                                  <Text style={{ fontSize: 11, color: "#888" }}>Community</Text>
+                                                  <Text style={{ fontSize: 13, fontWeight: "600", color: darkMode ? "#eee" : "#212121" }}>
+                                                    {viewing.community || "—"}
+                                                  </Text>
+                                                </View>
+                                              </View>
+                                            </View>
+
+                                            {/* Family & Contact Section */}
+                                            <View style={{ backgroundColor: darkMode ? "#252538" : "#f9fafb", borderRadius: 10, padding: 12, borderWidth: 1, borderColor: darkMode ? "#33334d" : "#f0f0f0" }}>
+                                              <Text style={{ fontSize: 11, fontWeight: "700", color: "#e65100", textTransform: "uppercase", marginBottom: 8, letterSpacing: 0.5 }}>
+                                                Family & Contact
+                                              </Text>
+                                              <View style={{ flexDirection: "row", flexWrap: "wrap", rowGap: 8 }}>
+                                                <View style={{ width: isMobile ? "100%" : "50%", paddingRight: 8 }}>
+                                                  <Text style={{ fontSize: 11, color: "#888" }}>Father / Guardian</Text>
+                                                  <Text style={{ fontSize: 13, fontWeight: "600", color: darkMode ? "#eee" : "#212121" }}>
+                                                    {viewing.fatherName || "—"}
+                                                  </Text>
+                                                </View>
+                                                <View style={{ width: isMobile ? "100%" : "50%", paddingRight: 8 }}>
+                                                  <Text style={{ fontSize: 11, color: "#888" }}>Occupation</Text>
+                                                  <Text style={{ fontSize: 13, fontWeight: "600", color: darkMode ? "#eee" : "#212121" }}>
+                                                    {viewing.occupation || "—"}
+                                                  </Text>
+                                                </View>
+                                                <View style={{ width: isMobile ? "100%" : "50%", paddingRight: 8 }}>
+                                                  <Text style={{ fontSize: 11, color: "#888" }}>Alt Phone</Text>
+                                                  <Text style={{ fontSize: 13, fontWeight: "600", color: darkMode ? "#eee" : "#212121" }}>
+                                                    {viewing.altPhone || "—"}
+                                                  </Text>
+                                                </View>
+                                                <View style={{ width: isMobile ? "100%" : "50%", paddingRight: 8 }}>
+                                                  <Text style={{ fontSize: 11, color: "#888" }}>Email</Text>
+                                                  <Text style={{ fontSize: 13, fontWeight: "600", color: darkMode ? "#eee" : "#212121" }}>
+                                                    {viewing.email || "—"}
+                                                  </Text>
+                                                </View>
+                                                <View style={{ width: "100%", marginTop: 4 }}>
+                                                  <Text style={{ fontSize: 11, color: "#888" }}>Address</Text>
+                                                  <Text style={{ fontSize: 13, fontWeight: "500", color: darkMode ? "#eee" : "#212121" }}>
+                                                    {viewing.address || "—"}
+                                                  </Text>
+                                                </View>
+                                              </View>
+                                            </View>
+
+                                            {/* Academic & Background Section */}
+                                            <View style={{ backgroundColor: darkMode ? "#252538" : "#f9fafb", borderRadius: 10, padding: 12, borderWidth: 1, borderColor: darkMode ? "#33334d" : "#f0f0f0" }}>
+                                              <Text style={{ fontSize: 11, fontWeight: "700", color: "#2e7d32", textTransform: "uppercase", marginBottom: 8, letterSpacing: 0.5 }}>
+                                                Education & Referral
+                                              </Text>
+                                              <View style={{ flexDirection: "row", flexWrap: "wrap", rowGap: 8 }}>
+                                                <View style={{ width: isMobile ? "100%" : "50%", paddingRight: 8 }}>
+                                                  <Text style={{ fontSize: 11, color: "#888" }}>Qualification</Text>
+                                                  <Text style={{ fontSize: 13, fontWeight: "600", color: darkMode ? "#eee" : "#212121" }}>
+                                                    {viewing.qualification || "—"}
+                                                  </Text>
+                                                </View>
+                                                <View style={{ width: isMobile ? "100%" : "50%", paddingRight: 8 }}>
+                                                  <Text style={{ fontSize: 11, color: "#888" }}>College</Text>
+                                                  <Text style={{ fontSize: 13, fontWeight: "600", color: darkMode ? "#eee" : "#212121" }}>
+                                                    {viewing.college || "—"}
+                                                  </Text>
+                                                </View>
+                                                <View style={{ width: isMobile ? "100%" : "50%", paddingRight: 8 }}>
+                                                  <Text style={{ fontSize: 11, color: "#888" }}>Referral Source</Text>
+                                                  <Text style={{ fontSize: 13, fontWeight: "600", color: darkMode ? "#eee" : "#212121" }}>
+                                                    {viewing.referralSource || "—"}
+                                                  </Text>
+                                                </View>
+                                                <View style={{ width: isMobile ? "100%" : "50%", paddingRight: 8 }}>
+                                                  <Text style={{ fontSize: 11, color: "#888" }}>ID Type</Text>
+                                                  <Text style={{ fontSize: 13, fontWeight: "600", color: darkMode ? "#eee" : "#212121" }}>
+                                                    {viewing.photoIdType || "—"}
+                                                  </Text>
+                                                </View>
+                                              </View>
+                                            </View>
+
+                                            {/* Document Attachments */}
+                                            {(viewing.passportPhotoBase64 || viewing.photoIdBase64) && (
+                                              <View style={{ backgroundColor: darkMode ? "#252538" : "#f9fafb", borderRadius: 10, padding: 12, borderWidth: 1, borderColor: darkMode ? "#33334d" : "#f0f0f0" }}>
+                                                <Text style={{ fontSize: 11, fontWeight: "700", color: "#7b1fa2", textTransform: "uppercase", marginBottom: 8, letterSpacing: 0.5 }}>
+                                                  Uploaded Documents (Tap to Enlarge)
+                                                </Text>
+                                                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 14 }}>
+                                                  {viewing.passportPhotoBase64 ? (
+                                                    <TouchableOpacity
+                                                      onPress={() => {
+                                                        setPreviewImageTitle(`Passport Photo - ${viewing.name || viewing.username}`);
+                                                        setPreviewImageUri(getDirectImageUrl(viewing.passportPhotoBase64));
+                                                      }}
+                                                      style={{ alignItems: "center" }}
+                                                    >
+                                                      <Text style={{ fontSize: 11, color: "#777", marginBottom: 4, fontWeight: "600" }}>Passport Photo</Text>
+                                                      <Image
+                                                        source={{ uri: getDirectImageUrl(viewing.passportPhotoBase64) }}
+                                                        style={{ width: 90, height: 90, borderRadius: 8, borderWidth: 1, borderColor: "#cbd5e1" }}
+                                                      />
+                                                      <Text style={{ fontSize: 10, color: "#1976d2", marginTop: 4, fontWeight: "600" }}>🔍 Tap to zoom</Text>
+                                                    </TouchableOpacity>
+                                                  ) : null}
+
+                                                  {viewing.photoIdBase64 && (
+                                                    <TouchableOpacity
+                                                      onPress={() => {
+                                                        setPreviewImageTitle(`${viewing.photoIdType || "Photo ID"} - ${viewing.name || viewing.username}`);
+                                                        setPreviewImageUri(getDirectImageUrl(viewing.photoIdBase64));
+                                                      }}
+                                                      style={{ alignItems: "center" }}
+                                                    >
+                                                      <Text style={{ fontSize: 11, color: "#777", marginBottom: 4, fontWeight: "600" }}>{viewing.photoIdType || "Photo ID"}</Text>
+                                                      <Image
+                                                        source={{ uri: getDirectImageUrl(viewing.photoIdBase64) }}
+                                                        style={{ width: 140, height: 90, borderRadius: 8, borderWidth: 1, borderColor: "#cbd5e1" }}
+                                                      />
+                                                      <Text style={{ fontSize: 10, color: "#1976d2", marginTop: 4, fontWeight: "600" }}>🔍 Tap to zoom</Text>
+                                                    </TouchableOpacity>
+                                                  )}
+                                                </View>
+                                              </View>
+                                            )}
+
+                                            <Text style={{ color: "#9e9e9e", fontSize: 11, marginTop: 4, textAlign: "center" }}>
+                                              Submitted: {viewing.submittedAt ? new Date(viewing.submittedAt).toLocaleString() : "—"}
+                                            </Text>
+                                          </ScrollView>
+
+                                          {/* Sticky Bottom Action Buttons */}
+                                          <View
+                                            style={{
+                                              flexDirection: "row",
+                                              gap: 12,
+                                              paddingHorizontal: 16,
+                                              paddingVertical: 12,
+                                              borderTopWidth: 1,
+                                              borderTopColor: darkMode ? "#2b2b3d" : "#f0f0f0",
+                                              backgroundColor: darkMode ? "#252538" : "#f8fafc"
+                                            }}
+                                          >
+                                            <TouchableOpacity
+                                              onPress={() => approveProfileRequest(viewing.id)}
+                                              style={{
+                                                flex: 1,
+                                                backgroundColor: "#4caf50",
+                                                borderRadius: 8,
+                                                paddingVertical: 12,
+                                                alignItems: "center",
+                                                justifyContent: "center",
+                                                shadowColor: "#4caf50",
+                                                shadowOffset: { width: 0, height: 2 },
+                                                shadowOpacity: 0.3,
+                                                elevation: 2
+                                              }}
+                                              disabled={isProcessingProfile === viewing.id}
+                                            >
+                                              {isProcessingProfile === viewing.id ? (
+                                                <ActivityIndicator color="#ffffff" size="small" />
+                                              ) : (
+                                                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                                                  <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
+                                                  <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 14 }}>Approve</Text>
+                                                </View>
+                                              )}
+                                            </TouchableOpacity>
+
+                                            <TouchableOpacity
+                                              onPress={() => rejectProfileRequest(viewing.id, "Please resubmit with correct documents.")}
+                                              style={{
+                                                flex: 1,
+                                                backgroundColor: "#d32f2f",
+                                                borderRadius: 8,
+                                                paddingVertical: 12,
+                                                alignItems: "center",
+                                                justifyContent: "center",
+                                                shadowColor: "#d32f2f",
+                                                shadowOffset: { width: 0, height: 2 },
+                                                shadowOpacity: 0.3,
+                                                elevation: 2
+                                              }}
+                                              disabled={isProcessingProfile === viewing.id}
+                                            >
+                                              {isProcessingProfile === viewing.id ? (
+                                                <ActivityIndicator color="#ffffff" size="small" />
+                                              ) : (
+                                                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                                                  <Ionicons name="close-circle-outline" size={18} color="#fff" />
+                                                  <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 14 }}>Reject</Text>
+                                                </View>
+                                              )}
+                                            </TouchableOpacity>
+                                          </View>
                                         </View>
-                                      ) : null}
-                                      <Text style={{ color: "#bbb", fontSize: 11, marginBottom: 10 }}>Submitted: {viewing.submittedAt ? new Date(viewing.submittedAt).toLocaleString() : "—"}</Text>
-                                      <View style={{ flexDirection: "row", gap: 10 }}>
-                                        <TouchableOpacity
-                                          onPress={() => approveProfileRequest(viewing.id)}
-                                          style={{ flex: 1, backgroundColor: "#4caf50", borderRadius: 8, padding: 10, alignItems: "center" }}
-                                          disabled={isProcessingProfile === viewing.id}
-                                        >
-                                          {isProcessingProfile === viewing.id ? (
-                                            <ActivityIndicator color="#ffffff" size="small" />
-                                          ) : (
-                                            <Text style={{ color: "#fff", fontWeight: "bold" }}>Approve</Text>
-                                          )}
-                                        </TouchableOpacity>
-                                        <TouchableOpacity
-                                          onPress={() => rejectProfileRequest(viewing.id, "Please resubmit with correct documents.")}
-                                          style={{ flex: 1, backgroundColor: "#c62828", borderRadius: 8, padding: 10, alignItems: "center" }}
-                                          disabled={isProcessingProfile === viewing.id}
-                                        >
-                                          {isProcessingProfile === viewing.id ? (
-                                            <ActivityIndicator color="#ffffff" size="small" />
-                                          ) : (
-                                            <Text style={{ color: "#fff", fontWeight: "bold" }}>Reject</Text>
-                                          )}
-                                        </TouchableOpacity>
-                                      </View>
+                                      )}
                                     </View>
-                                  )}
+                                  </Modal>
                                 </View>
                               )}
                             </View>
@@ -35552,13 +36049,13 @@ SOURCE QUESTION PAPER:
 
                           return (
                             <View style={{ gap: 12 }}>
-                              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-                                <Text style={styles.sectionTitle}> Profile Edit Permissions</Text>
+                              <View style={{ flexDirection: isMobile ? "column" : "row", justifyContent: "space-between", alignItems: isMobile ? "stretch" : "center", gap: 10 }}>
+                                <Text style={styles.sectionTitle}>Profile Edit Permissions</Text>
                                 {/* Batch Filter dropdown */}
-                                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#f5f5f5", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: "#e0e0e0" }}>
-                                  <Ionicons name="filter" size={14} color="#555" />
-                                  <Text style={{ fontSize: 11, fontWeight: "bold", color: "#555" }}>Batch:</Text>
-                                  <View style={{ minWidth: 150 }}>
+                                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: darkMode ? "#2a2a2a" : "#f5f5f5", paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: darkMode ? "#444" : "#e0e0e0", width: isMobile ? "100%" : "auto" }}>
+                                  <Ionicons name="filter" size={14} color={darkMode ? "#ccc" : "#555"} />
+                                  <Text style={{ fontSize: 12, fontWeight: "bold", color: darkMode ? "#ccc" : "#555" }}>Batch:</Text>
+                                  <View style={{ flex: 1, minWidth: isMobile ? undefined : 180 }}>
                                     <UniversalDropdown
                                       value={editPermBatchFilter}
                                       onSelect={(val) => {
@@ -35572,17 +36069,18 @@ SOURCE QUESTION PAPER:
                                           value: bName
                                         }))
                                       ]}
-                                      style={{ height: 30, fontSize: 11, borderColor: "#ccc" }}
+                                      darkMode={darkMode}
+                                      themeColor="#1565c0"
                                     />
                                   </View>
                                 </View>
                               </View>
 
                               <View style={[styles.card, { padding: 0, overflow: "hidden" }]}>
-                                <View style={{ flexDirection: "row", paddingHorizontal: 12, paddingVertical: 8, backgroundColor: "#f5f5f5", borderBottomWidth: 1, borderColor: "#e0e0e0" }}>
-                                  <Text style={{ flex: 1, fontWeight: "bold", fontSize: 12, color: "#555" }}>Roll No</Text>
-                                  <Text style={{ flex: 2, fontWeight: "bold", fontSize: 12, color: "#555" }}>Student Name</Text>
-                                  <Text style={{ flex: 1, fontWeight: "bold", fontSize: 12, color: "#555", textAlign: "center" }}>Edit Permission</Text>
+                                <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 10, paddingVertical: 10, backgroundColor: darkMode ? "#2a2a2a" : "#f5f5f5", borderBottomWidth: 1, borderColor: darkMode ? "#333" : "#e0e0e0" }}>
+                                  <Text style={{ width: 70, fontWeight: "bold", fontSize: 11, color: darkMode ? "#bbb" : "#555" }}>Roll No</Text>
+                                  <Text style={{ flex: 1, fontWeight: "bold", fontSize: 11, color: darkMode ? "#bbb" : "#555", paddingHorizontal: 4 }}>Student Name</Text>
+                                  <Text style={{ width: 105, fontWeight: "bold", fontSize: 11, color: darkMode ? "#bbb" : "#555", textAlign: "center" }}>Edit Permission</Text>
                                 </View>
                                 {(() => {
                                   if (batchFilteredSubmitted.length === 0) {
@@ -35599,22 +36097,24 @@ SOURCE QUESTION PAPER:
                                   return displayedSubmitted.map((s: any, idx: number) => {
                                     const hasPermission = !!s.profileEditPermission;
                                     return (
-                                      <View key={s.id} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 10, backgroundColor: idx % 2 === 0 ? "#fff" : "#fafafa", borderBottomWidth: 1, borderColor: "#f0f0f0" }}>
-                                        <Text style={{ flex: 1, fontSize: 13, color: "#424242" }}>{s.rollNumber || s.loginUsername || "—"}</Text>
-                                        <Text style={{ flex: 2, fontSize: 13, color: "#212121", fontWeight: "500" }}>{getStudentName(s) || s.loginUsername}</Text>
-                                        <View style={{ flex: 1, alignItems: "center" }}>
+                                      <View key={s.id} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 10, paddingVertical: 10, backgroundColor: idx % 2 === 0 ? (darkMode ? "#1e1e1e" : "#fff") : (darkMode ? "#242424" : "#fafafa"), borderBottomWidth: 1, borderColor: darkMode ? "#333" : "#f0f0f0" }}>
+                                        <Text style={{ width: 70, fontSize: 12, color: darkMode ? "#bbb" : "#424242" }} numberOfLines={1}>{s.rollNumber || s.loginUsername || "—"}</Text>
+                                        <Text style={{ flex: 1, fontSize: 12, color: darkMode ? "#fff" : "#212121", fontWeight: "600", paddingHorizontal: 4 }} numberOfLines={1}>{getStudentName(s) || s.loginUsername}</Text>
+                                        <View style={{ width: 105, alignItems: "center", justifyContent: "center" }}>
                                           <TouchableOpacity
                                             onPress={() => toggleProfileEditPermission(s.id, hasPermission)}
                                             style={{
-                                              paddingHorizontal: 14,
-                                              paddingVertical: 6,
-                                              borderRadius: 20,
+                                              paddingHorizontal: 10,
+                                              paddingVertical: 5,
+                                              borderRadius: 14,
                                               backgroundColor: hasPermission ? "#e8f5e9" : "#fce4ec",
-                                              borderWidth: 1.5,
-                                              borderColor: hasPermission ? "#4caf50" : "#ef9a9a"
+                                              borderWidth: 1,
+                                              borderColor: hasPermission ? "#4caf50" : "#ef9a9a",
+                                              minWidth: 84,
+                                              alignItems: "center"
                                             }}
                                           >
-                                            <Text style={{ fontSize: 12, fontWeight: "bold", color: hasPermission ? "#2e7d32" : "#c62828" }}>
+                                            <Text numberOfLines={1} style={{ fontSize: 11, fontWeight: "bold", color: hasPermission ? "#2e7d32" : "#c62828", textAlign: "center" }}>
                                               {hasPermission ? "Enabled" : "Disabled"}
                                             </Text>
                                           </TouchableOpacity>
@@ -35646,7 +36146,7 @@ SOURCE QUESTION PAPER:
                                 </TouchableOpacity>
                               )}
                               <Text style={{ color: "#999", fontSize: 11, textAlign: "center" }}>
-                                Showing {'{' + 'displayedSubmitted.length' + '}'} of {'{' + 'batchFilteredSubmitted.length' + '}'} students. Tap a button to toggle.
+                                Showing {displayedSubmitted.length} of {batchFilteredSubmitted.length} students. Tap a button to toggle.
                               </Text>
                             </View>
                           );
@@ -36572,7 +37072,6 @@ SOURCE QUESTION PAPER:
                                               {[
                                                 { key: "super_admin", label: "Super Admin" },
                                                 { key: "admin", label: "Admin" },
-                                                { key: "editor", label: "Editor" },
                                                 { key: "contributor", label: "Contributor" },
                                                 ...customRoles.map(r => ({ key: r, label: r.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) }))
                                               ].map(r => {
@@ -36633,7 +37132,7 @@ SOURCE QUESTION PAPER:
                                               onPress={async () => {
                                                 const roleName = inlineEditRoleName.trim().toLowerCase().replace(/\s+/g, "_");
                                                 if (!roleName) { Alert.alert("Error", "Please enter a role name."); return; }
-                                                const defaultRoleKeys = ["super_admin", "admin", "editor", "contributor"];
+                                                const defaultRoleKeys = ["super_admin", "admin", "contributor"];
                                                 if (defaultRoleKeys.includes(roleName) || customRoles.includes(roleName)) {
                                                   Alert.alert("Error", "This role name already exists."); return;
                                                 }
@@ -36742,7 +37241,6 @@ SOURCE QUESTION PAPER:
                                               {[
                                                 { key: "super_admin", label: "Super Admin" },
                                                 { key: "admin", label: "Admin" },
-                                                { key: "editor", label: "Editor" },
                                                 { key: "contributor", label: "Contributor" },
                                                 ...customRoles.map(r => ({ key: r, label: r.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) }))
                                               ].map(r => {
@@ -36803,7 +37301,7 @@ SOURCE QUESTION PAPER:
                                               onPress={async () => {
                                                 const roleName = inlineCreateRoleName.trim().toLowerCase().replace(/\s+/g, "_");
                                                 if (!roleName) { Alert.alert("Error", "Please enter a role name."); return; }
-                                                const defaultRoleKeys = ["super_admin", "admin", "editor", "contributor"];
+                                                const defaultRoleKeys = ["super_admin", "admin", "contributor"];
                                                 if (defaultRoleKeys.includes(roleName) || customRoles.includes(roleName)) {
                                                   Alert.alert("Error", "This role name already exists."); return;
                                                 }
@@ -36924,7 +37422,6 @@ SOURCE QUESTION PAPER:
                               {(user.role === "super_admin" || user.role === "developer") && (() => {
                                 const roles = [
                                   { key: "admin", label: "Admin" },
-                                  { key: "editor", label: "Editor" },
                                   { key: "contributor", label: "Contributor" },
                                   ...customRoles.map(r => ({ key: r, label: r.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) }))
                                 ];
@@ -37869,11 +38366,11 @@ SOURCE QUESTION PAPER:
                                                     }}
                                                   >
                                                     {/* Row 1: Student Name & Badges */}
-                                                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                                                      <Text style={{ fontWeight: "bold", color: darkMode ? "#ffffff" : "#212121", fontSize: 14, flex: 1 }}>
+                                                    <View style={{ flexDirection: "column", gap: 6 }}>
+                                                      <Text style={{ fontWeight: "bold", color: darkMode ? "#ffffff" : "#212121", fontSize: 14 }}>
                                                         {getStudentName(s)}
                                                       </Text>
-                                                      <View style={{ flexDirection: "row", alignItems: "center", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                                                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                                                         {isPending ? (
                                                           <View style={{ backgroundColor: "#ffebee", borderRadius: 4, paddingHorizontal: 7, paddingVertical: 2.5 }}>
                                                             <Text style={{ color: "#c62828", fontSize: 10.5, fontWeight: "bold" }}>Pending: ₹{pending.toLocaleString()}</Text>
@@ -38726,17 +39223,24 @@ SOURCE QUESTION PAPER:
                                         </TouchableOpacity>
 
                                         <TouchableOpacity
-                                          onPress={() => setCardSubTab("hallticket")}
+                                          onPress={() => {
+                                            if (getFeatureAccess("hall_ticket") === "none") {
+                                              Alert.alert("Permission Denied", "You do not have permission to access Hall Ticket Generation.");
+                                              return;
+                                            }
+                                            setCardSubTab("hallticket");
+                                          }}
                                           style={{
                                             flex: 1,
                                             paddingVertical: 10,
                                             alignItems: "center",
                                             borderBottomWidth: 2,
-                                            borderColor: cardSubTab === "hallticket" ? "#c62828" : "transparent"
+                                            borderColor: cardSubTab === "hallticket" ? "#c62828" : "transparent",
+                                            opacity: getFeatureAccess("hall_ticket") === "none" ? 0.45 : 1
                                           }}
                                         >
                                           <Text style={{ color: cardSubTab === "hallticket" ? "#c62828" : "#757575", fontWeight: "bold", fontSize: 14 }}>
-                                            Hall Ticket Template
+                                            🎫 Hall Ticket Template {getFeatureAccess("hall_ticket") === "none" ? "(No Access)" : getFeatureAccess("hall_ticket") === "edit_on_approval" ? "(Approval Req.)" : ""}
                                           </Text>
                                         </TouchableOpacity>
                                       </View>
@@ -38921,6 +39425,15 @@ SOURCE QUESTION PAPER:
 
                                       {/* Hall Ticket Customizer */}
                                       {cardSubTab === "hallticket" && (
+                                        getFeatureAccess("hall_ticket") === "none" ? (
+                                          <View style={[styles.card, { alignItems: "center", padding: 30 }]}>
+                                            <Ionicons name="lock-closed-outline" size={48} color="#c62828" />
+                                            <Text style={{ fontSize: 16, fontWeight: "bold", color: "#c62828", marginTop: 10 }}>Access Denied</Text>
+                                            <Text style={{ fontSize: 13, color: "#757575", marginTop: 6, textAlign: "center" }}>
+                                              Your role does not have permission to view or generate Hall Tickets.
+                                            </Text>
+                                          </View>
+                                        ) : (
                                         <View style={{ flexDirection: isMobile ? "column" : "row", flexWrap: "wrap", gap: 20 }}>
                                           {/* Editor Form */}
                                           <View style={{ flex: isMobile ? undefined : 1, width: isMobile ? "100%" : undefined, minWidth: isMobile ? undefined : 280, gap: 10 }}>
@@ -39101,6 +39614,7 @@ SOURCE QUESTION PAPER:
                                             </View>
                                           </View>
                                         </View>
+                                        )
                                       )}
                                     </View>
                                   );
@@ -39690,7 +40204,7 @@ SOURCE QUESTION PAPER:
                           };
 
                           // Export to Excel function
-                          const handleExportMonthlyExcel = () => {
+                          const handleExportMonthlyExcel = async () => {
                             try {
                               const [y, m] = (offlineAttendanceMonth || new Date().toISOString().slice(0, 7)).split("-");
                               const daysCount = new Date(parseInt(y), parseInt(m), 0).getDate();
@@ -39736,10 +40250,33 @@ SOURCE QUESTION PAPER:
                               const ws = XLSX.utils.aoa_to_sheet(worksheetData);
                               const wb = XLSX.utils.book_new();
                               XLSX.utils.book_append_sheet(wb, ws, "Monthly Register");
-                              XLSX.writeFile(wb, `Attendance_${activeMonthlyBatch || "Batch"}_${offlineAttendanceMonth}.xlsx`);
-                            } catch (err) {
+                              const fileName = `Attendance_${activeMonthlyBatch || "Batch"}_${offlineAttendanceMonth}.xlsx`;
+
+                              if (Platform.OS === 'web') {
+                                XLSX.writeFile(wb, fileName);
+                              } else {
+                                const base64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+                                const baseDir = FileSystem.documentDirectory || FileSystem.cacheDirectory || '';
+                                const uri = (baseDir.endsWith('/') ? baseDir : baseDir + '/') + fileName;
+                                const legacyWrite = (FileSystem as any).writeAsStringAsync || (FileSystem as any).default?.writeAsStringAsync;
+                                if (typeof legacyWrite === 'function') {
+                                  await legacyWrite(uri, base64, { encoding: (FileSystem as any).EncodingType?.Base64 || 'base64' });
+                                } else {
+                                  throw new Error('FileSystem writer not available');
+                                }
+                                if (await Sharing.isAvailableAsync()) {
+                                  await Sharing.shareAsync(uri, {
+                                    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                    dialogTitle: 'Export Attendance Excel',
+                                    UTI: 'com.microsoft.excel.xlsx'
+                                  });
+                                } else {
+                                  Alert.alert('Excel Exported', `Saved successfully to ${fileName}`);
+                                }
+                              }
+                            } catch (err: any) {
                               console.error("Excel export error:", err);
-                              Alert.alert("Export Error", "Failed to generate Excel export file.");
+                              Alert.alert("Export Error", err?.message || "Failed to generate Excel export file.");
                             }
                           };
 
@@ -39829,9 +40366,9 @@ SOURCE QUESTION PAPER:
                                       elevation: offlineAttendanceViewMode === "daily" ? 2 : 0,
                                     }}
                                   >
-                                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                                      <Ionicons name="create-outline" size={16} color={offlineAttendanceViewMode === "daily" ? "#c62828" : "#757575"} />
-                                      <Text style={{ fontWeight: "bold", fontSize: 13, color: offlineAttendanceViewMode === "daily" ? "#c62828" : "#757575" }}>
+                                    <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                                      <Ionicons name="create-outline" size={15} color={offlineAttendanceViewMode === "daily" ? "#c62828" : "#757575"} />
+                                      <Text numberOfLines={1} style={{ fontWeight: "bold", fontSize: isMobile ? 11.5 : 13, color: offlineAttendanceViewMode === "daily" ? "#c62828" : "#757575" }}>
                                         Daily Marking
                                       </Text>
                                     </View>
@@ -39842,6 +40379,7 @@ SOURCE QUESTION PAPER:
                                     style={{
                                       flex: 1,
                                       paddingVertical: 9,
+                                      paddingHorizontal: 4,
                                       borderRadius: 8,
                                       backgroundColor: offlineAttendanceViewMode === "monthly" ? (darkMode ? "#1e1e1e" : "#fff") : "transparent",
                                       alignItems: "center",
@@ -39851,9 +40389,9 @@ SOURCE QUESTION PAPER:
                                       elevation: offlineAttendanceViewMode === "monthly" ? 2 : 0,
                                     }}
                                   >
-                                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                                      <Ionicons name="calendar" size={16} color={offlineAttendanceViewMode === "monthly" ? "#c62828" : "#757575"} />
-                                      <Text style={{ fontWeight: "bold", fontSize: 13, color: offlineAttendanceViewMode === "monthly" ? "#c62828" : "#757575" }}>
+                                    <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                                      <Ionicons name="calendar" size={15} color={offlineAttendanceViewMode === "monthly" ? "#c62828" : "#757575"} />
+                                      <Text numberOfLines={1} style={{ fontWeight: "bold", fontSize: isMobile ? 11.5 : 13, color: offlineAttendanceViewMode === "monthly" ? "#c62828" : "#757575" }}>
                                         Monthly Register & History
                                       </Text>
                                     </View>
@@ -40249,37 +40787,25 @@ SOURCE QUESTION PAPER:
                                       </View>
                                     </View>
 
-                                    {/* Batch Pills */}
+                                    {/* Batch Dropdown */}
                                     <View style={{ gap: 6 }}>
-                                      <Text style={{ fontSize: 12, fontWeight: "bold", color: "#757575" }}>SELECT OFFLINE BATCH:</Text>
-                                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-                                        {attendanceBatchNames.map(batchName => {
-                                          const isSelected = activeMonthlyBatch === batchName;
+                                      <Text style={{ fontSize: 12, fontWeight: "bold", color: darkMode ? "#bbb" : "#757575" }}>SELECT OFFLINE BATCH:</Text>
+                                      <UniversalDropdown
+                                        value={activeMonthlyBatch}
+                                        options={attendanceBatchNames.map(batchName => {
                                           const count = attendanceStudents.filter((s: any) => (s.batch || "General / Unassigned") === batchName).length;
-                                          return (
-                                            <TouchableOpacity
-                                              key={batchName}
-                                              onPress={() => setOfflineAttendanceMonthlyBatch(batchName)}
-                                              style={{
-                                                paddingHorizontal: 14,
-                                                paddingVertical: 7,
-                                                borderRadius: 20,
-                                                backgroundColor: isSelected ? "#c62828" : darkMode ? "#2a2a2a" : "#f1f3f4",
-                                                flexDirection: "row",
-                                                alignItems: "center",
-                                                gap: 6
-                                              }}
-                                            >
-                                              <Text style={{ fontSize: 12, fontWeight: isSelected ? "bold" : "600", color: isSelected ? "#fff" : "#424242" }}>
-                                                {batchName}
-                                              </Text>
-                                              <View style={{ backgroundColor: isSelected ? "rgba(255,255,255,0.25)" : "#e0e0e0", borderRadius: 10, paddingHorizontal: 6, paddingVertical: 1 }}>
-                                                <Text style={{ fontSize: 10, fontWeight: "bold", color: isSelected ? "#fff" : "#616161" }}>{count}</Text>
-                                              </View>
-                                            </TouchableOpacity>
-                                          );
+                                          return {
+                                            label: batchName,
+                                            value: batchName,
+                                            count
+                                          };
                                         })}
-                                      </ScrollView>
+                                        onSelect={(val) => setOfflineAttendanceMonthlyBatch(val)}
+                                        placeholder="-- Select Offline Batch --"
+                                        darkMode={darkMode}
+                                        themeColor="#c62828"
+                                        iconName="people-outline"
+                                      />
                                     </View>
                                   </View>
 
@@ -41916,6 +42442,7 @@ SOURCE QUESTION PAPER:
 
                       {/* Remaining LMS management items at the bottom */}
                       {isAdmin && renderSidebarItem("lms-zoom-accounts", lmsSub, "Zoom Accounts", "videocam-outline", () => changeLmsSub("lms-zoom-accounts"), "lms-admin-zoom-accounts", undefined, lmsTabsCollapsed && !isMobile, "lms_zoom_accounts")}
+                      {isAdmin && renderSidebarItem("lms-guest-recordings", lmsSub, "Guest Recordings", "film-outline", () => changeLmsSub("lms-guest-recordings"), "lms-admin-guest-recordings", undefined, lmsTabsCollapsed && !isMobile)}
 
                       {/* {isAdmin && (!lmsTabsCollapsed || isMobile) && <Text style={styles.categoryHeader}>AI STUDIO</Text>} */}
                       {/* {isAdmin && renderSidebarItem("lms-chatbot", lmsSub, "NERMAI AI Studio", "chatbubbles-outline", () => changeLmsSub("lms-chatbot"), "lms-admin-chatbot", undefined, lmsTabsCollapsed && !isMobile, "lms_chatbot_cms")} */}
@@ -42645,16 +43172,17 @@ SOURCE QUESTION PAPER:
 
                                     const isEnded = ['ENDED', 'CANCELLED', 'EXPIRED', 'ARCHIVED', 'NOT_UPLOADED', 'RECORDED_AVAILABLE', 'ended'].includes(String(sessionStatus || '').toUpperCase()) || String(sessionStatus || '').toLowerCase() === 'ended' || isExpired;
 
-                                    const isLive = !isEnded && (sessionStatus === "live" || sessionStatus === "active" || sessionStatus === "in_progress" || sessionStatus === "LIVE" || sessionStatus === "JOINING" || sessionStatus === "HOST_CONNECTED" || sessionStatus === "ATTENDANCE_RUNNING");
-                                    const isEndable = isAdmin && !isEnded;
+                                    const isDbLive = sessionStatus === "live" || sessionStatus === "active" || sessionStatus === "in_progress" || sessionStatus === "LIVE" || sessionStatus === "JOINING" || sessionStatus === "HOST_CONNECTED" || sessionStatus === "ATTENDANCE_RUNNING";
+                                    const isLive = !isEnded && isDbLive;
+                                    const isEndable = isAdmin && (!isEnded || isDbLive);
                                     const isCancelled = sessionStatus === "cancelled" || sessionStatus === "canceled" || sessionStatus === "CANCELLED";
                                     const faculty = session.teacherName || session.staffName || session.instructorName || "";
                                     const scheduledTime = scheduledTimeObj
                                       ? scheduledTimeObj.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })
                                       : session.scheduledAt || "Time not set";
-                                    // 🟡 Yellow=Upcoming, 🟢 Green=Live, 🔴 Red=Ended/Cancelled
-                                    const statusColor = isLive ? "#2e7d32" : isCancelled || isEnded ? "#c62828" : "#f59e0b";
-                                    const statusLabel = isLive ? "🟢 LIVE NOW" : isCancelled ? "🔴 CANCELLED" : isEnded ? "🔴 ENDED" : "🟡 " + sessionStatus.toUpperCase();
+                                    // 🟡 Yellow=Upcoming, 🟢 Green=Live, 🔴 Red=Ended/Cancelled, 🟠 Orange=Expired but still live in DB
+                                    const statusColor = isLive ? "#2e7d32" : (isDbLive && isExpired) ? "#e65100" : isCancelled || isEnded ? "#c62828" : "#f59e0b";
+                                    const statusLabel = isLive ? "🟢 LIVE NOW" : (isDbLive && isExpired) ? "🟠 EXPIRED (STILL LIVE IN DB)" : isCancelled ? "🔴 CANCELLED" : isEnded ? "🔴 ENDED" : "🟡 " + sessionStatus.toUpperCase();
 
                                     const courseName = session.courseName || session.courseTitle || (lmsCourses.find((c: any) => c.id === session.courseId)?.title || lmsCourses.find((c: any) => c.id === session.courseId)?.name || "");
                                     let batchName = session.batchName || session.targetBatchName || "";
@@ -43319,174 +43847,65 @@ SOURCE QUESTION PAPER:
                                       {/* Subject Filter */}
                                       <View style={{ flex: 1, minWidth: 120 }}>
                                         <Text style={{ fontSize: 10, fontWeight: "bold", color: darkMode ? "#aaa" : "#666", marginBottom: 4 }}>SUBJECT</Text>
-                                        {Platform.OS === "web" ? (
-                                          <select
-                                            value={recFilterSubject}
-                                            onChange={(e: any) => {
-                                              setRecFilterSubject(e.target.value);
-                                              setRecFilterTopic("all");
-                                              setRecFilterSubtopic("all");
-                                            }}
-                                            style={{
-                                              height: 38,
-                                              borderRadius: 6,
-                                              paddingLeft: 8,
-                                              paddingRight: 8,
-                                              fontSize: 12,
-                                              backgroundColor: darkMode ? "#2a2a2a" : "#fff",
-                                              color: darkMode ? "#fff" : "#212121",
-                                              border: "1px solid " + (darkMode ? "#444" : "#ccc"),
-                                              outline: "none",
-                                              width: "100%"
-                                            }}
-                                          >
-                                            <option value="all">All Subjects</option>
-                                            {lmsSubjects.map((s: any) => (
-                                              <option key={s.id || s._id} value={s.id || s._id}>{s.name || s.title}</option>
-                                            ))}
-                                          </select>
-                                        ) : (
-                                          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-                                            {[{ id: "all", name: "All Subjects" }, ...lmsSubjects].map((s: any) => {
-                                              const sid = s.id || s._id;
-                                              const isSel = recFilterSubject === sid;
-                                              return (
-                                                <TouchableOpacity
-                                                  key={sid}
-                                                  onPress={() => {
-                                                    setRecFilterSubject(sid);
-                                                    setRecFilterTopic("all");
-                                                    setRecFilterSubtopic("all");
-                                                  }}
-                                                  style={{
-                                                    paddingHorizontal: 10,
-                                                    paddingVertical: 6,
-                                                    borderRadius: 16,
-                                                    borderWidth: 1,
-                                                    borderColor: isSel ? "#2e7d32" : (darkMode ? "#444" : "#ccc"),
-                                                    backgroundColor: isSel ? (darkMode ? "#1b5e20" : "#e8f5e9") : (darkMode ? "#2a2a2a" : "#fff")
-                                                  }}
-                                                >
-                                                  <Text style={{ fontSize: 11, fontWeight: isSel ? "bold" : "normal", color: isSel ? (darkMode ? "#81c784" : "#2e7d32") : (darkMode ? "#ccc" : "#444") }}>
-                                                    {s.name || s.title}
-                                                  </Text>
-                                                </TouchableOpacity>
-                                              );
-                                            })}
-                                          </ScrollView>
-                                        )}
+                                        <UniversalDropdown
+                                          value={recFilterSubject}
+                                          options={[
+                                            { label: "All Subjects", value: "all" },
+                                            ...lmsSubjects.map((s: any) => ({
+                                              label: s.name || s.title,
+                                              value: s.id || s._id
+                                            }))
+                                          ]}
+                                          onSelect={(val) => {
+                                            setRecFilterSubject(val);
+                                            setRecFilterTopic("all");
+                                            setRecFilterSubtopic("all");
+                                          }}
+                                          placeholder="All Subjects"
+                                          darkMode={darkMode}
+                                          themeColor="#2e7d32"
+                                        />
                                       </View>
 
                                       {/* Topic Filter (Optional) */}
                                       <View style={{ flex: 1, minWidth: 120 }}>
                                         <Text style={{ fontSize: 10, fontWeight: "bold", color: darkMode ? "#aaa" : "#666", marginBottom: 4 }}>TOPIC (OPTIONAL)</Text>
-                                        {Platform.OS === "web" ? (
-                                          <select
-                                            value={recFilterTopic}
-                                            onChange={(e: any) => {
-                                              setRecFilterTopic(e.target.value);
-                                              setRecFilterSubtopic("all");
-                                            }}
-                                            style={{
-                                              height: 38,
-                                              borderRadius: 6,
-                                              paddingLeft: 8,
-                                              paddingRight: 8,
-                                              fontSize: 12,
-                                              backgroundColor: darkMode ? "#2a2a2a" : "#fff",
-                                              color: darkMode ? "#fff" : "#212121",
-                                              border: "1px solid " + (darkMode ? "#444" : "#ccc"),
-                                              outline: "none",
-                                              width: "100%"
-                                            }}
-                                          >
-                                            <option value="all">All Topics</option>
-                                            {availableLmsTopics.map((t: any) => (
-                                              <option key={t.id || t._id} value={t.id || t._id}>{t.name || t.title}</option>
-                                            ))}
-                                          </select>
-                                        ) : (
-                                          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-                                            {[{ id: "all", name: "All Topics" }, ...availableLmsTopics].map((t: any) => {
-                                              const tid = t.id || t._id;
-                                              const isSel = recFilterTopic === tid;
-                                              return (
-                                                <TouchableOpacity
-                                                  key={tid}
-                                                  onPress={() => {
-                                                    setRecFilterTopic(tid);
-                                                    setRecFilterSubtopic("all");
-                                                  }}
-                                                  style={{
-                                                    paddingHorizontal: 10,
-                                                    paddingVertical: 6,
-                                                    borderRadius: 16,
-                                                    borderWidth: 1,
-                                                    borderColor: isSel ? "#2e7d32" : (darkMode ? "#444" : "#ccc"),
-                                                    backgroundColor: isSel ? (darkMode ? "#1b5e20" : "#e8f5e9") : (darkMode ? "#2a2a2a" : "#fff")
-                                                  }}
-                                                >
-                                                  <Text style={{ fontSize: 11, fontWeight: isSel ? "bold" : "normal", color: isSel ? (darkMode ? "#81c784" : "#2e7d32") : (darkMode ? "#ccc" : "#444") }}>
-                                                    {t.name || t.title}
-                                                  </Text>
-                                                </TouchableOpacity>
-                                              );
-                                            })}
-                                          </ScrollView>
-                                        )}
+                                        <UniversalDropdown
+                                          value={recFilterTopic}
+                                          options={[
+                                            { label: "All Topics", value: "all" },
+                                            ...availableLmsTopics.map((t: any) => ({
+                                              label: t.name || t.title,
+                                              value: t.id || t._id
+                                            }))
+                                          ]}
+                                          onSelect={(val) => {
+                                            setRecFilterTopic(val);
+                                            setRecFilterSubtopic("all");
+                                          }}
+                                          placeholder="All Topics"
+                                          darkMode={darkMode}
+                                          themeColor="#2e7d32"
+                                        />
                                       </View>
 
                                       {/* Subtopic Filter (Optional) */}
                                       <View style={{ flex: 1, minWidth: 120 }}>
                                         <Text style={{ fontSize: 10, fontWeight: "bold", color: darkMode ? "#aaa" : "#666", marginBottom: 4 }}>SUBTOPIC (OPTIONAL)</Text>
-                                        {Platform.OS === "web" ? (
-                                          <select
-                                            value={recFilterSubtopic}
-                                            onChange={(e: any) => setRecFilterSubtopic(e.target.value)}
-                                            style={{
-                                              height: 38,
-                                              borderRadius: 6,
-                                              paddingLeft: 8,
-                                              paddingRight: 8,
-                                              fontSize: 12,
-                                              backgroundColor: darkMode ? "#2a2a2a" : "#fff",
-                                              color: darkMode ? "#fff" : "#212121",
-                                              border: "1px solid " + (darkMode ? "#444" : "#ccc"),
-                                              outline: "none",
-                                              width: "100%"
-                                            }}
-                                          >
-                                            <option value="all">All Subtopics</option>
-                                            {availableLmsSubtopics.map((st: any) => (
-                                              <option key={st.id || st._id} value={st.id || st._id}>{st.name || st.title}</option>
-                                            ))}
-                                          </select>
-                                        ) : (
-                                          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-                                            {[{ id: "all", name: "All Subtopics" }, ...availableLmsSubtopics].map((st: any) => {
-                                              const stid = st.id || st._id;
-                                              const isSel = recFilterSubtopic === stid;
-                                              return (
-                                                <TouchableOpacity
-                                                  key={stid}
-                                                  onPress={() => setRecFilterSubtopic(stid)}
-                                                  style={{
-                                                    paddingHorizontal: 10,
-                                                    paddingVertical: 6,
-                                                    borderRadius: 16,
-                                                    borderWidth: 1,
-                                                    borderColor: isSel ? "#2e7d32" : (darkMode ? "#444" : "#ccc"),
-                                                    backgroundColor: isSel ? (darkMode ? "#1b5e20" : "#e8f5e9") : (darkMode ? "#2a2a2a" : "#fff")
-                                                  }}
-                                                >
-                                                  <Text style={{ fontSize: 11, fontWeight: isSel ? "bold" : "normal", color: isSel ? (darkMode ? "#81c784" : "#2e7d32") : (darkMode ? "#ccc" : "#444") }}>
-                                                    {st.name || st.title}
-                                                  </Text>
-                                                </TouchableOpacity>
-                                              );
-                                            })}
-                                          </ScrollView>
-                                        )}
+                                        <UniversalDropdown
+                                          value={recFilterSubtopic}
+                                          options={[
+                                            { label: "All Subtopics", value: "all" },
+                                            ...availableLmsSubtopics.map((st: any) => ({
+                                              label: st.name || st.title,
+                                              value: st.id || st._id
+                                            }))
+                                          ]}
+                                          onSelect={(val) => setRecFilterSubtopic(val)}
+                                          placeholder="All Subtopics"
+                                          darkMode={darkMode}
+                                          themeColor="#2e7d32"
+                                        />
                                       </View>
                                     </View>
                                   </View>
@@ -43646,16 +44065,46 @@ SOURCE QUESTION PAPER:
                                         : "";
                                       const hasVideo = !!cls.encryptedVideoId || !!cls.recordingUrl || !!cls.playbackUrl || !!cls.videoUrl;
 
+                                      const playRecordedClass = async () => {
+                                        if (!hasVideo) return;
+                                        if (cls.access && !cls.access.allowed) {
+                                          if (cls.access.pendingRequest) {
+                                            alert("Your access request is currently pending review.");
+                                          } else {
+                                            setAccessRequestFormId(cls.id || cls._id);
+                                            setAccessRequestReason("");
+                                          }
+                                          return;
+                                        }
+                                        try {
+                                          const res = await api.get(`/classes/${cls.id || cls._id}/access`);
+                                          const playerToken = res.playerToken || res.data?.playerToken;
+                                          const denialReason = res.denialReason || res.data?.denialReason || "Access Denied";
+
+                                          if (playerToken) {
+                                            setVideoPlayerModal({ visible: true, playerToken });
+                                          } else {
+                                            alert("Failed to get player token: " + denialReason);
+                                          }
+                                        } catch (err: any) {
+                                          alert("Error accessing recording: " + (err.response?.data?.message || err.message));
+                                        }
+                                      };
+
                                       return (
                                         <View key={cls.id || cls._id} style={[styles.card, darkMode && styles.cardDark, { width: "100%", maxWidth: 380, flex: 1, minWidth: 280, padding: 0, overflow: "hidden", borderRadius: 12 }]}>
-                                          <View style={{ width: "100%", height: 160, backgroundColor: "#111", justifyContent: "center", alignItems: "center", position: "relative" }}>
+                                          <TouchableOpacity
+                                            activeOpacity={hasVideo ? 0.82 : 1}
+                                            onPress={hasVideo ? playRecordedClass : undefined}
+                                            style={{ width: "100%", height: 160, backgroundColor: "#111", justifyContent: "center", alignItems: "center", position: "relative" }}
+                                          >
                                             <Ionicons name="play-circle" size={52} color="#c62828" />
                                             {duration ? (
                                               <View style={{ position: "absolute", bottom: 8, right: 8, backgroundColor: "rgba(0,0,0,0.75)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
                                                 <Text style={{ color: "#fff", fontSize: 11, fontWeight: "bold" }}>{duration}</Text>
                                               </View>
                                             ) : null}
-                                          </View>
+                                          </TouchableOpacity>
                                           <View style={{ padding: 14, gap: 8 }}>
                                             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 4 }}>
                                               {subject ? (
@@ -43809,21 +44258,7 @@ SOURCE QUESTION PAPER:
                                               ) : (
                                                 // State: access granted (or admin/staff with no access field) — existing Watch Recording
                                                 <TouchableOpacity
-                                                  onPress={async () => {
-                                                    try {
-                                                      const res = await api.get(`/classes/${cls.id || cls._id}/access`);
-                                                      const playerToken = res.playerToken || res.data?.playerToken;
-                                                      const denialReason = res.denialReason || res.data?.denialReason || "Access Denied";
-
-                                                      if (playerToken) {
-                                                        setVideoPlayerModal({ visible: true, playerToken });
-                                                      } else {
-                                                        alert("Failed to get player token: " + denialReason);
-                                                      }
-                                                    } catch (err: any) {
-                                                      alert("Error accessing recording: " + (err.response?.data?.message || err.message));
-                                                    }
-                                                  }}
+                                                  onPress={playRecordedClass}
                                                   style={[styles.primaryBtn, { marginTop: 6, paddingVertical: 8, flexDirection: "row", alignItems: "center", gap: 6, justifyContent: "center" }]}
                                                 >
                                                   <Ionicons name="play-circle-outline" size={16} color="#fff" />
@@ -44450,132 +44885,44 @@ SOURCE QUESTION PAPER:
                                     {/* Filter by Year */}
                                     <View style={{ flex: 1, minWidth: 100 }}>
                                       <Text style={{ fontSize: 10, fontWeight: "bold", color: darkMode ? "#aaa" : "#666", marginBottom: 4 }}>YEAR</Text>
-                                      {Platform.OS === "web" ? (
-                                        <select
-                                          value={dailyFilterYear}
-                                          onChange={(e: any) => { setDailyFilterYear(e.target.value); setDailyFilterDate(""); }}
-                                          style={{
-                                            height: 38,
-                                            borderRadius: 6,
-                                            paddingLeft: 8,
-                                            paddingRight: 8,
-                                            fontSize: 12,
-                                            backgroundColor: darkMode ? "#2a2a2a" : "#fff",
-                                            color: darkMode ? "#fff" : "#212121",
-                                            border: "1px solid " + (darkMode ? "#444" : "#ccc"),
-                                            outline: "none",
-                                            width: "100%"
-                                          }}
-                                        >
-                                          <option value="">All Years</option>
-                                          {dailyAvailableYears.map((y: string) => (
-                                            <option key={y} value={y}>{y}</option>
-                                          ))}
-                                        </select>
-                                      ) : (
-                                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-                                          {["", ...dailyAvailableYears].map((y) => {
-                                            const isSel = dailyFilterYear === y;
-                                            return (
-                                              <TouchableOpacity
-                                                key={y || "all"}
-                                                onPress={() => { setDailyFilterYear(y); setDailyFilterDate(""); }}
-                                                style={{
-                                                  paddingHorizontal: 10,
-                                                  paddingVertical: 6,
-                                                  borderRadius: 16,
-                                                  borderWidth: 1,
-                                                  borderColor: isSel ? "#1565c0" : (darkMode ? "#444" : "#ccc"),
-                                                  backgroundColor: isSel ? (darkMode ? "#0d47a1" : "#e3f2fd") : (darkMode ? "#2a2a2a" : "#fff")
-                                                }}
-                                              >
-                                                <Text style={{ fontSize: 11, fontWeight: isSel ? "bold" : "normal", color: isSel ? "#1565c0" : (darkMode ? "#ccc" : "#444") }}>
-                                                  {y || "All Years"}
-                                                </Text>
-                                              </TouchableOpacity>
-                                            );
-                                          })}
-                                        </ScrollView>
-                                      )}
+                                      <UniversalDropdown
+                                        value={dailyFilterYear}
+                                        options={[
+                                          { label: "All Years", value: "" },
+                                          ...dailyAvailableYears.map((y: string) => ({ label: y, value: y }))
+                                        ]}
+                                        onSelect={(val) => { setDailyFilterYear(val); setDailyFilterDate(""); }}
+                                        placeholder="All Years"
+                                        darkMode={darkMode}
+                                        themeColor="#1565c0"
+                                      />
                                     </View>
 
                                     {/* Filter by Month */}
                                     <View style={{ flex: 1.2, minWidth: 120 }}>
                                       <Text style={{ fontSize: 10, fontWeight: "bold", color: darkMode ? "#aaa" : "#666", marginBottom: 4 }}>MONTH</Text>
-                                      {Platform.OS === "web" ? (
-                                        <select
-                                          value={dailyFilterMonth}
-                                          onChange={(e: any) => { setDailyFilterMonth(e.target.value); setDailyFilterDate(""); }}
-                                          style={{
-                                            height: 38,
-                                            borderRadius: 6,
-                                            paddingLeft: 8,
-                                            paddingRight: 8,
-                                            fontSize: 12,
-                                            backgroundColor: darkMode ? "#2a2a2a" : "#fff",
-                                            color: darkMode ? "#fff" : "#212121",
-                                            border: "1px solid " + (darkMode ? "#444" : "#ccc"),
-                                            outline: "none",
-                                            width: "100%"
-                                          }}
-                                        >
-                                          <option value="">All Months</option>
-                                          {[
-                                            { val: "01", label: "January (01)" },
-                                            { val: "02", label: "February (02)" },
-                                            { val: "03", label: "March (03)" },
-                                            { val: "04", label: "April (04)" },
-                                            { val: "05", label: "May (05)" },
-                                            { val: "06", label: "June (06)" },
-                                            { val: "07", label: "July (07)" },
-                                            { val: "08", label: "August (08)" },
-                                            { val: "09", label: "September (09)" },
-                                            { val: "10", label: "October (10)" },
-                                            { val: "11", label: "November (11)" },
-                                            { val: "12", label: "December (12)" }
-                                          ].map(m => (
-                                            <option key={m.val} value={m.val}>{m.label}</option>
-                                          ))}
-                                        </select>
-                                      ) : (
-                                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-                                          {[
-                                            { val: "", label: "All" },
-                                            { val: "01", label: "Jan" },
-                                            { val: "02", label: "Feb" },
-                                            { val: "03", label: "Mar" },
-                                            { val: "04", label: "Apr" },
-                                            { val: "05", label: "May" },
-                                            { val: "06", label: "Jun" },
-                                            { val: "07", label: "Jul" },
-                                            { val: "08", label: "Aug" },
-                                            { val: "09", label: "Sep" },
-                                            { val: "10", label: "Oct" },
-                                            { val: "11", label: "Nov" },
-                                            { val: "12", label: "Dec" }
-                                          ].map(m => {
-                                            const isSel = dailyFilterMonth === m.val;
-                                            return (
-                                              <TouchableOpacity
-                                                key={m.val || "all"}
-                                                onPress={() => { setDailyFilterMonth(m.val); setDailyFilterDate(""); }}
-                                                style={{
-                                                  paddingHorizontal: 10,
-                                                  paddingVertical: 6,
-                                                  borderRadius: 16,
-                                                  borderWidth: 1,
-                                                  borderColor: isSel ? "#1565c0" : (darkMode ? "#444" : "#ccc"),
-                                                  backgroundColor: isSel ? (darkMode ? "#0d47a1" : "#e3f2fd") : (darkMode ? "#2a2a2a" : "#fff")
-                                                }}
-                                              >
-                                                <Text style={{ fontSize: 11, fontWeight: isSel ? "bold" : "normal", color: isSel ? "#1565c0" : (darkMode ? "#ccc" : "#444") }}>
-                                                  {m.label}
-                                                </Text>
-                                              </TouchableOpacity>
-                                            );
-                                          })}
-                                        </ScrollView>
-                                      )}
+                                      <UniversalDropdown
+                                        value={dailyFilterMonth}
+                                        options={[
+                                          { label: "All Months", value: "" },
+                                          { label: "January (01)", value: "01" },
+                                          { label: "February (02)", value: "02" },
+                                          { label: "March (03)", value: "03" },
+                                          { label: "April (04)", value: "04" },
+                                          { label: "May (05)", value: "05" },
+                                          { label: "June (06)", value: "06" },
+                                          { label: "July (07)", value: "07" },
+                                          { label: "August (08)", value: "08" },
+                                          { label: "September (09)", value: "09" },
+                                          { label: "October (10)", value: "10" },
+                                          { label: "November (11)", value: "11" },
+                                          { label: "December (12)", value: "12" }
+                                        ]}
+                                        onSelect={(val) => { setDailyFilterMonth(val); setDailyFilterDate(""); }}
+                                        placeholder="All Months"
+                                        darkMode={darkMode}
+                                        themeColor="#1565c0"
+                                      />
                                     </View>
 
                                     {/* Filter by Exact Date */}
@@ -44782,7 +45129,15 @@ SOURCE QUESTION PAPER:
                                   </Suspense>
                                 </View>
                               )}
-                              {/* Student — My Courses */}
+                              {/* Admin — Guest Recordings */}
+                               {isAdmin && lmsSub === 'lms-guest-recordings' && GuestRecordingsAdminPage && (
+                                 <View style={{ flex: 1, padding: 16, backgroundColor: darkMode ? '#0B0B14' : '#f9f9f9' }}>
+                                   <Suspense fallback={<RNCardGridSkeleton count={6} darkMode={darkMode} />}>
+                                     <GuestRecordingsAdminPage />
+                                   </Suspense>
+                                 </View>
+                               )}
+                               {/* Student — My Courses */}
                               {!isAdmin && lmsSub === 'my-courses' && StudentCoursesPage && (
                                 <View style={{ flex: 1, backgroundColor: darkMode ? '#0B0B14' : '#f9f9f9' }}>
                                   <Suspense fallback={<RNCardGridSkeleton count={6} darkMode={darkMode} />}>
@@ -44802,6 +45157,11 @@ SOURCE QUESTION PAPER:
                           </LMSProvider>
                         ) : (
                           <Suspense fallback={<RNTableSkeleton rows={6} darkMode={darkMode} />}>
+                            {isAdmin && lmsSub === "lms-guest-recordings" && GuestRecordingsAdminPage ? (
+                              <View style={{ flex: 1, backgroundColor: darkMode ? "#0B0B14" : "#f9f9f9", padding: 8 }}>
+                                <GuestRecordingsAdminPage isMobile={true} darkMode={darkMode} />
+                              </View>
+                            ) : (
                             <MobileLMSPages
                               lmsSub={lmsSub}
                               isAdmin={isAdmin}
@@ -44811,6 +45171,7 @@ SOURCE QUESTION PAPER:
                               getFeatureAccess={getFeatureAccess}
                               changeLmsSub={changeLmsSub}
                             />
+                            )}
                           </Suspense>
                         )}
                       </>
@@ -45093,6 +45454,7 @@ SOURCE QUESTION PAPER:
                       {!crmSidebarCollapsed || isMobile ? <Text style={styles.categoryHeader}>CAMPAIGNS & ENGAGEMENT</Text> : null}
                       {renderSidebarItem("campaigns", crmSub, "Campaigns", "megaphone-outline", () => changeCrmSub("campaigns"), "crm-campaigns", undefined, crmSidebarCollapsed && !isMobile, "campaigns")}
                       {renderSidebarItem("guest-posters", crmSub, "Guest Posters", "images-outline", () => { changeCrmSub("guest-posters"); loadAdminGuestPosters(); }, "crm-guest-posters", undefined, crmSidebarCollapsed && !isMobile, "campaigns")}
+                      {renderSidebarItem("guest-recordings", crmSub, "Guest Recordings", "videocam-outline", () => changeCrmSub("guest-recordings"), "crm-guest-recordings", undefined, crmSidebarCollapsed && !isMobile)}
                       {renderSidebarItem("feedback", crmSub, "Feedback", "star-outline", () => changeCrmSub("feedback"), "crm-feedback", undefined, crmSidebarCollapsed && !isMobile, "alumni_feedback")}
                     </ScrollView>
                   </View>
@@ -45814,6 +46176,15 @@ SOURCE QUESTION PAPER:
                                 ))
                               )}
                             </View>
+                          </View>
+                        )}
+
+                        {/* ── CRM: Guest Recordings Management ─────────────────── */}
+                        {crmSub === "guest-recordings" && GuestRecordingsAdminPage && (
+                          <View style={{ flex: 1, backgroundColor: darkMode ? '#0B0B14' : '#f9f9f9' }}>
+                            <Suspense fallback={<RNCardGridSkeleton count={6} darkMode={darkMode} />}>
+                              <GuestRecordingsAdminPage />
+                            </Suspense>
                           </View>
                         )}
 
@@ -48699,11 +49070,14 @@ SOURCE QUESTION PAPER:
                     <WebView
                       key={videoPlayerModal.playerToken}
                       source={{ uri: playerSrc }}
+                      userAgent="Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
                       style={{ flex: 1, width: "100%", height: "100%", backgroundColor: "#000" }}
                       javaScriptEnabled={true}
                       domStorageEnabled={true}
                       allowsFullscreenVideo={true}
                       mediaPlaybackRequiresUserAction={false}
+                      allowsInlineMediaPlayback={true}
+                      originWhitelist={['*']}
                       startInLoadingState={true}
                       renderLoading={() => (
                         <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "center", alignItems: "center", backgroundColor: "#000" }}>
@@ -49315,9 +49689,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#f5f5f5",
     alignItems: "center",
     justifyContent: "center",
-    gap: 4,
-    paddingVertical: 11,
-    paddingHorizontal: 9,
   },
   hamburgerLine: {
     height: 2,

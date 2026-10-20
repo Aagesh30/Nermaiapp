@@ -381,15 +381,17 @@ const SessionCard = ({
 }) => {
   const rawStatus: string = cls.liveStatus || cls.status || 'SCHEDULED';
 
-  // Client-side time-based override: if backend says SCHEDULED but time has passed → treat as ENDED
+  // Client-side time-based override: if backend says SCHEDULED or stale LIVE but time has passed → treat as ENDED
   const isTimedOutCard = (() => {
-    if (rawStatus !== 'SCHEDULED' && rawStatus !== 'DRAFT') return false;
-    const scheduledMs = cls.scheduledStartTime || cls.startTime || cls.scheduledAt
-      ? new Date(cls.scheduledStartTime || cls.startTime || cls.scheduledAt).getTime()
+    const isLive = isLiveStatus(rawStatus);
+    const isSched = rawStatus === 'SCHEDULED' || rawStatus === 'DRAFT';
+    if (!isLive && !isSched) return false;
+    const scheduledMs = cls.actualStartTime || cls.scheduledStartTime || cls.startTime || cls.scheduledAt
+      ? new Date(cls.actualStartTime || cls.scheduledStartTime || cls.startTime || cls.scheduledAt).getTime()
       : 0;
     if (!scheduledMs) return false;
     const durationMs = (cls.expectedDurationMinutes || 60) * 60 * 1000;
-    const graceMs = 10 * 60 * 1000;
+    const graceMs = 30 * 60 * 1000;
     return Date.now() > scheduledMs + durationMs + graceMs;
   })();
 
@@ -531,8 +533,16 @@ const SessionCard = ({
 
   const statusDisplay = getStatusDisplay();
 
-  const canJoin = (cls.joinAllowed || existingRequest?.status === 'APPROVED') && !isEnded && !attRecord?.attendanceSubmittedAt;
-  const accessDenied = !!cls.accessDenied && existingRequest?.status !== 'APPROVED';
+  const hasActiveLivePass = myRequests.some((r: any) => {
+    const isApp = r && (r.status === 'APPROVED' || r.status === 'approved' || r.status === 'GRANT' || r.status === 'GRANTED');
+    if (!isApp) return false;
+    const notExp = !r.expiresAt || new Date(r.expiresAt).getTime() > Date.now();
+    const isLive = r.requestType === 'LIVE_SESSION' || r.isLiveClass || (r.contentName && r.contentName.toLowerCase().includes('live'));
+    return isApp && notExp && isLive;
+  });
+
+  const canJoin = (cls.joinAllowed || existingRequest?.status === 'APPROVED' || hasActiveLivePass) && !isEnded && !attRecord?.attendanceSubmittedAt;
+  const accessDenied = !!cls.accessDenied && existingRequest?.status !== 'APPROVED' && !hasActiveLivePass;
 
   const renderRequestButton = (label: string) => {
     if (!accessDenied && cls.hasRecordedAccess !== false) return null;
@@ -984,9 +994,26 @@ export const StudentLiveClassesPage = () => {
     }
   };
 
+  // Client-side time-based ended override:
+  // If a class is SCHEDULED or stale LIVE but its scheduled time + expected duration + grace
+  // has already passed, treat it as ENDED regardless of what the backend says.
+  const isTimedOut = (c: any): boolean => {
+    const s = c.liveStatus || c.status || 'SCHEDULED';
+    const isLive = isLiveStatus(s);
+    const isSched = s === 'SCHEDULED' || s === 'DRAFT';
+    if (!isLive && !isSched) return false;
+    const scheduledMs = c.actualStartTime || c.scheduledStartTime || c.startTime || c.scheduledAt
+      ? new Date(c.actualStartTime || c.scheduledStartTime || c.startTime || c.scheduledAt).getTime()
+      : 0;
+    if (!scheduledMs) return false;
+    const durationMs = (c.expectedDurationMinutes || 60) * 60 * 1000;
+    const graceMs = 30 * 60 * 1000;
+    return Date.now() > scheduledMs + durationMs + graceMs;
+  };
+
   // Show all live classes in Live Now tab (SessionCard handles accessDenied with "Request Live Class Access")
   const live = classes.filter(
-    (c: any) => isLiveStatus(c.liveStatus || c.status)
+    (c: any) => isLiveStatus(c.liveStatus || c.status) && !isTimedOut(c)
   );
 
   // Default to live tab if there are live classes and we haven't manually changed tabs
@@ -995,23 +1022,6 @@ export const StudentLiveClassesPage = () => {
       setActiveTab('live');
     }
   }, [live.length]);
-
-  // ── CoursePlayer view removed for popup ──
-
-  // Client-side time-based ended override:
-  // If a class is SCHEDULED but its scheduled time + expected duration + 10-min grace
-  // has already passed, treat it as ENDED regardless of what the backend says.
-  const isTimedOut = (c: any): boolean => {
-    const s = c.liveStatus || c.status || 'SCHEDULED';
-    if (s !== 'SCHEDULED' && s !== 'DRAFT') return false;
-    const scheduledMs = c.scheduledStartTime || c.startTime || c.scheduledAt
-      ? new Date(c.scheduledStartTime || c.startTime || c.scheduledAt).getTime()
-      : 0;
-    if (!scheduledMs) return false;
-    const durationMs = (c.expectedDurationMinutes || 60) * 60 * 1000;
-    const graceMs = 10 * 60 * 1000;
-    return Date.now() > scheduledMs + durationMs + graceMs;
-  };
 
   const upcoming = classes.filter((c: any) => {
     const s = c.liveStatus || c.status || 'SCHEDULED';

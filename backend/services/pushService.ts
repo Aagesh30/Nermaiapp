@@ -17,15 +17,14 @@ export interface PushDeliveryResult {
   tokensFound: number;
   ticketsOk: number;
   ticketsError: number;
-  expoCount: number;
-  webCount: number;
+  fcmCount: number;       // renamed from webCount — now all tokens are FCM
   totalTokens: number;
   success: boolean;
   ticketDetails?: any[];
 }
 
 /**
- * Mask push token for safe logging (e.g. ExponentPushToken[xxxx...yyyy])
+ * Mask push token for safe logging
  */
 function maskToken(token: string): string {
   if (!token || token.length < 15) return "***";
@@ -33,38 +32,18 @@ function maskToken(token: string): string {
 }
 
 /**
- * Check Expo push receipts (~15 minutes after ticket generation)
- */
-export async function checkExpoReceipts(receiptIds: string[]): Promise<Record<string, any>> {
-  if (!receiptIds || receiptIds.length === 0) return {};
-  try {
-    const resp = await fetch("https://exp.host/--/api/v2/push/getReceipts", {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Accept-Encoding": "gzip, deflate",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ ids: receiptIds }),
-    });
-    if (!resp.ok) {
-      console.warn("[PushService] Receipt check HTTP error:", resp.status);
-      return {};
-    }
-    const data: any = await resp.json();
-    console.log("[PushService] Receipt check results:", JSON.stringify(data?.data || {}));
-    return data?.data || {};
-  } catch (err: any) {
-    console.warn("[PushService] Failed checking receipts:", err?.message);
-    return {};
-  }
-}
-
-/**
- * Centralized Push Notification Service for NERMAI IAS Academy
- * Dispatches high-priority push notifications to:
- * 1. Physical Android devices (Expo Push API / FCM) even when app is killed / closed.
- * 2. Desktop & Mobile Web Browsers (Web Push / FCM Service Worker).
+ * Centralized Push Notification Service — NERMAI IAS Academy
+ *
+ * STACK: Pure FCM via Firebase Admin SDK sendEachForMulticast.
+ *   - APK:  Expo getDevicePushTokenAsync() → native FCM device token → stored in device_push_tokens.
+ *   - Web:  Firebase Messaging getToken() (VAPID) → stored in device_push_tokens with "web_" prefix.
+ *   - No Expo Push API, no Expo relay servers. Everything goes direct to Google FCM.
+ *
+ * TARGETING:
+ *   targetUserId   → query device_push_tokens where userId OR studentId == targetUserId
+ *   targetRole     → role field in device_push_tokens (student/admin/super_admin/guest/staff)
+ *   targetBatch    → further filter by batch field (students only)
+ *   excludeUserId  → exclude the actor/sender (prevents notifying yourself)
  */
 export async function sendPushNotification(
   payload: PushNotificationPayload
@@ -73,8 +52,7 @@ export async function sendPushNotification(
     tokensFound: 0,
     ticketsOk: 0,
     ticketsError: 0,
-    expoCount: 0,
-    webCount: 0,
+    fcmCount: 0,
     totalTokens: 0,
     success: false,
     ticketDetails: [],
@@ -87,7 +65,7 @@ export async function sendPushNotification(
       return result;
     }
 
-    // Resolve excluded candidate IDs if excludeUserId is passed
+    // ── Build exclude set (sender + linked student/user IDs) ───────────────
     const excludeSet = new Set<string>();
     if (excludeUserId) {
       const exStr = String(excludeUserId).trim();
@@ -108,14 +86,15 @@ export async function sendPushNotification(
       }
     }
 
+    // ── Fetch token documents ──────────────────────────────────────────────
     const docsMap = new Map<string, admin.firestore.QueryDocumentSnapshot>();
 
     if (targetUserId) {
+      // Resolve all candidate IDs (student doc ID ↔ userId field, user doc ID ↔ studentId field)
       const targetStr = String(targetUserId).trim();
       const candidateIds = new Set<string>([targetStr]);
 
       try {
-        // 1. Resolve via students collection (students doc ID -> userId field, or userId field -> doc ID)
         const studentDocDirect = await db.collection("students").doc(targetStr).get();
         if (studentDocDirect.exists) {
           const uId = studentDocDirect.data()?.userId;
@@ -124,7 +103,6 @@ export async function sendPushNotification(
         const studentByUserIdSnap = await db.collection("students").where("userId", "==", targetStr).get();
         studentByUserIdSnap.forEach((d) => candidateIds.add(d.id));
 
-        // 2. Resolve via users collection (users doc ID -> studentId field, or studentId field -> doc ID)
         const userDocDirect = await db.collection("users").doc(targetStr).get();
         if (userDocDirect.exists) {
           const sId = userDocDirect.data()?.studentId;
@@ -162,11 +140,11 @@ export async function sendPushNotification(
     }
 
     if (docsMap.size === 0) {
-      console.log(`[PushService] No tokens found for targetRole=${targetRole}, targetUserId=${targetUserId}`);
+      console.log(`[PushService] No tokens for targetRole=${targetRole}, targetUserId=${targetUserId}`);
       return result;
     }
 
-    // Parse and resolve targetBatch filter
+    // ── Resolve targetBatch filter ─────────────────────────────────────────
     let resolvedTargetBatches: Set<string> | null = null;
     if (targetBatch && targetBatch !== "all" && targetBatch !== "all_paid") {
       const rawBatchItems: string[] = Array.isArray(targetBatch)
@@ -180,7 +158,6 @@ export async function sendPushNotification(
       if (candidateBatches.length > 0) {
         resolvedTargetBatches = new Set<string>();
 
-        // Fetch batches collection once per send to map doc ID -> batchName / name
         let batchIdToNameMap = new Map<string, string>();
         try {
           const [bSnap, sbSnap] = await Promise.all([
@@ -189,14 +166,12 @@ export async function sendPushNotification(
           ]);
           const allDocs = [...(bSnap.docs || []), ...(sbSnap.docs || [])];
           allDocs.forEach((doc) => {
-            const data = doc.data();
-            const bName = (data.batchName || data.name || data.code || "").toString().trim().toLowerCase();
-            if (bName) {
-              batchIdToNameMap.set(doc.id.trim().toLowerCase(), bName);
-            }
+            const d = doc.data();
+            const bName = (d.batchName || d.name || d.code || "").toString().trim().toLowerCase();
+            if (bName) batchIdToNameMap.set(doc.id.trim().toLowerCase(), bName);
           });
         } catch (lookupErr: any) {
-          console.warn("[PushService] Batch lookup warning (falling back to direct names):", lookupErr?.message);
+          console.warn("[PushService] Batch lookup warning:", lookupErr?.message);
         }
 
         for (const item of candidateBatches) {
@@ -208,323 +183,244 @@ export async function sendPushNotification(
       }
     }
 
-    const tokenDocMap = new Map<string, string>(); // token -> docId
-    const tokenRoleMap = new Map<string, string>(); // token -> role
-    const expoTokens: string[] = [];
-    const fcmTokens: string[] = [];
+    // ── Filter tokens: exclude sender, apply batch filter ─────────────────
+    const tokenDocMap = new Map<string, string>();  // token → docId
+    const tokenRoleMap = new Map<string, string>(); // token → role
+    const allFcmTokens: string[] = [];
 
     docsMap.forEach((docSnap) => {
       const d = docSnap.data();
       const token = d?.token;
       if (!token || typeof token !== "string") return;
 
-      // Exclude sender / performed user if specified
+      // Reject Expo Push Tokens if any stale ones exist in DB (migration safety)
+      if (token.startsWith("ExponentPushToken") || token.startsWith("ExpoPushToken")) {
+        console.warn(`[PushService] Skipping stale Expo Push Token (${maskToken(token)}) — migrate device to FCM by re-logging in.`);
+        return;
+      }
+
+      // Exclude sender
       if (excludeSet.size > 0) {
         const uId = d.userId ? String(d.userId).trim() : "";
         const sId = d.studentId ? String(d.studentId).trim() : "";
-        if (excludeSet.has(uId) || (sId && excludeSet.has(sId)) || excludeSet.has(docSnap.id)) {
-          return;
-        }
+        if (excludeSet.has(uId) || (sId && excludeSet.has(sId)) || excludeSet.has(docSnap.id)) return;
       }
 
-      // Filter by targetBatch if specified and user is student
+      // Batch filter — applies to students AND admins
       if (resolvedTargetBatches && resolvedTargetBatches.size > 0) {
-        if (d.role !== "student" || !d.batch) {
-          return;
-        }
-        const tokenBatchLower = String(d.batch).trim().toLowerCase();
-        if (!resolvedTargetBatches.has(tokenBatchLower)) {
-          return;
+        const roleStr = String(d.role || "").toLowerCase();
+        const isAdmin = ["admin", "super_admin", "staff", "developer"].includes(roleStr);
+
+        if (isAdmin) {
+          // Admin batch filtering: only notify admins who manage this batch.
+          // If assignedBatches is empty or missing → super admin → receives ALL batch notifications.
+          const adminBatches: string[] = Array.isArray(d.assignedBatches)
+            ? d.assignedBatches.map((b: any) => String(b).trim().toLowerCase()).filter(Boolean)
+            : [];
+          if (adminBatches.length > 0) {
+            // This admin has specific batch assignments — check if any overlap with target
+            const hasOverlap = adminBatches.some((b) => resolvedTargetBatches!.has(b));
+            if (!hasOverlap) return; // Skip this admin — they don't manage this batch
+          }
+          // adminBatches.length === 0 → super admin → passes through, receives the notification
+        } else {
+          // Student batch filter: match their `batch` field (supports exact, normalized & substring variations)
+          if (!d.batch) return;
+          const tokenBatchLower = String(d.batch).trim().toLowerCase();
+          const cleanTokenBatch = tokenBatchLower.replace(/\s*batch\s*/gi, "").trim();
+
+          const isBatchMatch = resolvedTargetBatches.has(tokenBatchLower) ||
+            resolvedTargetBatches.has(cleanTokenBatch) ||
+            Array.from(resolvedTargetBatches).some(tb => {
+              const cleanTb = tb.replace(/\s*batch\s*/gi, "").trim();
+              return tb === "all" ||
+                tb === "all batches" ||
+                tb === tokenBatchLower ||
+                cleanTb === cleanTokenBatch ||
+                tokenBatchLower.includes(cleanTb) ||
+                cleanTokenBatch.includes(cleanTb);
+            });
+
+          if (!isBatchMatch) return;
         }
       }
 
       const roleStr = String(d.role || "").toLowerCase();
       tokenRoleMap.set(token, roleStr);
       tokenDocMap.set(token, docSnap.id);
-
-      // Route tokens accurately: ExponentPushToken -> Expo API, everything else (Native Android FCM & Web FCM) -> Direct Google FCM
-      if (token.startsWith("ExponentPushToken") || token.startsWith("ExpoPushToken")) {
-        expoTokens.push(token);
-      } else {
-        fcmTokens.push(token);
-      }
+      allFcmTokens.push(token);
     });
 
-    const uniqueExpo = Array.from(new Set(expoTokens));
-    const uniqueWeb = Array.from(new Set(fcmTokens));
-    result.tokensFound = uniqueExpo.length + uniqueWeb.length;
-    result.totalTokens = result.tokensFound;
+    const uniqueTokens = Array.from(new Set(allFcmTokens));
+    result.tokensFound = uniqueTokens.length;
+    result.totalTokens = uniqueTokens.length;
 
+    if (uniqueTokens.length === 0) {
+      console.log("[PushService] No FCM tokens after filtering.");
+      return result;
+    }
+
+    // ── Build clean data payload (FCM data values must all be strings) ────
     const cleanData: Record<string, string> = {};
     if (data) {
       Object.entries(data).forEach(([k, v]) => {
         cleanData[String(k)] = typeof v === "string" ? v : (v === null || v === undefined ? "" : JSON.stringify(v));
       });
     }
-
-    // Default screen navigation mapping
     cleanData.targetTab = cleanData.targetTab || cleanData.screen || "dashboard";
     cleanData.targetSub = cleanData.targetSub || cleanData.subTab || "";
-    cleanData.screen = cleanData.targetTab;
-    cleanData.subTab = cleanData.targetSub;
+    cleanData.screen    = cleanData.targetTab;
+    cleanData.subTab    = cleanData.targetSub;
 
-    // 1. Dispatch to Expo Push API (Physical Android Devices)
-    if (uniqueExpo.length > 0) {
-      const expoMessages = uniqueExpo.map((to) => {
-        const tokenRole = tokenRoleMap.get(to) || "student";
-        const isAdmin = ["admin", "super_admin", "staff", "developer"].includes(tokenRole);
-        const isGuest = tokenRole === "guest";
-        const tokenData = { ...cleanData };
-        if (isGuest) {
-          if (tokenData.targetTab === "test" || tokenData.targetTab === "tests" || tokenData.targetSub === "tests" || tokenData.targetSub === "available") {
-            tokenData.targetTab = "guest";
-            tokenData.targetSub = "tests";
-          } else if (tokenData.targetTab === "resources" || tokenData.targetTab === "lms" || tokenData.targetSub === "resources" || tokenData.targetSub === "daily-content") {
-            tokenData.targetTab = "guest";
-            tokenData.targetSub = "resources";
-          } else if (tokenData.targetTab === "crm" || tokenData.targetSub === "admissions" || tokenData.targetSub === "apply") {
-            tokenData.targetTab = "guest";
-            tokenData.targetSub = "apply";
-          } else {
-            tokenData.targetTab = "guest";
-            tokenData.targetSub = "home";
-          }
-          tokenData.screen = tokenData.targetTab;
-          tokenData.subTab = tokenData.targetSub;
+    // ── Dispatch via Firebase Admin SDK sendEachForMulticast ───────────────
+    // Process in chunks of 500 (Firebase Admin SDK limit per call)
+    for (let i = 0; i < uniqueTokens.length; i += 500) {
+      const chunk = uniqueTokens.slice(i, i + 500);
+
+      // Group tokens by role to set role-appropriate deep-link URL for web push
+      const studentTokens: string[] = [];
+      const adminTokens: string[] = [];
+      const guestTokens: string[] = [];
+
+      chunk.forEach((t) => {
+        const r = tokenRoleMap.get(t) || "student";
+        if (["admin", "super_admin", "staff", "developer"].includes(r)) {
+          adminTokens.push(t);
+        } else if (r === "guest") {
+          guestTokens.push(t);
+        } else {
+          studentTokens.push(t);
         }
-        return {
-          to,
-          sound: "default",
-          title,
-          body,
-          priority: "high",
-          channelId: "default",
-          data: tokenData,
-          ...(tokenData.dedupeId ? { collapseId: tokenData.dedupeId } : {}),
-        };
       });
 
-      for (let i = 0; i < expoMessages.length; i += 100) {
-        const chunk = expoMessages.slice(i, i + 100);
-        try {
-          const resp = await fetch("https://exp.host/--/api/v2/push/send", {
-            method: "POST",
-            headers: {
-              Accept: "application/json",
-              "Accept-Encoding": "gzip, deflate",
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(chunk),
-          });
+      const subChunks: Array<{ tokens: string[]; payloadData: Record<string, string>; link: string }> = [];
 
-          if (resp.ok) {
-            const resBody: any = await resp.json().catch(() => null);
-            const tickets = resBody?.data || [];
-            if (Array.isArray(tickets)) {
-              for (let tIdx = 0; tIdx < tickets.length; tIdx++) {
-                const ticket = tickets[tIdx];
-                const targetToken = chunk[tIdx]?.to || "";
-                const masked = maskToken(targetToken);
-                const docId = tokenDocMap.get(targetToken);
-
-                if (ticket.status === "ok") {
-                  result.ticketsOk++;
-                  result.expoCount++;
-                  result.ticketDetails?.push({ token: masked, status: "ok", receiptId: ticket.id });
-                } else if (ticket.status === "error") {
-                  result.ticketsError++;
-                  const errCode = ticket.details?.error || "UnknownError";
-                  const errMsg = ticket.message || "";
-                  console.warn(`[PushService] Ticket error for token ${masked}: [${errCode}] ${errMsg}`);
-                  result.ticketDetails?.push({ token: masked, status: "error", error: `${errCode}: ${errMsg}` });
-
-                  if (errCode === "DeviceNotRegistered" && docId) {
-                    console.log(`[PushService] Deleting stale unregistered token doc ${docId} (${masked})`);
-                    db.collection("device_push_tokens").doc(docId).delete().catch(() => {});
-                  } else if (errCode === "InvalidCredentials" || errCode === "MismatchSenderId") {
-                    console.error(`[PushService] CRITICAL EXPO/FCM CONFIG ERROR: ${errCode} for token ${masked}`);
-                  }
-                }
-              }
-            } else {
-              result.expoCount += chunk.length;
-              result.ticketsOk += chunk.length;
-            }
-          } else {
-            console.warn(`[PushService] Expo HTTP error status: ${resp.status}`);
-            result.ticketsError += chunk.length;
-          }
-        } catch (e: any) {
-          console.warn("[PushService] Expo chunk delivery error:", e?.message);
-          result.ticketsError += chunk.length;
-        }
-      }
-    }
-
-    // 2. Dispatch to Direct FCM (Native Android & Web Browsers via Firebase Admin SDK)
-    if (uniqueWeb.length > 0) {
-      const isTestAvailable = cleanData.targetTab === "test" && cleanData.targetSub === "available";
-
-      for (let i = 0; i < uniqueWeb.length; i += 500) {
-        const chunk = uniqueWeb.slice(i, i + 500);
-
-        // Subdivide chunk into recipient payloads based on role (guest, admin, student)
-        const subChunks: Array<{ tokens: string[]; payloadData: Record<string, string>; link: string }> = [];
-        const studentTokens: string[] = [];
-        const adminTokens: string[] = [];
-        const guestTokens: string[] = [];
-
-        chunk.forEach((t) => {
-          const r = tokenRoleMap.get(t) || "student";
-          if (["admin", "super_admin", "staff", "developer"].includes(r)) {
-            adminTokens.push(t);
-          } else if (r === "guest") {
-            guestTokens.push(t);
-          } else {
-            studentTokens.push(t);
-          }
+      // Guest — remap tabs to guest navigation
+      if (guestTokens.length > 0) {
+        let guestSub = "home";
+        if (cleanData.targetTab === "test" || cleanData.targetSub === "available") guestSub = "tests";
+        else if (cleanData.targetTab === "lms" || cleanData.targetSub === "resources" || cleanData.targetSub === "daily-content") guestSub = "resources";
+        else if (cleanData.targetTab === "crm" || cleanData.targetSub === "apply") guestSub = "apply";
+        subChunks.push({
+          tokens: guestTokens,
+          payloadData: { ...cleanData, targetTab: "guest", targetSub: guestSub, screen: "guest", subTab: guestSub },
+          link: `https://nermaiiasacademy-519c8.web.app/#guest/${guestSub}`,
         });
+      }
 
-        // 2a. Guest Web FCM payload & link
-        if (guestTokens.length > 0) {
-          let guestSub = "home";
-          if (cleanData.targetTab === "test" || cleanData.targetTab === "tests" || cleanData.targetSub === "tests" || cleanData.targetSub === "available") {
-            guestSub = "tests";
-          } else if (cleanData.targetTab === "resources" || cleanData.targetTab === "lms" || cleanData.targetSub === "resources" || cleanData.targetSub === "daily-content") {
-            guestSub = "resources";
-          } else if (cleanData.targetTab === "crm" || cleanData.targetSub === "admissions" || cleanData.targetSub === "apply") {
-            guestSub = "apply";
-          }
-          subChunks.push({
-            tokens: guestTokens,
-            payloadData: { ...cleanData, targetTab: "guest", targetSub: guestSub, screen: "guest", subTab: guestSub },
-            link: `https://nermaiiasacademy-519c8.web.app/#guest/${guestSub}`,
-          });
-        }
+      // Admin
+      if (adminTokens.length > 0) {
+        const adminPath = cleanData.targetTab
+          ? `/#${cleanData.targetTab}${cleanData.targetSub ? `/${cleanData.targetSub}` : ""}`
+          : "/";
+        subChunks.push({
+          tokens: adminTokens,
+          payloadData: cleanData,
+          link: `https://nermaiiasacademy-519c8.web.app${adminPath}`,
+        });
+      }
 
-        // 2b. Admin Web FCM payload & link
-        if (adminTokens.length > 0) {
-          if (isTestAvailable) {
-            subChunks.push({
-              tokens: adminTokens,
-              payloadData: { ...cleanData, targetSub: "available", subTab: "available" },
-              link: `https://nermaiiasacademy-519c8.web.app/#test/available`,
-            });
-          } else {
-            const adminPath = cleanData.targetTab ? `/#${cleanData.targetTab}${cleanData.targetSub ? `/${cleanData.targetSub}` : ''}` : "/";
-            subChunks.push({
-              tokens: adminTokens,
-              payloadData: cleanData,
-              link: `https://nermaiiasacademy-519c8.web.app${adminPath}`,
-            });
-          }
-        }
+      // Student
+      if (studentTokens.length > 0) {
+        const studentPath = cleanData.targetTab
+          ? `/#${cleanData.targetTab}${cleanData.targetSub ? `/${cleanData.targetSub}` : ""}`
+          : "/";
+        subChunks.push({
+          tokens: studentTokens,
+          payloadData: cleanData,
+          link: `https://nermaiiasacademy-519c8.web.app${studentPath}`,
+        });
+      }
 
-        // 2c. Student Web FCM payload & link
-        if (studentTokens.length > 0) {
-          const studentPath = isTestAvailable ? "/#test" : (cleanData.targetTab ? `/#${cleanData.targetTab}${cleanData.targetSub ? `/${cleanData.targetSub}` : ''}` : "/");
-          subChunks.push({
-            tokens: studentTokens,
-            payloadData: cleanData,
-            link: `https://nermaiiasacademy-519c8.web.app${studentPath}`,
-          });
-        }
-
-        for (const sub of subChunks) {
-          try {
-            const firebaseApp = getFirebaseApp();
-            const activeMessaging = getMessaging(firebaseApp);
-            const response = await activeMessaging.sendEachForMulticast({
-              tokens: sub.tokens,
+      for (const sub of subChunks) {
+        try {
+          const firebaseApp = getFirebaseApp();
+          const activeMessaging = getMessaging(firebaseApp);
+          const response = await activeMessaging.sendEachForMulticast({
+            tokens: sub.tokens,
+            notification: { title, body },
+            data: sub.payloadData,
+            android: {
+              priority: "high",
+              ttl: 86400 * 1000,  // 24 hours in ms — FCM retries while device is in Doze
+              collapseKey: sub.payloadData.dedupeId || undefined,
               notification: {
                 title,
                 body,
+                channelId: "default",
+                sound: "default",
+                priority: "max",
+                defaultVibrateTimings: true,
+                defaultSound: true,
+                clickAction: "fcm.ACTION.NOTIFICATION_CLICK",
+                tag: sub.payloadData.dedupeId || undefined,
               },
-              data: sub.payloadData,
-              android: {
-                priority: "high",
-                collapseKey: sub.payloadData.dedupeId || undefined,
-                notification: {
-                  title,
-                  body,
-                  channelId: "default",
-                  sound: "default",
-                  priority: "max",
-                  defaultVibrateTimings: true,
-                  defaultSound: true,
-                  clickAction: "fcm.ACTION.NOTIFICATION_CLICK",
-                  tag: sub.payloadData.dedupeId || undefined,
-                },
+            },
+            webpush: {
+              notification: {
+                title,
+                body,
+                icon: "/favicon.png",
+                badge: "/favicon.png",
+                tag: sub.payloadData.dedupeId || undefined,
               },
-              webpush: {
-                notification: {
-                  title,
-                  body,
-                  icon: "/favicon.png",
-                  badge: "/favicon.png",
-                  tag: sub.payloadData.dedupeId || undefined,
-                },
-                fcmOptions: {
-                  link: sub.link,
-                },
-              },
-            });
-            result.webCount += response.successCount;
-            result.ticketsOk += response.successCount;
-            result.ticketsError += response.failureCount;
+              fcmOptions: { link: sub.link },
+            },
+          });
 
+          result.fcmCount  += response.successCount;
+          result.ticketsOk += response.successCount;
+          result.ticketsError += response.failureCount;
+
+          // Clean up stale / invalid FCM tokens
           if (response.failureCount > 0 && Array.isArray(response.responses)) {
-            let staleWebCount = 0;
-            const batch = db.batch();
+            let staleCount = 0;
+            const batchWrite = db.batch();
             response.responses.forEach((resp, idx) => {
-              const targetToken = chunk[idx] || "";
+              const targetToken = sub.tokens[idx] || "";
               const masked = maskToken(targetToken);
               if (!resp.success && resp.error) {
                 const code = resp.error.code || (resp.error as any).status || "unknown";
-                const msg = resp.error.message || JSON.stringify(resp.error) || "Unknown error";
-                const fullErr = `[${code}] ${msg}${resp.error.stack ? ` | stack: ${resp.error.stack}` : ""}`;
-                console.warn(`[PushService] Web FCM error for token ${masked}: ${fullErr}`);
-                result.ticketDetails?.push({ token: masked, status: "error", error: `${code}: ${msg}`, rawError: resp.error });
+                const msg  = resp.error.message || JSON.stringify(resp.error) || "Unknown error";
+                console.warn(`[PushService] FCM error for ${masked}: [${code}] ${msg}`);
+                result.ticketDetails?.push({ token: masked, status: "error", error: `${code}: ${msg}` });
 
                 if (
                   code === "messaging/registration-token-not-registered" ||
                   code === "messaging/invalid-registration-token"
                 ) {
-                  if (targetToken) {
-                    const knownDocId = tokenDocMap.get(targetToken);
-                    if (knownDocId) {
-                      batch.delete(db.collection("device_push_tokens").doc(knownDocId));
-                      staleWebCount++;
-                    } else {
-                      const cleanDocId = targetToken.replace(/[^a-zA-Z0-9_-]/g, "_");
-                      batch.delete(db.collection("device_push_tokens").doc(cleanDocId));
-                      const webCleanDocId = "web_" + targetToken.slice(-24).replace(/[^a-zA-Z0-9_-]/g, "_");
-                      batch.delete(db.collection("device_push_tokens").doc(webCleanDocId));
-                      staleWebCount++;
-                    }
+                  const knownDocId = tokenDocMap.get(targetToken);
+                  if (knownDocId) {
+                    batchWrite.delete(db.collection("device_push_tokens").doc(knownDocId));
+                    staleCount++;
+                  } else if (targetToken) {
+                    // Try both formats
+                    const cleanDocId = targetToken.replace(/[^a-zA-Z0-9_-]/g, "_");
+                    batchWrite.delete(db.collection("device_push_tokens").doc(cleanDocId));
+                    const webCleanDocId = "web_" + targetToken.slice(-24).replace(/[^a-zA-Z0-9_-]/g, "_");
+                    batchWrite.delete(db.collection("device_push_tokens").doc(webCleanDocId));
+                    staleCount++;
                   }
                 }
               }
             });
-            if (staleWebCount > 0) {
-              await batch.commit().catch(() => {});
-              console.log(`[PushService] Cleaned up ${staleWebCount} stale/invalid FCM token docs.`);
+            if (staleCount > 0) {
+              await batchWrite.commit().catch(() => {});
+              console.log(`[PushService] Cleaned up ${staleCount} stale FCM token doc(s).`);
             }
           }
         } catch (e: any) {
-          console.warn("[PushService] Web FCM delivery error:", e?.message);
-          result.ticketsError += chunk.length;
+          console.warn("[PushService] FCM delivery error:", e?.message);
+          result.ticketsError += sub.tokens.length;
         }
       }
     }
+
+    result.success = result.ticketsOk > 0;
+    console.log(`[PushService] Push complete: tokensFound=${result.tokensFound}, ok=${result.ticketsOk}, err=${result.ticketsError}`);
+    return result;
+  } catch (error: any) {
+    console.error("[PushService] Global error:", error?.message);
+    return result;
   }
-
-  result.success = result.ticketsOk > 0;
-  console.log(`[PushService] Push complete: tokensFound=${result.tokensFound}, ticketsOk=${result.ticketsOk}, ticketsError=${result.ticketsError}`);
-  return result;
-} catch (error: any) {
-  console.error("[PushService] Global error in sendPushNotification:", error?.message);
-  return result;
 }
-}
-

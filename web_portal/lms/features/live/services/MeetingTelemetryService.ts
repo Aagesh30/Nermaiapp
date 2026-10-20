@@ -8,7 +8,8 @@ export type TelemetryEventName =
   | 'BRIDGE_EVENT_RECEIVED'
   | 'JOIN_SUCCESSFUL'
   | 'HEARTBEAT_TIMEOUT'
-  | 'UNEXPECTED_EXIT';
+  | 'UNEXPECTED_EXIT'
+  | 'REJOIN_TOKEN_FAILED';
 
 export interface TelemetryEntry {
   event: TelemetryEventName;

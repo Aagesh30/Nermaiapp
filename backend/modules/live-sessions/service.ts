@@ -457,13 +457,29 @@ export class LiveSessionService {
       : null;
 
     const activeGrantEntityIds = new Set<string>();
+    let hasGlobalLiveGrant = false;
     const processGrant = (d: FirebaseFirestore.QueryDocumentSnapshot) => {
       const g = d.data();
       const expired = g.expiresAt && new Date(g.expiresAt).getTime() < now;
-      if (!expired) activeGrantEntityIds.add(g.entityId);
+      if (!expired) {
+        activeGrantEntityIds.add(g.entityId);
+        if (g.entityType === 'LIVE_SESSION' || g.entityId === 'ALL_LIVE_CLASSES') {
+          hasGlobalLiveGrant = true;
+        }
+      }
     };
     grantsSnap.docs.forEach(processGrant);
     if (grantsSnap2) grantsSnap2.docs.forEach(processGrant);
+
+    // If student has an active unexpired grant for ANY live class, also treat as global live grant
+    if (!hasGlobalLiveGrant) {
+      for (const doc of classesDocs) {
+        if (activeGrantEntityIds.has(doc.id)) {
+          hasGlobalLiveGrant = true;
+          break;
+        }
+      }
+    }
 
     for (const doc of classesDocs) {
       const cls = { id: doc.id, ...doc.data() } as any;
@@ -535,8 +551,9 @@ export class LiveSessionService {
       const passesTargeting = isCourseEnrolled || isDirectlyTargetedBatch || (!classCourseId && !hasBatchTargeting);
       const isEligibleForClass = isCourseEnrolled || isDirectlyTargetedBatch || isOpenClass || (!classCourseId && !hasBatchTargeting);
 
-      // ── Grant-based override: admin approved a CLASS or higher-level grant ──
-      const hasGrant = activeGrantEntityIds.has(cls.id);
+      // ── Grant-based override: admin approved a CLASS or higher-level grant or live pass ──
+      const isLiveClass = cls.classType === 'live' || cls.classType === 'zoom_live' || cls.classType === 'youtube_live';
+      const hasGrant = activeGrantEntityIds.has(cls.id) || (hasGlobalLiveGrant && isLiveClass);
 
       if (hasGrant) {
         hasAccess = true;
@@ -573,16 +590,24 @@ export class LiveSessionService {
 
         // ── Time-based override ───────────────────────────────────────────────
         // scheduledStartTime is stored on the live_session doc, not the class doc.
-        if (derivedStatus === 'SCHEDULED' && !resolvedSession.actualStartTime) {
-          const scheduledMs = resolvedSession.scheduledStartTime
+        const refStartMs = resolvedSession.actualStartTime
+          ? new Date(resolvedSession.actualStartTime).getTime()
+          : resolvedSession.scheduledStartTime
             ? new Date(resolvedSession.scheduledStartTime).getTime()
             : cls.scheduledStartTime
               ? new Date(cls.scheduledStartTime).getTime()
               : 0;
-          const durMins = resolvedSession.expectedDurationMinutes || cls.expectedDurationMinutes || 60;
-          const durationMs = durMins * 60 * 1000;
-          const graceMs = 10 * 60 * 1000; // 10-min grace period
-          if (scheduledMs > 0 && now > scheduledMs + durationMs + graceMs) {
+        const durMins = resolvedSession.expectedDurationMinutes || cls.expectedDurationMinutes || 60;
+        const durationMs = durMins * 60 * 1000;
+        const graceMs = 30 * 60 * 1000; // 30-min grace period after expected end time
+
+        if (derivedStatus === 'SCHEDULED' && !resolvedSession.actualStartTime) {
+          if (refStartMs > 0 && now > refStartMs + durationMs + graceMs) {
+            derivedStatus = 'ENDED';
+            isJoinAllowed = false;
+          }
+        } else if (['LIVE', 'JOINING', 'HOST_CONNECTED', 'ATTENDANCE_RUNNING'].includes(derivedStatus)) {
+          if (refStartMs > 0 && now > refStartMs + durationMs + graceMs) {
             derivedStatus = 'ENDED';
             isJoinAllowed = false;
           }
@@ -643,18 +668,18 @@ export class LiveSessionService {
         let derivedStatus: string = sessionStatus;
 
         // Time-based override for denied-access classes too
-        if (derivedStatus === 'SCHEDULED' && !resolvedSession.actualStartTime) {
-          const scheduledMs = resolvedSession.scheduledStartTime
+        const deniedStartMs = resolvedSession.actualStartTime
+          ? new Date(resolvedSession.actualStartTime).getTime()
+          : resolvedSession.scheduledStartTime
             ? new Date(resolvedSession.scheduledStartTime).getTime()
             : cls.scheduledStartTime
               ? new Date(cls.scheduledStartTime).getTime()
               : 0;
-          const durMins = resolvedSession.expectedDurationMinutes || cls.expectedDurationMinutes || 60;
-          const durationMs = durMins * 60 * 1000;
-          const graceMs = 10 * 60 * 1000;
-          if (scheduledMs > 0 && now > scheduledMs + durationMs + graceMs) {
-            derivedStatus = 'ENDED';
-          }
+        const deniedDurMins = resolvedSession.expectedDurationMinutes || cls.expectedDurationMinutes || 60;
+        const deniedDurationMs = deniedDurMins * 60 * 1000;
+        const deniedGraceMs = 30 * 60 * 1000;
+        if (deniedStartMs > 0 && now > deniedStartMs + deniedDurationMs + deniedGraceMs) {
+          derivedStatus = 'ENDED';
         }
 
         if (derivedStatus === 'ENDED' && !cls.encryptedRecordingId) {
@@ -1097,6 +1122,8 @@ Launch Payload Exists: ${!!session.launchPayload}
             ? clsData.targetBatchIds
             : (clsData?.targetBatchIds ? [clsData.targetBatchIds] : []);
           const validBatches = rawBatches.filter((b: any) => b && b !== 'all' && b !== 'all_paid');
+
+          // Notify students in the targeted batches
           sendPushNotification({
             title: 'Live Class Started 🔴',
             body: `${clsData?.title || 'Live Session'} is now live! Tap to join.`,
@@ -1106,8 +1133,30 @@ Launch Payload Exists: ${!!session.launchPayload}
             data: {
               targetTab: 'lms',
               targetSub: 'live-classes',
+              screen: 'lms',
+              subTab: 'live-classes',
               classId: session.classId,
-              sessionId: session.id
+              sessionId: session.id,
+              dedupeId: `live_started_${session.id}_${Date.now()}`
+            }
+          }).catch(() => {});
+
+          // Notify admins & super admins that the class is now live
+          const hostName = (session.host as any)?.name || session.hostId || 'a teacher';
+          sendPushNotification({
+            title: '🔴 Live Class Is Now Active',
+            body: `"${clsData?.title || 'Live Session'}" started by ${hostName}. Tap to monitor.`,
+            targetRole: 'admin',
+            targetBatch: validBatches.length > 0 ? validBatches : null,
+            excludeUserId: session.hostId || null,
+            data: {
+              targetTab: 'lms',
+              targetSub: 'live-classes',
+              screen: 'lms',
+              subTab: 'live-classes',
+              classId: session.classId,
+              sessionId: session.id,
+              dedupeId: `live_started_admin_${session.id}`
             }
           }).catch(() => {});
         }).catch(() => {});
@@ -1441,6 +1490,8 @@ Launch Payload Exists: ${!!session.launchPayload}
       await ParticipantService.markAllParticipantsLeft(sessionId);
 
       interactionEventBus.emit('class:ended', { classId: sessionData.classId, sessionId });
+      await this.notifyLiveClassIndexChanged(sessionData?.classId, 'ENDED');
+      this.invalidateListSessionsCache();
     }
   }
 
@@ -1867,6 +1918,7 @@ Reason:     ${verifyResult.state}
     
     // Store in redis with a 5 minute TTL
     await redisClient.set(`live_join_token:${token}`, JSON.stringify(payload), 'EX', 300);
+    await redisClient.set(`live_join_token_uses:${token}`, '0', 'EX', 300);
     
     // Track token by session to allow mass invalidation when meeting regenerates
     await redisClient.sadd(`live_session_tokens:${sessionId}`, token);
@@ -1877,9 +1929,12 @@ Reason:     ${verifyResult.state}
 
   static async validateJoinToken(token: string) {
     const data = await redisClient.get(`live_join_token:${token}`);
-    if (!data) throw new AppError('Invalid or expired join token', 400);
-    // Delete token immediately to ensure one-time use
-    await redisClient.del(`live_join_token:${token}`);
+    if (!data) {
+      throw new AppError('Invalid or expired join token. If you were disconnected, please rejoin from your student portal.', 400);
+    }
+
+    // Strictly one-time token: immediately burn upon consumption so it cannot be shared or opened on another device
+    await redisClient.del(`live_join_token:${token}`, `live_join_token_uses:${token}`);
     return JSON.parse(data);
   }
 
@@ -1887,7 +1942,7 @@ Reason:     ${verifyResult.state}
     try {
       const tokens = await redisClient.smembers(`live_session_tokens:${sessionId}`);
       if (tokens && tokens.length > 0) {
-        const keys = tokens.map((t: string) => `live_join_token:${t}`);
+        const keys = tokens.flatMap((t: string) => [`live_join_token:${t}`, `live_join_token_uses:${t}`]);
         await redisClient.del(...keys);
         await redisClient.del(`live_session_tokens:${sessionId}`);
         const { logger } = require('../../core/logger');

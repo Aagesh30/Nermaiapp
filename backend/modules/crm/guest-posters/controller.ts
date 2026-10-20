@@ -90,6 +90,25 @@ export class GuestPostersController {
                 createdBy: createdBy || "admin",
             });
 
+            // Notify admins & super admins about the new guest poster (fire-and-forget)
+            try {
+                const { sendPushNotification } = await import("../../../services/pushService");
+                sendPushNotification({
+                    title: "🖼️ New Guest Poster Added",
+                    body: `A new guest poster "${title || "Poster"}" was added to the CRM.`,
+                    targetRole: "admin",
+                    excludeUserId: createdBy && createdBy !== "admin" ? createdBy : null,
+                    data: {
+                        targetTab: "crm",
+                        targetSub: "guest-posters",
+                        screen: "crm",
+                        subTab: "guest-posters",
+                        posterId: id,
+                        dedupeId: `guest_poster_${id}`
+                    }
+                }).catch(err => console.log("[Push] Guest poster push error:", err?.message));
+            } catch (_) {}
+
             return res.status(201).json({ success: true, message: "Guest poster created.", data: { id, posterUrl } });
         } catch (e: any) {
             return res.status(500).json({ success: false, message: e.message });

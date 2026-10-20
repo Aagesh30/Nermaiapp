@@ -527,7 +527,7 @@ export class DeveloperController {
         };
 
         try {
-            const defaultsList = ["super_admin", "admin", "editor", "contributor"];
+            const defaultsList = ["super_admin", "admin", "contributor"];
             const permissions: any = {};
 
             // 1. Get all documents from role_permissions collection

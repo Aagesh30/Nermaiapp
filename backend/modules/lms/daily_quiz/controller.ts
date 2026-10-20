@@ -21,8 +21,12 @@ export class DailyQuizController {
                 quizDate,
                 title,
                 questions, // array of { questionText, options: [opt1, opt2, opt3, opt4], correctOptionIndex (0-3) }
-                createdBy
+                createdBy,
+                targetBatch,
+                batch
             } = req.body;
+
+            const selectedBatch = targetBatch || batch || null;
 
             if (!questions || !Array.isArray(questions) || questions.length === 0) {
                 return res.status(400).json({
@@ -47,6 +51,8 @@ export class DailyQuizController {
                 title: quizTitle,
                 quizDate: date,
                 questions,
+                targetBatch: selectedBatch,
+                batch: selectedBatch,
                 status: "active",         // "active" | "disabled" | "unattended"
                 publishedAt: now,
                 autoDisableAt,            // ISO string - auto disabled after 24h
@@ -66,6 +72,7 @@ export class DailyQuizController {
                     title: '📝 Daily Quiz Published',
                     body: `"${quizTitle}" is now live! Test your knowledge today.`,
                     targetRole: 'student',
+                    targetBatch: selectedBatch || null,
                     excludeUserId: createdBy || null,
                     data: {
                         targetTab: 'lms',
@@ -74,9 +81,27 @@ export class DailyQuizController {
                         subTab: 'quiz',
                         quizId,
                         quizDate: date,
+                        targetBatch: selectedBatch || '',
                         dedupeId: `daily_quiz_${quizId}`
                     }
                 }).catch(err => console.log('[Push] Daily quiz push note error:', err?.message));
+
+                // Also notify admins
+                sendPushNotification({
+                    title: '📝 Daily Quiz Published',
+                    body: `Quiz "${quizTitle}" has been published to LMS.`,
+                    targetRole: 'admin',
+                    excludeUserId: createdBy || null,
+                    data: {
+                        targetTab: 'lms',
+                        targetSub: 'quiz',
+                        screen: 'lms',
+                        subTab: 'quiz',
+                        quizId,
+                        quizDate: date,
+                        dedupeId: `daily_quiz_admin_${quizId}`
+                    }
+                }).catch(err => console.log('[Push] Daily quiz admin push note error:', err?.message));
             } catch (_) {}
 
             return res.status(200).json({

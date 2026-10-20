@@ -24,7 +24,25 @@ export class AlumniFeedbackController {
                 isDeleted: false
             });
             console.log("[FEEDBACK CREATE] Successfully saved feedback id:", id);
+
+            // Notify admins about new alumni feedback (fire-and-forget)
+            try {
+              const { sendPushNotification } = await import("../../../services/pushService");
+              sendPushNotification({
+                title: "⭐ New Alumni Feedback",
+                body: `${name || "Someone"}${batch ? ` (${batch})` : ""} submitted feedback${rating ? ` — ${rating}/5 stars` : ""}.`,
+                targetRole: "admin",
+                data: {
+                  targetTab: "crm", targetSub: "alumni-feedback",
+                  screen: "crm", subTab: "alumni-feedback",
+                  feedbackId: id,
+                  dedupeId: `feedback_${id}`
+                }
+              }).catch(() => {});
+            } catch (_) {}
+
             return res.status(201).json({ success: true, message: "Feedback submitted", data: { id } });
+
         } catch (e: any) {
             console.error("[FEEDBACK CREATE] Error:", e);
             return res.status(500).json({ success: false, message: e.message });

@@ -12,9 +12,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
 import * as FileSystemLegacy from 'expo-file-system/legacy';
-import { parseStudentUploadFromBase64, parseStudentUploadFile, ParsedStudentUploadResult, ParsedStudentRow } from '../utils/excelStudentParser';
+import { parseStudentUploadFromBase64, parseStudentUploadFile, parseStudentUploadFromArrayBuffer, ParsedStudentUploadResult, ParsedStudentRow } from '../utils/excelStudentParser';
 import api from '../core/api';
 
 interface MobileBulkStudentUploadModalProps {
@@ -107,36 +106,26 @@ export const MobileBulkStudentUploadModal: React.FC<MobileBulkStudentUploadModal
 
       let parsed: ParsedStudentUploadResult;
 
-      if (Platform.OS === 'web') {
-        const res = await fetch(asset.uri);
-        const blob = await res.blob();
-        const fileObj = new File([blob], pickedName, { type: blob.type });
-        parsed = await parseStudentUploadFile(fileObj, batches);
-      } else {
-        let base64 = '';
-        try {
-          if (FileSystemLegacy && typeof FileSystemLegacy.readAsStringAsync === 'function') {
-            base64 = await FileSystemLegacy.readAsStringAsync(asset.uri, {
-              encoding: FileSystemLegacy.EncodingType.Base64,
-            });
-          } else {
-            throw new Error('legacy readAsStringAsync unavailable');
-          }
-        } catch (legacyErr) {
-          try {
-            const fsFile = new (FileSystem as any).File(asset.uri);
-            if (typeof fsFile.base64 === 'function') {
-              base64 = await fsFile.base64();
-            } else {
-              throw new Error('File.base64 unavailable');
-            }
-          } catch {
-            base64 = await FileSystem.readAsStringAsync(asset.uri, {
-              encoding: (FileSystem as any).EncodingType?.Base64 || 'base64',
-            });
-          }
+      // Universal read for Web and Native (Android/iOS)
+      const readLegacyBase64 = async (uri: string) => {
+        const fn = (FileSystemLegacy as any)?.readAsStringAsync || (FileSystemLegacy as any)?.default?.readAsStringAsync;
+        if (typeof fn === 'function') {
+          return await fn(uri, { encoding: 'base64' });
         }
+        throw new Error('readAsStringAsync unavailable');
+      };
+
+      try {
+        const base64 = await readLegacyBase64(asset.uri);
         parsed = parseStudentUploadFromBase64(base64, pickedName, batches);
+      } catch (legacyErr) {
+        const res = await fetch(asset.uri);
+        const arrayBuf = await res.arrayBuffer();
+        if (arrayBuf && arrayBuf.byteLength > 0) {
+          parsed = parseStudentUploadFromArrayBuffer(arrayBuf, pickedName, batches);
+        } else {
+          throw new Error('Unable to read selected Excel file.');
+        }
       }
 
       if (!parsed.students || parsed.students.length === 0) {

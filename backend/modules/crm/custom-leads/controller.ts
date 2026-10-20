@@ -28,6 +28,22 @@ export class CustomLeadsController {
         formTitle
       });
 
+      // Notify admins about new application lead (fire-and-forget)
+      try {
+        const { sendPushNotification } = await import("../../../services/pushService");
+        sendPushNotification({
+          title: "📋 New Application Received",
+          body: `${name} (${phone}) submitted an application form${formTitle ? ` for "${formTitle}"` : ""}.`,
+          targetRole: "admin",
+          data: {
+            targetTab: "crm", targetSub: "custom-leads",
+            screen: "crm", subTab: "custom-leads",
+            leadId: lead?.id || "",
+            dedupeId: `custom_lead_${lead?.id || Date.now()}`
+          }
+        }).catch(() => {});
+      } catch (_) {}
+
       return res.status(201).json({
         success: true,
         message: "Application submitted successfully! Our team will contact you soon.",

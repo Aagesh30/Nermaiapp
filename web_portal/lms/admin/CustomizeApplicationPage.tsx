@@ -368,7 +368,7 @@ export default function CustomizeApplicationPage() {
 
             <View style={{ gap: 10, marginTop: 12 }}>
               {config.customFields.map((field, idx) => (
-                <View key={field.id} style={styles.customFieldRow}>
+                <View key={field.id} style={[styles.customFieldRow, isMobile && { flexDirection: 'column', alignItems: 'stretch', gap: 10 }]}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
                     <View style={styles.orderControls}>
                       <TouchableOpacity
@@ -388,7 +388,7 @@ export default function CustomizeApplicationPage() {
                     </View>
 
                     <View style={{ flex: 1 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         <Text style={styles.fieldNameText}>{field.label}</Text>
                         {field.required && (
                           <Text style={{ color: '#dc2626', fontSize: 15, fontWeight: '700' }}>*</Text>
@@ -399,31 +399,59 @@ export default function CustomizeApplicationPage() {
                         {field.options && field.options.length > 0 && ` • Options: (${field.options.join(', ')})`}
                       </Text>
                     </View>
+
+                    {!isMobile && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <View style={field.required ? styles.badgeRequired : styles.badgeOptional}>
+                          <Text style={field.required ? styles.badgeRequiredText : styles.badgeOptionalText}>
+                            {field.required ? 'Required' : 'Optional'}
+                          </Text>
+                        </View>
+
+                        <TouchableOpacity
+                          style={styles.editFieldBtn}
+                          onPress={() => openEditFieldModal(field)}
+                          title="Edit Field"
+                        >
+                          <MaterialCommunityIcons name="pencil-outline" size={18} color="#2563eb" />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={styles.deleteFieldBtn}
+                          onPress={() => removeCustomField(field.id)}
+                          title="Delete Field"
+                        >
+                          <MaterialCommunityIcons name="trash-can-outline" size={18} color="#dc2626" />
+                        </TouchableOpacity>
+                      </View>
+                    )}
                   </View>
 
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <View style={field.required ? styles.badgeRequired : styles.badgeOptional}>
-                      <Text style={field.required ? styles.badgeRequiredText : styles.badgeOptionalText}>
-                        {field.required ? 'Required' : 'Optional'}
-                      </Text>
+                  {isMobile && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8, borderTopWidth: 1, borderColor: '#f1f5f9', paddingTop: 8 }}>
+                      <View style={field.required ? styles.badgeRequired : styles.badgeOptional}>
+                        <Text style={field.required ? styles.badgeRequiredText : styles.badgeOptionalText}>
+                          {field.required ? 'Required' : 'Optional'}
+                        </Text>
+                      </View>
+
+                      <TouchableOpacity
+                        style={styles.editFieldBtn}
+                        onPress={() => openEditFieldModal(field)}
+                        title="Edit Field"
+                      >
+                        <MaterialCommunityIcons name="pencil-outline" size={18} color="#2563eb" />
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.deleteFieldBtn}
+                        onPress={() => removeCustomField(field.id)}
+                        title="Delete Field"
+                      >
+                        <MaterialCommunityIcons name="trash-can-outline" size={18} color="#dc2626" />
+                      </TouchableOpacity>
                     </View>
-
-                    <TouchableOpacity
-                      style={styles.editFieldBtn}
-                      onPress={() => openEditFieldModal(field)}
-                      title="Edit Field"
-                    >
-                      <MaterialCommunityIcons name="pencil-outline" size={18} color="#2563eb" />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={styles.deleteFieldBtn}
-                      onPress={() => removeCustomField(field.id)}
-                      title="Delete Field"
-                    >
-                      <MaterialCommunityIcons name="trash-can-outline" size={18} color="#dc2626" />
-                    </TouchableOpacity>
-                  </View>
+                  )}
                 </View>
               ))}
             </View>

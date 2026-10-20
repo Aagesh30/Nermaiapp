@@ -15,8 +15,8 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as XLSX from 'xlsx';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
-import * as FileSystemLegacy from 'expo-file-system/legacy';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import api from '../core/api';
 import { db } from '../../firebaseConfig';
 import { collection, onSnapshot } from 'firebase/firestore';
@@ -711,7 +711,7 @@ export default function MergedLeadsAdmissionsPage() {
   };
 
   // Export to Excel in the Exact Academy Enquiry Format
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
     if (filteredList.length === 0) {
       Alert.alert('Export', 'No records to export.');
       return;
@@ -739,7 +739,35 @@ export default function MergedLeadsAdmissionsPage() {
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(rows);
     XLSX.utils.book_append_sheet(wb, ws, 'G_ENQUIRY_2026');
-    XLSX.writeFile(wb, `NERMAI_IAS_ACADEMY_G_ENQUIRY_2026_${new Date().toISOString().split('T')[0]}.xlsx`);
+    const fileName = `NERMAI_IAS_ACADEMY_G_ENQUIRY_2026_${new Date().toISOString().split('T')[0]}.xlsx`;
+
+    try {
+      if (Platform.OS === 'web') {
+        XLSX.writeFile(wb, fileName);
+      } else {
+        const base64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+        const baseDir = FileSystem.documentDirectory || FileSystem.cacheDirectory || '';
+        const uri = (baseDir.endsWith('/') ? baseDir : baseDir + '/') + fileName;
+        const legacyWrite = (FileSystem as any).writeAsStringAsync || (FileSystem as any).default?.writeAsStringAsync;
+        if (typeof legacyWrite === 'function') {
+          await legacyWrite(uri, base64, { encoding: (FileSystem as any).EncodingType?.Base64 || 'base64' });
+        } else {
+          throw new Error('FileSystem writer not available');
+        }
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(uri, {
+            mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            dialogTitle: 'Export Enquiries Excel',
+            UTI: 'com.microsoft.excel.xlsx'
+          });
+        } else {
+          Alert.alert('Excel Exported', `Saved successfully to ${fileName}`);
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to export excel:', err);
+      Alert.alert('Export Error', err?.message || 'Failed to export excel file.');
+    }
   };
 
   // Process parsed Excel workbook rows (shared across Web and Mobile)
@@ -901,34 +929,26 @@ export default function MergedLeadsAdmissionsPage() {
 
       let base64 = '';
       try {
-        if (FileSystemLegacy && typeof (FileSystemLegacy as any).readAsStringAsync === 'function') {
-          base64 = await (FileSystemLegacy as any).readAsStringAsync(asset.uri, {
-            encoding: (FileSystemLegacy as any).EncodingType?.Base64 || 'base64'
+        const readFn = (FileSystem as any).readAsStringAsync || (FileSystem as any).default?.readAsStringAsync;
+        if (typeof readFn === 'function') {
+          base64 = await readFn(asset.uri, {
+            encoding: (FileSystem as any).EncodingType?.Base64 || 'base64'
           });
         } else {
-          throw new Error('legacy readAsStringAsync unavailable');
+          throw new Error('readAsStringAsync unavailable');
         }
       } catch (legacyErr) {
-        try {
-          const fsFile = new (FileSystem as any).File(asset.uri);
-          if (typeof fsFile.base64 === 'function') {
-            base64 = await fsFile.base64();
-          } else {
-            throw new Error('FileSystem.File base64 unavailable');
-          }
-        } catch {
-          const res = await fetch(asset.uri);
-          const blob = await res.blob();
-          base64 = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-              const r = reader.result as string;
-              resolve(r.split(',')[1] || r);
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-          });
-        }
+        const res = await fetch(asset.uri);
+        const blob = await res.blob();
+        base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const r = reader.result as string;
+            resolve(r.split(',')[1] || r);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
       }
 
       const workbook = XLSX.read(base64, { type: 'base64' });

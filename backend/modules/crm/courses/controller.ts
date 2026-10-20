@@ -81,6 +81,25 @@ export class CoursesController {
                 isDeleted: false
             });
 
+            // Notify admins about new CRM course
+            try {
+                const { sendPushNotification } = await import("../../../services/pushService");
+                sendPushNotification({
+                    title: "📚 New Course Added to CRM",
+                    body: `Course "${name}" has been created in CRM.`,
+                    targetRole: "admin",
+                    excludeUserId: createdBy || null,
+                    data: {
+                        targetTab: "crm",
+                        targetSub: "courses",
+                        screen: "crm",
+                        subTab: "courses",
+                        courseId,
+                        dedupeId: `crm_course_${courseId}`
+                    }
+                }).catch(() => {});
+            } catch (_) {}
+
             return res.status(201).json({ success: true, message: "Course created", data: { id: courseId } });
         } catch (e: any) {
             return res.status(500).json({ success: false, message: e.message });
@@ -149,6 +168,25 @@ export class CoursesController {
                     await leadRef.update({ courseInterest, updatedAt: now });
                 }
             }
+
+            // Notify admins about course interest
+            try {
+                const { sendPushNotification } = await import("../../../services/pushService");
+                sendPushNotification({
+                    title: "🎯 New Course Interest",
+                    body: `${leadName || "A lead"} (${phone || email || "Contact"}) showed interest in "${courseName}".`,
+                    targetRole: "admin",
+                    data: {
+                        targetTab: "crm",
+                        targetSub: "courses",
+                        screen: "crm",
+                        subTab: "courses",
+                        courseId,
+                        leadId,
+                        dedupeId: `course_interest_${courseId}_${leadId}`
+                    }
+                }).catch(() => {});
+            } catch (_) {}
 
             return res.status(200).json({
                 success: true,

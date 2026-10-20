@@ -282,12 +282,23 @@ export default function DynamicApplicationModal({
               {/* Render Every Dynamic Field */}
               {(formConfig?.customFields || []).map((field: CustomField) => {
                 const currentVal = formValues[field.id] || '';
+                const lbl = field.label.toLowerCase();
+                const isLocked = Boolean(
+                  (lbl.includes('name') && (prefillName || currentVal)) ||
+                  ((lbl.includes('phone') || lbl.includes('mobile')) && (prefillPhone || currentVal)) ||
+                  (lbl.includes('email') && (prefillEmail || currentVal))
+                );
 
                 return (
                   <View key={field.id} style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>
-                      {field.label.toUpperCase()} {field.required && '*'}
-                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <Text style={[styles.inputLabel, { marginBottom: 0 }]}>
+                        {field.label.toUpperCase()} {field.required && '*'}
+                      </Text>
+                      {isLocked && (
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#94a3b8' }}>🔒 Verified</Text>
+                      )}
+                    </View>
 
                     {field.type === 'dropdown' ? (
                       <View style={styles.dropdownContainer}>
@@ -316,20 +327,31 @@ export default function DynamicApplicationModal({
                       </View>
                     ) : field.type === 'textarea' ? (
                       <TextInput
-                        style={[styles.input, { height: 75, textAlignVertical: 'top' }]}
+                        style={[
+                          styles.input, 
+                          { height: 75, textAlignVertical: 'top' },
+                          isLocked && { backgroundColor: '#f1f5f9', color: '#64748b' }
+                        ]}
                         multiline
                         placeholder={field.placeholder || `Enter ${field.label}`}
                         placeholderTextColor="#94a3b8"
                         value={String(currentVal)}
+                        editable={!isLocked}
+                        selectTextOnFocus={false}
                         onChangeText={t => setFieldValue(field.id, t)}
                       />
                     ) : (
                       <TextInput
-                        style={styles.input}
+                        style={[
+                          styles.input,
+                          isLocked && { backgroundColor: '#f1f5f9', color: '#64748b' }
+                        ]}
                         placeholder={field.placeholder || `Enter ${field.label}`}
                         placeholderTextColor="#94a3b8"
                         keyboardType={field.type === 'number' ? 'phone-pad' : 'default'}
                         value={String(currentVal)}
+                        editable={!isLocked}
+                        selectTextOnFocus={false}
                         onChangeText={t => setFieldValue(field.id, t)}
                       />
                     )}

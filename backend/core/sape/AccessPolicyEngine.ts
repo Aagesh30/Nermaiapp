@@ -62,6 +62,54 @@ export class AccessPolicyEngine {
     //    This handles legacy students (from 'students' collection) who are not in
     //    'student_profiles', so they would otherwise get NOT_ENROLLED even with a
     //    valid admin-approved grant.
+    if (entityType === 'CLASS') {
+      try {
+        const clsSnap = await db.collection('classes').doc(entityId).get();
+        const clsData = clsSnap.exists ? clsSnap.data() : null;
+        const isLive = clsData && ['live', 'zoom_live', 'youtube_live'].includes(clsData.classType);
+        if (isLive) {
+          const livePassDoc = await db.collection('content_access').doc(`live_pass_${studentId}`).get();
+          if (livePassDoc.exists) {
+            const lp = livePassDoc.data() as IContentAccess;
+            if (lp.status === 'ACTIVE' && (!lp.expiresAt || new Date(lp.expiresAt) > new Date())) {
+              return { allowed: true, reason: 'TEMPORARY LIVE_SESSION grant', source: 'TEMPORARY' };
+            }
+          }
+
+          const liveGrants = await db.collection('content_access')
+            .where('studentId', '==', studentId)
+            .where('entityType', '==', 'LIVE_SESSION')
+            .where('status', '==', 'ACTIVE')
+            .get();
+
+          for (const doc of liveGrants.docs) {
+            const grant = doc.data() as IContentAccess;
+            if (!grant.expiresAt || new Date(grant.expiresAt) > new Date()) {
+              return { allowed: true, reason: 'TEMPORARY LIVE_SESSION grant', source: 'TEMPORARY' };
+            }
+          }
+
+          const classGrants = await db.collection('content_access')
+            .where('studentId', '==', studentId)
+            .where('entityType', '==', 'CLASS')
+            .where('status', '==', 'ACTIVE')
+            .get();
+
+          const now = new Date();
+          for (const doc of classGrants.docs) {
+            const grant = doc.data() as IContentAccess;
+            if (!grant.expiresAt || new Date(grant.expiresAt) > now) {
+              const gCls = await db.collection('classes').doc(grant.entityId).get();
+              if (gCls.exists && ['live', 'zoom_live', 'youtube_live'].includes(gCls.data()?.classType)) {
+                return { allowed: true, reason: 'TEMPORARY LIVE CLASS grant', source: 'TEMPORARY' };
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[AccessPolicyEngine] Live pass check error:', err);
+      }
+    }
     const earlyTree = [
       { type: entityType, id: entityId },
       ...(await this.hierarchyService.getParents(entityType, entityId))

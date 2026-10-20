@@ -99,6 +99,12 @@ service cloud.firestore {
       allow write: if true;
     }
 
+    // guest_recordings
+    match /guest_recordings/{docId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
     // feedbacks
     match /feedbacks/{docId} {
       allow read: if true;
@@ -196,6 +202,12 @@ service cloud.firestore {
 
     // videos
     match /videos/{videoId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // guest_recordings (Free guest demo lectures & recordings)
+    match /guest_recordings/{recordingId} {
       allow read: if true;
       allow write: if isAdmin();
     }

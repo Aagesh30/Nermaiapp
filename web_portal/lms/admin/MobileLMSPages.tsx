@@ -19,6 +19,8 @@ import api from '../core/api';
 import { db } from '../../firebaseConfig';
 import { collection, doc, onSnapshot } from 'firebase/firestore';
 import { MobileExcelSyllabusModal } from './MobileExcelSyllabusModal';
+import { GuestRecordingsAdminPage } from './GuestRecordingsAdminPage';
+import { UniversalDropdown } from '../components/UniversalDropdown';
 
 const showUniversalAlert = (title: string, message: string) => {
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
@@ -277,9 +279,18 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
           .map((r: any) => r.contentId || r.classId)
       );
 
+      const nowMs = Date.now();
+      const hasActiveLivePass = reqList.some((r: any) => {
+        const isApp = r && (r.status === 'APPROVED' || r.status === 'approved' || r.status === 'GRANT' || r.status === 'GRANTED');
+        if (!isApp) return false;
+        const notExp = !r.expiresAt || new Date(r.expiresAt).getTime() > nowMs;
+        const isLive = r.requestType === 'LIVE_SESSION' || r.isLiveClass || (r.contentName && r.contentName.toLowerCase().includes('live'));
+        return isApp && notExp && isLive;
+      });
+
       const enriched = (Array.isArray(liveList) ? liveList : []).map((cls: any) => {
         const cid = cls.classId || cls.id || cls._id;
-        const isSacsApproved = approvedClassIds.has(cid);
+        const isSacsApproved = approvedClassIds.has(cid) || hasActiveLivePass;
         return {
           ...cls,
           accessRequestPending: pendingClassIds.has(cid) && !isSacsApproved,
@@ -1118,40 +1129,24 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
               </TouchableOpacity>
             </View>
 
-            {/* Course Filter Pills */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, marginTop: 12 }}>
-              <TouchableOpacity
-                onPress={() => setSelectedCourseFilter('all')}
-                style={[
-                  styles.filterPill,
-                  {
-                    backgroundColor: selectedCourseFilter === 'all' ? themeRed : inputBg,
-                    borderColor: selectedCourseFilter === 'all' ? themeRed : borderColor,
-                  },
+            {/* Course Filter Dropdown */}
+            <View style={{ marginTop: 12 }}>
+              <UniversalDropdown
+                value={selectedCourseFilter}
+                options={[
+                  { label: 'All Courses', value: 'all' },
+                  ...courses.map((c) => ({
+                    label: c.name || c.title || 'Course',
+                    value: c.id
+                  }))
                 ]}
-              >
-                <Text style={{ fontSize: 13, fontWeight: '700', color: selectedCourseFilter === 'all' ? '#fff' : textSecondary }}>
-                  All Courses
-                </Text>
-              </TouchableOpacity>
-              {courses.map((c) => (
-                <TouchableOpacity
-                  key={c.id}
-                  onPress={() => setSelectedCourseFilter(c.id)}
-                  style={[
-                    styles.filterPill,
-                    {
-                      backgroundColor: selectedCourseFilter === c.id ? themeRed : inputBg,
-                      borderColor: selectedCourseFilter === c.id ? themeRed : borderColor,
-                    },
-                  ]}
-                >
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: selectedCourseFilter === c.id ? '#fff' : textSecondary }}>
-                    {c.name || c.title}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                onSelect={(val) => setSelectedCourseFilter(val)}
+                placeholder="-- Select Course --"
+                darkMode={darkMode}
+                themeColor={themeRed}
+                iconName="school-outline"
+              />
+            </View>
           </View>
 
           {/* List */}
@@ -1226,40 +1221,24 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
               </TouchableOpacity>
             </View>
 
-            {/* Subject Filter Pills */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, marginTop: 12 }}>
-              <TouchableOpacity
-                onPress={() => setSelectedSubjectFilter('all')}
-                style={[
-                  styles.filterPill,
-                  {
-                    backgroundColor: selectedSubjectFilter === 'all' ? themeRed : inputBg,
-                    borderColor: selectedSubjectFilter === 'all' ? themeRed : borderColor,
-                  },
+            {/* Subject Filter Dropdown */}
+            <View style={{ marginTop: 12 }}>
+              <UniversalDropdown
+                value={selectedSubjectFilter}
+                options={[
+                  { label: 'All Subjects', value: 'all' },
+                  ...subjects.map((s) => ({
+                    label: s.name || s.title || 'Subject',
+                    value: s.id
+                  }))
                 ]}
-              >
-                <Text style={{ fontSize: 13, fontWeight: '700', color: selectedSubjectFilter === 'all' ? '#fff' : textSecondary }}>
-                  All Subjects
-                </Text>
-              </TouchableOpacity>
-              {subjects.map((s) => (
-                <TouchableOpacity
-                  key={s.id}
-                  onPress={() => setSelectedSubjectFilter(s.id)}
-                  style={[
-                    styles.filterPill,
-                    {
-                      backgroundColor: selectedSubjectFilter === s.id ? themeRed : inputBg,
-                      borderColor: selectedSubjectFilter === s.id ? themeRed : borderColor,
-                    },
-                  ]}
-                >
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: selectedSubjectFilter === s.id ? '#fff' : textSecondary }}>
-                    {s.name || s.title}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                onSelect={(val) => setSelectedSubjectFilter(val)}
+                placeholder="-- Select Subject --"
+                darkMode={darkMode}
+                themeColor={themeRed}
+                iconName="book-outline"
+              />
+            </View>
           </View>
 
           {/* List */}
@@ -1334,40 +1313,24 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
               </TouchableOpacity>
             </View>
 
-            {/* Filter by Topic */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, marginTop: 12 }}>
-              <TouchableOpacity
-                onPress={() => setSelectedTopicFilter('all')}
-                style={[
-                  styles.filterPill,
-                  {
-                    backgroundColor: selectedTopicFilter === 'all' ? themeRed : inputBg,
-                    borderColor: selectedTopicFilter === 'all' ? themeRed : borderColor,
-                  },
+            {/* Filter by Topic Dropdown */}
+            <View style={{ marginTop: 12 }}>
+              <UniversalDropdown
+                value={selectedTopicFilter}
+                options={[
+                  { label: 'All Topics', value: 'all' },
+                  ...topics.map((t) => ({
+                    label: t.name || t.title || 'Topic',
+                    value: t.id
+                  }))
                 ]}
-              >
-                <Text style={{ fontSize: 13, fontWeight: '700', color: selectedTopicFilter === 'all' ? '#fff' : textSecondary }}>
-                  All Topics
-                </Text>
-              </TouchableOpacity>
-              {topics.map((t) => (
-                <TouchableOpacity
-                  key={t.id}
-                  onPress={() => setSelectedTopicFilter(t.id)}
-                  style={[
-                    styles.filterPill,
-                    {
-                      backgroundColor: selectedTopicFilter === t.id ? themeRed : inputBg,
-                      borderColor: selectedTopicFilter === t.id ? themeRed : borderColor,
-                    },
-                  ]}
-                >
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: selectedTopicFilter === t.id ? '#fff' : textSecondary }}>
-                    {t.name || t.title}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                onSelect={(val) => setSelectedTopicFilter(val)}
+                placeholder="-- Select Topic --"
+                darkMode={darkMode}
+                themeColor={themeRed}
+                iconName="layers-outline"
+              />
+            </View>
           </View>
 
           {/* List */}
@@ -1501,6 +1464,11 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
               ))
           )}
         </View>
+      )}
+
+      {/* ─── GUEST RECORDINGS PAGE ─────────────────────────────────── */}
+      {lmsSub === 'lms-guest-recordings' && (
+        <GuestRecordingsAdminPage isMobile={true} darkMode={darkMode} />
       )}
 
       {/* ─── 6. ZOOM ACCOUNTS PAGE ─────────────────────────────────── */}
@@ -2152,68 +2120,43 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
               Track course coverage and completion status.
             </Text>
 
-            {/* Course Selector */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, marginTop: 12 }}>
-              <TouchableOpacity
-                onPress={() => setSelectedCourseFilter('all')}
-                style={[
-                  styles.filterPill,
-                  {
-                    backgroundColor: selectedCourseFilter === 'all' ? themeRed : inputBg,
-                    borderColor: selectedCourseFilter === 'all' ? themeRed : borderColor,
-                  },
+            {/* Course Selector Dropdown */}
+            <View style={{ marginTop: 12 }}>
+              <UniversalDropdown
+                value={selectedCourseFilter}
+                options={[
+                  { label: 'All Courses', value: 'all' },
+                  ...courses.map((c) => ({
+                    label: c.name || c.title || 'Course',
+                    value: c.id
+                  }))
                 ]}
-              >
-                <Text style={{ fontSize: 13, fontWeight: '700', color: selectedCourseFilter === 'all' ? '#fff' : textSecondary }}>
-                  All Courses
-                </Text>
-              </TouchableOpacity>
-              {courses.map((c) => (
-                <TouchableOpacity
-                  key={c.id}
-                  onPress={() => setSelectedCourseFilter(c.id)}
-                  style={[
-                    styles.filterPill,
-                    {
-                      backgroundColor: selectedCourseFilter === c.id ? themeRed : inputBg,
-                      borderColor: selectedCourseFilter === c.id ? themeRed : borderColor,
-                    },
-                  ]}
-                >
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: selectedCourseFilter === c.id ? '#fff' : textSecondary }}>
-                    {c.name || c.title}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                onSelect={(val) => setSelectedCourseFilter(val)}
+                placeholder="-- Select Course --"
+                darkMode={darkMode}
+                themeColor={themeRed}
+                iconName="school-outline"
+                label="COURSE"
+              />
+            </View>
 
-            {/* Status Filter */}
-            <View style={{ flexDirection: 'row', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
-              {[
-                { key: 'all', label: 'All Statuses' },
-                { key: 'completed', label: 'Completed' },
-                { key: 'in_progress', label: 'In Progress' },
-                { key: 'pending', label: 'Pending' },
-              ].map((sf) => {
-                const isSelected = syllabusStatusFilter === sf.key;
-                return (
-                  <TouchableOpacity
-                    key={sf.key}
-                    onPress={() => setSyllabusStatusFilter(sf.key as any)}
-                    style={[
-                      styles.chip,
-                      {
-                        backgroundColor: isSelected ? themeRed : inputBg,
-                        borderColor: isSelected ? themeRed : borderColor,
-                      },
-                    ]}
-                  >
-                    <Text style={{ fontSize: 12, fontWeight: '700', color: isSelected ? '#fff' : textSecondary }}>
-                      {sf.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
+            {/* Status Filter Dropdown */}
+            <View style={{ marginTop: 8 }}>
+              <UniversalDropdown
+                value={syllabusStatusFilter}
+                options={[
+                  { label: 'All Statuses', value: 'all' },
+                  { label: 'Completed', value: 'completed' },
+                  { label: 'In Progress', value: 'in_progress' },
+                  { label: 'Pending', value: 'pending' }
+                ]}
+                onSelect={(val) => setSyllabusStatusFilter(val as any)}
+                placeholder="-- Select Status --"
+                darkMode={darkMode}
+                themeColor={themeRed}
+                iconName="checkmark-done-circle-outline"
+                label="STATUS"
+              />
             </View>
           </View>
 

@@ -55,6 +55,8 @@ class MeetingLauncherServiceClass {
   private pollInterval:     ReturnType<typeof setInterval> | null = null;
   private heartbeatInterval:ReturnType<typeof setInterval> | null = null;
   private lastHeartbeatAck: number = 0;
+  private heartbeatWarned:  boolean = false;
+  private popupName:        string = POPUP_WINDOW_NAME;
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -62,9 +64,9 @@ class MeetingLauncherServiceClass {
    * launch() must be called directly from a user-interaction handler
    * (click event) so the browser allows the popup to open without blocking.
    */
-  preparePopup(): void {
-    // Open synchronously on user click to bypass blockers
-    this.popupWindow = window.open('about:blank', POPUP_WINDOW_NAME, POPUP_FEATURES);
+  preparePopup(sessionId?: string): void {
+    this.popupName = sessionId ? `${POPUP_WINDOW_NAME}-${sessionId}` : POPUP_WINDOW_NAME;
+    this.popupWindow = window.open('about:blank', this.popupName, POPUP_FEATURES);
   }
 
   /**
@@ -72,6 +74,11 @@ class MeetingLauncherServiceClass {
    */
   launch(request: MeetingLaunchRequest): void {
     this.currentRequest = request;
+    this._stopTimers();
+
+    if (!this.isAlive()) {
+      this.popupName = `${POPUP_WINDOW_NAME}-${request.sessionId}`;
+    }
 
     const launchPage = (PROVIDER_LAUNCH_PAGES[request.provider] ?? PROVIDER_LAUNCH_PAGES['zoom'])();
     const url = `${launchPage}?token=${encodeURIComponent(request.token)}&sessionId=${encodeURIComponent(request.sessionId)}&apiUrl=${encodeURIComponent(this._getApiUrl())}`;
@@ -81,7 +88,7 @@ class MeetingLauncherServiceClass {
 
     // Re-use the window if prepared, otherwise open it (which might get blocked)
     if (!this.popupWindow || this.popupWindow.closed) {
-       this.popupWindow = window.open(url, POPUP_WINDOW_NAME, POPUP_FEATURES);
+       this.popupWindow = window.open(url, this.popupName, POPUP_FEATURES);
     } else {
        this.popupWindow.location.href = url;
     }
@@ -117,17 +124,32 @@ class MeetingLauncherServiceClass {
   }
 
   /**
-   * reconnect() — safe to call from UI. Will re-open the popup.
-   * Must still originate from a user click to avoid popup blocking.
+   * reconnect() — safe to call from UI or bridge event.
+   * Re-mints a fresh authenticated token and navigates the alive popup.
    */
-  reconnect(): void {
-    if (this.currentRequest) {
-      MeetingTelemetryService.record('RECONNECT_INITIATED', { provider: this.currentRequest.provider });
-      MeetingStateManager.setState('reconnecting');
-      this._cleanup();
-      // Small delay gives the browser time to finish closing the old window
-      setTimeout(() => this.launch(this.currentRequest!), 300);
+  async reconnect(): Promise<void> {
+    const req = this.currentRequest;
+    if (!req) return;
+
+    // If called from a UI click and the popup is gone, open it now while we still have the click
+    if (!this.isAlive()) this.preparePopup(req.sessionId);
+
+    MeetingTelemetryService.record('RECONNECT_INITIATED', { provider: req.provider });
+    MeetingStateManager.setState('reconnecting');
+
+    try {
+      const res: any = await getApiClient().post(`/live-sessions/${req.sessionId}/join-token`);
+      const token = res?.data?.token ?? res?.token;
+      if (!token) throw new Error('no token in response');
+      req.token = token;
+    } catch (e) {
+      MeetingTelemetryService.record('REJOIN_TOKEN_FAILED', {});
+      MeetingStateManager.setState('closed');
+      return;
     }
+
+    this._stopTimers();
+    this.launch(req);
   }
 
   isAlive(): boolean {
@@ -188,6 +210,10 @@ class MeetingLauncherServiceClass {
             this._cleanup();
           }
         }
+
+        if (data.type === 'RECONNECT_REQUESTED' && event.source === this.popupWindow) {
+          this.reconnect();
+        }
       } catch (_) {}
     };
 
@@ -217,22 +243,30 @@ class MeetingLauncherServiceClass {
         this.popupWindow!.postMessage(JSON.stringify({ type: 'HEARTBEAT' }), '*');
       } catch (_) {}
 
-      // If we haven't received an ACK within the timeout window, mark as closed
+      // If we haven't received an ACK within the timeout window, record telemetry once without closing
       const elapsed = Date.now() - this.lastHeartbeatAck;
       if (elapsed > HEARTBEAT_TIMEOUT) {
-        MeetingTelemetryService.record('HEARTBEAT_TIMEOUT', { elapsedMs: elapsed });
-        MeetingStateManager.setState('closed');
-        this._cleanup();
+        if (!this.heartbeatWarned) {
+          this.heartbeatWarned = true;
+          MeetingTelemetryService.record('HEARTBEAT_TIMEOUT', { elapsedMs: elapsed });
+        }
+      } else {
+        this.heartbeatWarned = false;
       }
     }, HEARTBEAT_INTERVAL);
   }
 
   // ── Cleanup ────────────────────────────────────────────────────────────────
 
-  private _cleanup(): void {
+  private _stopTimers(): void {
     if (this.pollInterval)      { clearInterval(this.pollInterval);      this.pollInterval = null; }
     if (this.heartbeatInterval) { clearInterval(this.heartbeatInterval); this.heartbeatInterval = null; }
     if (this.messageHandler)    { window.removeEventListener('message', this.messageHandler); this.messageHandler = null; }
+    this.heartbeatWarned = false;
+  }
+
+  private _cleanup(): void {
+    this._stopTimers();
     this.popupWindow = null;
   }
 

@@ -1,5 +1,6 @@
 import { CourseRepository, SubjectRepository, TopicRepository, SubtopicRepository, ClassRepository } from './repository';
 import { ICourse, ISubject, ITopic, ISubtopic, IClass } from './types';
+import { LMS_COLLECTIONS } from './constants';
 import { AppError } from '../../core/errors/AppError';
 import { encrypt, decrypt } from '../../core/utils/encryption';
 import { randomUUID } from 'crypto';
@@ -900,21 +901,90 @@ export class CourseService {
     const result: any[] = [];
     let subjectOrder = 1;
 
+    // ── Phase 1: Pre-fetch existing subjects and topics for fast in-memory matching ──
+    const existingSubjects = await this.subjectRepo.findByCourseId(courseId);
+    const subjectMap = new Map<string, any>();
+    existingSubjects.forEach(s => {
+      if (s.name) subjectMap.set(s.name.trim().toLowerCase(), s);
+    });
+
+    // Pre-fetch all topics for existing subjects in parallel
+    const topicMap = new Map<string, any>();
+    if (existingSubjects.length > 0) {
+      const topicLists = await Promise.all(
+        existingSubjects.map(s => this.topicRepo.findBySubjectId(s.id!).catch(() => []))
+      );
+      topicLists.flat().forEach(t => {
+        if (t && t.name && t.subjectId) {
+          topicMap.set(`${t.subjectId}_${t.name.trim().toLowerCase()}`, t);
+        }
+      });
+    }
+
+    // Pre-fetch all existing subtopics for existing topics
+    const subtopicMap = new Map<string, any>();
+    const allExistingTopicIds = Array.from(topicMap.values()).map(t => t.id!).filter(Boolean);
+    if (allExistingTopicIds.length > 0) {
+      // Fetch in chunks of 20 topics to prevent connection exhaustion
+      const CHUNK_SIZE = 20;
+      for (let i = 0; i < allExistingTopicIds.length; i += CHUNK_SIZE) {
+        const chunk = allExistingTopicIds.slice(i, i + CHUNK_SIZE);
+        const subtopicLists = await Promise.all(
+          chunk.map(tid => this.subtopicRepo.findByTopicId(tid).catch(() => []))
+        );
+        subtopicLists.flat().forEach(st => {
+          if (st && st.name && st.topicId) {
+            subtopicMap.set(`${st.topicId}_${st.name.trim().toLowerCase()}`, st);
+          }
+        });
+      }
+    }
+
+    // ── Phase 2: Batch Writer Setup (Firestore allows up to 500 writes per batch) ──
+    const batches: any[] = [];
+    let currentBatch = db.batch();
+    let currentBatchOps = 0;
+
+    const queueWrite = (docRef: any, data: any) => {
+      if (currentBatchOps >= 450) {
+        batches.push(currentBatch);
+        currentBatch = db.batch();
+        currentBatchOps = 0;
+      }
+      currentBatch.set(docRef, data, { merge: true });
+      currentBatchOps++;
+    };
+
+    const auditFields = {
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      createdBy: userId,
+      updatedBy: userId,
+      isDeleted: false,
+      deletedAt: null,
+      deletedBy: null,
+    };
+
+    // ── Phase 3: Fast In-Memory Resolution and Batch Queuing ──
     for (const subj of subjectsData) {
       if (!subj || !subj.name) continue;
       const subjectName = String(subj.name).trim();
       if (!subjectName) continue;
 
-      // 1. Find or create Subject
-      const matchedSubjects = await this.subjectRepo.findByNameAndCourse(subjectName, courseId);
-      let subject = matchedSubjects && matchedSubjects.length > 0 ? matchedSubjects[0] : null;
+      const subjectKey = subjectName.toLowerCase();
+      let subject = subjectMap.get(subjectKey);
 
       if (!subject) {
-        subject = await this.subjectRepo.create({
+        const subDocRef = db.collection(LMS_COLLECTIONS.SUBJECTS).doc();
+        subject = {
+          id: subDocRef.id,
           courseId,
           name: subjectName,
-          order: subj.order || subjectOrder++
-        }, userId);
+          order: subj.order || subjectOrder++,
+          ...auditFields
+        };
+        queueWrite(subDocRef, subject);
+        subjectMap.set(subjectKey, subject);
       }
 
       let topicOrder = 1;
@@ -925,16 +995,20 @@ export class CourseService {
         const topicName = String(top.name).trim();
         if (!topicName) continue;
 
-        // 2. Find or create Topic
-        const matchedTopics = await this.topicRepo.findByNameAndSubject(topicName, subject.id!);
-        let topic = matchedTopics && matchedTopics.length > 0 ? matchedTopics[0] : null;
+        const topicKey = `${subject.id}_${topicName.toLowerCase()}`;
+        let topic = topicMap.get(topicKey);
 
         if (!topic) {
-          topic = await this.topicRepo.create({
-            subjectId: subject.id!,
+          const topDocRef = db.collection(LMS_COLLECTIONS.TOPICS).doc();
+          topic = {
+            id: topDocRef.id,
+            subjectId: subject.id,
             name: topicName,
-            order: top.order || topicOrder++
-          }, userId);
+            order: top.order || topicOrder++,
+            ...auditFields
+          };
+          queueWrite(topDocRef, topic);
+          topicMap.set(topicKey, topic);
         }
 
         let subtopicOrder = 1;
@@ -946,9 +1020,16 @@ export class CourseService {
           if (!subtopicName) continue;
 
           const isCompleted = st.coverageStatus?.toString().toLowerCase() === 'done' || st.completed === true;
+          const subtopicKey = `${topic.id}_${subtopicName.toLowerCase()}`;
+          const existingSub = subtopicMap.get(subtopicKey);
+
+          const subDocRef = existingSub?.id
+            ? db.collection(LMS_COLLECTIONS.SUBTOPICS).doc(existingSub.id)
+            : db.collection(LMS_COLLECTIONS.SUBTOPICS).doc();
 
           const subtopicPayload = {
-            topicId: topic.id!,
+            id: subDocRef.id,
+            topicId: topic.id,
             name: subtopicName,
             order: st.order || subtopicOrder++,
             description: st.remarks || st.description || '',
@@ -964,16 +1045,14 @@ export class CourseService {
             testConducted: st.testConducted || '',
             testDate: st.testDate || '',
             avgScore: Number(st.avgScore) || 0,
-            remarks: st.remarks || ''
+            remarks: st.remarks || '',
+            updatedAt: new Date().toISOString(),
+            updatedBy: userId,
+            ...(existingSub ? {} : auditFields)
           };
 
-          // 3. Find or create / update Subtopic
-          const matchedSubtopics = await this.subtopicRepo.findByNameAndTopic(subtopicName, topic.id!);
-          if (matchedSubtopics && matchedSubtopics.length > 0) {
-            await this.subtopicRepo.update(matchedSubtopics[0].id!, subtopicPayload, userId);
-          } else {
-            await this.subtopicRepo.create(subtopicPayload, userId);
-          }
+          queueWrite(subDocRef, subtopicPayload);
+          subtopicMap.set(subtopicKey, subtopicPayload);
         }
       }
 
@@ -982,6 +1061,15 @@ export class CourseService {
         topicsCount: topicsList.length,
         subtopicsCount: topicsList.reduce((acc: number, t: any) => acc + (t.subtopics?.length || 0), 0)
       });
+    }
+
+    // ── Phase 4: Parallel Commit all Batches ──
+    if (currentBatchOps > 0) {
+      batches.push(currentBatch);
+    }
+
+    if (batches.length > 0) {
+      await Promise.all(batches.map(b => b.commit()));
     }
 
     generalCache.invalidatePrefix('courses:');

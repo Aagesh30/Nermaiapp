@@ -70,6 +70,45 @@ export class IDCardController {
 
             await db.collection(ID_CARD_COLLECTION).doc(id).set(payload);
 
+            // Push notifications — fire-and-forget
+            try {
+                const { sendPushNotification } = await import("../../../services/pushService");
+                const cardLabel = userType === "hall_ticket" ? "Hall Ticket" : "ID Card";
+
+                // Notify the student that their card is ready
+                sendPushNotification({
+                    title: `🪪 Your ${cardLabel} is Ready`,
+                    body: `Your ${cardLabel} has been generated. Tap to view and download it.`,
+                    targetUserId: userId,
+                    data: {
+                        targetTab: "erp",
+                        targetSub: "id-card",
+                        screen: "erp",
+                        subTab: "id-card",
+                        cardId: id,
+                        userId,
+                        dedupeId: `id_card_${id}`
+                    }
+                }).catch(err => console.log("[Push] ID card student push error:", err?.message));
+
+                // Notify admins & super admins
+                sendPushNotification({
+                    title: `🪪 ${cardLabel} Generated`,
+                    body: `A new ${cardLabel} (Card #${cardNumber || id.slice(-6).toUpperCase()}) was generated for user ${userId}.`,
+                    targetRole: "admin",
+                    excludeUserId: createdBy || null,
+                    data: {
+                        targetTab: "erp",
+                        targetSub: "id-card",
+                        screen: "erp",
+                        subTab: "id-card",
+                        cardId: id,
+                        userId,
+                        dedupeId: `id_card_admin_${id}`
+                    }
+                }).catch(err => console.log("[Push] ID card admin push error:", err?.message));
+            } catch (_) {}
+
             return res.status(201).json({
                 success: true,
                 message: "ID card generated successfully",

@@ -89,6 +89,22 @@ export class AnnouncementController {
                         dedupeId: `announcement_${id}`
                     }
                 }).catch(e => console.log("[AnnouncementController] Push note:", e?.message));
+
+                // Also notify admins about the new notice (staff dashboard view)
+                sendPushNotification({
+                    title: `📢 New Notice: ${title.trim()}`,
+                    body: content.trim().slice(0, 120),
+                    targetRole: "admin",
+                    excludeUserId: (req as any).user?.userId || (createdBy && createdBy !== "admin" ? createdBy : null) || null,
+                    data: {
+                        targetTab: "dashboard",
+                        targetSub: "notices",
+                        screen: "dashboard",
+                        subTab: "notices",
+                        announcementId: id,
+                        dedupeId: `announcement_admin_${id}`
+                    }
+                }).catch(e => console.log("[AnnouncementController] Admin push note:", e?.message));
             } catch (_) {}
 
             return res.status(201).json({

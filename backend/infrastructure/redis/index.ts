@@ -111,6 +111,17 @@ export const redisClient = {
     return 1;
   },
 
+  async incr(key: string): Promise<number> {
+    const rec = fallbackCache.get(key);
+    let val = 0;
+    if (rec && Date.now() <= rec.expiry) {
+      val = parseInt(rec.value, 10) || 0;
+    }
+    val++;
+    fallbackCache.set(key, { value: val.toString(), expiry: rec?.expiry ?? Infinity });
+    return val;
+  },
+
   async publish(_channel: string, _message: string): Promise<number> { return 0; },
 
   async disconnect(): Promise<void> { /* no-op */ },
