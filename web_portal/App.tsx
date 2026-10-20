@@ -33020,7 +33020,9 @@ SOURCE QUESTION PAPER:
                           ) : (
                             <View style={{ gap: 15, paddingTop: isMobile ? 8 : 4 }}>
                               <View style={{ flexDirection: isMobile ? "column" : "row", justifyContent: "space-between", alignItems: isMobile ? "stretch" : "center", flexWrap: "wrap", gap: 10 }}>
-                                <Text style={[styles.sectionTitle, { marginTop: isMobile ? 8 : 0, paddingTop: 4, fontSize: 16 }]}>Student Management Portal</Text>
+                                <Text style={[styles.sectionTitle, darkMode && styles.sectionTitleDark, { marginTop: isMobile ? 10 : 0, marginBottom: 8, paddingTop: 4, fontSize: isMobile ? 18 : 16, fontWeight: "bold", color: darkMode ? "#ef9a9a" : "#c62828" }]}>
+                                  Student Management Portal
+                                </Text>
                                 {!isReadOnly("student_management") && (
                                   <View style={{ flexDirection: isMobile ? "column" : "row", gap: 10, alignItems: "stretch", width: isMobile ? "100%" : "auto" }}>
                                     <TouchableOpacity

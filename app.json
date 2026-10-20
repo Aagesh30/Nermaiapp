@@ -17,7 +17,8 @@
     },
     "android": {
       "package": "com.nermai.iasacademy",
-      "versionCode": 5,
+      "versionCode": 6,
+      "backgroundColor": "#7b0000",
       "splash": {
         "image": "./assets/splash-icon.png",
         "resizeMode": "contain",
@@ -31,7 +32,7 @@
         "android.permission.POST_NOTIFICATIONS"
       ],
       "adaptiveIcon": {
-        "backgroundColor": "#5a0000",
+        "backgroundColor": "#7b0000",
         "foregroundImage": "./assets/android-icon-foreground.png"
       },
       "predictiveBackGestureEnabled": false
