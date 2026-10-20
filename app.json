@@ -17,7 +17,7 @@
     },
     "android": {
       "package": "com.nermai.iasacademy",
-      "versionCode": 6,
+      "versionCode": 7,
       "backgroundColor": "#7b0000",
       "splash": {
         "image": "./assets/splash-icon.png",
