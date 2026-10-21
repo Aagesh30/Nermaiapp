@@ -280,8 +280,14 @@ export class ExaminationController {
                 }
             }
 
-            if (isSpecialBatchTest && specialRollNumber) {
-                rollNumber = specialRollNumber;
+            const isMockOrSpecialTest = Boolean(test.targetAudience === "special_mock" || test.testType === "special_mock" || test.isSpecialMock || isSpecialBatchTest);
+
+            if (isMockOrSpecialTest) {
+                if (specialRollNumber) {
+                    rollNumber = specialRollNumber;
+                } else if (sData && sData.mockRollNumber) {
+                    rollNumber = String(sData.mockRollNumber);
+                }
             }
 
             const attemptPayload = {
@@ -292,6 +298,7 @@ export class ExaminationController {
                 rollNumber,
                 isSpecialBatchTest,
                 specialRollNo: specialRollNumber || null,
+                mockRollNumber: (sData && sData.mockRollNumber) ? String(sData.mockRollNumber) : null,
                 status: "started",
                 isSubmitted: false,
                 submittedAt: null,

@@ -37,6 +37,7 @@
     "expo-print": "~57.0.2",
     "expo-screen-capture": "~57.0.4",
     "expo-sharing": "~57.0.22",
+    "expo-splash-screen": "~57.0.10",
     "expo-status-bar": "~57.0.1",
     "expo-web-browser": "~57.0.3",
     "firebase": "^12.16.0",

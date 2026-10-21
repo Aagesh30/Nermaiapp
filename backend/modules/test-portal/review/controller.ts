@@ -715,8 +715,9 @@ export class ReviewController {
                 if (isGenericName(sName)) sName = "Guest User";
                 if (isGenericName(rNum) || isPhoneNum(rNum) || rNum === sName) rNum = "Guest";
 
-                // Enrich with special batch roll number ONLY when this test is for a special mock batch
-                if (isSpecialBatchTest) {
+                // Enrich with special batch roll number or mock roll number ONLY for special mock or special batch tests
+                const isMockOrSpecialTest = Boolean(isSpecialBatchTest || testData?.targetAudience === "special_mock" || testData?.isSpecialMock || testData?.testType === "special_mock");
+                if (isMockOrSpecialTest) {
                     if (entry.studentId && specialBatchRollMap[entry.studentId]) {
                         rNum = String(specialBatchRollMap[entry.studentId]);
                     } else if (entry.specialRollNo) {

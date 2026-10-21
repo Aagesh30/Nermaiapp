@@ -249,6 +249,44 @@ export class StudentController {
             // Assign the built installments back to the payload before saving
             payload.feeInstallments = initialInstallments;
 
+            // Auto-assign Special Mock Roll Number & issue Hall Ticket if student's batch is in locked mock configuration
+            try {
+                const configDoc = await db.collection("settings").doc("special_mock_roll_config").get();
+                if (configDoc.exists) {
+                    const configData = configDoc.data();
+                    if (configData?.isLocked && Array.isArray(configData.allocatedBatches) && configData.allocatedBatches.length > 0) {
+                        const norm = (s: string) => String(s || "").trim().toLowerCase();
+                        const studentBatches = (finalBatches || []).map(norm);
+                        
+                        const isMatch = configData.allocatedBatches.some((b: any) => {
+                            const bName = norm(b.batchName || b);
+                            return studentBatches.some((sb: string) => sb === bName || sb.startsWith(bName + " ") || sb.startsWith(bName + "("));
+                        });
+
+                        if (isMatch) {
+                            let nextRoll = Number(configData.lastAssignedRollNo || configData.startingRollNo || 182025) + 1;
+                            payload.mockRollNumber = String(nextRoll);
+                            payload.hallTicketGenerated = true;
+                            
+                            const ht = configData.hallTicketDefaults || {};
+                            payload.hallTicketExamName = ht.examName || "UPSC Special Mock Examination";
+                            payload.hallTicketExamDate = ht.examDate || "";
+                            payload.hallTicketTime = ht.examTime || "10:00 AM - 12:00 PM";
+                            payload.hallTicketVenue = ht.venue || "NERMAI IAS Academy Main Campus";
+                            payload.hallTicketInstructions = ht.instructions || "1. Bring printed copy of this Hall Ticket and original ID Proof.\n2. Standard blue/black ballpoint pen only.\n3. Electronic gadgets are strictly prohibited.";
+
+                            // Atomically update lastAssignedRollNo in settings
+                            await db.collection("settings").doc("special_mock_roll_config").update({
+                                lastAssignedRollNo: nextRoll,
+                                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                            });
+                        }
+                    }
+                }
+            } catch (cfgErr) {
+                console.error("Error auto-assigning mock roll number in student create:", cfgErr);
+            }
+
             await db.collection(COLLECTION).doc(id).set(payload);
 
             if (loginUsername) {
@@ -1301,18 +1339,18 @@ export class StudentController {
                     const { mockTestId, specialBatchId, specialBatchName } = req.body;
                     let mockRollNumbers = req.body.mockRollNumbers;
                     let targetStudentIds: string[] = [];
+                    let bRef: any = null;
+                    let bDocData: any = null;
 
                     if (specialBatchId) {
-                        const batchDoc = await db.collection("batches").doc(specialBatchId).get();
-                        if (batchDoc.exists) {
-                            const bData = batchDoc.data();
-                            mockRollNumbers = bData?.studentRollMap || mockRollNumbers || {};
-                        }
+                        bRef = db.collection("batches").doc(specialBatchId);
+                        const bDoc = await bRef.get();
+                        if (bDoc.exists) bDocData = bDoc.data();
                     } else if (specialBatchName) {
-                        const batchSnap = await db.collection("batches").where("batchName", "==", specialBatchName).limit(1).get();
-                        if (!batchSnap.empty) {
-                            const bData = batchSnap.docs[0].data();
-                            mockRollNumbers = bData?.studentRollMap || mockRollNumbers || {};
+                        const bSnap = await db.collection("batches").where("batchName", "==", specialBatchName).limit(1).get();
+                        if (!bSnap.empty) {
+                            bRef = bSnap.docs[0].ref;
+                            bDocData = bSnap.docs[0].data();
                         }
                     } else if (mockTestId && (!mockRollNumbers || Object.keys(mockRollNumbers).length === 0)) {
                         const testDoc = await db.collection("tests").doc(mockTestId).get();
@@ -1322,65 +1360,59 @@ export class StudentController {
                         }
                     }
 
-                    if (mockRollNumbers && typeof mockRollNumbers === "object") {
-                        targetStudentIds = Object.keys(mockRollNumbers);
-                    }
+                    if (bDocData) {
+                        const existingRollMap: Record<string, string> = { ...(bDocData.studentRollMap || mockRollNumbers || {}) };
+                        const ordered = Array.isArray(bDocData.orderedBatches) && bDocData.orderedBatches.length > 0
+                            ? bDocData.orderedBatches
+                            : (Array.isArray(bDocData.subBatches) && bDocData.subBatches.length > 0 ? bDocData.subBatches : [bDocData.batchName]);
 
-                    // Dynamic fallback: If studentRollMap was not pre-populated on the batch, build it live from the ordered batches
-                    if (targetStudentIds.length === 0) {
-                        let bDocData: any = null;
-                        let bRef: any = null;
-                        if (specialBatchId) {
-                            bRef = db.collection("batches").doc(specialBatchId);
-                            const bDoc = await bRef.get();
-                            if (bDoc.exists) bDocData = bDoc.data();
-                        } else if (specialBatchName) {
-                            const bSnap = await db.collection("batches").where("batchName", "==", specialBatchName).limit(1).get();
-                            if (!bSnap.empty) {
-                                bRef = bSnap.docs[0].ref;
-                                bDocData = bSnap.docs[0].data();
-                            }
-                        }
+                        let maxRoll = 0;
+                        Object.values(existingRollMap).forEach(v => {
+                            const n = parseInt(String(v).replace(/\D/g, ""), 10);
+                            if (!isNaN(n) && n > maxRoll) maxRoll = n;
+                        });
 
-                        if (bDocData) {
-                            const ordered = Array.isArray(bDocData.orderedBatches) && bDocData.orderedBatches.length > 0
-                                ? bDocData.orderedBatches
-                                : (Array.isArray(bDocData.subBatches) ? bDocData.subBatches : []);
-                            let currentRoll = parseInt(String(bDocData.startingRollNo || "7000").replace(/\D/g, ""), 10);
-                            if (isNaN(currentRoll)) currentRoll = 7000;
+                        let currentRoll = maxRoll > 0 ? (maxRoll + 1) : (parseInt(String(bDocData.startingRollNo || "1000").replace(/\D/g, ""), 10) || 1000);
+                        const norm = (s: string) => String(s || "").trim().toLowerCase();
+                        const orderedNorms = ordered.map(norm);
 
-                            const computedRollMap: Record<string, string> = {};
+                        const allStudentsSnap = await db.collection("students")
+                            .where("isDeleted", "==", false)
+                            .get();
 
-                            for (const bName of ordered) {
-                                const studentsSnap = await db.collection("students")
-                                    .where("batch", "==", bName)
-                                    .where("isDeleted", "==", false)
-                                    .get();
+                        let mapChanged = false;
+                        allStudentsSnap.forEach(doc => {
+                            const stData = doc.data();
+                            const sBatches = [
+                                stData.batch,
+                                stData.batchName,
+                                ...(Array.isArray(stData.batches) ? stData.batches.map((b: any) => typeof b === 'string' ? b : b?.batchName) : [])
+                            ].filter(Boolean).map(norm);
 
-                                const batchStudents = studentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
-                                batchStudents.sort((a, b) => {
-                                    const rA = String(a.rollNumber || a.loginUsername || "");
-                                    const rB = String(b.rollNumber || b.loginUsername || "");
-                                    const numA = parseInt(rA.replace(/\D/g, ""), 10);
-                                    const numB = parseInt(rB.replace(/\D/g, ""), 10);
-                                    if (!isNaN(numA) && !isNaN(numB) && numA !== numB) return numA - numB;
-                                    const nameA = `${a.firstName || ""} ${a.lastName || ""}`.trim().toLowerCase();
-                                    const nameB = `${b.firstName || ""} ${b.lastName || ""}`.trim().toLowerCase();
-                                    return nameA.localeCompare(nameB);
-                                });
+                            const belongs = sBatches.some((sb: string) => 
+                                orderedNorms.some((ob: string) => sb === ob || sb.startsWith(ob + " ") || sb.startsWith(ob + "("))
+                            );
 
-                                for (const st of batchStudents) {
-                                    computedRollMap[st.id] = String(currentRoll++);
+                            if (belongs) {
+                                if (!existingRollMap[doc.id]) {
+                                    existingRollMap[doc.id] = String(currentRoll++);
+                                    mapChanged = true;
                                 }
                             }
+                        });
 
-                            mockRollNumbers = computedRollMap;
-                            targetStudentIds = Object.keys(mockRollNumbers);
+                        mockRollNumbers = existingRollMap;
+                        targetStudentIds = Object.keys(mockRollNumbers);
 
-                            if (bRef && targetStudentIds.length > 0) {
-                                await bRef.set({ studentRollMap: computedRollMap, lastAssignedRollNo: currentRoll - 1 }, { merge: true });
-                            }
+                        if (bRef && mapChanged) {
+                            await bRef.set({
+                                studentRollMap: existingRollMap,
+                                lastAssignedRollNo: currentRoll - 1,
+                                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                            }, { merge: true });
                         }
+                    } else if (mockRollNumbers && typeof mockRollNumbers === "object") {
+                        targetStudentIds = Object.keys(mockRollNumbers);
                     }
 
                     if (targetStudentIds.length > 0) {
@@ -1392,13 +1424,15 @@ export class StudentController {
                                 const studentRef = db.collection("students").doc(sId);
                                 const sUpdate: any = {
                                     ...updateData,
-                                    hallTicketIsSpecial: true,
-                                    hallTicketSpecialBatch: specialBatchName || null,
                                     specialRollNo: assignedMockRoll,
                                     mockRollNumber: assignedMockRoll,
                                     lastSpecialBatchId: specialBatchId || null,
                                     lastMockTestId: mockTestId || null
                                 };
+                                if (type === "hallticket") {
+                                    sUpdate.hallTicketIsSpecial = updateData.hallTicketGenerated !== false;
+                                    sUpdate.hallTicketSpecialBatch = updateData.hallTicketGenerated !== false ? (specialBatchName || null) : null;
+                                }
                                 firestoreBatch.set(studentRef, sUpdate, { merge: true });
                             }
                             await firestoreBatch.commit();
@@ -1950,6 +1984,9 @@ export class StudentController {
                     for (const doc of chunk) {
                         batchWrite.update(doc.ref, {
                             mockRollNumber: admin.firestore.FieldValue.delete(),
+                            specialRollNo: admin.firestore.FieldValue.delete(),
+                            hallTicketIsSpecial: false,
+                            hallTicketSpecialBatch: admin.firestore.FieldValue.delete(),
                             hallTicketGenerated: false,
                             hallTicketExamName: admin.firestore.FieldValue.delete(),
                             hallTicketExamDate: admin.firestore.FieldValue.delete(),
@@ -1981,6 +2018,118 @@ export class StudentController {
             return res.status(500).json({
                 success: false,
                 message: error.message || "Failed to unlock mock roll configuration"
+            });
+        }
+    }
+
+    /**
+     * POST /api/erp/student/mock-roll/sync-unassigned
+     * Scans active students in locked allocated batches who don't have mockRollNumber,
+     * assigns sequential mock roll numbers starting from lastAssignedRollNo + 1,
+     * issues their hall tickets, and updates config.
+     */
+    static async syncUnassignedMockRolls(req: Request, res: Response) {
+        try {
+            const configRef = db.collection("settings").doc("special_mock_roll_config");
+            const configDoc = await configRef.get();
+            if (!configDoc.exists || !configDoc.data()?.isLocked) {
+                return res.status(400).json({
+                    success: false,
+                    message: "No active locked mock roll configuration found."
+                });
+            }
+
+            const configData = configDoc.data()!;
+            const allocatedBatches = configData.allocatedBatches || [];
+            if (allocatedBatches.length === 0) {
+                return res.status(200).json({
+                    success: true,
+                    message: "No batches are currently allocated.",
+                    count: 0
+                });
+            }
+
+            const norm = (s: string) => String(s || "").trim().toLowerCase();
+            const lockedBatchNames = allocatedBatches.map((b: any) => norm(b.batchName || b));
+
+            // Fetch all active students
+            const snap = await db.collection("students")
+                .where("isDeleted", "==", false)
+                .get();
+
+            const unassignedStudents: any[] = [];
+            snap.forEach(d => {
+                const data = d.data();
+                if (!data.mockRollNumber) {
+                    const sBatches = [
+                        data.batch,
+                        data.batchName,
+                        ...(Array.isArray(data.batches) ? data.batches.map((b: any) => typeof b === 'string' ? b : b?.batchName) : [])
+                    ].filter(Boolean).map(norm);
+
+                    const belongs = sBatches.some((sb: string) => 
+                        lockedBatchNames.some((lb: string) => sb === lb || sb.startsWith(lb + " ") || sb.startsWith(lb + "("))
+                    );
+
+                    if (belongs) {
+                        unassignedStudents.push({ id: d.id, ...data });
+                    }
+                }
+            });
+
+            if (unassignedStudents.length === 0) {
+                return res.status(200).json({
+                    success: true,
+                    message: "All students in allocated batches already have mock roll numbers.",
+                    count: 0
+                });
+            }
+
+            let currentRoll = Number(configData.lastAssignedRollNo || configData.startingRollNo || 182025) + 1;
+            const startRoll = currentRoll;
+            const ht = configData.hallTicketDefaults || {};
+
+            for (let i = 0; i < unassignedStudents.length; i += 400) {
+                const chunk = unassignedStudents.slice(i, i + 400);
+                const batchWrite = db.batch();
+
+                for (const st of chunk) {
+                    const sRef = db.collection("students").doc(st.id);
+                    batchWrite.set(sRef, {
+                        mockRollNumber: String(currentRoll),
+                        hallTicketGenerated: true,
+                        hallTicketExamName: ht.examName || "UPSC Special Mock Examination",
+                        hallTicketExamDate: ht.examDate || "",
+                        hallTicketTime: ht.examTime || "10:00 AM - 12:00 PM",
+                        hallTicketVenue: ht.venue || "NERMAI IAS Academy Main Campus",
+                        hallTicketInstructions: ht.instructions || "1. Bring printed copy of this Hall Ticket and original ID Proof.\n2. Standard blue/black ballpoint pen only.\n3. Electronic gadgets are strictly prohibited.",
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                    }, { merge: true });
+                    currentRoll++;
+                }
+
+                await batchWrite.commit();
+            }
+
+            const endRoll = currentRoll - 1;
+
+            await configRef.update({
+                lastAssignedRollNo: endRoll,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+
+            return res.status(200).json({
+                success: true,
+                message: `Successfully assigned continuous mock roll numbers (${startRoll} - ${endRoll}) to ${unassignedStudents.length} student(s) and issued hall tickets!`,
+                count: unassignedStudents.length,
+                startRoll,
+                endRoll
+            });
+        } catch (error: any) {
+            console.error("Error syncing unassigned mock rolls:", error);
+            return res.status(500).json({
+                success: false,
+                message: error.message || "Failed to sync unassigned mock rolls"
             });
         }
     }

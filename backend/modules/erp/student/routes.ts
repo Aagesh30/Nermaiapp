@@ -71,6 +71,7 @@ router.post("/bulk/credentials", requireRole(['super_admin']), StudentController
 // Mock Roll Number configuration & continuous generation
 router.get("/mock-roll/config", requireRole(['super_admin', 'admin']), StudentController.getMockRollConfig);
 router.post("/mock-roll/generate", requireRole(['super_admin', 'admin']), StudentController.generateMockRollNumbers);
+router.post("/mock-roll/sync-unassigned", requireRole(['super_admin', 'admin']), StudentController.syncUnassignedMockRolls);
 router.post("/mock-roll/unlock", requireRole(['super_admin', 'admin']), StudentController.unlockMockRollConfig);
 
 // Soft delete student

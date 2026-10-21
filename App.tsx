@@ -1205,7 +1205,7 @@ export default function App() {
           <View style={{ width: "100%", borderTopWidth: 1, borderColor: "#eeeeee", paddingTop: 10, gap: 4 }}>
             <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
               <Text style={[styles.idCardMeta, { fontWeight: "600", fontSize: 11 }]}>Roll No:</Text>
-              <Text style={[styles.idCardMeta, { color: "#212121", fontSize: 11 }]}>{student.rollNumber}</Text>
+              <Text style={[styles.idCardMeta, { color: "#212121", fontSize: 11 }]}>{student.rollNumber || student.loginUsername || student.admissionNumber || "—"}</Text>
             </View>
             <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
               <Text style={[styles.idCardMeta, { fontWeight: "600", fontSize: 11 }]}>Admission:</Text>
@@ -1226,7 +1226,7 @@ export default function App() {
           </View>
 
           <View style={[styles.idBarcode, { backgroundColor: cardTheme, marginTop: 15 }]}>
-            <Text style={{ letterSpacing: 4, fontSize: 9, color: "#ffffff", fontWeight: "bold", fontFamily: "monospace" }}>* {student.rollNumber} *</Text>
+            <Text style={{ letterSpacing: 4, fontSize: 9, color: "#ffffff", fontWeight: "bold", fontFamily: "monospace" }}>* {student.rollNumber || student.admissionNumber || "ACADEMY"} *</Text>
           </View>
         </View>
       </View>
@@ -1276,7 +1276,7 @@ export default function App() {
                   <View style={{ flex: 1, gap: 4 }}>
                     <Text style={{ fontSize: 10, color: "#757575", fontWeight: "bold" }}>CANDIDATE DETAILS</Text>
                     <Text style={{ fontSize: 14, fontWeight: "bold", color: "#212121" }}>{getStudentName(student)}</Text>
-                    <Text style={{ fontSize: 11, color: "#424242" }}><Text style={{ fontWeight: "bold" }}>Roll No:</Text> {student.mockRollNumber || student.rollNumber || "—"}</Text>
+                    <Text style={{ fontSize: 11, color: "#424242" }}><Text style={{ fontWeight: "bold" }}>Roll No:</Text> {(student.hallTicketIsSpecial ? (student.specialRollNo || student.mockRollNumber || student.rollNumber) : (student.rollNumber || student.loginUsername || "—"))}</Text>
                     <Text style={{ fontSize: 11, color: "#424242" }}><Text style={{ fontWeight: "bold" }}>Course:</Text> {student.course}</Text>
                     <Text style={{ fontSize: 11, color: "#424242" }}><Text style={{ fontWeight: "bold" }}>Batch:</Text> {student.batch || "General"}</Text>
                   </View>
@@ -7564,7 +7564,7 @@ export default function App() {
                     <>
                       <TouchableOpacity onPress={() => changeErpSub("students")} style={[styles.sidebarTab, erpSub === "students" && styles.sidebarTabActive]}>
                         <Ionicons name="people-outline" size={20} color={erpSub === "students" ? "#c62828" : "#757575"} />
-                        <Text style={[styles.sidebarTabTxt, erpSub === "students" && styles.sidebarTabTxtActive]}>Students</Text>
+                        <Text style={[styles.sidebarTabTxt, erpSub === "students" && styles.sidebarTabTxtActive]}>Student Management Portal</Text>
                       </TouchableOpacity>
                       <TouchableOpacity onPress={() => changeErpSub("staff")} style={[styles.sidebarTab, erpSub === "staff" && styles.sidebarTabActive]}>
                         <Ionicons name="shield-checkmark-outline" size={20} color={erpSub === "staff" ? "#c62828" : "#757575"} />

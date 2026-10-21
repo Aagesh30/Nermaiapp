@@ -53,18 +53,21 @@ import {
 export const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
 export const db = (() => {
-  if (Platform.OS === "web") {
+  try {
+    return initializeFirestore(app, {
+      localCache: persistentLocalCache(
+        Platform.OS === "web"
+          ? { tabManager: persistentMultipleTabManager() }
+          : {}
+      )
+    });
+  } catch (e) {
     try {
-      return initializeFirestore(app, {
-        localCache: persistentLocalCache({
-          tabManager: persistentMultipleTabManager()
-        })
-      });
-    } catch (e) {
       return getFirestore(app);
+    } catch (_) {
+      return initializeFirestore(app, {});
     }
   }
-  return getFirestore(app);
 })();
 
 // Initialize Auth with AsyncStorage persistence for React Native to resolve memory persistence warnings

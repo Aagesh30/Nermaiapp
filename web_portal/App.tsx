@@ -1066,6 +1066,45 @@ const userStorage = {
   }
 };
 
+// Universal Cross-Platform Local Storage Cache Helper for Instant App Reloads
+// Caches modules on mobile phone storage (AsyncStorage) & web (localStorage)
+const appDataCache = {
+  async get<T = any>(key: string): Promise<T | null> {
+    try {
+      let raw: string | null = null;
+      if (Platform.OS === "web" && typeof localStorage !== "undefined") {
+        raw = localStorage.getItem(`nermai_cache_${key}`);
+      } else {
+        raw = await AsyncStorage.getItem(`nermai_cache_${key}`);
+      }
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (e) {
+      return null;
+    }
+  },
+  async set(key: string, data: any): Promise<void> {
+    if (data === undefined || data === null) return;
+    try {
+      const serialized = JSON.stringify(data);
+      if (Platform.OS === "web" && typeof localStorage !== "undefined") {
+        localStorage.setItem(`nermai_cache_${key}`, serialized);
+      } else {
+        await AsyncStorage.setItem(`nermai_cache_${key}`, serialized);
+      }
+    } catch (e) { }
+  },
+  async remove(key: string): Promise<void> {
+    try {
+      if (Platform.OS === "web" && typeof localStorage !== "undefined") {
+        localStorage.removeItem(`nermai_cache_${key}`);
+      } else {
+        await AsyncStorage.removeItem(`nermai_cache_${key}`);
+      }
+    } catch (e) { }
+  }
+};
+
 // Web Portal LocalStorage Exam Persistence Helper for high performance and offline resilience
 const examLocalStorage = {
   saveDraft(attemptId: string, data: any) {
@@ -8180,7 +8219,7 @@ function MainApp() {
           </View>
 
           <Text style={styles.idCardName}>{getStudentName(student)}</Text>
-          <Text style={{ color: cardTheme, fontSize: 12, fontWeight: "bold", marginBottom: 6, letterSpacing: 0.5 }}>Roll No: {student.mockRollNumber || student.rollNumber || student.loginUsername || "—"}</Text>
+          <Text style={{ color: cardTheme, fontSize: 12, fontWeight: "bold", marginBottom: 6, letterSpacing: 0.5 }}>Roll No: {student.rollNumber || student.loginUsername || student.admissionNumber || "—"}</Text>
 
           <View style={{ width: "100%", borderTopWidth: 1, borderColor: "#eeeeee", paddingTop: 6, gap: 3 }}>
             <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
@@ -9223,6 +9262,31 @@ function MainApp() {
         }
         setUser(savedUser);
         setAuthGate("authenticated");
+
+        // ── Instant Phone Storage Hydration (No Waiting on App Open #2 to #109) ──
+        (async () => {
+          try {
+            const [cachedAnn, cachedNotif, cachedCourses, cachedDaily, cachedTests, cachedBatches, cachedTodayQuiz, cachedStudents] = await Promise.all([
+              appDataCache.get<any[]>("announcements"),
+              appDataCache.get<any[]>("notifications"),
+              appDataCache.get<any[]>("courses"),
+              appDataCache.get<any[]>("lms_daily_content"),
+              appDataCache.get<any[]>("tests"),
+              appDataCache.get<any[]>("batches"),
+              appDataCache.get<any>("today_quiz"),
+              appDataCache.get<any[]>("students")
+            ]);
+            if (cachedAnn && cachedAnn.length > 0) setAnnouncements(cachedAnn);
+            if (cachedNotif && cachedNotif.length > 0) setNotifications(cachedNotif);
+            if (cachedCourses && cachedCourses.length > 0) setCourses(cachedCourses);
+            if (cachedDaily && cachedDaily.length > 0) setLmsDailyContent(cachedDaily);
+            if (cachedTests && cachedTests.length > 0) setTests(cachedTests);
+            if (cachedBatches && cachedBatches.length > 0) setBatches(cachedBatches);
+            if (cachedTodayQuiz) setTodayQuiz(cachedTodayQuiz);
+            if (cachedStudents && cachedStudents.length > 0) setStudents(cachedStudents);
+          } catch (_) { }
+        })();
+
         return;
       }
       const persisted = await guestStorage.get();
@@ -11389,6 +11453,7 @@ function MainApp() {
         });
       }
       setAnnouncements(notices);
+      appDataCache.set("announcements", notices);
 
       // Play sound for any newly retrieved notices
       if (notices.length > 0 && user) {
@@ -11424,7 +11489,13 @@ function MainApp() {
       }
     } catch (e) {
       console.log("Failed loading announcements:", e);
-      setAnnouncements([]);
+      // Fallback to cached announcements if offline / network error
+      const cached = await appDataCache.get<any[]>("announcements");
+      if (cached && cached.length > 0) {
+        setAnnouncements(cached);
+      } else {
+        setAnnouncements([]);
+      }
     }
   };
 
@@ -11438,6 +11509,7 @@ function MainApp() {
           const meData = res?.data !== undefined ? res.data : res;
           studentList = Array.isArray(meData) ? meData : (meData && typeof meData === "object" ? [meData] : []);
           setStudents(studentList);
+          appDataCache.set("students", studentList);
         } catch (e) {
           console.log("Failed loading student profile in loadNotifications:", e);
         }
@@ -11474,9 +11546,15 @@ function MainApp() {
         });
       }
       setNotifications(notifs);
+      appDataCache.set("notifications", notifs);
     } catch (e) {
       console.log("Failed loading notifications:", e);
-      setNotifications([]);
+      const cached = await appDataCache.get<any[]>("notifications");
+      if (cached && cached.length > 0) {
+        setNotifications(cached);
+      } else {
+        setNotifications([]);
+      }
     }
   };
 
@@ -11500,10 +11578,16 @@ function MainApp() {
             ? rawData.data
             : (rawData && typeof rawData === "object" && rawData.id ? [rawData] : []);
       setStudents(list);
+      appDataCache.set("students", list);
       loadedCollectionsRef.current.add("students");
     } catch (e) {
       console.log("Failed loading students:", e);
-      setStudents([]);
+      const cached = await appDataCache.get<any[]>("students");
+      if (cached && cached.length > 0) {
+        setStudents(cached);
+      } else {
+        setStudents([]);
+      }
     }
   };
 
@@ -11519,9 +11603,15 @@ function MainApp() {
             ? rawData.data
             : [];
       setBatches(list);
+      appDataCache.set("batches", list);
     } catch (e) {
       console.log("Failed loading batches:", e);
-      setBatches([]);
+      const cached = await appDataCache.get<any[]>("batches");
+      if (cached && cached.length > 0) {
+        setBatches(cached);
+      } else {
+        setBatches([]);
+      }
     }
   };
 
@@ -12061,10 +12151,16 @@ function MainApp() {
         }
         return newTests;
       });
+      appDataCache.set("tests", newTests);
     } catch (e) {
       console.log("Failed loading tests:", e);
       if (!isSilent) {
-        setTests([]);
+        const cached = await appDataCache.get<any[]>("tests");
+        if (cached && cached.length > 0) {
+          setTests(cached);
+        } else {
+          setTests([]);
+        }
       }
     } finally {
       loadTestsInProgressRef.current = false;
@@ -12180,6 +12276,9 @@ function MainApp() {
       const res = await api.get(`/lms/daily-quiz/today?studentId=${user.userId}`);
       const quiz = res?.data !== undefined ? res.data : res;
       setTodayQuiz(quiz || null);
+      if (quiz) {
+        appDataCache.set("today_quiz", quiz);
+      }
       if (quiz && quiz.existingAttempt) {
         setQuizScore(quiz.existingAttempt.correctCount);
         const attemptAnswers = quiz.existingAttempt.answers || quiz.existingAttempt.results || [];
@@ -12203,7 +12302,12 @@ function MainApp() {
       }
     } catch (e) {
       console.log("Failed loading today's quiz:", e);
-      setTodayQuiz(null);
+      const cached = await appDataCache.get<any>("today_quiz");
+      if (cached) {
+        setTodayQuiz(cached);
+      } else {
+        setTodayQuiz(null);
+      }
     }
   };
 
@@ -12254,10 +12358,17 @@ function MainApp() {
   const loadCourses = async () => {
     try {
       const res = await api.get("/crm/courses");
-      setCourses(res?.data || res || []);
+      const list = res?.data || res || [];
+      setCourses(list);
+      appDataCache.set("courses", list);
     } catch (e) {
       console.log("Failed loading courses:", e);
-      setCourses([]);
+      const cached = await appDataCache.get<any[]>("courses");
+      if (cached && cached.length > 0) {
+        setCourses(cached);
+      } else {
+        setCourses([]);
+      }
     }
   };
 
@@ -12595,12 +12706,18 @@ function MainApp() {
       if (Array.isArray(list)) {
         list.sort(sortDailyContentDesc);
         setLmsDailyContent(list);
+        appDataCache.set("lms_daily_content", list);
       } else {
         setLmsDailyContent([]);
       }
     } catch (e) {
       console.log("Failed loading LMS daily content:", e);
-      setLmsDailyContent([]);
+      const cached = await appDataCache.get<any[]>("lms_daily_content");
+      if (cached && cached.length > 0) {
+        setLmsDailyContent(cached);
+      } else {
+        setLmsDailyContent([]);
+      }
     }
   };
 
@@ -14052,9 +14169,15 @@ function MainApp() {
     try {
       const res = await api.get("/crm/guest-posters");
       const list = res?.data?.data || res?.data || res || [];
-      setGuestPosters(Array.isArray(list) ? list : []);
+      const cleanList = Array.isArray(list) ? list : [];
+      setGuestPosters(cleanList);
+      appDataCache.set("guest_posters", cleanList);
     } catch (e) {
       console.log("Failed loading guest posters:", e);
+      const cached = await appDataCache.get<any[]>("guest_posters");
+      if (cached && cached.length > 0) {
+        setGuestPosters(cached);
+      }
     }
   };
 
@@ -14067,9 +14190,14 @@ function MainApp() {
       const config = (res && typeof res === "object" && "isActive" in res) ? res : (res?.data || null);
       if (config) {
         setGuestCustomAppConfig(config);
+        appDataCache.set("guest_custom_form", config);
       }
     } catch (e) {
       console.log("Failed loading guest custom form config:", e);
+      const cached = await appDataCache.get<any>("guest_custom_form");
+      if (cached) {
+        setGuestCustomAppConfig(cached);
+      }
     }
   };
 
@@ -32999,10 +33127,10 @@ SOURCE QUESTION PAPER:
                           fontSize: 15,
                           fontWeight: "bold",
                           color: darkMode ? "#ffffff" : "#212121",
-                          textTransform: "capitalize",
+                          textTransform: erpSub === "students" ? "none" : "capitalize",
                         }}
                       >
-                        {erpSub ? erpSub.replace(/-/g, " ") : "ERP Portal"}
+                        {erpSub === "students" ? "Student Management Portal" : erpSub ? erpSub.replace(/-/g, " ") : "ERP Portal"}
                       </Text>
                     </View>
                   )}
@@ -33020,9 +33148,11 @@ SOURCE QUESTION PAPER:
                           ) : (
                             <View style={{ gap: 15, paddingTop: isMobile ? 8 : 4 }}>
                               <View style={{ flexDirection: isMobile ? "column" : "row", justifyContent: "space-between", alignItems: isMobile ? "stretch" : "center", flexWrap: "wrap", gap: 10 }}>
-                                <Text style={[styles.sectionTitle, darkMode && styles.sectionTitleDark, { marginTop: isMobile ? 10 : 0, marginBottom: 8, paddingTop: 4, fontSize: isMobile ? 18 : 16, fontWeight: "bold", color: darkMode ? "#ef9a9a" : "#c62828" }]}>
-                                  Student Management Portal
-                                </Text>
+                                {!isMobile && (
+                                  <Text style={[styles.sectionTitle, darkMode && styles.sectionTitleDark, { marginBottom: 8, fontSize: 16, fontWeight: "bold", color: darkMode ? "#ef9a9a" : "#c62828" }]}>
+                                    Student Management Portal
+                                  </Text>
+                                )}
                                 {!isReadOnly("student_management") && (
                                   <View style={{ flexDirection: isMobile ? "column" : "row", gap: 10, alignItems: "stretch", width: isMobile ? "100%" : "auto" }}>
                                     <TouchableOpacity
@@ -33777,8 +33907,8 @@ SOURCE QUESTION PAPER:
                                 {/* Main Directory Split Layout */}
                                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 15 }}>
                                   {/* Left List Pane */}
-                                  <View style={{ flex: 1, minWidth: 280, maxHeight: isMobile ? undefined : 500 }}>
-                                    <ScrollView nestedScrollEnabled={true} style={{ borderRightWidth: isMobile ? 0 : 1, borderRightColor: "#eeeeee", paddingRight: isMobile ? 0 : 8 }}>
+                                  <View style={{ flex: 1, minWidth: 280, maxHeight: isMobile ? 650 : 500 }}>
+                                    <ScrollView nestedScrollEnabled={true} style={{ borderRightWidth: isMobile ? 0 : 1, borderRightColor: "#eeeeee", paddingRight: isMobile ? 0 : 8 }} contentContainerStyle={{ paddingBottom: isMobile ? 20 : 0 }}>
                                       {(() => {
                                         const filtered = students.filter((s: any) => {
                                           const q = searchDirQuery.toLowerCase();
@@ -39027,7 +39157,12 @@ SOURCE QUESTION PAPER:
                                         return (
                                           <TouchableOpacity
                                             key={t.key}
-                                            onPress={() => setBulkTargetGroup(t.key as any)}
+                                            onPress={() => {
+                                              setBulkTargetGroup(t.key as any);
+                                              if (t.key === "mock") {
+                                                setCardSubTab("hallticket");
+                                              }
+                                            }}
                                             style={{
                                               flex: 1,
                                               minWidth: isMobile ? 120 : undefined,

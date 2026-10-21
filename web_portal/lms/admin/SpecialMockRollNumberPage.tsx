@@ -285,6 +285,52 @@ export const SpecialMockRollNumberPage: React.FC<SpecialMockRollNumberPageProps>
     return (students || []).filter(s => s && s.mockRollNumber).length;
   }, [students]);
 
+  // Count active students in allocated batches who don't yet have mockRollNumber
+  const unassignedStudents = useMemo(() => {
+    if (!isLocked || allocatedBatches.length === 0) return [];
+    const norm = (s: string) => String(s || '').trim().toLowerCase();
+    const lockedNames = allocatedBatches.map(b => norm(b.batchName || b));
+
+    return (students || []).filter(s => {
+      if (!s || s.mockRollNumber) return false;
+      const sBatches = [
+        s.batch,
+        s.batchName,
+        ...(Array.isArray(s.batches) ? s.batches.map((b: any) => typeof b === 'string' ? b : b?.batchName) : [])
+      ].filter(Boolean).map(norm);
+      return sBatches.some(sb => lockedNames.some(lb => sb === lb || sb.startsWith(lb + " ") || sb.startsWith(lb + "(")));
+    });
+  }, [isLocked, allocatedBatches, students]);
+
+  // Execute Quick-Sync for new students in locked batches
+  const handleSyncUnassigned = async () => {
+    if (unassignedStudents.length === 0) return;
+    const nextStart = Number(lastAssignedRollNo || startingRollNo) + 1;
+    const nextEnd = nextStart + unassignedStudents.length - 1;
+
+    showConfirm({
+      title: 'Assign Mock Rolls to New Students?',
+      message: `Found ${unassignedStudents.length} student(s) in allocated batches without Mock Roll Numbers.\n\nThis will assign continuous roll numbers ${nextStart} to ${nextEnd} and issue their hall tickets.\n\nProceed?`,
+      confirmText: 'Assign & Issue',
+      confirmButtonColor: '#d97706',
+      icon: 'flash',
+      iconColor: '#d97706',
+      onConfirm: async () => {
+        try {
+          setIsSubmitting(true);
+          const res = await api.post('/erp/student/mock-roll/sync-unassigned', {});
+          await Promise.all([fetchConfig(), loadStudents()]);
+          showNotification('Success!', res?.message || `Assigned roll numbers ${nextStart} - ${nextEnd} successfully!`);
+        } catch (e: any) {
+          console.error('Sync error:', e);
+          showNotification('Error', e?.message || 'Failed to sync new students.', true);
+        } finally {
+          setIsSubmitting(false);
+        }
+      }
+    });
+  };
+
   // Execute Generation & Auto Hall Ticket Issuance
   const handleGenerate = async (isAppend: boolean) => {
     if (selectedBatches.length === 0) {
@@ -448,6 +494,51 @@ export const SpecialMockRollNumberPage: React.FC<SpecialMockRollNumberPageProps>
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Unassigned Students Alert & Quick-Sync Card */}
+      {isLocked && unassignedStudents.length > 0 && (
+        <View style={[styles.card, darkMode && styles.cardDark, { borderLeftWidth: 5, borderLeftColor: '#d97706', backgroundColor: darkMode ? '#261c02' : '#fffbeb' }]}>
+          <View style={{ flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', gap: 12 }}>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="alert-circle" size={24} color="#d97706" />
+                <Text style={{ fontSize: 16, fontWeight: 'bold', color: darkMode ? '#fef3c7' : '#92400e' }}>
+                  {unassignedStudents.length} New Student{unassignedStudents.length > 1 ? 's' : ''} Detected in Locked Batches
+                </Text>
+              </View>
+              <Text style={{ fontSize: 13, color: darkMode ? '#fde68a' : '#b45309', marginTop: 4 }}>
+                These students were recently added to allocated batches but do not have Mock Roll Numbers yet. Roll numbers {Number(lastAssignedRollNo || startingRollNo) + 1} to {Number(lastAssignedRollNo || startingRollNo) + unassignedStudents.length} will be assigned sequentially without altering any existing numbers.
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              disabled={isSubmitting}
+              onPress={handleSyncUnassigned}
+              style={{
+                backgroundColor: '#d97706',
+                paddingHorizontal: 16,
+                paddingVertical: 10,
+                borderRadius: 8,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                opacity: isSubmitting ? 0.7 : 1
+              }}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <>
+                  <Ionicons name="flash" size={16} color="#fff" />
+                  <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 13 }}>
+                    Assign Roll Numbers & Generate Tickets
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       {/* Main Tab Views */}
       {loadingConfig ? (

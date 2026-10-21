@@ -1,0 +1,456 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Helper Functions ───────────────────────────────────
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        request.auth.token.role in ['super_admin', 'admin', 'staff', 'teacher'];
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && request.auth.token.role == 'super_admin';
+    }
+
+
+    function isSelf(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // ─── Original Main Project Rules (Folder 1) ───────────────────────────────────
+    
+    // announcements
+    match /announcements/{docId} {
+      allow read: if true;
+      allow write: if isAdmin(); // Allow admins to write announcements
+    }
+
+    // students
+    match /students/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // users
+    match /users/{docId} {
+      allow read: if isSelf(docId) || isAdmin();
+      allow write: if isSelf(docId) || isAdmin();
+    }
+
+    // deleted_students
+    match /deleted_students/{docId} {
+      allow read: if isAdmin();
+      allow write: if isSuperAdmin();
+    }
+
+    // fees
+    match /fees/{docId} {
+      allow read: if isSelf(docId) || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // profile_requests
+    match /profile_requests/{docId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // access_requests (LMS recording, live class, and content access requests)
+    match /access_requests/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // content_access (Grants issued by admin)
+    match /content_access/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // leads / CRM
+    match /leads/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // admissions
+    match /admissions/{docId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // campaigns
+    match /campaigns/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // inquiries
+    match /inquiries/{docId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // guest_recordings
+    match /guest_recordings/{docId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // feedbacks
+    match /feedbacks/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // notifications
+    match /notifications/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // daily_quiz
+    match /daily_quiz/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // ─── LMS / Sub-project Rules (Folder 2 Merged) ───────────────────────────────
+    
+    // tenants
+    match /tenants/{tenantId} {
+      allow read: if isAdmin();
+      allow write: if isSuperAdmin();
+    }
+
+    // provider_accounts
+    match /provider_accounts/{accountId} {
+      allow read: if isAdmin();
+      allow write: if isSuperAdmin();
+    }
+
+    // batches
+    match /batches/{batchId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // batch_memberships
+    match /batch_memberships/{membershipId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // courses
+    match /courses/{courseId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // enrollments
+    match /enrollments/{enrollmentId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // subjects
+    match /subjects/{subjectId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // topics
+    match /topics/{topicId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // classes
+    match /classes/{classId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // live_sessions
+    match /live_sessions/{sessionId} {
+      allow read: if true;
+      allow write: if false; // Actions flow through APIs
+
+      match /participants/{participantId} {
+        allow read: if true;
+        allow write: if false;
+      }
+
+      match /activity_feed/{feedId} {
+        allow read: if true;
+        allow write: if false;
+      }
+
+      match /logs/{logId} {
+        allow read: if isAdmin();
+        allow write: if false;
+      }
+    }
+
+    // videos
+    match /videos/{videoId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // guest_recordings (Free guest demo lectures & recordings)
+    match /guest_recordings/{recordingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // resources
+    match /resources/{resourceId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // watch_history
+    match /watch_history/{watchId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // tests
+    match /tests/{testId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // questions
+    match /questions/{questionId} {
+      allow read: if false; // Block client-side reads to prevent answers exposure
+      allow write: if isAdmin();
+    }
+
+    // attempts
+    match /attempts/{attemptId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // attempt_answers
+    match /attempt_answers/{answerId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // question_translations
+    match /question_translations/{translationId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // test_targets
+    match /test_targets/{targetId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // daily_quizzes
+    match /daily_quizzes/{dailyQuizId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /dailyQuizzes/{dailyQuizId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // dailyContent
+    match /dailyContent/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // recorded_classes
+    match /recorded_classes/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // user_devices
+    match /user_devices/{deviceId} {
+      allow read: if isAdmin() || isSelf(resource.data.userId);
+      allow write: if isSelf(resource.data.userId) || isAdmin();
+    }
+
+    // conversations
+    match /conversations/{conversationId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // messages
+    match /messages/{messageId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // support_tickets
+    match /support_tickets/{ticketId} {
+      allow read: if isAdmin() || isSelf(resource.data.studentId);
+      allow write: if isSignedIn();
+    }
+
+    // offlineTestPermissionRequests
+    match /offlineTestPermissionRequests/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // live_class_index signal doc
+    match /live_class_index/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // subtopics
+    match /subtopics/{subtopicId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // staff
+    match /staff/{staffId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // zoom_accounts
+    match /zoom_accounts/{accountId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // device_alerts
+    match /device_alerts/{alertId} {
+      allow read: if isAdmin();
+      allow write: if isSignedIn();
+    }
+
+    // feePayments
+    match /feePayments/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // alumniFeedback
+    match /alumniFeedback/{docId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // leaderboards, results, student_attempts
+    match /leaderboards/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /results/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /student_attempts/{docId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // access_rules & SACS requests
+    match /access_rules/{ruleId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /access_requests/{requestId} {
+      allow read: if true;
+      allow write: if isSignedIn() || isAdmin();
+    }
+
+    // offlineTestPermissionRequests - Offline student test permission requests & approvals
+    match /offlineTestPermissionRequests/{requestId} {
+      allow read: if true;
+      allow write: if isSignedIn() || isAdmin();
+    }
+
+    match /access_history/{historyId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // system_settings, settings & payment acknowledgements
+    match /system_settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /payment_acknowledgements/{ackId} {
+      allow read: if isSelf(resource.data.studentId) || isAdmin();
+      allow write: if isSignedIn();
+    }
+
+    match /page_locks/{lockId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /role_permissions/{roleId} {
+      allow read: if isAdmin();
+      allow write: if isSuperAdmin();
+    }
+
+    match /custom_application_leads/{leadId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /custom_application_forms/{formId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // admin_alerts - Live student requests and activity notifications for Admin Dashboard
+    match /admin_alerts/{alertId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // system_activity_logs - Permanent audit logs filtered date-wise for Super Admin
+    match /system_activity_logs/{logId} {
+      allow read: if isAdmin();
+      allow write: if isSignedIn();
+    }
+
+    // device_push_tokens - Remote push notification tokens for Android / iOS APK
+    match /device_push_tokens/{tokenId} {
+      allow read: if isAdmin();
+      allow write: if isSignedIn();
+    }
+
+    // ─── CATCH-ALL: Deny everything else ────────────────────
+    match /{document=**} {
+      allow read: if false;
+      allow write: if false;
+    }
+  }
+}
