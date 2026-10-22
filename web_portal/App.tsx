@@ -10630,6 +10630,7 @@ function MainApp() {
               const targetBatches = (ann.targetBatch || "").split(",").map((b: string) => b.trim().toLowerCase()).filter(Boolean);
               const studentBatches: string[] = [
                 String(studentBatch || "").trim().toLowerCase(),
+                String(user?.batch || "").trim().toLowerCase(),
                 String(myStudent?.batchName || "").trim().toLowerCase(),
                 String(user?.batchName || "").trim().toLowerCase()
               ].filter(Boolean);
@@ -10639,7 +10640,11 @@ function MainApp() {
                   if (b) studentBatches.push(String(b).trim().toLowerCase());
                 });
               }
-              return targetBatches.length > 0 && studentBatches.some((sB: string) => targetBatches.includes(sB));
+              // Also try substring matching for cases like "testing batch" vs "testing"
+              const isBatchMatch = targetBatches.some(tb =>
+                studentBatches.some(sb => sb === tb || sb.includes(tb) || tb.includes(sb))
+              );
+              return isBatchMatch;
             }
             return false;
           }
@@ -10673,6 +10678,16 @@ function MainApp() {
             return (stdNameLower && (lowerTitle.includes(stdNameLower) || lowerContent.includes(stdNameLower))) ||
               (usrNameLower && (lowerTitle.includes(usrNameLower) || lowerContent.includes(usrNameLower))) ||
               (nameLower && (lowerTitle.includes(nameLower) || lowerContent.includes(nameLower)));
+          });
+        }
+
+        // Filter out expired notices for students & guests (admins always see all notices)
+        if (role !== "admin" && role !== "super_admin" && role !== "staff") {
+          const now = Date.now();
+          notices = notices.filter((n: any) => {
+            if (!n.expiresAt) return true;
+            const exp = new Date(n.expiresAt).getTime();
+            return isNaN(exp) || exp >= now;
           });
         }
 
@@ -11421,8 +11436,11 @@ function MainApp() {
     try {
       const role = user?.role || "guest";
       const myStudent = getLoggedInStudent(user, students);
-      const batch = myStudent?.batch || "";
-      const res = await api.get(`/announcement?role=${role}&batch=${batch}`);
+      // Use the best available batch identifier — checked in priority order
+      const batch = myStudent?.batch || user?.batch ||
+        (Array.isArray(myStudent?.batches) ? myStudent.batches[0] : null) ||
+        (Array.isArray(user?.batches) ? user.batches[0] : null) || "";
+      const res = await api.get(`/announcement?role=${role}&batch=${encodeURIComponent(batch)}`);
       const rawData = res?.data !== undefined ? res.data : res;
       let notices: any[] = Array.isArray(rawData)
         ? rawData
@@ -14972,6 +14990,8 @@ function MainApp() {
         setActiveTab("dashboard");
       }
       showToast(`Welcome back, ${userData.name || userData.username || "User"}! 👋`, "success");
+      // Re-register push token now that we have the user's batch info (works for Web + APK)
+      registerForPushNotificationsAsync(userData).catch(() => {});
     } catch (e: any) {
       const isNetwork =
         (typeof navigator !== "undefined" && navigator.onLine === false) ||

@@ -1,0 +1,623 @@
+[
+  {
+    "collection": "announcements",
+    "whoReads": "Web (Direct Firestore SDK) + Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 1,
+    "webWriteCount": 0,
+    "backendCount": 15
+  },
+  {
+    "collection": "students",
+    "whoReads": "Web (Direct Firestore SDK) + Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 7,
+    "webWriteCount": 0,
+    "backendCount": 92
+  },
+  {
+    "collection": "users",
+    "whoReads": "Web (Direct Firestore SDK) + Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 2,
+    "webWriteCount": 0,
+    "backendCount": 73
+  },
+  {
+    "collection": "deleted_students",
+    "whoReads": "Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": false,
+    "webReadCount": 0,
+    "webWriteCount": 0,
+    "backendCount": 2
+  },
+  {
+    "collection": "fees",
+    "whoReads": "None (Unused or rules-only)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": false,
+    "webReadCount": 0,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "profile_requests",
+    "whoReads": "Web (Direct Firestore SDK)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 1,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "access_requests",
+    "whoReads": "Web (Direct Firestore SDK) + Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 7,
+    "webWriteCount": 0,
+    "backendCount": 21
+  },
+  {
+    "collection": "content_access",
+    "whoReads": "Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": false,
+    "webReadCount": 0,
+    "webWriteCount": 0,
+    "backendCount": 25
+  },
+  {
+    "collection": "leads",
+    "whoReads": "Web (Direct Firestore SDK) + Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 2,
+    "webWriteCount": 0,
+    "backendCount": 12
+  },
+  {
+    "collection": "admissions",
+    "whoReads": "Web (Direct Firestore SDK) + Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 2,
+    "webWriteCount": 0,
+    "backendCount": 2
+  },
+  {
+    "collection": "campaigns",
+    "whoReads": "Web (Direct Firestore SDK)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 1,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "inquiries",
+    "whoReads": "Web (Direct Firestore SDK)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 1,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "guest_recordings",
+    "whoReads": "Web (Direct Firestore SDK)",
+    "whoWrites": "Web (Direct Firestore SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 2,
+    "webWriteCount": 4,
+    "backendCount": 0
+  },
+  {
+    "collection": "feedbacks",
+    "whoReads": "None (Unused or rules-only)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": false,
+    "webReadCount": 0,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "notifications",
+    "whoReads": "Web (Direct Firestore SDK)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 1,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "daily_quiz",
+    "whoReads": "None (Unused or rules-only)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": false,
+    "webReadCount": 0,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "tenants",
+    "whoReads": "None (Unused or rules-only)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": false,
+    "webReadCount": 0,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "provider_accounts",
+    "whoReads": "None (Unused or rules-only)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": false,
+    "webReadCount": 0,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "batches",
+    "whoReads": "Web (Direct Firestore SDK) + Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 1,
+    "webWriteCount": 0,
+    "backendCount": 13
+  },
+  {
+    "collection": "batch_memberships",
+    "whoReads": "None (Unused or rules-only)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": false,
+    "webReadCount": 0,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "courses",
+    "whoReads": "Web (Direct Firestore SDK) + Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 8,
+    "webWriteCount": 0,
+    "backendCount": 10
+  },
+  {
+    "collection": "enrollments",
+    "whoReads": "Web (Direct Firestore SDK)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 2,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "subjects",
+    "whoReads": "Web (Direct Firestore SDK) + Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 5,
+    "webWriteCount": 0,
+    "backendCount": 6
+  },
+  {
+    "collection": "topics",
+    "whoReads": "Web (Direct Firestore SDK) + Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 6,
+    "webWriteCount": 0,
+    "backendCount": 7
+  },
+  {
+    "collection": "classes",
+    "whoReads": "Web (Direct Firestore SDK) + Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 1,
+    "webWriteCount": 0,
+    "backendCount": 43
+  },
+  {
+    "collection": "live_sessions",
+    "whoReads": "Web (Direct Firestore SDK) + Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 3,
+    "webWriteCount": 0,
+    "backendCount": 24
+  },
+  {
+    "collection": "participants",
+    "whoReads": "None (Unused or rules-only)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": false,
+    "webReadCount": 0,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "activity_feed",
+    "whoReads": "None (Unused or rules-only)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": false,
+    "webReadCount": 0,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "logs",
+    "whoReads": "None (Unused or rules-only)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": false,
+    "webReadCount": 0,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "videos",
+    "whoReads": "None (Unused or rules-only)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": false,
+    "webReadCount": 0,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "resources",
+    "whoReads": "Web (Direct Firestore SDK) + Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 1,
+    "webWriteCount": 0,
+    "backendCount": 5
+  },
+  {
+    "collection": "watch_history",
+    "whoReads": "Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": false,
+    "webReadCount": 0,
+    "webWriteCount": 0,
+    "backendCount": 1
+  },
+  {
+    "collection": "tests",
+    "whoReads": "Web (Direct Firestore SDK) + Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 2,
+    "webWriteCount": 0,
+    "backendCount": 20
+  },
+  {
+    "collection": "questions",
+    "whoReads": "Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": false,
+    "webReadCount": 0,
+    "webWriteCount": 0,
+    "backendCount": 12
+  },
+  {
+    "collection": "attempts",
+    "whoReads": "None (Unused or rules-only)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": false,
+    "webReadCount": 0,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "attempt_answers",
+    "whoReads": "None (Unused or rules-only)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": false,
+    "webReadCount": 0,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "question_translations",
+    "whoReads": "None (Unused or rules-only)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": false,
+    "webReadCount": 0,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "test_targets",
+    "whoReads": "None (Unused or rules-only)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": false,
+    "webReadCount": 0,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "daily_quizzes",
+    "whoReads": "None (Unused or rules-only)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": false,
+    "webReadCount": 0,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "dailyQuizzes",
+    "whoReads": "Web (Direct Firestore SDK)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 1,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "dailyContent",
+    "whoReads": "Web (Direct Firestore SDK)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 1,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "recorded_classes",
+    "whoReads": "None (Unused or rules-only)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": false,
+    "webReadCount": 0,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "user_devices",
+    "whoReads": "None (Unused or rules-only)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": false,
+    "webReadCount": 0,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "conversations",
+    "whoReads": "None (Unused or rules-only)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": false,
+    "webReadCount": 0,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "messages",
+    "whoReads": "None (Unused or rules-only)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": false,
+    "webReadCount": 0,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "support_tickets",
+    "whoReads": "None (Unused or rules-only)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": false,
+    "webReadCount": 0,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "offlineTestPermissionRequests",
+    "whoReads": "Web (Direct Firestore SDK)",
+    "whoWrites": "Web (Direct Firestore SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 2,
+    "webWriteCount": 4,
+    "backendCount": 0
+  },
+  {
+    "collection": "live_class_index",
+    "whoReads": "Web (Direct Firestore SDK) + Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 5,
+    "webWriteCount": 0,
+    "backendCount": 4
+  },
+  {
+    "collection": "subtopics",
+    "whoReads": "Web (Direct Firestore SDK) + Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 5,
+    "webWriteCount": 0,
+    "backendCount": 1
+  },
+  {
+    "collection": "staff",
+    "whoReads": "Web (Direct Firestore SDK) + Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 2,
+    "webWriteCount": 0,
+    "backendCount": 6
+  },
+  {
+    "collection": "zoom_accounts",
+    "whoReads": "Web (Direct Firestore SDK) + Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 2,
+    "webWriteCount": 0,
+    "backendCount": 3
+  },
+  {
+    "collection": "device_alerts",
+    "whoReads": "Web (Direct Firestore SDK) + Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 1,
+    "webWriteCount": 0,
+    "backendCount": 1
+  },
+  {
+    "collection": "feePayments",
+    "whoReads": "Web (Direct Firestore SDK) + Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 1,
+    "webWriteCount": 0,
+    "backendCount": 8
+  },
+  {
+    "collection": "alumniFeedback",
+    "whoReads": "Web (Direct Firestore SDK)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 1,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "leaderboards",
+    "whoReads": "Web (Direct Firestore SDK) + Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 1,
+    "webWriteCount": 0,
+    "backendCount": 7
+  },
+  {
+    "collection": "results",
+    "whoReads": "Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": false,
+    "webReadCount": 0,
+    "webWriteCount": 0,
+    "backendCount": 32
+  },
+  {
+    "collection": "student_attempts",
+    "whoReads": "Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": false,
+    "webReadCount": 0,
+    "webWriteCount": 0,
+    "backendCount": 25
+  },
+  {
+    "collection": "access_rules",
+    "whoReads": "None (Unused or rules-only)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": false,
+    "webReadCount": 0,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "access_history",
+    "whoReads": "Web (Direct Firestore SDK)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 2,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "system_settings",
+    "whoReads": "Web (Direct Firestore SDK) + Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 1,
+    "webWriteCount": 0,
+    "backendCount": 2
+  },
+  {
+    "collection": "settings",
+    "whoReads": "Web (Direct Firestore SDK) + Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 1,
+    "webWriteCount": 0,
+    "backendCount": 10
+  },
+  {
+    "collection": "payment_acknowledgements",
+    "whoReads": "Web (Direct Firestore SDK) + Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 3,
+    "webWriteCount": 0,
+    "backendCount": 5
+  },
+  {
+    "collection": "page_locks",
+    "whoReads": "None (Unused or rules-only)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": false,
+    "webReadCount": 0,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "role_permissions",
+    "whoReads": "Web (Direct Firestore SDK) + Backend (Admin SDK)",
+    "whoWrites": "Backend (Admin SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 1,
+    "webWriteCount": 0,
+    "backendCount": 4
+  },
+  {
+    "collection": "custom_application_leads",
+    "whoReads": "Web (Direct Firestore SDK)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 2,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "custom_application_forms",
+    "whoReads": "Web (Direct Firestore SDK)",
+    "whoWrites": "None (Read-only / Backend only)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 2,
+    "webWriteCount": 0,
+    "backendCount": 0
+  },
+  {
+    "collection": "admin_alerts",
+    "whoReads": "Web (Direct Firestore SDK) + Backend (Admin SDK)",
+    "whoWrites": "Web (Direct Firestore SDK) + Backend (Admin SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 1,
+    "webWriteCount": 25,
+    "backendCount": 9
+  },
+  {
+    "collection": "system_activity_logs",
+    "whoReads": "Web (Direct Firestore SDK)",
+    "whoWrites": "Web (Direct Firestore SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 2,
+    "webWriteCount": 1,
+    "backendCount": 0
+  },
+  {
+    "collection": "device_push_tokens",
+    "whoReads": "Web (Direct Firestore SDK) + Backend (Admin SDK)",
+    "whoWrites": "Web (Direct Firestore SDK) + Backend (Admin SDK)",
+    "hasClientDirectAccess": true,
+    "webReadCount": 2,
+    "webWriteCount": 2,
+    "backendCount": 10
+  }
+]

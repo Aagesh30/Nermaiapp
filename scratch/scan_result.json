@@ -1,0 +1,994 @@
+{
+  "directClientCollections": [
+    {
+      "col": "students",
+      "filesCount": 5,
+      "files": [
+        "web_portal\\App.tsx",
+        "web_portal\\lms\\admin\\MobileQRCodePermissions.tsx",
+        "web_portal\\lms\\admin\\QRCodePermissionsPage.tsx",
+        "web_portal\\lms\\components\\ui\\WatermarkOverlay.tsx",
+        "web_portal\\lms\\student\\StudentPayFeesPage.tsx"
+      ]
+    },
+    {
+      "col": "users",
+      "filesCount": 2,
+      "files": [
+        "web_portal\\App.tsx",
+        "web_portal\\lms\\components\\ui\\WatermarkOverlay.tsx"
+      ]
+    },
+    {
+      "col": "system_activity_logs",
+      "filesCount": 1,
+      "files": [
+        "web_portal\\App.tsx"
+      ]
+    },
+    {
+      "col": "offlineTestPermissionRequests",
+      "filesCount": 1,
+      "files": [
+        "web_portal\\App.tsx"
+      ]
+    },
+    {
+      "col": "admin_alerts",
+      "filesCount": 1,
+      "files": [
+        "web_portal\\App.tsx"
+      ]
+    },
+    {
+      "col": "access_requests",
+      "filesCount": 5,
+      "files": [
+        "web_portal\\App.tsx",
+        "web_portal\\lms\\admin\\AccessControlPage.tsx",
+        "web_portal\\lms\\admin\\MobileLMSPages.tsx",
+        "web_portal\\lms\\student\\ResourceViewer.tsx",
+        "web_portal\\lms\\student\\StudentLiveClassesPage.tsx"
+      ]
+    },
+    {
+      "col": "live_class_index",
+      "filesCount": 4,
+      "files": [
+        "web_portal\\App.tsx",
+        "web_portal\\lms\\admin\\AccessControlPage.tsx",
+        "web_portal\\lms\\admin\\MobileLMSPages.tsx",
+        "web_portal\\lms\\student\\StudentLiveClassesPage.tsx"
+      ]
+    },
+    {
+      "col": "settings",
+      "filesCount": 1,
+      "files": [
+        "web_portal\\App.tsx"
+      ]
+    },
+    {
+      "col": "notifications",
+      "filesCount": 1,
+      "files": [
+        "web_portal\\App.tsx"
+      ]
+    },
+    {
+      "col": "announcements",
+      "filesCount": 1,
+      "files": [
+        "web_portal\\App.tsx"
+      ]
+    },
+    {
+      "col": "profile_requests",
+      "filesCount": 1,
+      "files": [
+        "web_portal\\App.tsx"
+      ]
+    },
+    {
+      "col": "role_permissions",
+      "filesCount": 1,
+      "files": [
+        "web_portal\\App.tsx"
+      ]
+    },
+    {
+      "col": "resources",
+      "filesCount": 1,
+      "files": [
+        "web_portal\\App.tsx"
+      ]
+    },
+    {
+      "col": "dailyContent",
+      "filesCount": 1,
+      "files": [
+        "web_portal\\App.tsx"
+      ]
+    },
+    {
+      "col": "dailyQuizzes",
+      "filesCount": 1,
+      "files": [
+        "web_portal\\App.tsx"
+      ]
+    },
+    {
+      "col": "admissions",
+      "filesCount": 2,
+      "files": [
+        "web_portal\\App.tsx",
+        "web_portal\\lms\\admin\\MergedLeadsAdmissionsPage.tsx"
+      ]
+    },
+    {
+      "col": "leads",
+      "filesCount": 2,
+      "files": [
+        "web_portal\\App.tsx",
+        "web_portal\\lms\\admin\\MergedLeadsAdmissionsPage.tsx"
+      ]
+    },
+    {
+      "col": "custom_application_leads",
+      "filesCount": 2,
+      "files": [
+        "web_portal\\App.tsx",
+        "web_portal\\lms\\admin\\CustomLeadsPage.tsx"
+      ]
+    },
+    {
+      "col": "campaigns",
+      "filesCount": 1,
+      "files": [
+        "web_portal\\App.tsx"
+      ]
+    },
+    {
+      "col": "inquiries",
+      "filesCount": 1,
+      "files": [
+        "web_portal\\App.tsx"
+      ]
+    },
+    {
+      "col": "tests",
+      "filesCount": 1,
+      "files": [
+        "web_portal\\App.tsx"
+      ]
+    },
+    {
+      "col": "live_sessions",
+      "filesCount": 3,
+      "files": [
+        "web_portal\\App.tsx",
+        "web_portal\\lms\\admin\\MobileLMSPages.tsx",
+        "web_portal\\lms\\student\\StudentLiveClassesPage.tsx"
+      ]
+    },
+    {
+      "col": "classes",
+      "filesCount": 1,
+      "files": [
+        "web_portal\\App.tsx"
+      ]
+    },
+    {
+      "col": "batches",
+      "filesCount": 1,
+      "files": [
+        "web_portal\\App.tsx"
+      ]
+    },
+    {
+      "col": "courses",
+      "filesCount": 7,
+      "files": [
+        "web_portal\\App.tsx",
+        "web_portal\\lms\\admin\\CoursesPage.tsx",
+        "web_portal\\lms\\admin\\MobileLMSPages.tsx",
+        "web_portal\\lms\\admin\\SubjectsPage.tsx",
+        "web_portal\\lms\\admin\\SubtopicsPage.tsx",
+        "web_portal\\lms\\admin\\TopicsPage.tsx",
+        "web_portal\\lms\\student\\StudentCoursesPage.tsx"
+      ]
+    },
+    {
+      "col": "subjects",
+      "filesCount": 5,
+      "files": [
+        "web_portal\\App.tsx",
+        "web_portal\\lms\\admin\\MobileLMSPages.tsx",
+        "web_portal\\lms\\admin\\SubjectsPage.tsx",
+        "web_portal\\lms\\admin\\SubtopicsPage.tsx",
+        "web_portal\\lms\\admin\\TopicsPage.tsx"
+      ]
+    },
+    {
+      "col": "topics",
+      "filesCount": 6,
+      "files": [
+        "web_portal\\App.tsx",
+        "web_portal\\lms\\admin\\MobileLMSPages.tsx",
+        "web_portal\\lms\\admin\\SubtopicsPage.tsx",
+        "web_portal\\lms\\admin\\SyllabusTrackerPage.tsx",
+        "web_portal\\lms\\admin\\TopicsPage.tsx",
+        "web_portal\\lms\\staff\\TeacherDashboard.tsx"
+      ]
+    },
+    {
+      "col": "subtopics",
+      "filesCount": 5,
+      "files": [
+        "web_portal\\App.tsx",
+        "web_portal\\lms\\admin\\MobileLMSPages.tsx",
+        "web_portal\\lms\\admin\\SubtopicsPage.tsx",
+        "web_portal\\lms\\admin\\SyllabusTrackerPage.tsx",
+        "web_portal\\lms\\staff\\TeacherDashboard.tsx"
+      ]
+    },
+    {
+      "col": "staff",
+      "filesCount": 2,
+      "files": [
+        "web_portal\\App.tsx",
+        "web_portal\\lms\\admin\\TeachersPage.tsx"
+      ]
+    },
+    {
+      "col": "feePayments",
+      "filesCount": 1,
+      "files": [
+        "web_portal\\App.tsx"
+      ]
+    },
+    {
+      "col": "device_alerts",
+      "filesCount": 1,
+      "files": [
+        "web_portal\\App.tsx"
+      ]
+    },
+    {
+      "col": "alumniFeedback",
+      "filesCount": 1,
+      "files": [
+        "web_portal\\App.tsx"
+      ]
+    },
+    {
+      "col": "leaderboards",
+      "filesCount": 1,
+      "files": [
+        "web_portal\\App.tsx"
+      ]
+    },
+    {
+      "col": "access_history",
+      "filesCount": 2,
+      "files": [
+        "web_portal\\lms\\admin\\AccessControlPage.tsx",
+        "web_portal\\lms\\admin\\MobileLMSPages.tsx"
+      ]
+    },
+    {
+      "col": "custom_application_forms",
+      "filesCount": 2,
+      "files": [
+        "web_portal\\lms\\admin\\CustomizeApplicationPage.tsx",
+        "web_portal\\lms\\components\\DynamicApplicationModal.tsx"
+      ]
+    },
+    {
+      "col": "guest_recordings",
+      "filesCount": 2,
+      "files": [
+        "web_portal\\lms\\admin\\GuestRecordingsAdminPage.tsx",
+        "web_portal\\lms\\student\\GuestRecordingsPage.tsx"
+      ]
+    },
+    {
+      "col": "zoom_accounts",
+      "filesCount": 2,
+      "files": [
+        "web_portal\\lms\\admin\\MobileLMSPages.tsx",
+        "web_portal\\lms\\developer\\ZoomAccountsPage.tsx"
+      ]
+    },
+    {
+      "col": "enrollments",
+      "filesCount": 2,
+      "files": [
+        "web_portal\\lms\\admin\\MobileLMSPages.tsx",
+        "web_portal\\lms\\student\\StudentCoursesPage.tsx"
+      ]
+    },
+    {
+      "col": "payment_acknowledgements",
+      "filesCount": 3,
+      "files": [
+        "web_portal\\lms\\admin\\MobileQRCodePermissions.tsx",
+        "web_portal\\lms\\admin\\QRCodePermissionsPage.tsx",
+        "web_portal\\lms\\student\\StudentPayFeesPage.tsx"
+      ]
+    },
+    {
+      "col": "system_settings",
+      "filesCount": 1,
+      "files": [
+        "web_portal\\lms\\student\\StudentPayFeesPage.tsx"
+      ]
+    },
+    {
+      "col": "device_push_tokens",
+      "filesCount": 1,
+      "files": [
+        "web_portal\\notifications.ts"
+      ]
+    }
+  ],
+  "backendAdminCollections": [
+    {
+      "col": "classes",
+      "filesCount": 32,
+      "files": [
+        "backend\\check-access.ts",
+        "backend\\check_status.ts",
+        "backend\\core\\hierarchy\\ContentHierarchyService.ts",
+        "backend\\core\\sape\\AccessPolicyEngine.ts",
+        "backend\\debug_lms.ts",
+        "backend\\diagnose-tenant.ts",
+        "backend\\diagnose2.js",
+        "backend\\modules\\access-requests\\service.ts",
+        "backend\\modules\\analytics\\attendance.worker.ts",
+        "backend\\modules\\analytics\\worker.ts",
+        "backend\\modules\\attendance\\controller.ts",
+        "backend\\modules\\attendance\\service.ts",
+        "backend\\modules\\courses\\service.ts",
+        "backend\\modules\\dashboard\\controller.ts",
+        "backend\\modules\\live-sessions\\LiveSessionResolver.ts",
+        "backend\\modules\\live-sessions\\policy.ts",
+        "backend\\modules\\live-sessions\\service.ts",
+        "backend\\modules\\staff\\TeachingAssignmentService.ts",
+        "backend\\modules\\students\\lms-service.ts",
+        "backend\\modules\\zoom-accounts\\controller.ts",
+        "backend\\query_classes.ts",
+        "backend\\scripts\\check_courses_classes.ts",
+        "backend\\scripts\\verify_recorded_access.ts",
+        "backend\\services\\liveSync.service.ts",
+        "backend\\test_class.ts",
+        "temp_zip_extract\\backend\\check-access.ts",
+        "temp_zip_extract\\backend\\check_status.ts",
+        "temp_zip_extract\\backend\\core\\hierarchy\\ContentHierarchyService.ts",
+        "temp_zip_extract\\backend\\core\\sape\\AccessPolicyEngine.ts",
+        "temp_zip_extract\\backend\\debug_lms.ts",
+        "temp_zip_extract\\backend\\diagnose-tenant.ts",
+        "temp_zip_extract\\backend\\diagnose2.js"
+      ]
+    },
+    {
+      "col": "live_sessions",
+      "filesCount": 12,
+      "files": [
+        "backend\\check_status.ts",
+        "backend\\modules\\courses\\service.ts",
+        "backend\\modules\\dashboard\\controller.ts",
+        "backend\\modules\\live-attendance\\service.ts",
+        "backend\\modules\\live-sessions\\controller.ts",
+        "backend\\modules\\live-sessions\\LiveSessionResolver.ts",
+        "backend\\modules\\live-sessions\\policy.ts",
+        "backend\\modules\\lms-attendance\\service.ts",
+        "backend\\modules\\new-attendance\\service.ts",
+        "backend\\modules\\zoom-accounts\\controller.ts",
+        "backend\\test_raw.ts",
+        "temp_zip_extract\\backend\\check_status.ts"
+      ]
+    },
+    {
+      "col": "system_health",
+      "filesCount": 2,
+      "files": [
+        "backend\\core\\health\\controller.ts",
+        "temp_zip_extract\\backend\\core\\health\\controller.ts"
+      ]
+    },
+    {
+      "col": "topics",
+      "filesCount": 8,
+      "files": [
+        "backend\\core\\hierarchy\\ContentHierarchyService.ts",
+        "backend\\diagnose-tenant.ts",
+        "backend\\diagnose2.js",
+        "backend\\modules\\dashboard\\controller.ts",
+        "backend\\modules\\staff\\TeachingAssignmentService.ts",
+        "temp_zip_extract\\backend\\core\\hierarchy\\ContentHierarchyService.ts",
+        "temp_zip_extract\\backend\\diagnose-tenant.ts",
+        "temp_zip_extract\\backend\\diagnose2.js"
+      ]
+    },
+    {
+      "col": "subjects",
+      "filesCount": 8,
+      "files": [
+        "backend\\core\\hierarchy\\ContentHierarchyService.ts",
+        "backend\\diagnose-tenant.ts",
+        "backend\\diagnose2.js",
+        "backend\\modules\\dashboard\\controller.ts",
+        "backend\\modules\\staff\\TeachingAssignmentService.ts",
+        "temp_zip_extract\\backend\\core\\hierarchy\\ContentHierarchyService.ts",
+        "temp_zip_extract\\backend\\diagnose-tenant.ts",
+        "temp_zip_extract\\backend\\diagnose2.js"
+      ]
+    },
+    {
+      "col": "chatbot_logs",
+      "filesCount": 2,
+      "files": [
+        "backend\\core\\jobs\\chatbot\\chatbot-logger.job.ts",
+        "temp_zip_extract\\backend\\core\\jobs\\chatbot\\chatbot-logger.job.ts"
+      ]
+    },
+    {
+      "col": "student_attempts",
+      "filesCount": 6,
+      "files": [
+        "backend\\core\\middleware\\auth.middleware.ts",
+        "backend\\modules\\test-portal\\evaluation\\controller.ts",
+        "backend\\modules\\test-portal\\examination\\controller.ts",
+        "backend\\modules\\test-portal\\review\\controller.ts",
+        "backend\\modules\\test-portal\\test-creation\\controller.ts",
+        "backend\\purge.ts"
+      ]
+    },
+    {
+      "col": "role_permissions",
+      "filesCount": 3,
+      "files": [
+        "backend\\core\\middleware\\auth.middleware.ts",
+        "backend\\modules\\developer\\controller.ts",
+        "temp_zip_extract\\backend\\core\\middleware\\auth.middleware.ts"
+      ]
+    },
+    {
+      "col": "one_time_permissions",
+      "filesCount": 2,
+      "files": [
+        "backend\\core\\middleware\\auth.middleware.ts",
+        "backend\\modules\\developer\\controller.ts"
+      ]
+    },
+    {
+      "col": "content_access",
+      "filesCount": 5,
+      "files": [
+        "backend\\core\\sape\\AccessPolicyEngine.ts",
+        "backend\\modules\\access-requests\\service.ts",
+        "backend\\modules\\access-rules\\service.ts",
+        "backend\\modules\\live-sessions\\service.ts",
+        "temp_zip_extract\\backend\\core\\sape\\AccessPolicyEngine.ts"
+      ]
+    },
+    {
+      "col": "students",
+      "filesCount": 30,
+      "files": [
+        "backend\\core\\sape\\AccessPolicyEngine.ts",
+        "backend\\core\\security\\AccessCache.ts",
+        "backend\\modules\\access-requests\\service.ts",
+        "backend\\modules\\access-rules\\service.ts",
+        "backend\\modules\\admin-approvals\\service.ts",
+        "backend\\modules\\auth\\controller.ts",
+        "backend\\modules\\courses\\player.ts",
+        "backend\\modules\\dashboard\\admin\\controller.ts",
+        "backend\\modules\\dashboard\\erp\\controller.ts",
+        "backend\\modules\\dashboard\\student\\controller.ts",
+        "backend\\modules\\developer\\controller.ts",
+        "backend\\modules\\erp\\analytics\\controller.ts",
+        "backend\\modules\\erp\\profile-request\\controller.ts",
+        "backend\\modules\\erp\\student\\controller.ts",
+        "backend\\modules\\live-sessions\\controller.ts",
+        "backend\\modules\\live-sessions\\service.ts",
+        "backend\\modules\\lms\\daily_content\\controller.ts",
+        "backend\\modules\\lms-attendance\\service.ts",
+        "backend\\modules\\new-attendance\\service.ts",
+        "backend\\modules\\students\\lms-service.ts",
+        "backend\\modules\\students\\service.ts",
+        "backend\\modules\\test-portal\\evaluation\\controller.ts",
+        "backend\\modules\\test-portal\\examination\\controller.ts",
+        "backend\\modules\\test-portal\\review\\controller.ts",
+        "backend\\scripts\\inspect_aagesh.js",
+        "backend\\scripts\\inspect_aagesh.ts",
+        "backend\\scripts\\test_request_fix.ts",
+        "backend\\scripts\\verify_recorded_access.ts",
+        "backend\\services\\pushService.ts",
+        "temp_zip_extract\\backend\\core\\security\\AccessCache.ts"
+      ]
+    },
+    {
+      "col": "student_request_usage",
+      "filesCount": 3,
+      "files": [
+        "backend\\core\\sape\\AccessPolicyEngine.ts",
+        "backend\\modules\\access-requests\\service.ts",
+        "temp_zip_extract\\backend\\core\\sape\\AccessPolicyEngine.ts"
+      ]
+    },
+    {
+      "col": "access_requests",
+      "filesCount": 6,
+      "files": [
+        "backend\\core\\sape\\AccessPolicyEngine.ts",
+        "backend\\modules\\access-requests\\service.ts",
+        "backend\\modules\\dashboard\\controller.ts",
+        "backend\\scripts\\test-sacs.ts",
+        "backend\\services\\accessCleanup.service.ts",
+        "temp_zip_extract\\backend\\core\\sape\\AccessPolicyEngine.ts"
+      ]
+    },
+    {
+      "col": "users",
+      "filesCount": 25,
+      "files": [
+        "backend\\core\\security\\AccessCache.ts",
+        "backend\\modules\\access-requests\\service.ts",
+        "backend\\modules\\admin-approvals\\service.ts",
+        "backend\\modules\\auth\\controller.ts",
+        "backend\\modules\\courses\\player.ts",
+        "backend\\modules\\dashboard\\student\\controller.ts",
+        "backend\\modules\\developer\\controller.ts",
+        "backend\\modules\\erp\\profile-request\\controller.ts",
+        "backend\\modules\\erp\\staff\\controller.ts",
+        "backend\\modules\\erp\\student\\controller.ts",
+        "backend\\modules\\live-sessions\\controller.ts",
+        "backend\\modules\\live-sessions\\service.ts",
+        "backend\\modules\\lms\\daily_content\\controller.ts",
+        "backend\\modules\\lms-attendance\\service.ts",
+        "backend\\modules\\new-attendance\\service.ts",
+        "backend\\modules\\students\\lms-service.ts",
+        "backend\\modules\\students\\service.ts",
+        "backend\\modules\\test-portal\\evaluation\\controller.ts",
+        "backend\\modules\\test-portal\\examination\\controller.ts",
+        "backend\\modules\\test-portal\\review\\controller.ts",
+        "backend\\scripts\\inspect_aagesh.js",
+        "backend\\scripts\\inspect_aagesh.ts",
+        "backend\\scripts\\test_request_fix.ts",
+        "backend\\scripts\\verify_recorded_access.ts",
+        "backend\\services\\pushService.ts"
+      ]
+    },
+    {
+      "col": "batches",
+      "filesCount": 8,
+      "files": [
+        "backend\\core\\security\\AccessCache.ts",
+        "backend\\modules\\courses\\repository.ts",
+        "backend\\modules\\erp\\student\\controller.ts",
+        "backend\\modules\\live-sessions\\service.ts",
+        "backend\\modules\\students\\lms-service.ts",
+        "backend\\modules\\test-portal\\examination\\controller.ts",
+        "backend\\modules\\test-portal\\review\\controller.ts",
+        "backend\\services\\pushService.ts"
+      ]
+    },
+    {
+      "col": "entity_permissions",
+      "filesCount": 2,
+      "files": [
+        "backend\\core\\security\\AccessEngine.ts",
+        "backend\\modules\\access-requests\\service.ts"
+      ]
+    },
+    {
+      "col": "chatbot_embeddings",
+      "filesCount": 3,
+      "files": [
+        "backend\\core\\services\\chatbot\\embeddingRetriever.ts",
+        "temp_zip_extract\\backend\\core\\jobs\\chatbot\\content-indexer.job.ts",
+        "temp_zip_extract\\backend\\core\\services\\chatbot\\embeddingRetriever.ts"
+      ]
+    },
+    {
+      "col": "faq_knowledge",
+      "filesCount": 2,
+      "files": [
+        "backend\\core\\services\\chatbot\\faqMatcher.ts",
+        "temp_zip_extract\\backend\\core\\services\\chatbot\\faqMatcher.ts"
+      ]
+    },
+    {
+      "col": "student_profiles",
+      "filesCount": 9,
+      "files": [
+        "backend\\debug_lms.ts",
+        "backend\\modules\\auth\\controller.ts",
+        "backend\\modules\\dashboard\\controller.ts",
+        "backend\\modules\\live-sessions\\controller.ts",
+        "backend\\modules\\live-sessions\\service.ts",
+        "backend\\modules\\lms-attendance\\service.ts",
+        "backend\\modules\\new-attendance\\service.ts",
+        "backend\\modules\\students\\service.ts",
+        "temp_zip_extract\\backend\\debug_lms.ts"
+      ]
+    },
+    {
+      "col": "courses",
+      "filesCount": 9,
+      "files": [
+        "backend\\diagnose-tenant.ts",
+        "backend\\diagnose2.js",
+        "backend\\modules\\dashboard\\controller.ts",
+        "backend\\modules\\live-sessions\\service.ts",
+        "backend\\modules\\staff\\TeachingAssignmentService.ts",
+        "backend\\modules\\students\\lms-service.ts",
+        "backend\\scripts\\check_courses_classes.ts",
+        "temp_zip_extract\\backend\\diagnose-tenant.ts",
+        "temp_zip_extract\\backend\\diagnose2.js"
+      ]
+    },
+    {
+      "col": "live_class_index",
+      "filesCount": 4,
+      "files": [
+        "backend\\modules\\access-requests\\service.ts",
+        "backend\\modules\\live-sessions\\service.ts",
+        "backend\\scripts\\seed-live-class-index.js",
+        "backend\\services\\liveSync.service.ts"
+      ]
+    },
+    {
+      "col": "admin_alerts",
+      "filesCount": 4,
+      "files": [
+        "backend\\modules\\access-requests\\service.ts",
+        "backend\\modules\\access-rules\\service.ts",
+        "backend\\modules\\erp\\profile-request\\controller.ts",
+        "backend\\modules\\students\\service.ts"
+      ]
+    },
+    {
+      "col": "staff",
+      "filesCount": 6,
+      "files": [
+        "backend\\modules\\admin-approvals\\service.ts",
+        "backend\\modules\\dashboard\\admin\\controller.ts",
+        "backend\\modules\\dashboard\\erp\\controller.ts",
+        "backend\\modules\\developer\\controller.ts",
+        "backend\\modules\\erp\\analytics\\controller.ts",
+        "backend\\scripts\\seed-admin.ts"
+      ]
+    },
+    {
+      "col": "attendance_analytics",
+      "filesCount": 2,
+      "files": [
+        "backend\\modules\\analytics\\attendance.service.ts",
+        "backend\\modules\\analytics\\worker.ts"
+      ]
+    },
+    {
+      "col": "attendance_sessions",
+      "filesCount": 4,
+      "files": [
+        "backend\\modules\\analytics\\attendance.worker.ts",
+        "backend\\modules\\attendance\\controller.ts",
+        "backend\\modules\\attendance\\service.ts",
+        "backend\\modules\\live-sessions\\controller.ts"
+      ]
+    },
+    {
+      "col": "class_analytics",
+      "filesCount": 1,
+      "files": [
+        "backend\\modules\\analytics\\worker.ts"
+      ]
+    },
+    {
+      "col": "announcements",
+      "filesCount": 4,
+      "files": [
+        "backend\\modules\\announcements\\repository.ts",
+        "backend\\modules\\dashboard\\controller.ts",
+        "backend\\modules\\erp\\profile-request\\controller.ts",
+        "backend\\modules\\erp\\student\\controller.ts"
+      ]
+    },
+    {
+      "col": "attendance_audits",
+      "filesCount": 1,
+      "files": [
+        "backend\\modules\\audit\\attendanceAudit.service.ts"
+      ]
+    },
+    {
+      "col": "device_alerts",
+      "filesCount": 1,
+      "files": [
+        "backend\\modules\\auth\\controller.ts"
+      ]
+    },
+    {
+      "col": "identity_lookup",
+      "filesCount": 2,
+      "files": [
+        "backend\\modules\\auth\\controller.ts",
+        "backend\\modules\\students\\service.ts"
+      ]
+    },
+    {
+      "col": "admin_users",
+      "filesCount": 3,
+      "files": [
+        "backend\\modules\\auth\\controller.ts",
+        "backend\\scripts\\seed-admin.ts",
+        "backend\\scripts\\test-sacs.ts"
+      ]
+    },
+    {
+      "col": "tenant_config",
+      "filesCount": 1,
+      "files": [
+        "backend\\modules\\config\\service.ts"
+      ]
+    },
+    {
+      "col": "leads",
+      "filesCount": 8,
+      "files": [
+        "backend\\modules\\crm\\admission\\controller.ts",
+        "backend\\modules\\crm\\courses\\controller.ts",
+        "backend\\modules\\crm\\inquiry\\controller.ts",
+        "backend\\modules\\dashboard\\admin\\controller.ts",
+        "backend\\modules\\erp\\student\\controller.ts",
+        "backend\\modules\\test-portal\\evaluation\\controller.ts",
+        "backend\\modules\\test-portal\\examination\\controller.ts",
+        "backend\\modules\\test-portal\\review\\controller.ts"
+      ]
+    },
+    {
+      "col": "course_interests",
+      "filesCount": 1,
+      "files": [
+        "backend\\modules\\crm\\courses\\controller.ts"
+      ]
+    },
+    {
+      "col": "admissions",
+      "filesCount": 2,
+      "files": [
+        "backend\\modules\\crm\\leads\\controller.ts",
+        "backend\\modules\\dashboard\\admin\\controller.ts"
+      ]
+    },
+    {
+      "col": "feePayments",
+      "filesCount": 6,
+      "files": [
+        "backend\\modules\\dashboard\\admin\\controller.ts",
+        "backend\\modules\\dashboard\\erp\\controller.ts",
+        "backend\\modules\\dashboard\\student\\controller.ts",
+        "backend\\modules\\developer\\controller.ts",
+        "backend\\modules\\erp\\analytics\\controller.ts",
+        "backend\\modules\\erp\\fees\\controller.ts"
+      ]
+    },
+    {
+      "col": "student_batches",
+      "filesCount": 4,
+      "files": [
+        "backend\\modules\\dashboard\\controller.ts",
+        "backend\\modules\\live-sessions\\controller.ts",
+        "backend\\modules\\live-sessions\\service.ts",
+        "backend\\services\\pushService.ts"
+      ]
+    },
+    {
+      "col": "watch_history",
+      "filesCount": 1,
+      "files": [
+        "backend\\modules\\dashboard\\controller.ts"
+      ]
+    },
+    {
+      "col": "resources",
+      "filesCount": 3,
+      "files": [
+        "backend\\modules\\dashboard\\controller.ts",
+        "backend\\modules\\resources\\repository.ts",
+        "backend\\modules\\students\\lms-service.ts"
+      ]
+    },
+    {
+      "col": "marks",
+      "filesCount": 2,
+      "files": [
+        "backend\\modules\\dashboard\\student\\controller.ts",
+        "backend\\modules\\erp\\analytics\\controller.ts"
+      ]
+    },
+    {
+      "col": "settings",
+      "filesCount": 3,
+      "files": [
+        "backend\\modules\\developer\\controller.ts",
+        "backend\\modules\\erp\\student\\controller.ts",
+        "backend\\services\\google_drive.ts"
+      ]
+    },
+    {
+      "col": "tests",
+      "filesCount": 6,
+      "files": [
+        "backend\\modules\\developer\\controller.ts",
+        "backend\\modules\\erp\\student\\controller.ts",
+        "backend\\modules\\test-portal\\evaluation\\controller.ts",
+        "backend\\modules\\test-portal\\examination\\controller.ts",
+        "backend\\modules\\test-portal\\review\\controller.ts",
+        "backend\\purge.ts"
+      ]
+    },
+    {
+      "col": "results",
+      "filesCount": 5,
+      "files": [
+        "backend\\modules\\developer\\controller.ts",
+        "backend\\modules\\test-portal\\evaluation\\controller.ts",
+        "backend\\modules\\test-portal\\review\\controller.ts",
+        "backend\\modules\\test-portal\\test-creation\\controller.ts",
+        "backend\\purge.ts"
+      ]
+    },
+    {
+      "col": "deleted_students",
+      "filesCount": 1,
+      "files": [
+        "backend\\modules\\erp\\student\\controller.ts"
+      ]
+    },
+    {
+      "col": "tenant_faqs",
+      "filesCount": 1,
+      "files": [
+        "backend\\modules\\faq\\repository.ts"
+      ]
+    },
+    {
+      "col": "interactions",
+      "filesCount": 1,
+      "files": [
+        "backend\\modules\\interaction-engine\\worker.ts"
+      ]
+    },
+    {
+      "col": "intent_dictionary",
+      "filesCount": 1,
+      "files": [
+        "backend\\modules\\knowledge-base\\repository.ts"
+      ]
+    },
+    {
+      "col": "kb_collections",
+      "filesCount": 1,
+      "files": [
+        "backend\\modules\\knowledge-base\\repository.ts"
+      ]
+    },
+    {
+      "col": "kb_articles",
+      "filesCount": 1,
+      "files": [
+        "backend\\modules\\knowledge-base\\repository.ts"
+      ]
+    },
+    {
+      "col": "assistant_settings",
+      "filesCount": 1,
+      "files": [
+        "backend\\modules\\knowledge-base\\repository.ts"
+      ]
+    },
+    {
+      "col": "assistant_quick_actions",
+      "filesCount": 1,
+      "files": [
+        "backend\\modules\\knowledge-base\\repository.ts"
+      ]
+    },
+    {
+      "col": "lms_class_attendance",
+      "filesCount": 1,
+      "files": [
+        "backend\\modules\\live-sessions\\controller.ts"
+      ]
+    },
+    {
+      "col": "device_push_tokens",
+      "filesCount": 2,
+      "files": [
+        "backend\\modules\\notification\\controller.ts",
+        "backend\\services\\pushService.ts"
+      ]
+    },
+    {
+      "col": "zoom_accounts",
+      "filesCount": 1,
+      "files": [
+        "backend\\modules\\provider-accounts\\service.ts"
+      ]
+    },
+    {
+      "col": "subtopics",
+      "filesCount": 1,
+      "files": [
+        "backend\\modules\\staff\\TeachingAssignmentService.ts"
+      ]
+    },
+    {
+      "col": "system_settings",
+      "filesCount": 1,
+      "files": [
+        "backend\\modules\\students\\service.ts"
+      ]
+    },
+    {
+      "col": "payment_acknowledgements",
+      "filesCount": 1,
+      "files": [
+        "backend\\modules\\students\\service.ts"
+      ]
+    },
+    {
+      "col": "leaderboards",
+      "filesCount": 3,
+      "files": [
+        "backend\\modules\\test-portal\\evaluation\\controller.ts",
+        "backend\\modules\\test-portal\\review\\controller.ts",
+        "backend\\purge.ts"
+      ]
+    },
+    {
+      "col": "questions",
+      "filesCount": 4,
+      "files": [
+        "backend\\modules\\test-portal\\evaluation\\controller.ts",
+        "backend\\modules\\test-portal\\examination\\controller.ts",
+        "backend\\modules\\test-portal\\review\\controller.ts",
+        "backend\\modules\\test-portal\\test-creation\\controller.ts"
+      ]
+    },
+    {
+      "col": "question_report_logs",
+      "filesCount": 1,
+      "files": [
+        "backend\\modules\\test-portal\\examination\\controller.ts"
+      ]
+    },
+    {
+      "col": "question_reports",
+      "filesCount": 1,
+      "files": [
+        "backend\\modules\\test-portal\\examination\\controller.ts"
+      ]
+    },
+    {
+      "col": "test_feedback",
+      "filesCount": 1,
+      "files": [
+        "backend\\modules\\test-portal\\test-creation\\controller.ts"
+      ]
+    },
+    {
+      "col": "batch_capabilities",
+      "filesCount": 3,
+      "files": [
+        "backend\\scripts\\check_batch_caps.ts",
+        "backend\\scripts\\test-sacs.ts",
+        "backend\\scripts\\verify_recorded_access.ts"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,981 @@
+{
+  "announcements": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "details": [
+      "Backend Admin: backend\\modules\\announcements\\repository.ts",
+      "Backend Admin: backend\\modules\\dashboard\\controller.ts",
+      "Backend Admin: backend\\modules\\erp\\profile-request\\controller.ts",
+      "Backend Admin: backend\\modules\\erp\\student\\controller.ts"
+    ]
+  },
+  "students": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [
+      "web_portal\\App.tsx",
+      "web_portal\\lms\\admin\\MobileQRCodePermissions.tsx",
+      "web_portal\\lms\\admin\\QRCodePermissionsPage.tsx",
+      "web_portal\\lms\\components\\ui\\WatermarkOverlay.tsx",
+      "web_portal\\lms\\student\\StudentPayFeesPage.tsx"
+    ],
+    "details": [
+      "Backend Admin: backend\\core\\sape\\AccessPolicyEngine.ts",
+      "Backend Admin: backend\\core\\security\\AccessCache.ts",
+      "Backend Admin: backend\\modules\\access-requests\\service.ts",
+      "Backend Admin: backend\\modules\\access-rules\\service.ts",
+      "Backend Admin: backend\\modules\\admin-approvals\\service.ts",
+      "Backend Admin: backend\\modules\\auth\\controller.ts",
+      "Backend Admin: backend\\modules\\courses\\player.ts",
+      "Backend Admin: backend\\modules\\dashboard\\admin\\controller.ts",
+      "Backend Admin: backend\\modules\\dashboard\\erp\\controller.ts",
+      "Backend Admin: backend\\modules\\dashboard\\student\\controller.ts",
+      "Backend Admin: backend\\modules\\developer\\controller.ts",
+      "Backend Admin: backend\\modules\\erp\\analytics\\controller.ts",
+      "Backend Admin: backend\\modules\\erp\\profile-request\\controller.ts",
+      "Backend Admin: backend\\modules\\erp\\student\\controller.ts",
+      "Backend Admin: backend\\modules\\live-sessions\\controller.ts",
+      "Backend Admin: backend\\modules\\live-sessions\\service.ts",
+      "Backend Admin: backend\\modules\\lms\\daily_content\\controller.ts",
+      "Backend Admin: backend\\modules\\lms-attendance\\service.ts",
+      "Backend Admin: backend\\modules\\new-attendance\\service.ts",
+      "Backend Admin: backend\\modules\\students\\lms-service.ts",
+      "Backend Admin: backend\\modules\\students\\service.ts",
+      "Backend Admin: backend\\modules\\test-portal\\evaluation\\controller.ts",
+      "Backend Admin: backend\\modules\\test-portal\\examination\\controller.ts",
+      "Backend Admin: backend\\modules\\test-portal\\review\\controller.ts",
+      "Backend Admin: backend\\scripts\\inspect_aagesh.js",
+      "Backend Admin: backend\\scripts\\inspect_aagesh.ts",
+      "Backend Admin: backend\\scripts\\test_request_fix.ts",
+      "Backend Admin: backend\\scripts\\verify_recorded_access.ts",
+      "Backend Admin: backend\\services\\pushService.ts"
+    ]
+  },
+  "users": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [
+      "web_portal\\App.tsx",
+      "web_portal\\lms\\components\\ui\\WatermarkOverlay.tsx"
+    ],
+    "details": [
+      "Backend Admin: backend\\core\\security\\AccessCache.ts",
+      "Backend Admin: backend\\modules\\access-requests\\service.ts",
+      "Backend Admin: backend\\modules\\admin-approvals\\service.ts",
+      "Backend Admin: backend\\modules\\auth\\controller.ts",
+      "Backend Admin: backend\\modules\\courses\\player.ts",
+      "Backend Admin: backend\\modules\\dashboard\\student\\controller.ts",
+      "Backend Admin: backend\\modules\\developer\\controller.ts",
+      "Backend Admin: backend\\modules\\erp\\profile-request\\controller.ts",
+      "Backend Admin: backend\\modules\\erp\\staff\\controller.ts",
+      "Backend Admin: backend\\modules\\erp\\student\\controller.ts",
+      "Backend Admin: backend\\modules\\live-sessions\\controller.ts",
+      "Backend Admin: backend\\modules\\live-sessions\\service.ts",
+      "Backend Admin: backend\\modules\\lms\\daily_content\\controller.ts",
+      "Backend Admin: backend\\modules\\lms-attendance\\service.ts",
+      "Backend Admin: backend\\modules\\new-attendance\\service.ts",
+      "Backend Admin: backend\\modules\\students\\lms-service.ts",
+      "Backend Admin: backend\\modules\\students\\service.ts",
+      "Backend Admin: backend\\modules\\test-portal\\evaluation\\controller.ts",
+      "Backend Admin: backend\\modules\\test-portal\\examination\\controller.ts",
+      "Backend Admin: backend\\modules\\test-portal\\review\\controller.ts",
+      "Backend Admin: backend\\scripts\\inspect_aagesh.js",
+      "Backend Admin: backend\\scripts\\inspect_aagesh.ts",
+      "Backend Admin: backend\\scripts\\test_request_fix.ts",
+      "Backend Admin: backend\\scripts\\verify_recorded_access.ts",
+      "Backend Admin: backend\\services\\pushService.ts"
+    ]
+  },
+  "deleted_students": {
+    "webRead": false,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [],
+    "details": [
+      "Backend Admin: backend\\modules\\erp\\student\\controller.ts"
+    ]
+  },
+  "fees": {
+    "webRead": false,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [],
+    "details": []
+  },
+  "profile_requests": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "details": []
+  },
+  "access_requests": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [
+      "web_portal\\App.tsx",
+      "web_portal\\lms\\admin\\AccessControlPage.tsx",
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx",
+      "web_portal\\lms\\student\\ResourceViewer.tsx",
+      "web_portal\\lms\\student\\StudentLiveClassesPage.tsx"
+    ],
+    "details": [
+      "Backend Admin: backend\\core\\sape\\AccessPolicyEngine.ts",
+      "Backend Admin: backend\\modules\\access-requests\\service.ts",
+      "Backend Admin: backend\\modules\\dashboard\\controller.ts",
+      "Backend Admin: backend\\scripts\\test-sacs.ts",
+      "Backend Admin: backend\\services\\accessCleanup.service.ts"
+    ]
+  },
+  "content_access": {
+    "webRead": false,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [],
+    "details": [
+      "Backend Admin: backend\\core\\sape\\AccessPolicyEngine.ts",
+      "Backend Admin: backend\\modules\\access-requests\\service.ts",
+      "Backend Admin: backend\\modules\\access-rules\\service.ts",
+      "Backend Admin: backend\\modules\\live-sessions\\service.ts"
+    ]
+  },
+  "leads": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [
+      "web_portal\\App.tsx",
+      "web_portal\\lms\\admin\\MergedLeadsAdmissionsPage.tsx"
+    ],
+    "details": [
+      "Backend Admin: backend\\modules\\crm\\admission\\controller.ts",
+      "Backend Admin: backend\\modules\\crm\\courses\\controller.ts",
+      "Backend Admin: backend\\modules\\crm\\inquiry\\controller.ts",
+      "Backend Admin: backend\\modules\\dashboard\\admin\\controller.ts",
+      "Backend Admin: backend\\modules\\erp\\student\\controller.ts",
+      "Backend Admin: backend\\modules\\test-portal\\evaluation\\controller.ts",
+      "Backend Admin: backend\\modules\\test-portal\\examination\\controller.ts",
+      "Backend Admin: backend\\modules\\test-portal\\review\\controller.ts"
+    ]
+  },
+  "admissions": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [
+      "web_portal\\App.tsx",
+      "web_portal\\lms\\admin\\MergedLeadsAdmissionsPage.tsx"
+    ],
+    "details": [
+      "Backend Admin: backend\\modules\\crm\\leads\\controller.ts",
+      "Backend Admin: backend\\modules\\dashboard\\admin\\controller.ts"
+    ]
+  },
+  "campaigns": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "details": []
+  },
+  "inquiries": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "details": []
+  },
+  "guest_recordings": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [
+      "web_portal\\lms\\admin\\GuestRecordingsAdminPage.tsx",
+      "web_portal\\lms\\student\\GuestRecordingsPage.tsx"
+    ],
+    "details": []
+  },
+  "feedbacks": {
+    "webRead": false,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [],
+    "details": []
+  },
+  "notifications": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "details": []
+  },
+  "daily_quiz": {
+    "webRead": false,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [],
+    "details": []
+  },
+  "tenants": {
+    "webRead": false,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [],
+    "details": []
+  },
+  "provider_accounts": {
+    "webRead": false,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [],
+    "details": []
+  },
+  "batches": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "details": [
+      "Backend Admin: backend\\core\\security\\AccessCache.ts",
+      "Backend Admin: backend\\modules\\courses\\repository.ts",
+      "Backend Admin: backend\\modules\\erp\\student\\controller.ts",
+      "Backend Admin: backend\\modules\\live-sessions\\service.ts",
+      "Backend Admin: backend\\modules\\students\\lms-service.ts",
+      "Backend Admin: backend\\modules\\test-portal\\examination\\controller.ts",
+      "Backend Admin: backend\\modules\\test-portal\\review\\controller.ts",
+      "Backend Admin: backend\\services\\pushService.ts"
+    ]
+  },
+  "batch_memberships": {
+    "webRead": false,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [],
+    "details": []
+  },
+  "courses": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [
+      "web_portal\\App.tsx",
+      "web_portal\\lms\\admin\\CoursesPage.tsx",
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx",
+      "web_portal\\lms\\admin\\SubjectsPage.tsx",
+      "web_portal\\lms\\admin\\SubtopicsPage.tsx",
+      "web_portal\\lms\\admin\\TopicsPage.tsx",
+      "web_portal\\lms\\student\\StudentCoursesPage.tsx"
+    ],
+    "details": [
+      "Backend Admin: backend\\diagnose-tenant.ts",
+      "Backend Admin: backend\\diagnose2.js",
+      "Backend Admin: backend\\modules\\dashboard\\controller.ts",
+      "Backend Admin: backend\\modules\\live-sessions\\service.ts",
+      "Backend Admin: backend\\modules\\staff\\TeachingAssignmentService.ts",
+      "Backend Admin: backend\\modules\\students\\lms-service.ts",
+      "Backend Admin: backend\\scripts\\check_courses_classes.ts"
+    ]
+  },
+  "enrollments": {
+    "webRead": true,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx",
+      "web_portal\\lms\\student\\StudentCoursesPage.tsx"
+    ],
+    "details": []
+  },
+  "subjects": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [
+      "web_portal\\App.tsx",
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx",
+      "web_portal\\lms\\admin\\SubjectsPage.tsx",
+      "web_portal\\lms\\admin\\SubtopicsPage.tsx",
+      "web_portal\\lms\\admin\\TopicsPage.tsx"
+    ],
+    "details": [
+      "Backend Admin: backend\\core\\hierarchy\\ContentHierarchyService.ts",
+      "Backend Admin: backend\\diagnose-tenant.ts",
+      "Backend Admin: backend\\diagnose2.js",
+      "Backend Admin: backend\\modules\\dashboard\\controller.ts",
+      "Backend Admin: backend\\modules\\staff\\TeachingAssignmentService.ts"
+    ]
+  },
+  "topics": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [
+      "web_portal\\App.tsx",
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx",
+      "web_portal\\lms\\admin\\SubtopicsPage.tsx",
+      "web_portal\\lms\\admin\\SyllabusTrackerPage.tsx",
+      "web_portal\\lms\\admin\\TopicsPage.tsx",
+      "web_portal\\lms\\staff\\TeacherDashboard.tsx"
+    ],
+    "details": [
+      "Backend Admin: backend\\core\\hierarchy\\ContentHierarchyService.ts",
+      "Backend Admin: backend\\diagnose-tenant.ts",
+      "Backend Admin: backend\\diagnose2.js",
+      "Backend Admin: backend\\modules\\dashboard\\controller.ts",
+      "Backend Admin: backend\\modules\\staff\\TeachingAssignmentService.ts"
+    ]
+  },
+  "classes": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "details": [
+      "Backend Admin: backend\\check-access.ts",
+      "Backend Admin: backend\\check_status.ts",
+      "Backend Admin: backend\\core\\hierarchy\\ContentHierarchyService.ts",
+      "Backend Admin: backend\\core\\sape\\AccessPolicyEngine.ts",
+      "Backend Admin: backend\\debug_lms.ts",
+      "Backend Admin: backend\\diagnose-tenant.ts",
+      "Backend Admin: backend\\diagnose2.js",
+      "Backend Admin: backend\\modules\\access-requests\\service.ts",
+      "Backend Admin: backend\\modules\\analytics\\attendance.worker.ts",
+      "Backend Admin: backend\\modules\\analytics\\worker.ts",
+      "Backend Admin: backend\\modules\\attendance\\controller.ts",
+      "Backend Admin: backend\\modules\\attendance\\service.ts",
+      "Backend Admin: backend\\modules\\courses\\service.ts",
+      "Backend Admin: backend\\modules\\dashboard\\controller.ts",
+      "Backend Admin: backend\\modules\\live-sessions\\LiveSessionResolver.ts",
+      "Backend Admin: backend\\modules\\live-sessions\\policy.ts",
+      "Backend Admin: backend\\modules\\live-sessions\\service.ts",
+      "Backend Admin: backend\\modules\\staff\\TeachingAssignmentService.ts",
+      "Backend Admin: backend\\modules\\students\\lms-service.ts",
+      "Backend Admin: backend\\modules\\zoom-accounts\\controller.ts",
+      "Backend Admin: backend\\query_classes.ts",
+      "Backend Admin: backend\\scripts\\check_courses_classes.ts",
+      "Backend Admin: backend\\scripts\\verify_recorded_access.ts",
+      "Backend Admin: backend\\services\\liveSync.service.ts",
+      "Backend Admin: backend\\test_class.ts"
+    ]
+  },
+  "live_sessions": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [
+      "web_portal\\App.tsx",
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx",
+      "web_portal\\lms\\student\\StudentLiveClassesPage.tsx"
+    ],
+    "details": [
+      "Backend Admin: backend\\check_status.ts",
+      "Backend Admin: backend\\modules\\courses\\service.ts",
+      "Backend Admin: backend\\modules\\dashboard\\controller.ts",
+      "Backend Admin: backend\\modules\\live-attendance\\service.ts",
+      "Backend Admin: backend\\modules\\live-sessions\\controller.ts",
+      "Backend Admin: backend\\modules\\live-sessions\\LiveSessionResolver.ts",
+      "Backend Admin: backend\\modules\\live-sessions\\policy.ts",
+      "Backend Admin: backend\\modules\\lms-attendance\\service.ts",
+      "Backend Admin: backend\\modules\\new-attendance\\service.ts",
+      "Backend Admin: backend\\modules\\zoom-accounts\\controller.ts",
+      "Backend Admin: backend\\test_raw.ts"
+    ]
+  },
+  "participants": {
+    "webRead": false,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [],
+    "details": []
+  },
+  "activity_feed": {
+    "webRead": false,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [],
+    "details": []
+  },
+  "logs": {
+    "webRead": false,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [],
+    "details": []
+  },
+  "videos": {
+    "webRead": false,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [],
+    "details": []
+  },
+  "resources": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "details": [
+      "Backend Admin: backend\\modules\\dashboard\\controller.ts",
+      "Backend Admin: backend\\modules\\resources\\repository.ts",
+      "Backend Admin: backend\\modules\\students\\lms-service.ts"
+    ]
+  },
+  "watch_history": {
+    "webRead": false,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [],
+    "details": [
+      "Backend Admin: backend\\modules\\dashboard\\controller.ts"
+    ]
+  },
+  "tests": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "details": [
+      "Backend Admin: backend\\modules\\developer\\controller.ts",
+      "Backend Admin: backend\\modules\\erp\\student\\controller.ts",
+      "Backend Admin: backend\\modules\\test-portal\\evaluation\\controller.ts",
+      "Backend Admin: backend\\modules\\test-portal\\examination\\controller.ts",
+      "Backend Admin: backend\\modules\\test-portal\\review\\controller.ts",
+      "Backend Admin: backend\\purge.ts"
+    ]
+  },
+  "questions": {
+    "webRead": false,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [],
+    "details": [
+      "Backend Admin: backend\\modules\\test-portal\\evaluation\\controller.ts",
+      "Backend Admin: backend\\modules\\test-portal\\examination\\controller.ts",
+      "Backend Admin: backend\\modules\\test-portal\\review\\controller.ts",
+      "Backend Admin: backend\\modules\\test-portal\\test-creation\\controller.ts"
+    ]
+  },
+  "attempts": {
+    "webRead": false,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [],
+    "details": []
+  },
+  "attempt_answers": {
+    "webRead": false,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [],
+    "details": []
+  },
+  "question_translations": {
+    "webRead": false,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [],
+    "details": []
+  },
+  "test_targets": {
+    "webRead": false,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [],
+    "details": []
+  },
+  "daily_quizzes": {
+    "webRead": false,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [],
+    "details": []
+  },
+  "dailyQuizzes": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "details": []
+  },
+  "dailyContent": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "details": []
+  },
+  "recorded_classes": {
+    "webRead": false,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [],
+    "details": []
+  },
+  "user_devices": {
+    "webRead": false,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [],
+    "details": []
+  },
+  "conversations": {
+    "webRead": false,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [],
+    "details": []
+  },
+  "messages": {
+    "webRead": false,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [],
+    "details": []
+  },
+  "support_tickets": {
+    "webRead": false,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [],
+    "details": []
+  },
+  "offlineTestPermissionRequests": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "details": []
+  },
+  "live_class_index": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [
+      "web_portal\\App.tsx",
+      "web_portal\\lms\\admin\\AccessControlPage.tsx",
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx",
+      "web_portal\\lms\\student\\StudentLiveClassesPage.tsx"
+    ],
+    "details": [
+      "Backend Admin: backend\\modules\\access-requests\\service.ts",
+      "Backend Admin: backend\\modules\\live-sessions\\service.ts",
+      "Backend Admin: backend\\scripts\\seed-live-class-index.js",
+      "Backend Admin: backend\\services\\liveSync.service.ts"
+    ]
+  },
+  "subtopics": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [
+      "web_portal\\App.tsx",
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx",
+      "web_portal\\lms\\admin\\SubtopicsPage.tsx",
+      "web_portal\\lms\\admin\\SyllabusTrackerPage.tsx",
+      "web_portal\\lms\\staff\\TeacherDashboard.tsx"
+    ],
+    "details": [
+      "Backend Admin: backend\\modules\\staff\\TeachingAssignmentService.ts"
+    ]
+  },
+  "staff": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [
+      "web_portal\\App.tsx",
+      "web_portal\\lms\\admin\\TeachersPage.tsx"
+    ],
+    "details": [
+      "Backend Admin: backend\\modules\\admin-approvals\\service.ts",
+      "Backend Admin: backend\\modules\\dashboard\\admin\\controller.ts",
+      "Backend Admin: backend\\modules\\dashboard\\erp\\controller.ts",
+      "Backend Admin: backend\\modules\\developer\\controller.ts",
+      "Backend Admin: backend\\modules\\erp\\analytics\\controller.ts",
+      "Backend Admin: backend\\scripts\\seed-admin.ts"
+    ]
+  },
+  "zoom_accounts": {
+    "webRead": true,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx",
+      "web_portal\\lms\\developer\\ZoomAccountsPage.tsx"
+    ],
+    "details": [
+      "Backend Admin: backend\\modules\\provider-accounts\\service.ts"
+    ]
+  },
+  "device_alerts": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "details": [
+      "Backend Admin: backend\\modules\\auth\\controller.ts"
+    ]
+  },
+  "feePayments": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "details": [
+      "Backend Admin: backend\\modules\\dashboard\\admin\\controller.ts",
+      "Backend Admin: backend\\modules\\dashboard\\erp\\controller.ts",
+      "Backend Admin: backend\\modules\\dashboard\\student\\controller.ts",
+      "Backend Admin: backend\\modules\\developer\\controller.ts",
+      "Backend Admin: backend\\modules\\erp\\analytics\\controller.ts",
+      "Backend Admin: backend\\modules\\erp\\fees\\controller.ts"
+    ]
+  },
+  "alumniFeedback": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "details": []
+  },
+  "leaderboards": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "details": [
+      "Backend Admin: backend\\modules\\test-portal\\evaluation\\controller.ts",
+      "Backend Admin: backend\\modules\\test-portal\\review\\controller.ts",
+      "Backend Admin: backend\\purge.ts"
+    ]
+  },
+  "results": {
+    "webRead": false,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [],
+    "details": [
+      "Backend Admin: backend\\modules\\developer\\controller.ts",
+      "Backend Admin: backend\\modules\\test-portal\\evaluation\\controller.ts",
+      "Backend Admin: backend\\modules\\test-portal\\review\\controller.ts",
+      "Backend Admin: backend\\modules\\test-portal\\test-creation\\controller.ts",
+      "Backend Admin: backend\\purge.ts"
+    ]
+  },
+  "student_attempts": {
+    "webRead": false,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [],
+    "details": [
+      "Backend Admin: backend\\core\\middleware\\auth.middleware.ts",
+      "Backend Admin: backend\\modules\\test-portal\\evaluation\\controller.ts",
+      "Backend Admin: backend\\modules\\test-portal\\examination\\controller.ts",
+      "Backend Admin: backend\\modules\\test-portal\\review\\controller.ts",
+      "Backend Admin: backend\\modules\\test-portal\\test-creation\\controller.ts",
+      "Backend Admin: backend\\purge.ts"
+    ]
+  },
+  "access_rules": {
+    "webRead": false,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [],
+    "details": []
+  },
+  "access_history": {
+    "webRead": true,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [
+      "web_portal\\lms\\admin\\AccessControlPage.tsx",
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx"
+    ],
+    "details": []
+  },
+  "system_settings": {
+    "webRead": true,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [
+      "web_portal\\lms\\student\\StudentPayFeesPage.tsx"
+    ],
+    "details": [
+      "Backend Admin: backend\\modules\\students\\service.ts"
+    ]
+  },
+  "settings": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "details": [
+      "Backend Admin: backend\\modules\\developer\\controller.ts",
+      "Backend Admin: backend\\modules\\erp\\student\\controller.ts",
+      "Backend Admin: backend\\services\\google_drive.ts"
+    ]
+  },
+  "payment_acknowledgements": {
+    "webRead": true,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [
+      "web_portal\\lms\\admin\\MobileQRCodePermissions.tsx",
+      "web_portal\\lms\\admin\\QRCodePermissionsPage.tsx",
+      "web_portal\\lms\\student\\StudentPayFeesPage.tsx"
+    ],
+    "details": [
+      "Backend Admin: backend\\modules\\students\\service.ts"
+    ]
+  },
+  "page_locks": {
+    "webRead": false,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [],
+    "details": []
+  },
+  "role_permissions": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "details": [
+      "Backend Admin: backend\\core\\middleware\\auth.middleware.ts",
+      "Backend Admin: backend\\modules\\developer\\controller.ts"
+    ]
+  },
+  "custom_application_leads": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [
+      "web_portal\\App.tsx",
+      "web_portal\\lms\\admin\\CustomLeadsPage.tsx"
+    ],
+    "details": []
+  },
+  "custom_application_forms": {
+    "webRead": true,
+    "webWrite": false,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [
+      "web_portal\\lms\\admin\\CustomizeApplicationPage.tsx",
+      "web_portal\\lms\\components\\DynamicApplicationModal.tsx"
+    ],
+    "details": []
+  },
+  "admin_alerts": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "details": [
+      "Backend Admin: backend\\modules\\access-requests\\service.ts",
+      "Backend Admin: backend\\modules\\access-rules\\service.ts",
+      "Backend Admin: backend\\modules\\erp\\profile-request\\controller.ts",
+      "Backend Admin: backend\\modules\\students\\service.ts"
+    ]
+  },
+  "system_activity_logs": {
+    "webRead": true,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": false,
+    "clientFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "details": []
+  },
+  "device_push_tokens": {
+    "webRead": false,
+    "webWrite": true,
+    "mobileRead": false,
+    "mobileWrite": false,
+    "backendAdmin": true,
+    "clientFiles": [
+      "web_portal\\notifications.ts"
+    ],
+    "details": [
+      "Backend Admin: backend\\modules\\notification\\controller.ts",
+      "Backend Admin: backend\\services\\pushService.ts"
+    ]
+  }
+}

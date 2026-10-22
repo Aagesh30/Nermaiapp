@@ -224,23 +224,37 @@ export async function sendPushNotification(
           }
           // adminBatches.length === 0 → super admin → passes through, receives the notification
         } else {
-          // Student batch filter: match their `batch` field (supports exact, normalized & substring variations)
-          if (!d.batch) return;
-          const tokenBatchLower = String(d.batch).trim().toLowerCase();
-          const cleanTokenBatch = tokenBatchLower.replace(/\s*batch\s*/gi, "").trim();
+          // Student batch filter: match their `batch` field OR `batches` array
+          // (supports exact, normalized & substring variations)
+          const singleBatch = d.batch ? String(d.batch).trim().toLowerCase() : null;
+          const multiBatches: string[] = Array.isArray(d.batches)
+            ? d.batches.map((b: any) => String(b).trim().toLowerCase()).filter(Boolean)
+            : [];
 
-          const isBatchMatch = resolvedTargetBatches.has(tokenBatchLower) ||
-            resolvedTargetBatches.has(cleanTokenBatch) ||
-            Array.from(resolvedTargetBatches).some(tb => {
-              const cleanTb = tb.replace(/\s*batch\s*/gi, "").trim();
-              return tb === "all" ||
-                tb === "all batches" ||
-                tb === tokenBatchLower ||
-                cleanTb === cleanTokenBatch ||
-                tokenBatchLower.includes(cleanTb) ||
-                cleanTokenBatch.includes(cleanTb);
-            });
+          // Build the full list of batch values this student token represents
+          const studentTokenBatches: string[] = [];
+          if (singleBatch) studentTokenBatches.push(singleBatch);
+          multiBatches.forEach(b => { if (!studentTokenBatches.includes(b)) studentTokenBatches.push(b); });
 
+          // If no batch info at all on this token, skip
+          if (studentTokenBatches.length === 0) return;
+
+          const matchesBatch = (tokenBatchLower: string): boolean => {
+            const cleanTokenBatch = tokenBatchLower.replace(/\s*batch\s*/gi, "").trim();
+            return resolvedTargetBatches!.has(tokenBatchLower) ||
+              resolvedTargetBatches!.has(cleanTokenBatch) ||
+              Array.from(resolvedTargetBatches!).some(tb => {
+                const cleanTb = tb.replace(/\s*batch\s*/gi, "").trim();
+                return tb === "all" ||
+                  tb === "all batches" ||
+                  tb === tokenBatchLower ||
+                  cleanTb === cleanTokenBatch ||
+                  tokenBatchLower.includes(cleanTb) ||
+                  cleanTokenBatch.includes(cleanTb);
+              });
+          };
+
+          const isBatchMatch = studentTokenBatches.some(matchesBatch);
           if (!isBatchMatch) return;
         }
       }

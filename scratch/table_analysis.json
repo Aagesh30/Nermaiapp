@@ -1,0 +1,886 @@
+{
+  "announcements": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "students": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [
+      "web_portal\\App.tsx",
+      "web_portal\\lms\\admin\\MobileQRCodePermissions.tsx",
+      "web_portal\\lms\\admin\\QRCodePermissionsPage.tsx",
+      "web_portal\\lms\\components\\ui\\WatermarkOverlay.tsx",
+      "web_portal\\lms\\student\\StudentPayFeesPage.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "users": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [
+      "web_portal\\App.tsx",
+      "web_portal\\lms\\components\\ui\\WatermarkOverlay.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "deleted_students": {
+    "webDirectRead": false,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [],
+    "writeFiles": []
+  },
+  "fees": {
+    "webDirectRead": false,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [],
+    "writeFiles": []
+  },
+  "profile_requests": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "access_requests": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [
+      "web_portal\\App.tsx",
+      "web_portal\\lms\\admin\\AccessControlPage.tsx",
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx",
+      "web_portal\\lms\\student\\ResourceViewer.tsx",
+      "web_portal\\lms\\student\\StudentLiveClassesPage.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "content_access": {
+    "webDirectRead": false,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [],
+    "writeFiles": []
+  },
+  "leads": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [
+      "web_portal\\App.tsx",
+      "web_portal\\lms\\admin\\MergedLeadsAdmissionsPage.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "admissions": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [
+      "web_portal\\App.tsx",
+      "web_portal\\lms\\admin\\MergedLeadsAdmissionsPage.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "campaigns": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "inquiries": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "guest_recordings": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [
+      "web_portal\\lms\\admin\\GuestRecordingsAdminPage.tsx",
+      "web_portal\\lms\\student\\GuestRecordingsPage.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\lms\\admin\\GuestRecordingsAdminPage.tsx"
+    ]
+  },
+  "feedbacks": {
+    "webDirectRead": false,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [],
+    "writeFiles": []
+  },
+  "notifications": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "daily_quiz": {
+    "webDirectRead": false,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [],
+    "writeFiles": []
+  },
+  "tenants": {
+    "webDirectRead": false,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [],
+    "writeFiles": []
+  },
+  "provider_accounts": {
+    "webDirectRead": false,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [],
+    "writeFiles": []
+  },
+  "batches": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "batch_memberships": {
+    "webDirectRead": false,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [],
+    "writeFiles": []
+  },
+  "courses": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [
+      "web_portal\\App.tsx",
+      "web_portal\\lms\\admin\\CoursesPage.tsx",
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx",
+      "web_portal\\lms\\admin\\SubjectsPage.tsx",
+      "web_portal\\lms\\admin\\SubtopicsPage.tsx",
+      "web_portal\\lms\\admin\\TopicsPage.tsx",
+      "web_portal\\lms\\student\\StudentCoursesPage.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "enrollments": {
+    "webDirectRead": true,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx",
+      "web_portal\\lms\\student\\StudentCoursesPage.tsx"
+    ],
+    "writeFiles": []
+  },
+  "subjects": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [
+      "web_portal\\App.tsx",
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx",
+      "web_portal\\lms\\admin\\SubjectsPage.tsx",
+      "web_portal\\lms\\admin\\SubtopicsPage.tsx",
+      "web_portal\\lms\\admin\\TopicsPage.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "topics": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [
+      "web_portal\\App.tsx",
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx",
+      "web_portal\\lms\\admin\\SubtopicsPage.tsx",
+      "web_portal\\lms\\admin\\SyllabusTrackerPage.tsx",
+      "web_portal\\lms\\admin\\TopicsPage.tsx",
+      "web_portal\\lms\\staff\\TeacherDashboard.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "classes": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "live_sessions": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [
+      "web_portal\\App.tsx",
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx",
+      "web_portal\\lms\\student\\StudentLiveClassesPage.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "participants": {
+    "webDirectRead": false,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [],
+    "writeFiles": []
+  },
+  "activity_feed": {
+    "webDirectRead": false,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [],
+    "writeFiles": []
+  },
+  "logs": {
+    "webDirectRead": false,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [],
+    "writeFiles": []
+  },
+  "videos": {
+    "webDirectRead": false,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [],
+    "writeFiles": []
+  },
+  "resources": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "watch_history": {
+    "webDirectRead": false,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [],
+    "writeFiles": []
+  },
+  "tests": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "questions": {
+    "webDirectRead": false,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [],
+    "writeFiles": []
+  },
+  "attempts": {
+    "webDirectRead": false,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [],
+    "writeFiles": []
+  },
+  "attempt_answers": {
+    "webDirectRead": false,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [],
+    "writeFiles": []
+  },
+  "question_translations": {
+    "webDirectRead": false,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [],
+    "writeFiles": []
+  },
+  "test_targets": {
+    "webDirectRead": false,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [],
+    "writeFiles": []
+  },
+  "daily_quizzes": {
+    "webDirectRead": false,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [],
+    "writeFiles": []
+  },
+  "dailyQuizzes": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "dailyContent": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "recorded_classes": {
+    "webDirectRead": false,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [],
+    "writeFiles": []
+  },
+  "user_devices": {
+    "webDirectRead": false,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [],
+    "writeFiles": []
+  },
+  "conversations": {
+    "webDirectRead": false,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [],
+    "writeFiles": []
+  },
+  "messages": {
+    "webDirectRead": false,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [],
+    "writeFiles": []
+  },
+  "support_tickets": {
+    "webDirectRead": false,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [],
+    "writeFiles": []
+  },
+  "offlineTestPermissionRequests": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "live_class_index": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [
+      "web_portal\\App.tsx",
+      "web_portal\\lms\\admin\\AccessControlPage.tsx",
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx",
+      "web_portal\\lms\\student\\StudentLiveClassesPage.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "subtopics": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": false,
+    "readFiles": [
+      "web_portal\\App.tsx",
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx",
+      "web_portal\\lms\\admin\\SubtopicsPage.tsx",
+      "web_portal\\lms\\admin\\SyllabusTrackerPage.tsx",
+      "web_portal\\lms\\staff\\TeacherDashboard.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "staff": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [
+      "web_portal\\App.tsx",
+      "web_portal\\lms\\admin\\TeachersPage.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "zoom_accounts": {
+    "webDirectRead": true,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx",
+      "web_portal\\lms\\developer\\ZoomAccountsPage.tsx"
+    ],
+    "writeFiles": []
+  },
+  "device_alerts": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "feePayments": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "alumniFeedback": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "leaderboards": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "results": {
+    "webDirectRead": false,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [],
+    "writeFiles": []
+  },
+  "student_attempts": {
+    "webDirectRead": false,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [],
+    "writeFiles": []
+  },
+  "access_rules": {
+    "webDirectRead": false,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [],
+    "writeFiles": []
+  },
+  "access_history": {
+    "webDirectRead": true,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [
+      "web_portal\\lms\\admin\\AccessControlPage.tsx",
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx"
+    ],
+    "writeFiles": []
+  },
+  "system_settings": {
+    "webDirectRead": true,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [
+      "web_portal\\lms\\student\\StudentPayFeesPage.tsx"
+    ],
+    "writeFiles": []
+  },
+  "settings": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "payment_acknowledgements": {
+    "webDirectRead": true,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [
+      "web_portal\\lms\\admin\\MobileQRCodePermissions.tsx",
+      "web_portal\\lms\\admin\\QRCodePermissionsPage.tsx",
+      "web_portal\\lms\\student\\StudentPayFeesPage.tsx"
+    ],
+    "writeFiles": []
+  },
+  "page_locks": {
+    "webDirectRead": false,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [],
+    "writeFiles": []
+  },
+  "role_permissions": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "custom_application_leads": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [
+      "web_portal\\App.tsx",
+      "web_portal\\lms\\admin\\CustomLeadsPage.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "custom_application_forms": {
+    "webDirectRead": true,
+    "webDirectWrite": false,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [
+      "web_portal\\lms\\admin\\CustomizeApplicationPage.tsx",
+      "web_portal\\lms\\components\\DynamicApplicationModal.tsx"
+    ],
+    "writeFiles": []
+  },
+  "admin_alerts": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "system_activity_logs": {
+    "webDirectRead": true,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": false,
+    "backendWrite": false,
+    "readFiles": [
+      "web_portal\\App.tsx"
+    ],
+    "writeFiles": [
+      "web_portal\\App.tsx"
+    ]
+  },
+  "device_push_tokens": {
+    "webDirectRead": false,
+    "webDirectWrite": true,
+    "mobileDirectRead": false,
+    "mobileDirectWrite": false,
+    "backendRead": true,
+    "backendWrite": true,
+    "readFiles": [],
+    "writeFiles": [
+      "web_portal\\notifications.ts"
+    ]
+  }
+}

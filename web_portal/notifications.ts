@@ -184,12 +184,21 @@ export const registerForPushNotificationsAsync = async (user?: any, forcePrompt:
       const role = user?.role || "guest";
       const batch = user?.batch || (Array.isArray(user?.batches) ? user.batches[0] : null) || null;
 
+      // Build all student batch values so batch-targeted notices reach this device
+      const studentBatchesArr: string[] = [];
+      if (user?.batch) studentBatchesArr.push(String(user.batch));
+      if (Array.isArray(user?.batches)) {
+        user.batches.forEach((b: any) => { if (b && !studentBatchesArr.includes(String(b))) studentBatchesArr.push(String(b)); });
+      }
+
       await setDoc(docRef, {
         token: webToken,
         userId: String(userId),
         studentId: studentId ? String(studentId) : null,
         role: String(role),
         batch: batch ? String(batch) : null,
+        // batches array — used by backend push filter to match multi-batch students
+        batches: role === "student" ? studentBatchesArr : [],
         platform: "web",
         updatedAt: serverTimestamp(),
         // assignedBatches: for admin users, which batches they manage.
@@ -282,12 +291,21 @@ export const registerForPushNotificationsAsync = async (user?: any, forcePrompt:
       const role = user?.role || "guest";
       const batch = user?.batch || (Array.isArray(user?.batches) ? user.batches[0] : null) || null;
 
+      // Build all student batch values so batch-targeted notices reach this device
+      const studentBatchesArr: string[] = [];
+      if (user?.batch) studentBatchesArr.push(String(user.batch));
+      if (Array.isArray(user?.batches)) {
+        user.batches.forEach((b: any) => { if (b && !studentBatchesArr.includes(String(b))) studentBatchesArr.push(String(b)); });
+      }
+
       await setDoc(docRef, {
         token: pushToken,
         userId: String(userId),
         studentId: studentId ? String(studentId) : null,
         role: String(role),
         batch: batch ? String(batch) : null,
+        // batches array — used by backend push filter to match multi-batch students
+        batches: role === "student" ? studentBatchesArr : [],
         platform: Platform.OS,  // "android" or "ios"
         updatedAt: serverTimestamp(),
         // assignedBatches: for admin users, which batches they manage.

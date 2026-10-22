@@ -196,7 +196,22 @@ export class AnnouncementController {
                         if (target === "paid" || target === "student") return true;
                         if (target === "batch") {
                             if (!batch) return false;
-                            return String(ann.targetBatch || "").toLowerCase() === String(batch).toLowerCase();
+                            const batchLower = String(batch).trim().toLowerCase();
+                            const cleanBatch = batchLower.replace(/\s*batch\s*/gi, "").trim();
+                            // targetBatch can be comma-separated (e.g. "testing, batch-2")
+                            const targetBatches = String(ann.targetBatch || "")
+                                .split(",")
+                                .map((b: string) => b.trim().toLowerCase())
+                                .filter(Boolean);
+                            return targetBatches.some((tb: string) => {
+                                const cleanTb = tb.replace(/\s*batch\s*/gi, "").trim();
+                                return tb === batchLower ||
+                                    cleanTb === cleanBatch ||
+                                    batchLower.includes(cleanTb) ||
+                                    cleanBatch.includes(cleanTb) ||
+                                    tb.includes(cleanBatch) ||
+                                    cleanTb.includes(cleanBatch);
+                            });
                         }
                         // "free" is EXCLUSIVE to guests — paid students must NOT see it
                         return false;

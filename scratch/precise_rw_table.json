@@ -1,0 +1,1205 @@
+{
+  "announcements": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:10597 -> collection(db, \"announcements\"),"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\modules\\announcements\\repository.ts:8",
+      "backend\\modules\\announcements\\repository.ts:20",
+      "backend\\modules\\announcements\\repository.ts:27",
+      "backend\\modules\\announcements\\repository.ts:33",
+      "backend\\modules\\announcements\\repository.ts:46",
+      "backend\\modules\\announcements\\repository.ts:58",
+      "backend\\modules\\announcements\\repository.ts:69",
+      "backend\\modules\\announcements\\repository.ts:84",
+      "backend\\modules\\dashboard\\controller.ts:314",
+      "backend\\modules\\erp\\profile-request\\controller.ts:249",
+      "backend\\modules\\erp\\profile-request\\controller.ts:272",
+      "backend\\modules\\erp\\profile-request\\controller.ts:507",
+      "backend\\modules\\erp\\profile-request\\controller.ts:529",
+      "backend\\modules\\erp\\student\\controller.ts:1130",
+      "backend\\modules\\erp\\student\\controller.ts:1152"
+    ]
+  },
+  "students": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:232 -> const sSnap = await getDoc(doc(db, \"students\", targetId));",
+      "web_portal\\App.tsx:10758 -> const studentDocRef = doc(db, \"students\", String(lookupId));",
+      "web_portal\\App.tsx:13032 -> collection(db, \"students\"),",
+      "web_portal\\lms\\admin\\MobileQRCodePermissions.tsx:195 -> const pendingStudentsQuery = query(collection(db, 'students'), where('qrCodeRequested', '==', true))",
+      "web_portal\\lms\\admin\\QRCodePermissionsPage.tsx:136 -> const pendingStudentsQuery = query(collection(db, 'students'), where('qrCodeRequested', '==', true))",
+      "web_portal\\lms\\components\\ui\\WatermarkOverlay.tsx:47 -> const sSnap = await getDoc(doc(db, 'students', targetId));",
+      "web_portal\\lms\\student\\StudentPayFeesPage.tsx:141 -> unsubStudent = onSnapshot(doc(db, 'students', studentDocId), () => {"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\core\\sape\\AccessPolicyEngine.ts:143",
+      "backend\\core\\security\\AccessCache.ts:70",
+      "backend\\core\\security\\AccessCache.ts:74",
+      "backend\\modules\\access-requests\\service.ts:172",
+      "backend\\modules\\access-requests\\service.ts:998",
+      "backend\\modules\\access-rules\\service.ts:711",
+      "backend\\modules\\admin-approvals\\service.ts:258",
+      "backend\\modules\\auth\\controller.ts:357",
+      "backend\\modules\\auth\\controller.ts:412",
+      "backend\\modules\\auth\\controller.ts:417",
+      "backend\\modules\\auth\\controller.ts:423",
+      "backend\\modules\\auth\\controller.ts:427",
+      "backend\\modules\\courses\\player.ts:754",
+      "backend\\modules\\dashboard\\admin\\controller.ts:17",
+      "backend\\modules\\dashboard\\erp\\controller.ts:16",
+      "backend\\modules\\dashboard\\student\\controller.ts:39",
+      "backend\\modules\\dashboard\\student\\controller.ts:44",
+      "backend\\modules\\developer\\controller.ts:926",
+      "backend\\modules\\erp\\analytics\\controller.ts:36",
+      "backend\\modules\\erp\\analytics\\controller.ts:89",
+      "backend\\modules\\erp\\profile-request\\controller.ts:55",
+      "backend\\modules\\erp\\profile-request\\controller.ts:61",
+      "backend\\modules\\erp\\profile-request\\controller.ts:65",
+      "backend\\modules\\erp\\profile-request\\controller.ts:69",
+      "backend\\modules\\erp\\profile-request\\controller.ts:73",
+      "backend\\modules\\erp\\profile-request\\controller.ts:237",
+      "backend\\modules\\erp\\profile-request\\controller.ts:470",
+      "backend\\modules\\erp\\profile-request\\controller.ts:476",
+      "backend\\modules\\erp\\profile-request\\controller.ts:481",
+      "backend\\modules\\erp\\profile-request\\controller.ts:483",
+      "backend\\modules\\erp\\profile-request\\controller.ts:488",
+      "backend\\modules\\erp\\profile-request\\controller.ts:605",
+      "backend\\modules\\erp\\profile-request\\controller.ts:610",
+      "backend\\modules\\erp\\profile-request\\controller.ts:615",
+      "backend\\modules\\erp\\student\\controller.ts:1379",
+      "backend\\modules\\erp\\student\\controller.ts:1424",
+      "backend\\modules\\erp\\student\\controller.ts:1457",
+      "backend\\modules\\erp\\student\\controller.ts:1815",
+      "backend\\modules\\erp\\student\\controller.ts:1884",
+      "backend\\modules\\erp\\student\\controller.ts:1975",
+      "backend\\modules\\erp\\student\\controller.ts:2056",
+      "backend\\modules\\erp\\student\\controller.ts:2097",
+      "backend\\modules\\live-sessions\\controller.ts:762",
+      "backend\\modules\\live-sessions\\controller.ts:775",
+      "backend\\modules\\live-sessions\\service.ts:262",
+      "backend\\modules\\live-sessions\\service.ts:268",
+      "backend\\modules\\live-sessions\\service.ts:272",
+      "backend\\modules\\lms\\daily_content\\controller.ts:212",
+      "backend\\modules\\lms-attendance\\service.ts:85",
+      "backend\\modules\\lms-attendance\\service.ts:92",
+      "backend\\modules\\lms-attendance\\service.ts:98",
+      "backend\\modules\\new-attendance\\service.ts:28",
+      "backend\\modules\\new-attendance\\service.ts:43",
+      "backend\\modules\\new-attendance\\service.ts:57",
+      "backend\\modules\\new-attendance\\service.ts:116",
+      "backend\\modules\\new-attendance\\service.ts:154",
+      "backend\\modules\\students\\lms-service.ts:71",
+      "backend\\modules\\students\\lms-service.ts:80",
+      "backend\\modules\\students\\lms-service.ts:86",
+      "backend\\modules\\students\\service.ts:32",
+      "backend\\modules\\students\\service.ts:376",
+      "backend\\modules\\students\\service.ts:381",
+      "backend\\modules\\students\\service.ts:386",
+      "backend\\modules\\students\\service.ts:388",
+      "backend\\modules\\students\\service.ts:394",
+      "backend\\modules\\students\\service.ts:403",
+      "backend\\modules\\students\\service.ts:429",
+      "backend\\modules\\students\\service.ts:458",
+      "backend\\modules\\students\\service.ts:521",
+      "backend\\modules\\students\\service.ts:553",
+      "backend\\modules\\students\\service.ts:581",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:346",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:552",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:568",
+      "backend\\modules\\test-portal\\examination\\controller.ts:223",
+      "backend\\modules\\test-portal\\examination\\controller.ts:1188",
+      "backend\\modules\\test-portal\\examination\\controller.ts:1191",
+      "backend\\modules\\test-portal\\examination\\controller.ts:1387",
+      "backend\\modules\\test-portal\\examination\\controller.ts:1497",
+      "backend\\modules\\test-portal\\review\\controller.ts:494",
+      "backend\\modules\\test-portal\\review\\controller.ts:499",
+      "backend\\modules\\test-portal\\review\\controller.ts:705",
+      "backend\\modules\\test-portal\\review\\controller.ts:1391",
+      "backend\\scripts\\inspect_aagesh.js:14",
+      "backend\\scripts\\inspect_aagesh.ts:13",
+      "backend\\scripts\\test_request_fix.ts:20",
+      "backend\\scripts\\test_request_fix.ts:53",
+      "backend\\scripts\\verify_recorded_access.ts:81",
+      "backend\\scripts\\verify_recorded_access.ts:123",
+      "backend\\services\\pushService.ts:75",
+      "backend\\services\\pushService.ts:98",
+      "backend\\services\\pushService.ts:103"
+    ]
+  },
+  "users": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:238 -> const uSnap = await getDoc(doc(db, \"users\", targetId));",
+      "web_portal\\lms\\components\\ui\\WatermarkOverlay.tsx:53 -> const uSnap = await getDoc(doc(db, 'users', targetId));"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\core\\security\\AccessCache.ts:71",
+      "backend\\modules\\access-requests\\service.ts:176",
+      "backend\\modules\\access-requests\\service.ts:713",
+      "backend\\modules\\access-requests\\service.ts:1002",
+      "backend\\modules\\access-requests\\service.ts:1056",
+      "backend\\modules\\admin-approvals\\service.ts:328",
+      "backend\\modules\\admin-approvals\\service.ts:378",
+      "backend\\modules\\auth\\controller.ts:315",
+      "backend\\modules\\auth\\controller.ts:320",
+      "backend\\modules\\courses\\player.ts:748",
+      "backend\\modules\\dashboard\\student\\controller.ts:19",
+      "backend\\modules\\developer\\controller.ts:292",
+      "backend\\modules\\developer\\controller.ts:294",
+      "backend\\modules\\developer\\controller.ts:300",
+      "backend\\modules\\developer\\controller.ts:302",
+      "backend\\modules\\erp\\profile-request\\controller.ts:494",
+      "backend\\modules\\erp\\profile-request\\controller.ts:499",
+      "backend\\modules\\erp\\staff\\controller.ts:73",
+      "backend\\modules\\erp\\staff\\controller.ts:143",
+      "backend\\modules\\erp\\staff\\controller.ts:414",
+      "backend\\modules\\erp\\staff\\controller.ts:421",
+      "backend\\modules\\erp\\staff\\controller.ts:431",
+      "backend\\modules\\erp\\staff\\controller.ts:489",
+      "backend\\modules\\erp\\staff\\controller.ts:493",
+      "backend\\modules\\erp\\staff\\controller.ts:573",
+      "backend\\modules\\erp\\staff\\controller.ts:631",
+      "backend\\modules\\erp\\student\\controller.ts:140",
+      "backend\\modules\\erp\\student\\controller.ts:311",
+      "backend\\modules\\erp\\student\\controller.ts:385",
+      "backend\\modules\\erp\\student\\controller.ts:523",
+      "backend\\modules\\erp\\student\\controller.ts:599",
+      "backend\\modules\\erp\\student\\controller.ts:646",
+      "backend\\modules\\erp\\student\\controller.ts:778",
+      "backend\\modules\\erp\\student\\controller.ts:1013",
+      "backend\\modules\\erp\\student\\controller.ts:1172",
+      "backend\\modules\\erp\\student\\controller.ts:1174",
+      "backend\\modules\\erp\\student\\controller.ts:1192",
+      "backend\\modules\\erp\\student\\controller.ts:1260",
+      "backend\\modules\\erp\\student\\controller.ts:1267",
+      "backend\\modules\\erp\\student\\controller.ts:1713",
+      "backend\\modules\\erp\\student\\controller.ts:1717",
+      "backend\\modules\\erp\\student\\controller.ts:1721",
+      "backend\\modules\\live-sessions\\controller.ts:770",
+      "backend\\modules\\live-sessions\\service.ts:250",
+      "backend\\modules\\live-sessions\\service.ts:871",
+      "backend\\modules\\live-sessions\\service.ts:891",
+      "backend\\modules\\lms\\daily_content\\controller.ts:208",
+      "backend\\modules\\lms-attendance\\service.ts:89",
+      "backend\\modules\\lms-attendance\\service.ts:542",
+      "backend\\modules\\new-attendance\\service.ts:40",
+      "backend\\modules\\new-attendance\\service.ts:150",
+      "backend\\modules\\students\\lms-service.ts:64",
+      "backend\\modules\\students\\service.ts:399",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:353",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:562",
+      "backend\\modules\\test-portal\\examination\\controller.ts:230",
+      "backend\\modules\\test-portal\\examination\\controller.ts:1173",
+      "backend\\modules\\test-portal\\examination\\controller.ts:1394",
+      "backend\\modules\\test-portal\\examination\\controller.ts:1489",
+      "backend\\modules\\test-portal\\review\\controller.ts:508",
+      "backend\\modules\\test-portal\\review\\controller.ts:513",
+      "backend\\modules\\test-portal\\review\\controller.ts:697",
+      "backend\\scripts\\inspect_aagesh.js:6",
+      "backend\\scripts\\inspect_aagesh.js:10",
+      "backend\\scripts\\inspect_aagesh.ts:5",
+      "backend\\scripts\\inspect_aagesh.ts:9",
+      "backend\\scripts\\test_request_fix.ts:14",
+      "backend\\scripts\\test_request_fix.ts:52",
+      "backend\\scripts\\verify_recorded_access.ts:76",
+      "backend\\scripts\\verify_recorded_access.ts:122",
+      "backend\\services\\pushService.ts:80",
+      "backend\\services\\pushService.ts:106",
+      "backend\\services\\pushService.ts:111"
+    ]
+  },
+  "deleted_students": {
+    "webDirectReads": [],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\modules\\erp\\student\\controller.ts:585",
+      "backend\\modules\\erp\\student\\controller.ts:1245"
+    ]
+  },
+  "fees": {
+    "webDirectReads": [],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "profile_requests": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:10810 -> collection(db, \"profile_requests\")"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "access_requests": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:6880 -> unsub = onSnapshot(collection(db, \"access_requests\"), (snapshot) => {",
+      "web_portal\\App.tsx:12472 -> ? query(collection(db, \"access_requests\"), where(\"studentId\", \"==\", targetStudentIds[0]))",
+      "web_portal\\App.tsx:12473 -> : query(collection(db, \"access_requests\"), where(\"studentId\", \"in\", targetStudentIds.slice(0, 10)));",
+      "web_portal\\lms\\admin\\AccessControlPage.tsx:607 -> unsub = onSnapshot(collection(db, 'access_requests'), (snapshot) => {",
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx:373 -> unsubA = onSnapshot(collection(db, 'access_requests'), (snap) => {",
+      "web_portal\\lms\\student\\ResourceViewer.tsx:299 -> collection(db, 'access_requests'),",
+      "web_portal\\lms\\student\\StudentLiveClassesPage.tsx:855 -> collection(db, 'access_requests'),"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\core\\sape\\AccessPolicyEngine.ts:361",
+      "backend\\modules\\access-requests\\service.ts:41",
+      "backend\\modules\\access-requests\\service.ts:54",
+      "backend\\modules\\access-requests\\service.ts:101",
+      "backend\\modules\\access-requests\\service.ts:130",
+      "backend\\modules\\access-requests\\service.ts:141",
+      "backend\\modules\\access-requests\\service.ts:255",
+      "backend\\modules\\access-requests\\service.ts:422",
+      "backend\\modules\\access-requests\\service.ts:501",
+      "backend\\modules\\access-requests\\service.ts:799",
+      "backend\\modules\\access-requests\\service.ts:831",
+      "backend\\modules\\access-requests\\service.ts:927",
+      "backend\\modules\\access-requests\\service.ts:973",
+      "backend\\modules\\dashboard\\controller.ts:316",
+      "backend\\scripts\\test-sacs.ts:40",
+      "backend\\scripts\\test-sacs.ts:50",
+      "backend\\scripts\\test-sacs.ts:56",
+      "backend\\scripts\\test-sacs.ts:62",
+      "backend\\scripts\\test-sacs.ts:89",
+      "backend\\services\\accessCleanup.service.ts:36",
+      "backend\\services\\accessCleanup.service.ts:61"
+    ]
+  },
+  "content_access": {
+    "webDirectReads": [],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\core\\sape\\AccessPolicyEngine.ts:71",
+      "backend\\core\\sape\\AccessPolicyEngine.ts:79",
+      "backend\\core\\sape\\AccessPolicyEngine.ts:92",
+      "backend\\core\\sape\\AccessPolicyEngine.ts:119",
+      "backend\\core\\sape\\AccessPolicyEngine.ts:222",
+      "backend\\modules\\access-requests\\service.ts:335",
+      "backend\\modules\\access-requests\\service.ts:344",
+      "backend\\modules\\access-requests\\service.ts:355",
+      "backend\\modules\\access-requests\\service.ts:515",
+      "backend\\modules\\access-requests\\service.ts:587",
+      "backend\\modules\\access-requests\\service.ts:604",
+      "backend\\modules\\access-requests\\service.ts:682",
+      "backend\\modules\\access-requests\\service.ts:697",
+      "backend\\modules\\access-requests\\service.ts:732",
+      "backend\\modules\\access-requests\\service.ts:752",
+      "backend\\modules\\access-requests\\service.ts:777",
+      "backend\\modules\\access-requests\\service.ts:786",
+      "backend\\modules\\access-requests\\service.ts:846",
+      "backend\\modules\\access-requests\\service.ts:928",
+      "backend\\modules\\access-requests\\service.ts:1008",
+      "backend\\modules\\access-requests\\service.ts:1045",
+      "backend\\modules\\access-requests\\service.ts:1071",
+      "backend\\modules\\access-rules\\service.ts:281",
+      "backend\\modules\\live-sessions\\service.ts:447",
+      "backend\\modules\\live-sessions\\service.ts:453"
+    ]
+  },
+  "leads": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:11156 -> const leadsQuery = query(collection(db, \"leads\"));",
+      "web_portal\\lms\\admin\\MergedLeadsAdmissionsPage.tsx:245 -> unsubLeads = onSnapshot(collection(db, 'leads'), (snap) => {"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\modules\\crm\\admission\\controller.ts:77",
+      "backend\\modules\\crm\\admission\\controller.ts:78",
+      "backend\\modules\\crm\\courses\\controller.ts:162",
+      "backend\\modules\\crm\\inquiry\\controller.ts:42",
+      "backend\\modules\\dashboard\\admin\\controller.ts:20",
+      "backend\\modules\\erp\\student\\controller.ts:1444",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:361",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:582",
+      "backend\\modules\\test-portal\\examination\\controller.ts:238",
+      "backend\\modules\\test-portal\\examination\\controller.ts:1402",
+      "backend\\modules\\test-portal\\examination\\controller.ts:1482",
+      "backend\\modules\\test-portal\\review\\controller.ts:690"
+    ]
+  },
+  "admissions": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:11112 -> const admissionsQuery = query(collection(db, \"admissions\"));",
+      "web_portal\\lms\\admin\\MergedLeadsAdmissionsPage.tsx:238 -> unsubAdm = onSnapshot(collection(db, 'admissions'), (snap) => {"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\modules\\crm\\leads\\controller.ts:474",
+      "backend\\modules\\dashboard\\admin\\controller.ts:19"
+    ]
+  },
+  "campaigns": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:11215 -> const campaignsQuery = query(collection(db, \"campaigns\"), where(\"isDeleted\", \"==\", false), where(\"sh"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "inquiries": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:11237 -> const inquiriesQuery = query(collection(db, \"inquiries\"));"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "guest_recordings": {
+    "webDirectReads": [
+      "web_portal\\lms\\admin\\GuestRecordingsAdminPage.tsx:641 -> const q = query(collection(db, 'guest_recordings'));",
+      "web_portal\\lms\\student\\GuestRecordingsPage.tsx:596 -> const q = query(collection(db, 'guest_recordings'));"
+    ],
+    "webDirectWrites": [
+      "web_portal\\lms\\admin\\GuestRecordingsAdminPage.tsx:792 -> await updateDoc(doc(db, 'guest_recordings', editingItem.id), payload);",
+      "web_portal\\lms\\admin\\GuestRecordingsAdminPage.tsx:796 -> const newRef = doc(collection(db, 'guest_recordings'));",
+      "web_portal\\lms\\admin\\GuestRecordingsAdminPage.tsx:813 -> await updateDoc(doc(db, 'guest_recordings', deleteConfirmItem.id), {",
+      "web_portal\\lms\\admin\\GuestRecordingsAdminPage.tsx:826 -> await updateDoc(doc(db, 'guest_recordings', item.id), {"
+    ],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "feedbacks": {
+    "webDirectReads": [],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "notifications": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:9473 -> const qUserNotifs = query(collection(db, \"notifications\"), where(\"requestedByUserId\", \"==\", userId))"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "daily_quiz": {
+    "webDirectReads": [],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "tenants": {
+    "webDirectReads": [],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "provider_accounts": {
+    "webDirectReads": [],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "batches": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:12636 -> const qBatches = query(collection(db, \"batches\"), where(\"isDeleted\", \"==\", false));"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\core\\security\\AccessCache.ts:118",
+      "backend\\core\\security\\AccessCache.ts:142",
+      "backend\\modules\\courses\\repository.ts:171",
+      "backend\\modules\\erp\\student\\controller.ts:1346",
+      "backend\\modules\\erp\\student\\controller.ts:1350",
+      "backend\\modules\\live-sessions\\service.ts:73",
+      "backend\\modules\\live-sessions\\service.ts:221",
+      "backend\\modules\\students\\lms-service.ts:104",
+      "backend\\modules\\students\\lms-service.ts:143",
+      "backend\\modules\\students\\lms-service.ts:281",
+      "backend\\modules\\test-portal\\examination\\controller.ts:262",
+      "backend\\modules\\test-portal\\review\\controller.ts:666",
+      "backend\\services\\pushService.ts:164"
+    ]
+  },
+  "batch_memberships": {
+    "webDirectReads": [],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "courses": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:12670 -> const qCourses = query(collection(db, \"courses\"), where(\"isDeleted\", \"==\", false));",
+      "web_portal\\lms\\admin\\CoursesPage.tsx:36 -> unsubscribe = onSnapshot(collection(db, 'courses'), (snapshot) => {",
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx:343 -> unsubC = onSnapshot(collection(db, 'courses'), (snap) => {",
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx:397 -> unsubC = onSnapshot(collection(db, 'courses'), () => {",
+      "web_portal\\lms\\admin\\SubjectsPage.tsx:51 -> unsubCourses = onSnapshot(collection(db, 'courses'), (snapshot) => {",
+      "web_portal\\lms\\admin\\SubtopicsPage.tsx:95 -> unsubCourses = onSnapshot(collection(db, 'courses'), (snapshot) => {",
+      "web_portal\\lms\\admin\\TopicsPage.tsx:61 -> unsubCourses = onSnapshot(collection(db, 'courses'), (snapshot) => {",
+      "web_portal\\lms\\student\\StudentCoursesPage.tsx:33 -> unsubCourses = onSnapshot(collection(db, 'courses'), () => {"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\diagnose-tenant.ts:41",
+      "backend\\diagnose2.js:34",
+      "backend\\modules\\dashboard\\controller.ts:47",
+      "backend\\modules\\dashboard\\controller.ts:125",
+      "backend\\modules\\dashboard\\controller.ts:309",
+      "backend\\modules\\live-sessions\\service.ts:65",
+      "backend\\modules\\live-sessions\\service.ts:199",
+      "backend\\modules\\staff\\TeachingAssignmentService.ts:58",
+      "backend\\modules\\students\\lms-service.ts:280",
+      "backend\\scripts\\check_courses_classes.ts:5"
+    ]
+  },
+  "enrollments": {
+    "webDirectReads": [
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx:400 -> unsubS = onSnapshot(collection(db, 'enrollments'), () => {",
+      "web_portal\\lms\\student\\StudentCoursesPage.tsx:36 -> unsubEnrollments = onSnapshot(collection(db, 'enrollments'), () => {"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "subjects": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:13005 -> unsubSubjects = onSnapshot(collection(db, \"subjects\"), () => triggerLookupReload(), (e) => console.l",
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx:350 -> unsubS = onSnapshot(collection(db, 'subjects'), (snap) => {",
+      "web_portal\\lms\\admin\\SubjectsPage.tsx:44 -> unsubSubjects = onSnapshot(collection(db, 'subjects'), (snapshot) => {",
+      "web_portal\\lms\\admin\\SubtopicsPage.tsx:88 -> unsubSubjects = onSnapshot(collection(db, 'subjects'), (snapshot) => {",
+      "web_portal\\lms\\admin\\TopicsPage.tsx:54 -> unsubSubjects = onSnapshot(collection(db, 'subjects'), (snapshot) => {"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\core\\hierarchy\\ContentHierarchyService.ts:60",
+      "backend\\core\\hierarchy\\ContentHierarchyService.ts:109",
+      "backend\\diagnose-tenant.ts:32",
+      "backend\\diagnose2.js:26",
+      "backend\\modules\\dashboard\\controller.ts:111",
+      "backend\\modules\\staff\\TeachingAssignmentService.ts:46"
+    ]
+  },
+  "topics": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:13006 -> unsubTopics = onSnapshot(collection(db, \"topics\"), () => triggerLookupReload(), (e) => console.log(\"",
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx:356 -> unsubT = onSnapshot(collection(db, 'topics'), (snap) => {",
+      "web_portal\\lms\\admin\\SubtopicsPage.tsx:81 -> unsubTopics = onSnapshot(collection(db, 'topics'), (snapshot) => {",
+      "web_portal\\lms\\admin\\SyllabusTrackerPage.tsx:79 -> unsubTopics = onSnapshot(collection(db, 'topics'), (snapshot) => {",
+      "web_portal\\lms\\admin\\TopicsPage.tsx:47 -> unsubTopics = onSnapshot(collection(db, 'topics'), (snapshot) => {",
+      "web_portal\\lms\\staff\\TeacherDashboard.tsx:74 -> unsubTopics = onSnapshot(collection(db, 'topics'), (snapshot) => {"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\core\\hierarchy\\ContentHierarchyService.ts:51",
+      "backend\\core\\hierarchy\\ContentHierarchyService.ts:97",
+      "backend\\core\\hierarchy\\ContentHierarchyService.ts:113",
+      "backend\\diagnose-tenant.ts:23",
+      "backend\\diagnose2.js:18",
+      "backend\\modules\\dashboard\\controller.ts:100",
+      "backend\\modules\\staff\\TeachingAssignmentService.ts:40"
+    ]
+  },
+  "classes": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:12585 -> const qClasses = query(collection(db, \"classes\"), where(\"isDeleted\", \"==\", false));"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\check-access.ts:10",
+      "backend\\check_status.ts:4",
+      "backend\\core\\hierarchy\\ContentHierarchyService.ts:42",
+      "backend\\core\\hierarchy\\ContentHierarchyService.ts:85",
+      "backend\\core\\hierarchy\\ContentHierarchyService.ts:91",
+      "backend\\core\\hierarchy\\ContentHierarchyService.ts:102",
+      "backend\\core\\hierarchy\\ContentHierarchyService.ts:117",
+      "backend\\core\\sape\\AccessPolicyEngine.ts:67",
+      "backend\\core\\sape\\AccessPolicyEngine.ts:102",
+      "backend\\core\\sape\\AccessPolicyEngine.ts:255",
+      "backend\\debug_lms.ts:23",
+      "backend\\diagnose-tenant.ts:14",
+      "backend\\diagnose2.js:9",
+      "backend\\modules\\access-requests\\service.ts:75",
+      "backend\\modules\\access-requests\\service.ts:275",
+      "backend\\modules\\access-requests\\service.ts:543",
+      "backend\\modules\\analytics\\attendance.worker.ts:18",
+      "backend\\modules\\analytics\\worker.ts:8",
+      "backend\\modules\\attendance\\controller.ts:68",
+      "backend\\modules\\attendance\\service.ts:23",
+      "backend\\modules\\courses\\service.ts:812",
+      "backend\\modules\\dashboard\\controller.ts:87",
+      "backend\\modules\\dashboard\\controller.ts:313",
+      "backend\\modules\\live-sessions\\LiveSessionResolver.ts:28",
+      "backend\\modules\\live-sessions\\policy.ts:54",
+      "backend\\modules\\live-sessions\\service.ts:84",
+      "backend\\modules\\live-sessions\\service.ts:88",
+      "backend\\modules\\live-sessions\\service.ts:428",
+      "backend\\modules\\live-sessions\\service.ts:433",
+      "backend\\modules\\live-sessions\\service.ts:1291",
+      "backend\\modules\\live-sessions\\service.ts:1989",
+      "backend\\modules\\live-sessions\\service.ts:2036",
+      "backend\\modules\\staff\\TeachingAssignmentService.ts:14",
+      "backend\\modules\\students\\lms-service.ts:309",
+      "backend\\modules\\zoom-accounts\\controller.ts:240",
+      "backend\\modules\\zoom-accounts\\controller.ts:348",
+      "backend\\query_classes.ts:3",
+      "backend\\scripts\\check_courses_classes.ts:9",
+      "backend\\scripts\\verify_recorded_access.ts:31",
+      "backend\\scripts\\verify_recorded_access.ts:115",
+      "backend\\services\\liveSync.service.ts:32",
+      "backend\\services\\liveSync.service.ts:95",
+      "backend\\test_class.ts:4"
+    ]
+  },
+  "live_sessions": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:12552 -> collection(db, \"live_sessions\"),",
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx:389 -> unsubA = onSnapshot(collection(db, 'live_sessions'), () => {",
+      "web_portal\\lms\\student\\StudentLiveClassesPage.tsx:815 -> unsubLive = onSnapshot(collection(db, 'live_sessions'), () => {"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\check_status.ts:11",
+      "backend\\modules\\courses\\service.ts:364",
+      "backend\\modules\\courses\\service.ts:494",
+      "backend\\modules\\courses\\service.ts:518",
+      "backend\\modules\\dashboard\\controller.ts:337",
+      "backend\\modules\\dashboard\\controller.ts:398",
+      "backend\\modules\\live-attendance\\service.ts:88",
+      "backend\\modules\\live-attendance\\service.ts:147",
+      "backend\\modules\\live-sessions\\controller.ts:562",
+      "backend\\modules\\live-sessions\\controller.ts:567",
+      "backend\\modules\\live-sessions\\controller.ts:637",
+      "backend\\modules\\live-sessions\\LiveSessionResolver.ts:33",
+      "backend\\modules\\live-sessions\\LiveSessionResolver.ts:62",
+      "backend\\modules\\live-sessions\\policy.ts:49",
+      "backend\\modules\\lms-attendance\\service.ts:469",
+      "backend\\modules\\lms-attendance\\service.ts:473",
+      "backend\\modules\\lms-attendance\\service.ts:504",
+      "backend\\modules\\new-attendance\\service.ts:162",
+      "backend\\modules\\new-attendance\\service.ts:166",
+      "backend\\modules\\new-attendance\\service.ts:210",
+      "backend\\modules\\new-attendance\\service.ts:214",
+      "backend\\modules\\zoom-accounts\\controller.ts:255",
+      "backend\\modules\\zoom-accounts\\controller.ts:347",
+      "backend\\test_raw.ts:4"
+    ]
+  },
+  "participants": {
+    "webDirectReads": [],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "activity_feed": {
+    "webDirectReads": [],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "logs": {
+    "webDirectReads": [],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "videos": {
+    "webDirectReads": [],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "resources": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:10881 -> const resourcesQuery = query(collection(db, \"resources\"), where(\"isDeleted\", \"==\", false));"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\modules\\dashboard\\controller.ts:200",
+      "backend\\modules\\dashboard\\controller.ts:310",
+      "backend\\modules\\dashboard\\controller.ts:399",
+      "backend\\modules\\resources\\repository.ts:5",
+      "backend\\modules\\students\\lms-service.ts:408"
+    ]
+  },
+  "watch_history": {
+    "webDirectReads": [],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\modules\\dashboard\\controller.ts:69"
+    ]
+  },
+  "tests": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:11282 -> const testsQuery = query(collection(db, \"tests\"), where(\"isDeleted\", \"==\", false));",
+      "web_portal\\App.tsx:13209 -> collection(db, \"tests\"),"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\modules\\developer\\controller.ts:936",
+      "backend\\modules\\erp\\student\\controller.ts:1356",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:219",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:757",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:809",
+      "backend\\modules\\test-portal\\examination\\controller.ts:99",
+      "backend\\modules\\test-portal\\examination\\controller.ts:389",
+      "backend\\modules\\test-portal\\examination\\controller.ts:517",
+      "backend\\modules\\test-portal\\examination\\controller.ts:867",
+      "backend\\modules\\test-portal\\examination\\controller.ts:1149",
+      "backend\\modules\\test-portal\\review\\controller.ts:56",
+      "backend\\modules\\test-portal\\review\\controller.ts:263",
+      "backend\\modules\\test-portal\\review\\controller.ts:322",
+      "backend\\modules\\test-portal\\review\\controller.ts:414",
+      "backend\\modules\\test-portal\\review\\controller.ts:559",
+      "backend\\modules\\test-portal\\review\\controller.ts:612",
+      "backend\\modules\\test-portal\\review\\controller.ts:908",
+      "backend\\modules\\test-portal\\review\\controller.ts:1087",
+      "backend\\modules\\test-portal\\review\\controller.ts:1374",
+      "backend\\purge.ts:14"
+    ]
+  },
+  "questions": {
+    "webDirectReads": [],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:232",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:828",
+      "backend\\modules\\test-portal\\examination\\controller.ts:535",
+      "backend\\modules\\test-portal\\examination\\controller.ts:1233",
+      "backend\\modules\\test-portal\\review\\controller.ts:69",
+      "backend\\modules\\test-portal\\review\\controller.ts:159",
+      "backend\\modules\\test-portal\\review\\controller.ts:268",
+      "backend\\modules\\test-portal\\review\\controller.ts:327",
+      "backend\\modules\\test-portal\\review\\controller.ts:419",
+      "backend\\modules\\test-portal\\review\\controller.ts:1112",
+      "backend\\modules\\test-portal\\test-creation\\controller.ts:559",
+      "backend\\modules\\test-portal\\test-creation\\controller.ts:625"
+    ]
+  },
+  "attempts": {
+    "webDirectReads": [],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "attempt_answers": {
+    "webDirectReads": [],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "question_translations": {
+    "webDirectReads": [],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "test_targets": {
+    "webDirectReads": [],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "daily_quizzes": {
+    "webDirectReads": [],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "dailyQuizzes": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:11060 -> const quizzesQuery = query(collection(db, \"dailyQuizzes\"), where(\"isDeleted\", \"==\", false));"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "dailyContent": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:11020 -> const dailyContentQuery = query(collection(db, \"dailyContent\"), where(\"isDeleted\", \"==\", false));"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "recorded_classes": {
+    "webDirectReads": [],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "user_devices": {
+    "webDirectReads": [],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "conversations": {
+    "webDirectReads": [],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "messages": {
+    "webDirectReads": [],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "support_tickets": {
+    "webDirectReads": [],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "offlineTestPermissionRequests": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:6542 -> collection(db, \"offlineTestPermissionRequests\"),",
+      "web_portal\\App.tsx:6714 -> collection(db, \"offlineTestPermissionRequests\")"
+    ],
+    "webDirectWrites": [
+      "web_portal\\App.tsx:29449 -> await setDoc(doc(db, \"offlineTestPermissionRequests\", req.id), { ...req, status: \"approved\", updated",
+      "web_portal\\App.tsx:29480 -> await setDoc(doc(db, \"offlineTestPermissionRequests\", req.id), { ...req, status: \"rejected\", updated",
+      "web_portal\\App.tsx:29713 -> await setDoc(doc(db, \"offlineTestPermissionRequests\", reqDocId), reqObj, { merge: true });",
+      "web_portal\\App.tsx:29931 -> await setDoc(doc(db, \"offlineTestPermissionRequests\", reqDocId), reqObj, { merge: true });"
+    ],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "live_class_index": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:6890 -> unsubSignal = onSnapshot(doc(db, \"live_class_index\", \"current\"), () => {",
+      "web_portal\\lms\\admin\\AccessControlPage.tsx:615 -> unsubIndex = onSnapshot(doc(db, 'live_class_index', 'current'), () => {",
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx:385 -> unsubZoom = onSnapshot(doc(db, 'live_class_index', 'current'), () => {",
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx:393 -> unsubReq = onSnapshot(doc(db, 'live_class_index', 'current'), () => {",
+      "web_portal\\lms\\student\\StudentLiveClassesPage.tsx:822 -> doc(db, 'live_class_index', 'current'),"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\modules\\access-requests\\service.ts:19",
+      "backend\\modules\\live-sessions\\service.ts:931",
+      "backend\\scripts\\seed-live-class-index.js:24",
+      "backend\\services\\liveSync.service.ts:98"
+    ]
+  },
+  "subtopics": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:13007 -> unsubSubtopics = onSnapshot(collection(db, \"subtopics\"), () => triggerLookupReload(), (e) => console",
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx:362 -> unsubSubT = onSnapshot(collection(db, 'subtopics'), (snap) => {",
+      "web_portal\\lms\\admin\\SubtopicsPage.tsx:74 -> unsubSubtopics = onSnapshot(collection(db, 'subtopics'), (snapshot) => {",
+      "web_portal\\lms\\admin\\SyllabusTrackerPage.tsx:86 -> unsubSubtopics = onSnapshot(collection(db, 'subtopics'), (snapshot) => {",
+      "web_portal\\lms\\staff\\TeacherDashboard.tsx:81 -> unsubSubtopics = onSnapshot(collection(db, 'subtopics'), (snapshot) => {"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\modules\\staff\\TeachingAssignmentService.ts:29"
+    ]
+  },
+  "staff": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:13067 -> collection(db, \"staff\"),",
+      "web_portal\\lms\\admin\\TeachersPage.tsx:45 -> unsub = onSnapshot(collection(db, 'staff'), (snapshot) => {"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\modules\\admin-approvals\\service.ts:341",
+      "backend\\modules\\dashboard\\admin\\controller.ts:18",
+      "backend\\modules\\dashboard\\erp\\controller.ts:17",
+      "backend\\modules\\developer\\controller.ts:297",
+      "backend\\modules\\erp\\analytics\\controller.ts:42",
+      "backend\\scripts\\seed-admin.ts:43"
+    ]
+  },
+  "zoom_accounts": {
+    "webDirectReads": [
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx:369 -> unsubZoom = onSnapshot(collection(db, 'zoom_accounts'), () => {",
+      "web_portal\\lms\\developer\\ZoomAccountsPage.tsx:77 -> unsub = onSnapshot(collection(db, 'zoom_accounts'), () => {"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\modules\\provider-accounts\\service.ts:16",
+      "backend\\modules\\provider-accounts\\service.ts:48",
+      "backend\\modules\\provider-accounts\\service.ts:110"
+    ]
+  },
+  "device_alerts": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:13137 -> collection(db, \"device_alerts\"),"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\modules\\auth\\controller.ts:51"
+    ]
+  },
+  "feePayments": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:13102 -> collection(db, \"feePayments\"),"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\modules\\dashboard\\admin\\controller.ts:21",
+      "backend\\modules\\dashboard\\erp\\controller.ts:18",
+      "backend\\modules\\dashboard\\student\\controller.ts:98",
+      "backend\\modules\\dashboard\\student\\controller.ts:231",
+      "backend\\modules\\developer\\controller.ts:975",
+      "backend\\modules\\erp\\analytics\\controller.ts:48",
+      "backend\\modules\\erp\\analytics\\controller.ts:114",
+      "backend\\modules\\erp\\fees\\controller.ts:262"
+    ]
+  },
+  "alumniFeedback": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:13172 -> collection(db, \"alumniFeedback\"),"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "leaderboards": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:13225 -> collection(db, \"leaderboards\"),"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:63",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:104",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:157",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:170",
+      "backend\\modules\\test-portal\\review\\controller.ts:628",
+      "backend\\modules\\test-portal\\review\\controller.ts:778",
+      "backend\\purge.ts:64"
+    ]
+  },
+  "results": {
+    "webDirectReads": [],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\modules\\developer\\controller.ts:943",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:28",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:37",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:45",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:55",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:97",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:137",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:411",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:423",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:486",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:625",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:664",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:703",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:712",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:741",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:887",
+      "backend\\modules\\test-portal\\review\\controller.ts:23",
+      "backend\\modules\\test-portal\\review\\controller.ts:35",
+      "backend\\modules\\test-portal\\review\\controller.ts:135",
+      "backend\\modules\\test-portal\\review\\controller.ts:201",
+      "backend\\modules\\test-portal\\review\\controller.ts:247",
+      "backend\\modules\\test-portal\\review\\controller.ts:306",
+      "backend\\modules\\test-portal\\review\\controller.ts:398",
+      "backend\\modules\\test-portal\\review\\controller.ts:545",
+      "backend\\modules\\test-portal\\review\\controller.ts:636",
+      "backend\\modules\\test-portal\\review\\controller.ts:784",
+      "backend\\modules\\test-portal\\review\\controller.ts:817",
+      "backend\\modules\\test-portal\\review\\controller.ts:922",
+      "backend\\modules\\test-portal\\review\\controller.ts:1095",
+      "backend\\modules\\test-portal\\review\\controller.ts:1409",
+      "backend\\modules\\test-portal\\test-creation\\controller.ts:1768",
+      "backend\\purge.ts:40"
+    ]
+  },
+  "student_attempts": {
+    "webDirectReads": [],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\core\\middleware\\auth.middleware.ts:136",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:203",
+      "backend\\modules\\test-portal\\evaluation\\controller.ts:414",
+      "backend\\modules\\test-portal\\examination\\controller.ts:45",
+      "backend\\modules\\test-portal\\examination\\controller.ts:149",
+      "backend\\modules\\test-portal\\examination\\controller.ts:314",
+      "backend\\modules\\test-portal\\examination\\controller.ts:356",
+      "backend\\modules\\test-portal\\examination\\controller.ts:418",
+      "backend\\modules\\test-portal\\examination\\controller.ts:472",
+      "backend\\modules\\test-portal\\examination\\controller.ts:679",
+      "backend\\modules\\test-portal\\examination\\controller.ts:730",
+      "backend\\modules\\test-portal\\examination\\controller.ts:769",
+      "backend\\modules\\test-portal\\examination\\controller.ts:798",
+      "backend\\modules\\test-portal\\examination\\controller.ts:812",
+      "backend\\modules\\test-portal\\examination\\controller.ts:846",
+      "backend\\modules\\test-portal\\examination\\controller.ts:927",
+      "backend\\modules\\test-portal\\examination\\controller.ts:961",
+      "backend\\modules\\test-portal\\examination\\controller.ts:1005",
+      "backend\\modules\\test-portal\\examination\\controller.ts:1058",
+      "backend\\modules\\test-portal\\examination\\controller.ts:1085",
+      "backend\\modules\\test-portal\\examination\\controller.ts:1319",
+      "backend\\modules\\test-portal\\examination\\controller.ts:1336",
+      "backend\\modules\\test-portal\\review\\controller.ts:523",
+      "backend\\modules\\test-portal\\test-creation\\controller.ts:1755",
+      "backend\\purge.ts:52"
+    ]
+  },
+  "access_rules": {
+    "webDirectReads": [],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "access_history": {
+    "webDirectReads": [
+      "web_portal\\lms\\admin\\AccessControlPage.tsx:925 -> unsub = onSnapshot(collection(db, 'access_history'), (snapshot) => {",
+      "web_portal\\lms\\admin\\MobileLMSPages.tsx:379 -> unsubS = onSnapshot(collection(db, 'access_history'), (snap) => {"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "system_settings": {
+    "webDirectReads": [
+      "web_portal\\lms\\student\\StudentPayFeesPage.tsx:157 -> const unsubSettings = onSnapshot(doc(db, 'system_settings', 'payment_qr_code'), () => {"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\modules\\students\\service.ts:349",
+      "backend\\modules\\students\\service.ts:369"
+    ]
+  },
+  "settings": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:7211 -> unsub = onSnapshot(doc(db, \"settings\", \"page_locks\"), (snap) => {"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\modules\\developer\\controller.ts:596",
+      "backend\\modules\\developer\\controller.ts:699",
+      "backend\\modules\\erp\\student\\controller.ts:254",
+      "backend\\modules\\erp\\student\\controller.ts:279",
+      "backend\\modules\\erp\\student\\controller.ts:1749",
+      "backend\\modules\\erp\\student\\controller.ts:1799",
+      "backend\\modules\\erp\\student\\controller.ts:1970",
+      "backend\\modules\\erp\\student\\controller.ts:2033",
+      "backend\\services\\google_drive.ts:39",
+      "backend\\services\\google_drive.ts:72"
+    ]
+  },
+  "payment_acknowledgements": {
+    "webDirectReads": [
+      "web_portal\\lms\\admin\\MobileQRCodePermissions.tsx:219 -> collection(db, 'payment_acknowledgements'),",
+      "web_portal\\lms\\admin\\QRCodePermissionsPage.tsx:155 -> const unsubAcks = onSnapshot(collection(db, 'payment_acknowledgements'), () => {",
+      "web_portal\\lms\\student\\StudentPayFeesPage.tsx:148 -> const qPayments = query(collection(db, 'payment_acknowledgements'), where('studentId', '==', student"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\modules\\students\\service.ts:642",
+      "backend\\modules\\students\\service.ts:654",
+      "backend\\modules\\students\\service.ts:682",
+      "backend\\modules\\students\\service.ts:692",
+      "backend\\modules\\students\\service.ts:703"
+    ]
+  },
+  "page_locks": {
+    "webDirectReads": [],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "role_permissions": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:10856 -> unsub = onSnapshot(collection(db, \"role_permissions\"), (snapshot) => {"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\core\\middleware\\auth.middleware.ts:212",
+      "backend\\modules\\developer\\controller.ts:534",
+      "backend\\modules\\developer\\controller.ts:543",
+      "backend\\modules\\developer\\controller.ts:574"
+    ]
+  },
+  "custom_application_leads": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:11199 -> const customLeadsQuery = query(collection(db, \"custom_application_leads\"), where(\"isDeleted\", \"==\", ",
+      "web_portal\\lms\\admin\\CustomLeadsPage.tsx:59 -> unsub = onSnapshot(collection(db, 'custom_application_leads'), (snap) => {"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "custom_application_forms": {
+    "webDirectReads": [
+      "web_portal\\lms\\admin\\CustomizeApplicationPage.tsx:83 -> unsub = onSnapshot(doc(db, 'custom_application_forms', 'mock_test_app'), (snap) => {",
+      "web_portal\\lms\\components\\DynamicApplicationModal.tsx:55 -> unsub = onSnapshot(doc(db, 'custom_application_forms', 'mock_test_app'), (snap) => {"
+    ],
+    "webDirectWrites": [],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "admin_alerts": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:6762 -> collection(db, \"admin_alerts\"),"
+    ],
+    "webDirectWrites": [
+      "web_portal\\App.tsx:6920 -> setDoc(doc(db, \"admin_alerts\", alertId), {",
+      "web_portal\\App.tsx:6945 -> setDoc(doc(db, \"admin_alerts\", alertId), {",
+      "web_portal\\App.tsx:6976 -> setDoc(doc(db, \"admin_alerts\", alertId), {",
+      "web_portal\\App.tsx:7002 -> setDoc(doc(db, \"admin_alerts\", alertId), {",
+      "web_portal\\App.tsx:7028 -> setDoc(doc(db, \"admin_alerts\", alertId), {",
+      "web_portal\\App.tsx:7057 -> deleteDoc(doc(db, \"admin_alerts\", alert.id)).catch(() => { });",
+      "web_portal\\App.tsx:7076 -> await deleteDoc(doc(db, \"admin_alerts\", alertItem.id));",
+      "web_portal\\App.tsx:7149 -> await deleteDoc(doc(db, \"admin_alerts\", alertId));",
+      "web_portal\\App.tsx:7167 -> await deleteDoc(doc(db, \"admin_alerts\", id));",
+      "web_portal\\App.tsx:11944 -> deleteDoc(doc(db, \"admin_alerts\", alertId)).catch(() => { });",
+      "web_portal\\App.tsx:11991 -> deleteDoc(doc(db, \"admin_alerts\", alertId)).catch(() => { });",
+      "web_portal\\App.tsx:13320 -> deleteDoc(doc(db, \"admin_alerts\", alertId)).catch(() => { });",
+      "web_portal\\App.tsx:13338 -> deleteDoc(doc(db, \"admin_alerts\", sacsApproveAlertId)).catch(() => { });",
+      "web_portal\\App.tsx:13354 -> deleteDoc(doc(db, \"admin_alerts\", sacsRejectAlertId)).catch(() => { });",
+      "web_portal\\App.tsx:14144 -> await setDoc(doc(db, \"admin_alerts\", admissionAlertId), {",
+      "web_portal\\App.tsx:14318 -> await setDoc(doc(db, \"admin_alerts\", inquiryAlertId), {",
+      "web_portal\\App.tsx:14346 -> resolveInqAlerts.forEach((a) => { deleteDoc(doc(db, \"admin_alerts\", a.id)).catch(() => { }); });",
+      "web_portal\\App.tsx:14368 -> deleteInqAlerts.forEach((a) => { deleteDoc(doc(db, \"admin_alerts\", a.id)).catch(() => { }); });",
+      "web_portal\\App.tsx:15804 -> await setDoc(doc(db, \"admin_alerts\", profileAlertId), {",
+      "web_portal\\App.tsx:15861 -> deleteDoc(doc(db, \"admin_alerts\", approveProfileAlertId)).catch(() => { });",
+      "web_portal\\App.tsx:15888 -> deleteDoc(doc(db, \"admin_alerts\", rejectProfileAlertId)).catch(() => { });",
+      "web_portal\\App.tsx:29453 -> deleteDoc(doc(db, \"admin_alerts\", approveTestAlertId)).catch(() => { });",
+      "web_portal\\App.tsx:29484 -> deleteDoc(doc(db, \"admin_alerts\", rejectTestAlertId)).catch(() => { });",
+      "web_portal\\App.tsx:29715 -> await setDoc(doc(db, \"admin_alerts\", alertDocId), {",
+      "web_portal\\App.tsx:29933 -> await setDoc(doc(db, \"admin_alerts\", alertDocId), {"
+    ],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\modules\\access-requests\\service.ts:412",
+      "backend\\modules\\access-requests\\service.ts:461",
+      "backend\\modules\\access-requests\\service.ts:659",
+      "backend\\modules\\access-rules\\service.ts:651",
+      "backend\\modules\\access-rules\\service.ts:676",
+      "backend\\modules\\erp\\profile-request\\controller.ts:549",
+      "backend\\modules\\erp\\profile-request\\controller.ts:622",
+      "backend\\modules\\students\\service.ts:467",
+      "backend\\modules\\students\\service.ts:525"
+    ]
+  },
+  "system_activity_logs": {
+    "webDirectReads": [
+      "web_portal\\App.tsx:4496 -> collection(db, \"system_activity_logs\"),",
+      "web_portal\\App.tsx:4508 -> collection(db, \"system_activity_logs\"),"
+    ],
+    "webDirectWrites": [
+      "web_portal\\App.tsx:4481 -> await addDoc(collection(db, \"system_activity_logs\"), {"
+    ],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": []
+  },
+  "device_push_tokens": {
+    "webDirectReads": [
+      "web_portal\\notifications.ts:179 -> const docRef = doc(db, \"device_push_tokens\", cleanDocId);",
+      "web_portal\\notifications.ts:277 -> const docRef = doc(db, \"device_push_tokens\", cleanDocId);"
+    ],
+    "webDirectWrites": [
+      "web_portal\\notifications.ts:319 -> await deleteDoc(doc(db, \"device_push_tokens\", cleanDocId)).catch(() => {});",
+      "web_portal\\notifications.ts:322 -> await deleteDoc(doc(db, \"device_push_tokens\", webCleanDocId)).catch(() => {});"
+    ],
+    "mobileDirectReads": [],
+    "mobileDirectWrites": [],
+    "backendAdminUsage": [
+      "backend\\modules\\notification\\controller.ts:450",
+      "backend\\modules\\notification\\controller.ts:451",
+      "backend\\modules\\notification\\controller.ts:456",
+      "backend\\modules\\notification\\controller.ts:458",
+      "backend\\services\\pushService.ts:118",
+      "backend\\services\\pushService.ts:120",
+      "backend\\services\\pushService.ts:124",
+      "backend\\services\\pushService.ts:394",
+      "backend\\services\\pushService.ts:399",
+      "backend\\services\\pushService.ts:401"
+    ]
+  }
+}
