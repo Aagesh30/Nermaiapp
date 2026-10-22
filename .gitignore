@@ -15,4 +15,6 @@ build/
 service-account.json
 serviceAccountKey.json
 *serviceAccountKey*.json
+*adminsdk*.json
+*firebase-adminsdk*.json
 *.apk

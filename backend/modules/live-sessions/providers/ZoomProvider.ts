@@ -429,7 +429,7 @@ ${detectedState}
     }
 
     const iat = Math.round(new Date().getTime() / 1000) - 30;
-    const exp = iat + 60 * 60 * 2; // 2 hours validity
+    const exp = iat + 60 * 60 * 5; // 5 hours validity (prevent premature session drop)
     const payload = {
       appKey: sdkKey,
       mn: meetingId,
