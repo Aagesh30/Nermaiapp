@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { AnnouncementController } from "./controller";
+import { requireAuth, requireRole } from "../../core/middleware/auth.middleware";
 
 const router = Router();
 
@@ -10,19 +11,15 @@ const router = Router();
  * ==========================================
  */
 
-// Get all announcements
-router.get("/", AnnouncementController.getAll);
+const adminRoles = ['super_admin', 'superadmin', 'admin', 'coordinator', 'staff'];
 
-// Get single announcement
+// Public: Students and guests can read announcements without authentication
+router.get("/", AnnouncementController.getAll);
 router.get("/:id", AnnouncementController.getOne);
 
-// Create announcement
-router.post("/", AnnouncementController.create);
-
-// Update announcement
-router.put("/:id", AnnouncementController.update);
-
-// Soft delete announcement
-router.delete("/:id", AnnouncementController.delete);
+// Protected: Only admins/staff can create, edit, or delete announcements
+router.post("/", requireAuth, requireRole(adminRoles), AnnouncementController.create);
+router.put("/:id", requireAuth, requireRole(adminRoles), AnnouncementController.update);
+router.delete("/:id", requireAuth, requireRole(adminRoles), AnnouncementController.delete);
 
 export default router;

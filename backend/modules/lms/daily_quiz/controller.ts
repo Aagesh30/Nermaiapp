@@ -9,6 +9,75 @@ const QUIZ_COLLECTION = "dailyQuizzes";
 const QUIZ_ATTEMPT_COLLECTION = "quizAttempts";
 
 export class DailyQuizController {
+    // In-flight Promise deduplication map to prevent simultaneous cache-miss queries within the same process
+    private static statsInFlight = new Map<string, Promise<any[]>>();
+    // Active submission lock per quiz and student to prevent concurrent duplicate submissions
+    private static activeSubmissions = new Set<string>();
+
+    /**
+     * Compute or retrieve cached question percentage statistics for a quiz.
+     * Reuses generalCache with a 60-second TTL and in-flight Promise deduplication.
+     */
+    private static async getOrComputeQuizStats(quizId: string, questions: any[]): Promise<any[]> {
+        const cacheKey = `daily_quiz_stats_${quizId}`;
+        let cachedStats = generalCache.get<any[]>(cacheKey);
+        if (cachedStats) {
+            return cachedStats;
+        }
+
+        try {
+            let promise = DailyQuizController.statsInFlight.get(cacheKey);
+            if (!promise) {
+                promise = (async () => {
+                    try {
+                        const attemptsSnapshot = await db.collection(QUIZ_ATTEMPT_COLLECTION)
+                            .where("quizId", "==", quizId)
+                            .get();
+                        const allAttempts = attemptsSnapshot.docs.map(d => d.data());
+                        const totalPoolCount = allAttempts.length;
+
+                        const computedStats = (questions || []).map((q: any, idx: number) => {
+                            const counts = [0, 0, 0, 0];
+                            allAttempts.forEach(attempt => {
+                                const attemptAnswers = attempt.answers || attempt.results;
+                                const ans = Array.isArray(attemptAnswers)
+                                    ? attemptAnswers.find((a: any) => a.questionIndex === idx)
+                                    : (attemptAnswers && typeof attemptAnswers === "object" ? { selectedOptionIndex: (attemptAnswers as any)[idx] } : null);
+                                if (ans && typeof ans.selectedOptionIndex === "number" && ans.selectedOptionIndex >= 0 && ans.selectedOptionIndex <= 3) {
+                                    counts[ans.selectedOptionIndex]++;
+                                }
+                            });
+                            const percentages = counts.map(count => totalPoolCount > 0 ? Math.round((count / totalPoolCount) * 100) : 0);
+                            return {
+                                questionText: q.questionText,
+                                options: q.options,
+                                correctOptionIndex: q.correctOptionIndex,
+                                explanation: q.explanation || "",
+                                optionPercentages: percentages
+                            };
+                        });
+
+                        generalCache.set(cacheKey, computedStats, 60); // 60s TTL
+                        return computedStats;
+                    } finally {
+                        DailyQuizController.statsInFlight.delete(cacheKey);
+                    }
+                })();
+                DailyQuizController.statsInFlight.set(cacheKey, promise);
+            }
+            return await promise;
+        } catch (statsErr) {
+            console.warn("[DailyQuiz] Non-critical stats computation warning:", statsErr);
+            // Safe fallback: provide zero percentages
+            return (questions || []).map((q: any) => ({
+                questionText: q.questionText,
+                options: q.options,
+                correctOptionIndex: q.correctOptionIndex,
+                explanation: q.explanation || "",
+                optionPercentages: [0, 0, 0, 0]
+            }));
+        }
+    }
     /**
      * CREATE/UPDATE QUIZ (Admin/Staff)
      * POST /api/lms/daily-quiz
@@ -233,7 +302,10 @@ export class DailyQuizController {
      */
     static async getTodayQuiz(req: Request, res: Response) {
         try {
-            const { studentId } = req.query;
+            const studentId = (req.user?.role === "student")
+                ? (req.user?.studentId || req.user?.userId)
+                : ((req.query.studentId as string) || req.user?.studentId || req.user?.userId);
+
             const now = new Date();
             const today = now.toISOString().split("T")[0];
 
@@ -266,20 +338,32 @@ export class DailyQuizController {
                 }
 
                 if (studentId) {
-                    const attemptSnapshot = await db.collection(QUIZ_ATTEMPT_COLLECTION)
-                        .where("quizId", "==", quizId)
-                        .where("studentId", "==", studentId as string)
-                        .limit(1)
+                    // Check deterministic doc ID first
+                    const deterministicDoc = await db.collection(QUIZ_ATTEMPT_COLLECTION)
+                        .doc(`${quizId}_${studentId}`)
                         .get();
 
-                    if (attemptSnapshot.empty) {
-                        // This quiz is pending for this student - show it
-                        targetQuiz = quizData;
-                        existingAttempt = null; // Clear any previously set fallback attempt!
-                        break;
-                    } else if (!targetQuiz) {
-                        // If no pending found yet, remember this completed one for fallback
-                        existingAttempt = attemptSnapshot.docs[0].data();
+                    if (deterministicDoc.exists) {
+                        if (!targetQuiz) {
+                            existingAttempt = deterministicDoc.data();
+                        }
+                    } else {
+                        // Check legacy attempts query
+                        const attemptSnapshot = await db.collection(QUIZ_ATTEMPT_COLLECTION)
+                            .where("quizId", "==", quizId)
+                            .where("studentId", "==", studentId as string)
+                            .limit(1)
+                            .get();
+
+                        if (attemptSnapshot.empty) {
+                            // This quiz is pending for this student - show it
+                            targetQuiz = quizData;
+                            existingAttempt = null; // Clear any previously set fallback attempt!
+                            break;
+                        } else if (!targetQuiz) {
+                            // If no pending found yet, remember this completed one for fallback
+                            existingAttempt = attemptSnapshot.docs[0].data();
+                        }
                     }
                 } else {
                     targetQuiz = quizData;
@@ -303,59 +387,46 @@ export class DailyQuizController {
                 targetQuiz = { ...quizDoc.data(), id: quizDoc.id };
 
                 if (studentId) {
-                    const attemptSnapshot = await db.collection(QUIZ_ATTEMPT_COLLECTION)
-                        .where("quizId", "==", targetQuiz.id)
-                        .where("studentId", "==", studentId as string)
-                        .limit(1)
+                    const deterministicDoc = await db.collection(QUIZ_ATTEMPT_COLLECTION)
+                        .doc(`${targetQuiz.id}_${studentId}`)
                         .get();
-                    if (!attemptSnapshot.empty) {
-                        existingAttempt = attemptSnapshot.docs[0].data();
+
+                    if (deterministicDoc.exists) {
+                        existingAttempt = deterministicDoc.data();
                     } else {
-                        existingAttempt = null;
+                        const attemptSnapshot = await db.collection(QUIZ_ATTEMPT_COLLECTION)
+                            .where("quizId", "==", targetQuiz.id)
+                            .where("studentId", "==", studentId as string)
+                            .limit(1)
+                            .get();
+                        if (!attemptSnapshot.empty) {
+                            existingAttempt = attemptSnapshot.docs[0].data();
+                        } else {
+                            existingAttempt = null;
+                        }
                     }
                 }
             }
 
             const quizId = targetQuiz.id;
+            const questionsWithStats = await DailyQuizController.getOrComputeQuizStats(quizId, targetQuiz.questions || []);
 
-            // Cache stats computation for 60 seconds to avoid fetching thousands of attempts on every load
-            const cacheKey = `daily_quiz_stats_${quizId}`;
-            let questionsWithStats = generalCache.get<any[]>(cacheKey);
+            const isStaffOrAdmin = req.user?.role === "admin" || req.user?.role === "super_admin" || req.user?.role === "staff";
+            const canViewAnswers = isStaffOrAdmin || !!existingAttempt;
 
-            if (!questionsWithStats) {
-                const attemptsSnapshot = await db.collection(QUIZ_ATTEMPT_COLLECTION)
-                    .where("quizId", "==", quizId)
-                    .get();
-                const allAttempts = attemptsSnapshot.docs.map(d => d.data());
-                const totalPoolCount = allAttempts.length;
-
-                questionsWithStats = (targetQuiz.questions || []).map((q: any, idx: number) => {
-                    const counts = [0, 0, 0, 0];
-                    allAttempts.forEach(attempt => {
-                        const attemptAnswers = attempt.answers || attempt.results;
-                        const ans = Array.isArray(attemptAnswers)
-                            ? attemptAnswers.find((a: any) => a.questionIndex === idx)
-                            : (attemptAnswers && typeof attemptAnswers === "object" ? { selectedOptionIndex: (attemptAnswers as any)[idx] } : null);
-                        if (ans && typeof ans.selectedOptionIndex === "number" && ans.selectedOptionIndex >= 0 && ans.selectedOptionIndex <= 3) {
-                            counts[ans.selectedOptionIndex]++;
-                        }
-                    });
-                    const percentages = counts.map(count => totalPoolCount > 0 ? Math.round((count / totalPoolCount) * 100) : 0);
-                    return {
-                        questionText: q.questionText,
-                        options: q.options,
-                        correctOptionIndex: q.correctOptionIndex,
-                        optionPercentages: percentages
-                    };
-                });
-                generalCache.set(cacheKey, questionsWithStats, 60); // 60s cache
-            }
+            // Security: Never reveal correctOptionIndex, percentages, or explanations to students before they submit
+            const clientQuestions = canViewAnswers
+                ? questionsWithStats
+                : (questionsWithStats || []).map((q: any) => ({
+                    questionText: q.questionText,
+                    options: q.options
+                }));
 
             return res.status(200).json({
                 success: true,
                 data: {
                     ...targetQuiz,
-                    questions: questionsWithStats,
+                    questions: clientQuestions,
                     publishedAt: targetQuiz.publishedAt ? (targetQuiz.publishedAt.toDate ? targetQuiz.publishedAt.toDate().toISOString() : new Date(targetQuiz.publishedAt).toISOString()) : null,
                     existingAttempt: existingAttempt ? {
                         correctCount: existingAttempt.correctCount,
@@ -371,13 +442,15 @@ export class DailyQuizController {
     }
 
     /**
-     * GET QUIZ BY ID (for attempting)
+     * GET QUIZ BY ID (for attempting or reviewing)
      * GET /api/lms/daily-quiz/:quizId
      */
     static async getQuiz(req: Request, res: Response) {
         try {
             const { quizId } = req.params;
-            const { studentId } = req.query;
+            const studentId = (req.user?.role === "student")
+                ? (req.user?.studentId || req.user?.userId)
+                : ((req.query.studentId as string) || req.user?.studentId || req.user?.userId);
 
             const quizDoc = await db.collection(QUIZ_COLLECTION).doc(quizId).get();
             if (!quizDoc.exists || quizDoc.data()?.isDeleted) {
@@ -386,43 +459,47 @@ export class DailyQuizController {
 
             const quizData = quizDoc.data()!;
 
-            // Check if student already attempted
-            let existingAttempt = null;
+            // Check if student already attempted (check deterministic doc first, then legacy query)
+            let existingAttempt: any = null;
             if (studentId) {
-                const attemptSnapshot = await db.collection(QUIZ_ATTEMPT_COLLECTION)
-                    .where("quizId", "==", quizId)
-                    .where("studentId", "==", studentId as string)
-                    .limit(1)
+                const deterministicDoc = await db.collection(QUIZ_ATTEMPT_COLLECTION)
+                    .doc(`${quizId}_${studentId}`)
                     .get();
-                if (!attemptSnapshot.empty) {
-                    existingAttempt = attemptSnapshot.docs[0].data();
+
+                if (deterministicDoc.exists) {
+                    existingAttempt = deterministicDoc.data();
+                } else {
+                    const attemptSnapshot = await db.collection(QUIZ_ATTEMPT_COLLECTION)
+                        .where("quizId", "==", quizId)
+                        .where("studentId", "==", studentId as string)
+                        .limit(1)
+                        .get();
+                    if (!attemptSnapshot.empty) {
+                        existingAttempt = attemptSnapshot.docs[0].data();
+                    }
                 }
             }
 
-            const attemptsSnapshot = await db.collection(QUIZ_ATTEMPT_COLLECTION)
-                .where("quizId", "==", quizId).get();
-            const allAttempts = attemptsSnapshot.docs.map(d => d.data());
-            const totalPoolCount = allAttempts.length;
+            const isStaffOrAdmin = req.user?.role === "admin" || req.user?.role === "super_admin" || req.user?.role === "staff";
+            const canViewAnswers = isStaffOrAdmin || !!existingAttempt;
 
-            const questionsWithStats = (quizData.questions || []).map((q: any, idx: number) => {
-                const counts = [0, 0, 0, 0];
-                allAttempts.forEach(attempt => {
-                    const attemptAnswers = attempt.answers || attempt.results;
-                    const ans = Array.isArray(attemptAnswers)
-                        ? attemptAnswers.find((a: any) => a.questionIndex === idx)
-                        : (attemptAnswers && typeof attemptAnswers === "object" ? { selectedOptionIndex: (attemptAnswers as any)[idx] } : null);
-                    if (ans && typeof ans.selectedOptionIndex === "number") counts[ans.selectedOptionIndex]++;
-                });
-                const percentages = counts.map(c => totalPoolCount > 0 ? Math.round((c / totalPoolCount) * 100) : 0);
-                return { questionText: q.questionText, options: q.options, correctOptionIndex: q.correctOptionIndex, optionPercentages: percentages };
-            });
+            // Reuse cached stats helper (60s TTL) - prevents downloading thousands of documents per request
+            const questionsWithStats = await DailyQuizController.getOrComputeQuizStats(quizId, quizData.questions || []);
+
+            // Security: Sanitize questions so students cannot see answers before attempting
+            const clientQuestions = canViewAnswers
+                ? questionsWithStats
+                : (questionsWithStats || []).map((q: any) => ({
+                    questionText: q.questionText,
+                    options: q.options
+                }));
 
             return res.status(200).json({
                 success: true,
                 data: {
                     ...quizData,
                     id: quizId,
-                    questions: questionsWithStats,
+                    questions: clientQuestions,
                     publishedAt: quizData.publishedAt ? (quizData.publishedAt as admin.firestore.Timestamp).toDate().toISOString() : null,
                     existingAttempt: existingAttempt ? {
                         correctCount: existingAttempt.correctCount,
@@ -445,107 +522,164 @@ export class DailyQuizController {
         try {
             const { studentId, quizId, answers, submittedBy } = req.body;
 
-            if (!studentId || !quizId || !answers) {
+            // Security: Enforce authenticated student identity from JWT token
+            const authenticatedStudentId = (req.user?.role === "admin" || req.user?.role === "super_admin" || req.user?.role === "staff")
+                ? (studentId || req.user?.studentId || req.user?.userId)
+                : (req.user?.studentId || req.user?.userId);
+
+            if (!authenticatedStudentId || !quizId || !answers) {
                 return res.status(400).json({ success: false, message: "studentId, quizId, and answers are required" });
             }
 
-            // Check one attempt per student
-            const existingAttempt = await db.collection(QUIZ_ATTEMPT_COLLECTION)
-                .where("quizId", "==", quizId)
-                .where("studentId", "==", studentId)
-                .limit(1)
-                .get();
-
-            if (!existingAttempt.empty) {
-                return res.status(409).json({ success: false, message: "You have already attempted this quiz" });
+            if (!Array.isArray(answers)) {
+                return res.status(400).json({ success: false, message: "answers must be an array" });
             }
 
-            const quizDoc = await db.collection(QUIZ_COLLECTION).doc(quizId).get();
-            if (!quizDoc.exists || quizDoc.data()?.isDeleted) {
-                return res.status(404).json({ success: false, message: "Quiz not found" });
+            // In-flight concurrency lock per student & quiz to block simultaneous double-tap submissions
+            const submissionLockKey = `${quizId}_${authenticatedStudentId}`;
+            if (DailyQuizController.activeSubmissions.has(submissionLockKey)) {
+                return res.status(409).json({ success: false, message: "Quiz submission already in progress. Please wait." });
             }
+            DailyQuizController.activeSubmissions.add(submissionLockKey);
 
-            const quiz = quizDoc.data()!;
+            try {
+                // Check if already attempted using deterministic doc ID
+                const attemptDocId = `${quizId}_${authenticatedStudentId}`;
+                const attemptDocRef = db.collection(QUIZ_ATTEMPT_COLLECTION).doc(attemptDocId);
 
-            // Check if quiz is still active
-            if (quiz.status !== "active") {
-                return res.status(400).json({ success: false, message: `This quiz is ${quiz.status || "disabled"} and can no longer be attempted` });
-            }
-
-            if (quiz.autoDisableAt && new Date() > new Date(quiz.autoDisableAt)) {
-                return res.status(400).json({ success: false, message: "This quiz has expired (24-hour window passed)" });
-            }
-
-            const results = answers.map((answer: any) => {
-                const question = quiz.questions[answer.questionIndex];
-                const isCorrect = question && answer.selectedOptionIndex === question.correctOptionIndex;
-                return {
-                    questionIndex: answer.questionIndex,
-                    selectedOptionIndex: answer.selectedOptionIndex,
-                    correctOptionIndex: question?.correctOptionIndex,
-                    isCorrect
-                };
-            });
-
-            const totalQuestions = quiz.questions.length;
-            const correctCount = results.filter((r: { isCorrect: boolean }) => r.isCorrect).length;
-            const wrongCount = answers.length - correctCount;
-            const skippedCount = totalQuestions - answers.length;
-
-            const attemptId = randomUUID();
-            await db.collection(QUIZ_ATTEMPT_COLLECTION).doc(attemptId).set({
-                id: attemptId,
-                studentId,
-                quizId,
-                quizDate: quiz.quizDate,
-                quizTitle: quiz.title,
-                answers,
-                results,
-                totalQuestions,
-                correctCount,
-                wrongCount,
-                skippedCount,
-                createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                createdBy: submittedBy || studentId
-            });
-
-            // Keep attemptCount on the quiz document in sync for real-time listeners
-            await db.collection(QUIZ_COLLECTION).doc(quizId).update({
-                attemptCount: admin.firestore.FieldValue.increment(1),
-                updatedAt: admin.firestore.FieldValue.serverTimestamp()
-            }).catch(() => {});
-
-            // Fetch updated stats
-            const attemptsSnapshot = await db.collection(QUIZ_ATTEMPT_COLLECTION).where("quizId", "==", quizId).get();
-            const allAttempts = attemptsSnapshot.docs.map(d => d.data());
-            const totalPoolCount = allAttempts.length;
-
-            const questionsWithStats = quiz.questions.map((q: any, idx: number) => {
-                const counts = [0, 0, 0, 0];
-                allAttempts.forEach(attempt => {
-                    const attemptAnswers = attempt.answers || attempt.results;
-                    const ans = Array.isArray(attemptAnswers)
-                        ? attemptAnswers.find((a: any) => a.questionIndex === idx)
-                        : (attemptAnswers && typeof attemptAnswers === "object" ? { selectedOptionIndex: (attemptAnswers as any)[idx] } : null);
-                    if (ans && typeof ans.selectedOptionIndex === "number") counts[ans.selectedOptionIndex]++;
-                });
-                const percentages = counts.map(c => totalPoolCount > 0 ? Math.round((c / totalPoolCount) * 100) : 0);
-                return {
-                    questionText: q.questionText,
-                    options: q.options,
-                    correctOptionIndex: q.correctOptionIndex,
-                    userAnswer: answers.find((a: any) => a.questionIndex === idx)?.selectedOptionIndex,
-                    optionPercentages: percentages
-                };
-            });
-
-            return res.status(200).json({
-                success: true,
-                message: "Quiz submitted successfully",
-                data: {
-                    attemptId, results, totalQuestions, correctCount, wrongCount, skippedCount, questions: questionsWithStats
+                const existingDoc = await attemptDocRef.get();
+                if (existingDoc.exists) {
+                    return res.status(409).json({ success: false, message: "You have already attempted this quiz" });
                 }
-            });
+
+                // Also check legacy attempts query for older attempts created with random UUIDs
+                const legacyAttemptSnapshot = await db.collection(QUIZ_ATTEMPT_COLLECTION)
+                    .where("quizId", "==", quizId)
+                    .where("studentId", "==", authenticatedStudentId)
+                    .limit(1)
+                    .get();
+
+                if (!legacyAttemptSnapshot.empty) {
+                    return res.status(409).json({ success: false, message: "You have already attempted this quiz" });
+                }
+
+                const quizDoc = await db.collection(QUIZ_COLLECTION).doc(quizId).get();
+                if (!quizDoc.exists || quizDoc.data()?.isDeleted) {
+                    return res.status(404).json({ success: false, message: "Quiz not found" });
+                }
+
+                const quiz = quizDoc.data()!;
+
+                // Check if quiz is still active
+                if (quiz.status !== "active") {
+                    return res.status(400).json({ success: false, message: `This quiz is ${quiz.status || "disabled"} and can no longer be attempted` });
+                }
+
+                if (quiz.autoDisableAt && new Date() > new Date(quiz.autoDisableAt)) {
+                    return res.status(400).json({ success: false, message: "This quiz has expired (24-hour window passed)" });
+                }
+
+                const quizQuestions = quiz.questions || [];
+                const seenQuestions = new Set<number>();
+                const validatedAnswers: Array<{ questionIndex: number; selectedOptionIndex: number }> = [];
+
+                for (const ans of answers) {
+                    if (!ans || typeof ans !== "object") continue;
+                    const qIdx = Number(ans.questionIndex);
+                    const optIdx = Number(ans.selectedOptionIndex);
+
+                    // Ensure question index is valid and within bounds
+                    if (isNaN(qIdx) || qIdx < 0 || qIdx >= quizQuestions.length) continue;
+                    // Deduplicate identical question submissions
+                    if (seenQuestions.has(qIdx)) continue;
+                    seenQuestions.add(qIdx);
+
+                    const targetQ = quizQuestions[qIdx];
+                    const numOptions = targetQ?.options?.length || 4;
+                    // Ensure selected option index is valid
+                    if (isNaN(optIdx) || optIdx < 0 || optIdx >= numOptions) continue;
+
+                    validatedAnswers.push({
+                        questionIndex: qIdx,
+                        selectedOptionIndex: optIdx
+                    });
+                }
+
+                const results = validatedAnswers.map((answer) => {
+                    const question = quizQuestions[answer.questionIndex];
+                    const isCorrect = question && answer.selectedOptionIndex === question.correctOptionIndex;
+                    return {
+                        questionIndex: answer.questionIndex,
+                        selectedOptionIndex: answer.selectedOptionIndex,
+                        correctOptionIndex: question?.correctOptionIndex,
+                        isCorrect
+                    };
+                });
+
+                const totalQuestions = quizQuestions.length;
+                const correctCount = results.filter((r) => r.isCorrect).length;
+                const wrongCount = validatedAnswers.length - correctCount;
+                const skippedCount = Math.max(0, totalQuestions - validatedAnswers.length);
+
+                const submittedByName = (req.user?.role === "student")
+                    ? (req.user?.name || authenticatedStudentId)
+                    : (submittedBy || req.user?.name || authenticatedStudentId);
+
+                // Write with deterministic attempt doc ID to prevent duplicate attempt documents in Firestore
+                await attemptDocRef.set({
+                    id: attemptDocId,
+                    studentId: authenticatedStudentId,
+                    quizId,
+                    quizDate: quiz.quizDate,
+                    quizTitle: quiz.title,
+                    answers: validatedAnswers,
+                    results,
+                    totalQuestions,
+                    correctCount,
+                    wrongCount,
+                    skippedCount,
+                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                    createdBy: submittedByName
+                });
+
+                // Keep attemptCount on the quiz document in sync for real-time listeners
+                await db.collection(QUIZ_COLLECTION).doc(quizId).update({
+                    attemptCount: admin.firestore.FieldValue.increment(1),
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                }).catch(() => {});
+
+                // Fetch stats using 60s cache
+                const baseStats = await DailyQuizController.getOrComputeQuizStats(quizId, quizQuestions);
+
+                // Dynamically attach the submitting student's own userAnswer
+                const questionsWithStats = (baseStats || []).map((q: any, idx: number) => {
+                    const studentAns = validatedAnswers.find(a => a.questionIndex === idx);
+                    return {
+                        questionText: q.questionText,
+                        options: q.options,
+                        correctOptionIndex: q.correctOptionIndex,
+                        explanation: q.explanation || "",
+                        userAnswer: studentAns !== undefined ? studentAns.selectedOptionIndex : undefined,
+                        optionPercentages: q.optionPercentages || [0, 0, 0, 0]
+                    };
+                });
+
+                return res.status(200).json({
+                    success: true,
+                    message: "Quiz submitted successfully",
+                    data: {
+                        attemptId: attemptDocId,
+                        results,
+                        totalQuestions,
+                        correctCount,
+                        wrongCount,
+                        skippedCount,
+                        questions: questionsWithStats
+                    }
+                });
+            } finally {
+                DailyQuizController.activeSubmissions.delete(submissionLockKey);
+            }
         } catch (error: any) {
             return res.status(500).json({ success: false, message: error.message });
         }
@@ -558,8 +692,15 @@ export class DailyQuizController {
     static async getStudentHistory(req: Request, res: Response) {
         try {
             const { studentId } = req.params;
+            const isStaffOrAdmin = req.user?.role === "admin" || req.user?.role === "super_admin" || req.user?.role === "staff";
+            const authorizedStudentId = isStaffOrAdmin ? studentId : (req.user?.studentId || req.user?.userId);
+
+            if (!isStaffOrAdmin && studentId !== authorizedStudentId) {
+                return res.status(403).json({ success: false, message: "Forbidden: Cannot access history of another student" });
+            }
+
             const snapshot = await db.collection(QUIZ_ATTEMPT_COLLECTION)
-                .where("studentId", "==", studentId)
+                .where("studentId", "==", authorizedStudentId)
                 .get();
 
             const history = snapshot.docs.map(doc => {
@@ -593,9 +734,18 @@ export class DailyQuizController {
             await db.collection(QUIZ_COLLECTION).doc(quizId).delete();
 
             const attemptsSnapshot = await db.collection(QUIZ_ATTEMPT_COLLECTION).where("quizId", "==", quizId).get();
-            const batch = db.batch();
-            attemptsSnapshot.docs.forEach(doc => batch.delete(doc.ref));
-            await batch.commit();
+            const docs = attemptsSnapshot.docs;
+            const CHUNK_SIZE = 400; // Strictly under Firestore's 500-write limit per batch
+
+            for (let i = 0; i < docs.length; i += CHUNK_SIZE) {
+                const chunk = docs.slice(i, i + CHUNK_SIZE);
+                const batch = db.batch();
+                chunk.forEach(doc => batch.delete(doc.ref));
+                await batch.commit();
+            }
+
+            // Invalidate cache for this quiz
+            generalCache.delete(`daily_quiz_stats_${quizId}`);
 
             return res.status(200).json({ success: true, message: "Quiz deleted successfully" });
         } catch (error: any) {

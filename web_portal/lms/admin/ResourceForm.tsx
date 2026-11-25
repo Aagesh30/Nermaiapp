@@ -57,6 +57,20 @@ export default function ResourceForm({ onClose, onSuccess, initialData }: Resour
   const [externalUrl, setExternalUrl] = useState(initialData?.sourceUrl || '');
   const [file, setFile] = useState<File | null>(null);
 
+  // Audio attachment state
+  const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [audioUrl, setAudioUrl] = useState(initialData?.audioUrl || '');
+
+  // Subject label
+  const [subject, setSubject] = useState(initialData?.subject || '');
+
+  const SUBJECT_OPTIONS = [
+    'History', 'Geography', 'Polity', 'Economy', 'Science & Technology',
+    'Environment', 'Current Affairs', 'Ethics', 'Art & Culture',
+    'International Relations', 'Internal Security', 'Social Issues',
+    'Disaster Management', 'General Studies', 'CSAT', 'Tamil Nadu Affairs', 'Other'
+  ];
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -175,6 +189,9 @@ export default function ResourceForm({ onClose, onSuccess, initialData }: Resour
       if (readingTimeMins) formData.append('readingTimeMins', readingTimeMins);
       if (pageCount) formData.append('pageCount', pageCount);
       if (tags) formData.append('tags', JSON.stringify(tags.split(',').map((t: string)=>t.trim()).filter(Boolean)));
+      if (subject) formData.append('subject', subject);
+      if (audioUrl) formData.append('audioUrl', audioUrl);
+      if (audioFile) formData.append('audioFile', audioFile);
   
       // Proper JSON Array format (Modern)
       if (targetBatchIds && visibility === 'batch') formData.append('targetBatchIds', JSON.stringify(targetBatchIds.split(',').map(id => id.trim())));
@@ -196,6 +213,8 @@ export default function ResourceForm({ onClose, onSuccess, initialData }: Resour
           title, description, type, categoryId, displayGroup, visibility, status, isGeneral, offlineAvailable,
           isSecure: visibility === 'public' ? isSecure : true,
           author, language, readingTimeMins, pageCount, tags: tags.split(',').map((t: string)=>t.trim()),
+          subject: subject || undefined,
+          audioUrl: audioUrl || undefined,
           targetBatchIds: visibility === 'batch' && targetBatchIds ? targetBatchIds.split(',').map((s: string)=>s.trim()) : [],
           courseIds: Array.from(courseIds),
           subjectIds: Array.from(subjectIds),
@@ -218,6 +237,9 @@ export default function ResourceForm({ onClose, onSuccess, initialData }: Resour
           formData.append('file', file);
         } else {
           formData.append('externalUrl', externalUrl);
+          if (uploadMode === 'drive' || externalUrl.includes('drive.google.com')) {
+            formData.append('googleDriveUrl', externalUrl);
+          }
           formData.append('provider', uploadMode === 'drive' ? 'google_drive' : 'firebase_asset');
         }
 
@@ -293,6 +315,16 @@ export default function ResourceForm({ onClose, onSuccess, initialData }: Resour
                       </select>
                     </div>
                   </div>
+                  {/* Subject Dropdown */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-1.5">Subject <span className="text-gray-500 font-normal">(for filtering)</span></label>
+                    <select value={subject} onChange={e=>setSubject(e.target.value)} className="w-full bg-gray-950 border border-gray-800 rounded-lg px-4 py-2 text-white focus:border-red-500 focus:outline-none">
+                      <option value="">-- None / General --</option>
+                      {SUBJECT_OPTIONS.map(s => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               </section>
 
@@ -345,6 +377,45 @@ export default function ResourceForm({ onClose, onSuccess, initialData }: Resour
                     <label className="block text-xs font-medium text-gray-400 mb-1">Tags (comma separated)</label>
                     <input value={tags} onChange={e=>setTags(e.target.value)} type="text" className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-1.5 text-white text-sm focus:border-red-500 outline-none" />
                   </div>
+                </div>
+              </section>
+
+              {/* 4. Audio Attachment */}
+              <section>
+                <h3 className="text-xs font-bold text-gray-400 mb-4 uppercase tracking-wider border-b border-gray-800 pb-2">4. Audio Narration <span className="text-gray-600 font-normal normal-case">(Optional)</span></h3>
+                <p className="text-xs text-gray-500 mb-3">Attach an audio lecture or narration — students will hear it while reading this PDF in the viewer.</p>
+                <div className="space-y-3">
+                  {/* Upload audio file */}
+                  <div className="border border-dashed border-purple-700/50 rounded-lg p-4 flex flex-col items-center justify-center bg-purple-950/10 text-center relative overflow-hidden group cursor-pointer hover:border-purple-500 transition-colors">
+                    <input
+                      type="file"
+                      accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg"
+                      onChange={e => setAudioFile(e.target.files?.[0] || null)}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                    />
+                    <svg className="w-7 h-7 text-purple-500 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z" /></svg>
+                    <p className="text-gray-300 text-sm font-medium">
+                      {audioFile ? `🎵 ${audioFile.name}` : 'Click to upload audio file'}
+                    </p>
+                    <p className="text-gray-500 text-xs mt-1">MP3, M4A, WAV, AAC — uploaded directly to Google Drive</p>
+                  </div>
+                  {/* OR paste audio URL */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-400 mb-1">Or paste Google Drive / External Audio URL</label>
+                    <input
+                      value={audioUrl}
+                      onChange={e => setAudioUrl(e.target.value)}
+                      type="url"
+                      placeholder="https://drive.google.com/... or https://..."
+                      className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-1.5 text-white text-sm focus:border-purple-500 outline-none placeholder:text-gray-600"
+                    />
+                  </div>
+                  {(initialData?.audioUrl || initialData?.hasAudio) && !audioFile && !audioUrl && (
+                    <p className="text-xs text-purple-400 flex items-center gap-1">
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                      Audio already attached. Upload a new file to replace it.
+                    </p>
+                  )}
                 </div>
               </section>
 

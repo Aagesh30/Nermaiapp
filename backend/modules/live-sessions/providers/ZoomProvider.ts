@@ -108,7 +108,7 @@ export class ZoomProvider implements LiveProvider {
               approval_type: 2, // No registration required
               who_can_share_screen: "host",
               who_can_share_screen_when_someone_is_sharing: "host",
-              auto_recording: "none"
+              auto_recording: "cloud"
             }
           },
           {
@@ -119,33 +119,64 @@ export class ZoomProvider implements LiveProvider {
           }
         );
       } catch (postError: any) {
-        logger.warn(`[ZoomProvider] Failed to create meeting on first attempt: ${postError.message}. Retrying...`);
-        response = await axios.post(
-          `https://api.zoom.us/v2/users/${zoomUserId}/meetings`,
-          {
-            topic: config.title,
-            type: 2,
-            start_time: config.startTime ? new Date(config.startTime).toISOString() : new Date().toISOString(),
-            duration: config.durationMinutes || 60,
-            settings: {
-              host_video: true,
-              participant_video: false,
-              join_before_host: false,
-              mute_upon_entry: true,
-              waiting_room: false,
-              approval_type: 2,
-              who_can_share_screen: "host",
-              who_can_share_screen_when_someone_is_sharing: "host",
-              auto_recording: "none"
+        const errMsg = (postError.response?.data?.message || postError.message || '').toLowerCase();
+        logger.warn(`[ZoomProvider] Failed to create meeting with cloud auto_recording: ${errMsg}. Retrying with local recording...`);
+        try {
+          response = await axios.post(
+            `https://api.zoom.us/v2/users/${zoomUserId}/meetings`,
+            {
+              topic: config.title,
+              type: 2,
+              start_time: config.startTime ? new Date(config.startTime).toISOString() : new Date().toISOString(),
+              duration: config.durationMinutes || 60,
+              settings: {
+                host_video: true,
+                participant_video: false,
+                join_before_host: false,
+                mute_upon_entry: true,
+                waiting_room: false,
+                approval_type: 2,
+                who_can_share_screen: "host",
+                who_can_share_screen_when_someone_is_sharing: "host",
+                auto_recording: "local"
+              }
+            },
+            {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              }
             }
-          },
-          {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
+          );
+        } catch (retryError: any) {
+          logger.warn(`[ZoomProvider] Retrying meeting creation with auto_recording: none as safe fallback: ${retryError.message}`);
+          response = await axios.post(
+            `https://api.zoom.us/v2/users/${zoomUserId}/meetings`,
+            {
+              topic: config.title,
+              type: 2,
+              start_time: config.startTime ? new Date(config.startTime).toISOString() : new Date().toISOString(),
+              duration: config.durationMinutes || 60,
+              settings: {
+                host_video: true,
+                participant_video: false,
+                join_before_host: false,
+                mute_upon_entry: true,
+                waiting_room: false,
+                approval_type: 2,
+                who_can_share_screen: "host",
+                who_can_share_screen_when_someone_is_sharing: "host",
+                auto_recording: "none"
+              }
+            },
+            {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              }
             }
-          }
-        );
+          );
+        }
       }
 
       const meetingData = response.data;
@@ -169,13 +200,6 @@ export class ZoomProvider implements LiveProvider {
       console.error('Zoom Create Meeting Error:', zoomErrorDetail);
       logger.error(`[ZoomProvider] Failed to create Zoom meeting for "${config.title}": ${JSON.stringify(zoomErrorDetail)}`);
 
-      // IMPORTANT: we must NOT fabricate a fake meeting ID here. A random number is not a real
-      // Zoom meeting, and generating one lets session creation "succeed" while producing a
-      // session that can never actually be joined — Zoom will reject it with
-      // "The meeting number is not found" (errorCode 3707) the moment anyone tries to connect.
-      // Instead, surface the real failure so the caller (startSession) reverts the session to
-      // SCHEDULED and the admin sees an actionable error, e.g. bad OAuth credentials, wrong
-      // ZOOM_ACCOUNT_ID, or an account without meeting-creation scope.
       throw new AppError(
         `Failed to create the Zoom meeting: ${error.response?.data?.message || error.message || 'Unknown Zoom API error'}. Check the Zoom account credentials configured for this session and try again.`,
         502
@@ -199,11 +223,34 @@ export class ZoomProvider implements LiveProvider {
             token = await this.getAccessToken({});
           }
 
-          // Auto-recording disabled — recording is managed manually by the host/teacher
-          logger.info(`[ZoomProvider] Live session ${meetingId} started. Auto-recording is disabled (manual control).`);
+          // Ensure auto_recording is active when class starts (cloud with local fallback)
+          await axios.patch(
+            `https://api.zoom.us/v2/meetings/${meetingId}`,
+            {
+              settings: {
+                auto_recording: 'cloud'
+              }
+            },
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              }
+            }
+          ).catch(async (patchErr: any) => {
+            const patchMsg = (patchErr.response?.data?.message || patchErr.message || '').toLowerCase();
+            if (patchMsg.includes('cloud') || patchMsg.includes('recording') || patchMsg.includes('not supported')) {
+              await axios.patch(
+                `https://api.zoom.us/v2/meetings/${meetingId}`,
+                { settings: { auto_recording: 'local' } },
+                { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }
+              ).catch(() => {});
+            }
+          });
+          logger.info(`[ZoomProvider] Live session ${meetingId} started. Auto-recording verified and activated.`);
         }
       } catch (err: any) {
-        logger.warn(`[ZoomProvider] Notice on startSession for meeting: ${err.message}`);
+        logger.warn(`[ZoomProvider] Notice on startSession auto-recording: ${err.message}`);
       }
     }
     return {

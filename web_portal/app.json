@@ -6,7 +6,7 @@
       "nermaiiasacademy",
       "com.nermai.iasacademy"
     ],
-    "version": "1.0.1",
+    "version": "1.0.4",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -15,7 +15,7 @@
     },
     "android": {
       "package": "com.nermai.iasacademy",
-      "versionCode": 7,
+      "versionCode": 10,
       "backgroundColor": "#7b0000",
       "googleServicesFile": "./google-services.json",
       "permissions": [

@@ -52,7 +52,7 @@ export class AnnouncementService {
   }
 
   async list(tenantId: string, role: string, studentContext?: { batchIds: string[], courseIds: string[] }): Promise<IAnnouncement[]> {
-    if (role === 'admin' || role === 'super_admin') {
+    if (['admin', 'super_admin', 'superadmin', 'coordinator'].includes(role)) {
       return this.repo.listForTenant(tenantId);
     }
     

@@ -149,6 +149,8 @@ export class LiveSessionService {
          batchName = 'All Batches';
        }
 
+       const attendedCount = liveSession?.joinedParticipantsDetails ? Object.keys(liveSession.joinedParticipantsDetails).length : (cls.attendedCount || cls.attendanceCount || 0);
+
        enriched.push({
          id: liveSession?.id || cls.id,
          classId: cls.id,
@@ -168,6 +170,8 @@ export class LiveSessionService {
          expectedDurationMinutes: durationMinutes,
          provider: liveSession?.provider || 'zoom',
          teacherName: cls.teacherName || 'Teacher',
+         attendedCount,
+         totalAttended: attendedCount,
          liveSession
        });
     }
@@ -1701,7 +1705,7 @@ Launch Payload Exists: ${!!session.launchPayload}
 
     // 1. Identity Display Formatting
     const isInstructor = user && ['super_admin', 'admin', 'teacher', 'staff', 'contributor', 'management', 'developer'].includes(user.role);
-    const name = user.name || user.displayName || user.email?.split('@')[0] || '';
+    let name = user.name || user.displayName || user.firstName || user.email?.split('@')[0] || '';
     let roleStr = user.role || 'student';
     
     if (roleStr === 'teacher' || roleStr === 'staff') {
@@ -1718,19 +1722,67 @@ Launch Payload Exists: ${!!session.launchPayload}
       roleStr = 'student';
     }
 
-    let rollNumber = user.rollNumber || '';
+    let rollNumber = user.rollNumber || user.rollNo || user.regNo || user.registrationNumber || '';
     if (!rollNumber && (!user.role || user.role === 'student')) {
       try {
-        const profileSnap = await db.collection('student_profiles').doc(user.userId || user.id).get();
-        rollNumber = profileSnap.data()?.rollNumber || '';
+        const uid = user.userId || user.id;
+        if (uid) {
+          // 1. Try students collection by doc id
+          const sSnap = await db.collection('students').doc(uid).get();
+          if (sSnap.exists) {
+            const sData = sSnap.data();
+            rollNumber = sData?.rollNumber || sData?.rollNo || sData?.regNo || sData?.loginUsername || '';
+            if (!name || name === user.email?.split('@')[0]) {
+              name = sData?.name || sData?.fullName || sData?.studentName || name;
+            }
+          }
+          // 2. Try students collection by userId
+          if (!rollNumber) {
+            const byUid = await db.collection('students').where('userId', '==', uid).limit(1).get();
+            if (!byUid.empty) {
+              const sData = byUid.docs[0].data();
+              rollNumber = sData?.rollNumber || sData?.rollNo || sData?.regNo || sData?.loginUsername || '';
+              if (!name || name === user.email?.split('@')[0]) {
+                name = sData?.name || sData?.fullName || sData?.studentName || name;
+              }
+            }
+          }
+          // 3. Try users collection or linked studentId
+          if (!rollNumber) {
+            const uSnap = await db.collection('users').doc(uid).get();
+            if (uSnap.exists) {
+              const uData = uSnap.data();
+              rollNumber = uData?.rollNumber || uData?.rollNo || uData?.regNo || uData?.username || '';
+              if (uData?.studentId && !rollNumber) {
+                const bySid = await db.collection('students').doc(uData.studentId).get();
+                if (bySid.exists) {
+                  rollNumber = bySid.data()?.rollNumber || bySid.data()?.rollNo || bySid.data()?.regNo || bySid.data()?.loginUsername || '';
+                  if (!name || name === user.email?.split('@')[0]) {
+                    name = bySid.data()?.name || bySid.data()?.fullName || bySid.data()?.studentName || name;
+                  }
+                }
+              }
+            }
+          }
+          // 4. Try student_profiles collection
+          if (!rollNumber) {
+            const profileSnap = await db.collection('student_profiles').doc(uid).get();
+            rollNumber = profileSnap.data()?.rollNumber || '';
+          }
+        }
       } catch(e) {}
     }
 
-    // Format: name - rollNumber - role (leaving blanks if missing)
-    let finalDisplayName = `${name} - ${rollNumber} - ${roleStr}`;
+    // Format: For students: "Roll Number - Name" (or Name if no roll number). For instructors: "Name - Role"
+    let finalDisplayName = '';
+    if (!isInstructor) {
+      finalDisplayName = rollNumber ? `${rollNumber} - ${name}` : name;
+    } else {
+      finalDisplayName = `${name} - ${roleStr}`;
+    }
     
     // Pass the formatted name to the provider payload generator
-    const userWithIdentity = { ...user, displayName: finalDisplayName };
+    const userWithIdentity = { ...user, displayName: finalDisplayName, rollNumber };
 
     const providerInstance = ProviderManager.getProvider(session.provider);
 

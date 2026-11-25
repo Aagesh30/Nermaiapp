@@ -119,6 +119,11 @@ export async function sendPushNotification(
         q1.forEach((d) => docsMap.set(d.id, d));
         const q2 = await db.collection("device_push_tokens").where("studentId", "==", id).get();
         q2.forEach((d) => docsMap.set(d.id, d));
+        // Also search by username and rollNumber (students who register APK with those identifiers)
+        const q3 = await db.collection("device_push_tokens").where("username", "==", id).get();
+        q3.forEach((d) => docsMap.set(d.id, d));
+        const q4 = await db.collection("device_push_tokens").where("rollNumber", "==", id).get();
+        q4.forEach((d) => docsMap.set(d.id, d));
       }
     } else {
       let q: admin.firestore.Query = db.collection("device_push_tokens");

@@ -22,6 +22,14 @@ export interface IResource extends BaseAuditFields {
   thumbnail?: string;
   pageCount?: number;
   tags?: string[];
+
+  // Audio Attachment (optional narration/lecture audio linked to PDF)
+  hasAudio?: boolean;
+  audioUrl?: string;          // Public/Drive URL to the audio file
+  audioStoragePath?: string;  // Encrypted storage path (if uploaded to Drive/Firebase)
+
+  // Subject Label (simple top-level subject tag e.g. 'History', 'Geography')
+  subject?: string;
   
   // Extended Metadata
   author?: string;

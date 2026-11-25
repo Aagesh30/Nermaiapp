@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import { SessionService, DeviceInfo } from '../../core/security/sessions/SessionService';
 import { logger } from '../../core/logger';
+import { LoginRateLimitService } from '../../core/security/rateLimiter/LoginRateLimitService';
 
 // ─── Single-Device Policy Enforcement ─────────────────────────────────────────
 /**
@@ -220,6 +221,28 @@ export const registerStudent = async (req: Request, res: Response, next: NextFun
 
 export const loginStudent = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    // ── Persistent Rate Limit & Lockout Check ───────────────────────────────
+    const lockout = await LoginRateLimitService.checkLockout(req);
+    if (lockout.isLocked) {
+      return res.status(429).json({
+        success: false,
+        status: 'error',
+        message: `Too many failed login attempts from this IP address. Please try again after ${lockout.minutesRemaining} minute(s).`
+      });
+    }
+
+    const onFailedLogin = async () => {
+      const attempt = await LoginRateLimitService.recordFailedAttempt(req);
+      if (attempt.isNowLocked) {
+        return res.status(429).json({
+          success: false,
+          status: 'error',
+          message: 'Too many failed login attempts from this IP address. Please try again after 15 minutes.'
+        });
+      }
+      return res.status(401).json({ status: 'error', message: 'Invalid username or password' });
+    };
+
     const body = loginSchema.parse(req.body);
     const rawIdentifier = (body.identifier || body.username || body.email || body.phone || '').trim();
     const password = body.password;
@@ -262,7 +285,7 @@ export const loginStudent = async (req: Request, res: Response, next: NextFuncti
 
       const passwordMatch = await bcrypt.compare(password, adminData.passwordHash);
       if (!passwordMatch) {
-        return res.status(401).json({ status: 'error', message: 'Invalid username or password' });
+        return onFailedLogin();
       }
 
       const role = adminData.role || 'admin';
@@ -291,6 +314,7 @@ export const loginStudent = async (req: Request, res: Response, next: NextFuncti
       });
 
       setRefreshTokenCookie(res, session.refreshToken, session.expiresAt);
+      await LoginRateLimitService.recordSuccessfulLogin(req);
 
       return res.status(200).json({
         status: 'success',
@@ -348,7 +372,7 @@ export const loginStudent = async (req: Request, res: Response, next: NextFuncti
       }
 
       if (!passwordMatch) {
-        return res.status(401).json({ status: 'error', message: 'Invalid username or password' });
+        return onFailedLogin();
       }
 
       let batchName = userData.batch || '';
@@ -387,6 +411,7 @@ export const loginStudent = async (req: Request, res: Response, next: NextFuncti
       });
 
       setRefreshTokenCookie(res, session.refreshToken, session.expiresAt);
+      await LoginRateLimitService.recordSuccessfulLogin(req);
 
       return res.status(200).json({
         status: 'success',
@@ -460,7 +485,7 @@ export const loginStudent = async (req: Request, res: Response, next: NextFuncti
       }
 
       if (!passwordMatch) {
-        return res.status(401).json({ status: 'error', message: 'Invalid username or password' });
+        return onFailedLogin();
       }
 
       const batchName = studentData.batch || '';
@@ -490,6 +515,7 @@ export const loginStudent = async (req: Request, res: Response, next: NextFuncti
       });
 
       setRefreshTokenCookie(res, session.refreshToken, session.expiresAt);
+      await LoginRateLimitService.recordSuccessfulLogin(req);
 
       return res.status(200).json({
         status: 'success',
@@ -512,7 +538,7 @@ export const loginStudent = async (req: Request, res: Response, next: NextFuncti
     }
 
     // ── 4. Nothing found ─────────────────────────────────────────────────────────
-    return res.status(401).json({ status: 'error', message: 'Invalid username or password' });
+    return onFailedLogin();
 
   } catch (error: any) {
     next(error);
@@ -541,12 +567,48 @@ export const refreshToken = async (req: Request, res: Response, next: NextFuncti
 
     const { session } = result;
 
+    // Resolve user details and studentId so student identity never changes mid-session
+    let studentId: string | null = null;
+    let name = '';
+    let email = '';
+    let username = '';
+    let batchName = '';
+
+    try {
+      if (session.role === 'student' || session.role === 'user') {
+        const userDoc = await db.collection('users').doc(session.userId).get();
+        if (userDoc.exists) {
+          const uData = userDoc.data()!;
+          studentId = uData.studentId || null;
+          name = uData.name || uData.username || '';
+          email = uData.email || '';
+          username = uData.username || '';
+          batchName = uData.batch || '';
+        } else {
+          const sDoc = await db.collection('students').doc(session.userId).get();
+          if (sDoc.exists) {
+            const sData = sDoc.data()!;
+            studentId = sDoc.id;
+            name = `${sData.firstName || ''} ${sData.lastName || ''}`.trim() || sData.name || '';
+            email = sData.email || '';
+            username = sData.loginUsername || sData.rollNumber || '';
+            batchName = sData.batch || '';
+          }
+        }
+      }
+    } catch (_) {}
+
     // Issue new access token
     const token = issueAccessToken({
       userId: session.userId,
       role: session.role,
       tenantId: session.tenantId,
       sessionId: session.sessionId,
+      studentId: studentId || (session.role === 'student' ? session.userId : null),
+      name,
+      email,
+      username,
+      batch: batchName,
     });
 
     // Update the httpOnly cookie for web
@@ -559,6 +621,9 @@ export const refreshToken = async (req: Request, res: Response, next: NextFuncti
         refreshToken: result.refreshToken, // For mobile clients
         sessionId,
         expiresIn: '900',
+        userId: session.userId,
+        studentId: studentId || (session.role === 'student' ? session.userId : null),
+        role: session.role,
       },
     });
   } catch (error: any) {

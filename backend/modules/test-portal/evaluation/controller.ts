@@ -66,7 +66,8 @@ export class EvaluationController {
         let shouldUpdateLeaderboard = true;
         if (leaderboardSnap.exists) {
             const existing = leaderboardSnap.data()!;
-            if ((existing.obtainedMarks || 0) >= score) {
+            const existingMarks = typeof existing.obtainedMarks === "number" ? existing.obtainedMarks : -Infinity;
+            if (existingMarks >= score) {
                 shouldUpdateLeaderboard = false;
             }
         }
@@ -320,10 +321,9 @@ export class EvaluationController {
                 });
             }
 
-            // Round to 2 decimal places; cap displayed score at 0 (never show negative total)
-            const actualObtainedMarks = Math.round(obtainedMarks * 100) / 100;
-            const finalObtainedMarks  = Math.max(0, actualObtainedMarks);
-            const percentage          = totalMarks > 0 ? (finalObtainedMarks / totalMarks) * 100 : 0;
+            // Round to 2 decimal places; preserve raw negative score
+            const finalObtainedMarks = Math.round(obtainedMarks * 100) / 100;
+            const percentage         = totalMarks > 0 ? (finalObtainedMarks / totalMarks) * 100 : 0;
             const passingMarks        = Number(test.passingMarks) || 0;
             let status = "fail";
             if (finalObtainedMarks > 0) {
@@ -380,8 +380,8 @@ export class EvaluationController {
                 return /^\d{7,15}$/.test(clean);
             };
             if (!rollNumber || rollNumber === "N/A" || rollNumber === "Student" || isPhoneNum(rollNumber) || rollNumber === studentName) rollNumber = "Guest";
-            if (attempt.isSpecialBatchTest && (attempt.specialRollNo || (attempt.rollNumber && attempt.rollNumber !== "Guest"))) {
-                rollNumber = attempt.specialRollNo || attempt.rollNumber;
+            if ((attempt.isSpecialBatchTest || attempt.mockRollNumber || attempt.specialRollNo) && (attempt.specialRollNo || attempt.mockRollNumber || (attempt.rollNumber && attempt.rollNumber !== "Guest"))) {
+                rollNumber = attempt.specialRollNo || attempt.mockRollNumber || attempt.rollNumber;
             }
 
             const resultPayload = {
@@ -499,6 +499,19 @@ export class EvaluationController {
                 });
             }
 
+            const user = (req as any).user;
+            const adminRoles = ["super_admin", "admin", "staff", "coordinator", "teacher", "developer"];
+            if (user && !adminRoles.includes(user.role)) {
+                const callerId = String(user.studentId || user.userId || "");
+                const resultStudentId = String(result.studentId || "");
+                if (callerId !== resultStudentId && user.userId !== resultStudentId) {
+                    return res.status(403).json({
+                        success: false,
+                        message: "Access denied: you can only view your own result"
+                    });
+                }
+            }
+
             return res.status(200).json({
                 success: true,
                 data: result
@@ -556,7 +569,7 @@ export class EvaluationController {
                     const last = studentData.lastName || "";
                     const full = (first + " " + last).trim();
                     studentName = full || studentData.fullName || studentData.name || studentName;
-                    rollNumber = studentData.rollNumber || "";
+                    rollNumber = studentData.mockRollNumber || studentData.specialRollNo || studentData.rollNumber || "";
                 } else {
                     // If not found in students, check if it is a user UID in users collection
                     const userDoc = await db.collection("users").doc(r.studentId).get();
@@ -572,7 +585,7 @@ export class EvaluationController {
                                 const last = studentData2.lastName || "";
                                 const full = (first + " " + last).trim();
                                 studentName = full || studentData2.fullName || studentName;
-                                rollNumber = studentData2.rollNumber || "";
+                                rollNumber = studentData2.mockRollNumber || studentData2.specialRollNo || studentData2.rollNumber || "";
                             }
                         } else {
                             rollNumber = userData.username || userData.loginUsername || studentName;
@@ -622,6 +635,18 @@ export class EvaluationController {
         try {
             const { studentId, testId } = req.params;
 
+            const user = (req as any).user;
+            const adminRoles = ["super_admin", "admin", "staff", "coordinator", "teacher", "developer"];
+            if (user && !adminRoles.includes(user.role)) {
+                const callerId = String(user.studentId || user.userId || "");
+                if (callerId !== studentId && user.userId !== studentId) {
+                    return res.status(403).json({
+                        success: false,
+                        message: "Access denied: you can only view your own results"
+                    });
+                }
+            }
+
             const snapshot = await db.collection("results")
                 .where("studentId", "==", studentId)
                 .where("testId", "==", testId)
@@ -666,13 +691,34 @@ export class EvaluationController {
                 .where("isDeleted", "==", false)
                 .get();
 
-            const results = snapshot.docs.map(doc => doc.data());
+            const user = (req as any).user;
+            const adminRoles = ["super_admin", "admin", "staff", "coordinator", "teacher", "developer"];
+            const isPrivileged = user && adminRoles.includes(user.role);
+
+            let results = snapshot.docs.map(doc => doc.data());
+
+            // Non-privileged callers may only retrieve their own result for this test
+            if (!isPrivileged) {
+                const callerId = String(user?.studentId || user?.userId || "");
+                results = results.filter((r: any) =>
+                    (callerId && String(r.studentId) === callerId) ||
+                    (user?.userId && String(r.studentId) === String(user.userId))
+                );
+            }
+
             results.sort((a: any, b: any) => (b.obtainedMarks || 0) - (a.obtainedMarks || 0));
             const enrichedResults = await Promise.all(results.map(r => EvaluationController.enrichResult(r)));
 
+            // Sanitize: strip questionDetails (which contains correctAnswer) for non-privileged callers
+            const sanitizedResults = enrichedResults.map(r => {
+                if (isPrivileged) return r;
+                const { questionDetails, ...safeData } = r;
+                return safeData;
+            });
+
             return res.status(200).json({
                 success: true,
-                data: enrichedResults
+                data: sanitizedResults
             });
 
         } catch (error: any) {
@@ -737,6 +783,18 @@ export class EvaluationController {
     static async getStudentAllResults(req: Request, res: Response) {
         try {
             const { studentId } = req.params;
+
+            const user = (req as any).user;
+            const adminRoles = ["super_admin", "admin", "staff", "coordinator", "teacher", "developer"];
+            if (user && !adminRoles.includes(user.role)) {
+                const callerId = String(user.studentId || user.userId || "");
+                if (callerId !== studentId && user.userId !== studentId) {
+                    return res.status(403).json({
+                        success: false,
+                        message: "Access denied: you can only view your own results"
+                    });
+                }
+            }
 
             const snapshot = await db.collection("results")
                 .where("studentId", "==", studentId)
@@ -839,6 +897,33 @@ export class EvaluationController {
             const totalMarks = totalQuestions * marksPerQ;
             let addedCount = 0;
 
+            // Fetch students to map uploaded roll numbers to student name, mock roll number, and studentId
+            const studentMap = new Map<string, any>();
+            try {
+                const studentsSnap = await db.collection("students").get();
+                for (const doc of studentsSnap.docs) {
+                    const st = { id: doc.id, ...doc.data() } as any;
+                    const addKey = (k: any) => {
+                        if (k !== undefined && k !== null) {
+                            const str = String(k).trim().toLowerCase();
+                            if (str && !studentMap.has(str)) {
+                                studentMap.set(str, st);
+                            }
+                        }
+                    };
+                    addKey(st.rollNumber);
+                    addKey(st.rollNo);
+                    addKey(st.mockRollNumber);
+                    addKey(st.specialRollNo);
+                    addKey(st.loginUsername);
+                    if (st.specialRollNumbers && typeof st.specialRollNumbers === "object") {
+                        Object.values(st.specialRollNumbers).forEach(addKey);
+                    }
+                }
+            } catch (err) {
+                console.warn("Could not pre-fetch students for roll number mapping:", err);
+            }
+
             const recordBatches: any[][] = [];
             for (let i = 0; i < records.length; i += 400) {
                 recordBatches.push(records.slice(i, i + 400));
@@ -847,8 +932,35 @@ export class EvaluationController {
             for (const chunk of recordBatches) {
                 const writeBatch = db.batch();
                 for (const rec of chunk) {
-                    const studentName = String(rec.studentName || rec.name || "Offline Student").trim();
-                    const rollNumber = String(rec.rollNumber || rec.rollNo || "Guest").trim();
+                    const rawRollNumber = String(rec.rollNumber || rec.rollNo || "Guest").trim();
+                    const cleanRollKey = rawRollNumber.toLowerCase();
+                    const matchedStudent = studentMap.get(cleanRollKey);
+
+                    const safeRoll = rawRollNumber.replace(/[^a-zA-Z0-9_-]/g, "_");
+                    const attemptId = `offline_${testId}_${safeRoll || Date.now()}_${addedCount}`;
+
+                    let studentName = String(rec.studentName || rec.name || "").trim();
+                    let rollNumber = rawRollNumber;
+                    let mockRollNumber = String(rec.mockRollNumber || "").trim();
+                    let studentId = attemptId;
+
+                    if (matchedStudent) {
+                        studentId = matchedStudent.id;
+                        const fullName = `${matchedStudent.firstName || ""} ${matchedStudent.lastName || ""}`.trim() || matchedStudent.fullName || matchedStudent.name;
+                        if (fullName) {
+                            studentName = fullName;
+                        }
+                        if (matchedStudent.mockRollNumber || matchedStudent.specialRollNo) {
+                            mockRollNumber = String(matchedStudent.mockRollNumber || matchedStudent.specialRollNo).trim();
+                        }
+                        if (matchedStudent.rollNumber || matchedStudent.rollNo) {
+                            rollNumber = String(matchedStudent.rollNumber || matchedStudent.rollNo).trim();
+                        }
+                    }
+
+                    if (!studentName || studentName === "Offline Student") {
+                        studentName = matchedStudent ? (`${matchedStudent.firstName || ""} ${matchedStudent.lastName || ""}`.trim() || "Offline Student") : (rawRollNumber !== "Guest" ? `Student (${rawRollNumber})` : "Offline Student");
+                    }
                     const answers = rec.answers || {};
 
                     let correctCount = 0;
@@ -856,43 +968,53 @@ export class EvaluationController {
                     let skippedCount = 0;
                     let obtainedMarks = 0;
 
-                    for (let qNo = 1; qNo <= totalQuestions; qNo++) {
-                        const q = questionsMap.get(qNo);
-                        let correctAns = String(q?.correctAnswer || "").trim().toUpperCase();
-                        if (!correctAns && q?.options && Array.isArray(q.options)) {
-                            correctAns = String(q.answer || "").trim().toUpperCase();
-                        }
-                        const rawChosen = answers[qNo] ?? answers[`Q${qNo}`] ?? answers[`q${qNo}`] ?? answers[`Q.${qNo}`] ?? answers[`q.${qNo}`] ?? "";
-                        const chosen = String(rawChosen).trim().toUpperCase();
-
-                        if (!chosen) {
-                            skippedCount++;
-                            obtainedMarks += unattendedMarksPerQ;
-                        } else if (chosen === correctAns && correctAns !== "") {
-                            correctCount++;
-                            obtainedMarks += marksPerQ;
+                    if (rec.hasDirectMarks) {
+                        correctCount = typeof rec.correct === "number" && !isNaN(rec.correct) ? rec.correct : 0;
+                        wrongCount = typeof rec.wrong === "number" && !isNaN(rec.wrong) ? rec.wrong : 0;
+                        skippedCount = typeof rec.skipped === "number" && !isNaN(rec.skipped) ? rec.skipped : Math.max(0, totalQuestions - (correctCount + wrongCount));
+                        if (typeof rec.obtainedMarks === "number" && !isNaN(rec.obtainedMarks)) {
+                            obtainedMarks = rec.obtainedMarks;
                         } else {
-                            wrongCount++;
-                            obtainedMarks -= negMarksPerQ;
+                            obtainedMarks = (correctCount * marksPerQ) - (wrongCount * negMarksPerQ) + (skippedCount * unattendedMarksPerQ);
+                        }
+                    } else {
+                        for (let qNo = 1; qNo <= totalQuestions; qNo++) {
+                            const q = questionsMap.get(qNo);
+                            let correctAns = String(q?.correctAnswer || "").trim().toUpperCase();
+                            if (!correctAns && q?.options && Array.isArray(q.options)) {
+                                correctAns = String(q.answer || "").trim().toUpperCase();
+                            }
+                            const rawChosen = answers[qNo] ?? answers[`Q${qNo}`] ?? answers[`q${qNo}`] ?? answers[`Q.${qNo}`] ?? answers[`q.${qNo}`] ?? "";
+                            const chosen = String(rawChosen).trim().toUpperCase();
+
+                            if (!chosen) {
+                                skippedCount++;
+                                obtainedMarks += unattendedMarksPerQ;
+                            } else if (chosen === correctAns && correctAns !== "") {
+                                correctCount++;
+                                obtainedMarks += marksPerQ;
+                            } else {
+                                wrongCount++;
+                                obtainedMarks -= negMarksPerQ;
+                            }
                         }
                     }
 
-                    const finalObtainedMarks = Math.max(0, Math.round(obtainedMarks * 100) / 100);
+                    const finalObtainedMarks = Math.round(obtainedMarks * 100) / 100;
                     const percentage = totalMarks > 0 ? (finalObtainedMarks / totalMarks) * 100 : 0;
                     const passingMarks = Number(test.passingMarks) || 0;
                     const status = finalObtainedMarks >= (passingMarks > 0 ? passingMarks : totalMarks * 0.35) ? "pass" : "fail";
 
-                    const safeRoll = rollNumber.replace(/[^a-zA-Z0-9_-]/g, "_");
-                    const attemptId = `offline_${testId}_${safeRoll || Date.now()}_${addedCount}`;
                     const resultRef = db.collection("results").doc(attemptId);
 
                     writeBatch.set(resultRef, {
                         id: attemptId,
                         attemptId,
                         testId,
-                        studentId: attemptId,
+                        studentId,
                         studentName,
                         rollNumber,
+                        mockRollNumber: mockRollNumber || (rawRollNumber !== "Guest" && rawRollNumber !== rollNumber ? rawRollNumber : ""),
                         totalMarks,
                         obtainedMarks: finalObtainedMarks,
                         percentage: Math.round(percentage * 100) / 100,

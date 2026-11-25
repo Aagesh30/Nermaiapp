@@ -13,38 +13,49 @@ const db = admin.firestore();
 export class AdminDashboardController {
     static async getOverview(req: Request, res: Response) {
         try {
-            // Get counts
-            const studentsSnapshot = await db.collection("students").where("isDeleted", "==", false).get();
-            const staffSnapshot = await db.collection("staff").where("isDeleted", "==", false).get();
-            const admissionsSnapshot = await db.collection("admissions").where("isDeleted", "==", false).get();
-            const leadsSnapshot = await db.collection("leads").where("isDeleted", "==", false).get();
-            const paymentsSnapshot = await db.collection("feePayments").where("isDeleted", "==", false).get();
+            const userRole = (req as any).user?.role;
+            const canViewFinancials = ["super_admin", "admin", "coordinator", "developer"].includes(userRole);
 
-            // Calculate total revenue (simplified)
-            let totalRevenue = 0;
-            paymentsSnapshot.docs.forEach(doc => {
-                const data = doc.data();
-                totalRevenue += data.amount || 0;
-            });
+            // Fetch non-financial counts in parallel
+            const [studentsSnapshot, staffSnapshot, admissionsSnapshot, leadsSnapshot] = await Promise.all([
+                db.collection("students").where("isDeleted", "==", false).get(),
+                db.collection("staff").where("isDeleted", "==", false).get(),
+                db.collection("admissions").where("isDeleted", "==", false).get(),
+                db.collection("leads").where("isDeleted", "==", false).get()
+            ]);
+
+            const stats: Record<string, any> = {
+                totalStudents: studentsSnapshot.size,
+                totalStaff: staffSnapshot.size,
+                totalAdmissions: admissionsSnapshot.size,
+                totalLeads: leadsSnapshot.size
+            };
+
+            if (canViewFinancials) {
+                const paymentsSnapshot = await db.collection("feePayments").where("isDeleted", "==", false).get();
+                let totalRevenue = 0;
+                paymentsSnapshot.docs.forEach(doc => {
+                    const data = doc.data();
+                    totalRevenue += data.amount || 0;
+                });
+                stats.totalRevenue = totalRevenue;
+                stats.totalPayments = paymentsSnapshot.size;
+            } else {
+                stats.totalRevenue = null;
+                stats.totalPayments = null;
+            }
 
             // Get recent activities
             const recentActivities = [
                 { type: "student", message: "New student registered", time: new Date().toISOString() },
-                { type: "payment", message: "Fee payment received", time: new Date().toISOString() },
+                ...(canViewFinancials ? [{ type: "payment", message: "Fee payment received", time: new Date().toISOString() }] : []),
                 { type: "lead", message: "New lead added", time: new Date().toISOString() }
             ];
 
             return res.status(200).json({
                 success: true,
                 data: {
-                    stats: {
-                        totalStudents: studentsSnapshot.size,
-                        totalStaff: staffSnapshot.size,
-                        totalAdmissions: admissionsSnapshot.size,
-                        totalLeads: leadsSnapshot.size,
-                        totalRevenue,
-                        totalPayments: paymentsSnapshot.size
-                    },
+                    stats,
                     recentActivities
                 }
             });

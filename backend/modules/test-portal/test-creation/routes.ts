@@ -58,10 +58,19 @@ router.delete("/permission-requests/:id", OfflineTestRequestController.deleteReq
 /** UPLOAD QUESTION IMAGE TO GOOGLE DRIVE (admin only) */
 router.post("/upload-question-image", requireRole(adminRoles), TestCreationController.uploadQuestionImage);
 
+/** UPLOAD EXPLANATION DOC TO GOOGLE DRIVE (admin only) */
+router.post("/upload-explanation-doc", requireRole(adminRoles), TestCreationController.uploadExplanationDoc);
+
+/** UPDATE EXPLANATIONS FOR A TEST (admin only) */
+router.patch("/:id/explanations", requireRole(adminRoles), TestCreationController.updateExplanations);
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** GET SINGLE TEST — students and admins */
 router.get("/:id", TestCreationController.getOne);
+
+/** GET ALL QUESTIONS FOR A TEST (admin and student study mode) */
+router.get("/:id/questions", TestCreationController.getTestQuestions);
 
 /** GET QUESTION PAPER PDF (available to all authenticated users after exam closes) */
 router.get("/:id/question-paper", TestCreationController.getQuestionPaper);

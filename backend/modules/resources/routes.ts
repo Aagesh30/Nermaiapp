@@ -63,7 +63,10 @@ const adminRoles = ['super_admin', 'admin', 'staff', 'teacher', 'editor', 'devel
 
 // ─── List & Create ───────────────────────────────────────────────────────────
 resourceRoutes.get('/', requireAuth, Controller.list);
-resourceRoutes.post('/', requireAuth, requireRole(adminRoles), multerCloudWrapper(upload.single('file')), Controller.create);
+resourceRoutes.post('/', requireAuth, requireRole(adminRoles), multerCloudWrapper(upload.fields([
+  { name: 'file', maxCount: 1 },
+  { name: 'audioFile', maxCount: 1 }
+])), Controller.create);
 
 // ─── Sub-resource routes MUST come before /:id to avoid Express 5 greedy match ──
 // Express 5 changed path matching — /:id will shadow /:id/access etc unless ordered correctly.
@@ -80,11 +83,17 @@ resourceRoutes.get('/:id/access', requireAuth, Controller.getAccess);
 // Note: This expects a standard FIREBASE token or ADMIN token, NOT the viewer token!
 resourceRoutes.get('/:id/content', requireAuthOrQueryToken, Controller.streamContent);
 
+// Audio proxy — streams the resource's audio file through backend to avoid Drive CORS/virus-scan
+resourceRoutes.get('/:id/audio', requireAuthOrQueryToken, Controller.streamAudio);
+
 // Secure stream for the mobile viewer - expects the short-lived viewerToken
 import { requireViewerJwt } from '../../core/middleware/auth.middleware';
 resourceRoutes.get('/:id/secure-stream', requireViewerJwt, Controller.streamContent);
 
-resourceRoutes.post('/:id/version', requireAuth, requireRole(adminRoles), multerCloudWrapper(upload.single('file')), Controller.uploadVersion);
+resourceRoutes.post('/:id/version', requireAuth, requireRole(adminRoles), multerCloudWrapper(upload.fields([
+  { name: 'file', maxCount: 1 },
+  { name: 'audioFile', maxCount: 1 }
+])), Controller.uploadVersion);
 
 // ─── Generic /:id — LAST so it doesn't shadow the sub-paths above ─────────────
 resourceRoutes.get('/:id', requireAuth, Controller.getById);

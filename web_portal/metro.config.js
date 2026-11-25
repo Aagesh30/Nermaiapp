@@ -14,7 +14,7 @@ config.cacheStores = [
 ];
 
 // ─── 2. Increase Max Workers ─────────────────────────────────────────────────
-config.maxWorkers = Math.max(os.cpus().length - 1, 2);
+config.maxWorkers = process.env.MAX_WORKERS ? parseInt(process.env.MAX_WORKERS) : 2;
 
 // ─── 3. Disable Lazy Bundling ─────────────────────────────────────────────────
 if (config.transformer) {

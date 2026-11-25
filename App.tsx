@@ -51,7 +51,7 @@ import * as Print from "expo-print";
 import * as XLSX from "xlsx";
 
 // Configure your Host IP address for local network connections or production server
-const DEFAULT_HOST_IP = "nermaiiasacademy-519c8.web.app";
+const DEFAULT_HOST_IP = "192.168.0.120";
 // Timeout in ms for all API calls — 30s gives plenty of room on mobile Wi-Fi / Cloud Functions cold start
 const API_TIMEOUT_MS = 30000;
 
@@ -440,40 +440,43 @@ function DatePickerField({
                 </TouchableOpacity>
               </View>
 
-              <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
+              <View style={{ flexDirection: "row", marginBottom: 8 }}>
                 {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map(d => (
-                  <Text key={d} style={{ width: 36, textAlign: "center", fontSize: 11, fontWeight: "bold", color: "#888" }}>{d}</Text>
+                  <View key={d} style={{ width: `${100 / 7}%`, alignItems: "center", justifyContent: "center" }}>
+                    <Text style={{ fontSize: 11, fontWeight: "bold", color: "#888" }}>{d}</Text>
+                  </View>
                 ))}
               </View>
 
               <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
                 {Array.from({ length: firstDayOfWeek }).map((_, i) => (
-                  <View key={`empty-${i}`} style={{ width: 36, height: 36 }} />
+                  <View key={`empty-${i}`} style={{ width: `${100 / 7}%`, height: 38 }} />
                 ))}
                 {Array.from({ length: daysInMonth }).map((_, i) => {
                   const day = i + 1;
                   const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
                   const isSel = value === dateStr;
                   return (
-                    <TouchableOpacity
-                      key={`day-${day}`}
-                      onPress={() => {
-                        onChange(dateStr);
-                        setShowModal(false);
-                      }}
-                      style={{
-                        width: 36,
-                        height: 36,
-                        justifyContent: "center",
-                        alignItems: "center",
-                        borderRadius: 18,
-                        backgroundColor: isSel ? "#c62828" : "transparent"
-                      }}
-                    >
-                      <Text style={{ fontSize: 12, color: isSel ? "#fff" : (darkMode ? "#ddd" : "#212121"), fontWeight: isSel ? "bold" : "normal" }}>
-                        {day}
-                      </Text>
-                    </TouchableOpacity>
+                    <View key={`day-${day}`} style={{ width: `${100 / 7}%`, height: 38, alignItems: "center", justifyContent: "center" }}>
+                      <TouchableOpacity
+                        onPress={() => {
+                          onChange(dateStr);
+                          setShowModal(false);
+                        }}
+                        style={{
+                          width: 32,
+                          height: 32,
+                          justifyContent: "center",
+                          alignItems: "center",
+                          borderRadius: 16,
+                          backgroundColor: isSel ? "#c62828" : "transparent"
+                        }}
+                      >
+                        <Text style={{ fontSize: 12, color: isSel ? "#fff" : (darkMode ? "#ddd" : "#212121"), fontWeight: isSel ? "bold" : "normal" }}>
+                          {day}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   );
                 })}
               </View>
@@ -696,6 +699,7 @@ export default function App() {
   const [noticeTab, setNoticeTab] = useState<"notices" | "notifications">("notices");
   const [searchNoticeQuery, setSearchNoticeQuery] = useState("");
   const [searchNoticeDate, setSearchNoticeDate] = useState("");
+  const [noticeCategoryFilter, setNoticeCategoryFilter] = useState<"general" | "student_alerts" | "all">("general");
   const [pdfFilename, setPdfFilename] = useState("");
   const [akFilename, setAkFilename] = useState("");
   const [newNotification, setNewNotification] = useState({ title: "", message: "", targetGroup: "all", targetBatch: "" });
@@ -788,6 +792,7 @@ export default function App() {
   const [reviewMode, setReviewMode] = useState(false);
   const [attemptQuestions, setAttemptQuestions] = useState<any[]>([]);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string>>({});
+  const selectedAnswersRef = useRef<Record<string, string>>({});
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
   const [notifyMsg, setNotifyMsg] = useState({ title: "", message: "" });
   const [feedbackRating, setFeedbackRating] = useState(5);
@@ -802,6 +807,7 @@ export default function App() {
   const [resultsLoading, setResultsLoading] = useState(false);
   const [allTestResults, setAllTestResults] = useState<any[]>([]);
   const [downloadingTestId, setDownloadingTestId] = useState<string | null>(null);
+  const [offlineExcelUploading, setOfflineExcelUploading] = useState(false);
   const [currentQIdx, setCurrentQIdx] = useState(0);
   const [liveCount, setLiveCount] = useState<any | null>(null);
   const [guestEmailGateVisible, setGuestEmailGateVisible] = useState(false);
@@ -1107,6 +1113,7 @@ export default function App() {
   const [quizAnswers, setQuizAnswers] = useState<Record<number, number>>({});
   const [quizFeedbackQuestions, setQuizFeedbackQuestions] = useState<any[]>([]);
   const [showAnswers, setShowAnswers] = useState(true);
+  const [isSubmittingQuiz, setIsSubmittingQuiz] = useState(false);
 
   // Create Quiz Form (LMS Admin)
   const [quizDateInput, setQuizDateInput] = useState(new Date().toISOString().split("T")[0]);
@@ -1543,51 +1550,61 @@ export default function App() {
     // Stored in a ref so it can be called later (deferred cold-start) without closing over stale state.
     const navigateFromNotif = (data: Record<string, any>) => {
       try {
-        const rawTab = String(data?.targetTab || data?.screen || "").toLowerCase();
-        const rawSub = String(data?.targetSub || data?.subTab || "").toLowerCase();
+        let rawTab = String(data?.targetTab || data?.screen || "").toLowerCase();
+        let rawSub = String(data?.targetSub || data?.subTab || "").toLowerCase();
+
+        if (rawTab === "test-portal" || rawTab === "tests" || rawTab === "exam" || rawTab === "exams") {
+          rawTab = "test";
+        } else if (rawTab === "classes" || rawTab === "class") {
+          rawTab = "lms";
+        }
 
         // 1. LMS Notifications Routing
         if (
-          rawTab === "lms" || rawTab === "classes" || rawTab === "resources" ||
+          rawTab === "lms" || rawTab === "resources" ||
           rawTab === "recorded" || rawTab === "live" || rawTab === "quiz" ||
           rawSub === "daily-content" || rawSub === "dailycontent" ||
           rawSub === "resources" || rawSub === "recorded" ||
           rawSub === "live-classes" || rawSub === "live" || rawSub === "quiz"
         ) {
           setActiveTab("lms");
-          if (rawSub === "daily-content" || rawSub === "dailycontent") setLmsSub("daily-content");
-          else if (rawSub === "resources")                              setLmsSub("resources");
-          else if (rawSub === "live-classes" || rawSub === "live")     setLmsSub("live-classes");
-          else if (rawSub === "recorded")                              setLmsSub("recorded");
-          else if (rawSub === "quiz" || rawTab === "quiz")             setLmsSub("quiz");
+          if (rawSub === "daily-content" || rawSub === "dailycontent" || rawSub === "editorial") setLmsSub("daily-content");
+          else if (rawSub === "resources" || rawSub === "materials" || rawSub === "study")      setLmsSub("resources");
+          else if (rawSub === "live-classes" || rawSub === "live" || rawSub === "class")         setLmsSub("live-classes");
+          else if (rawSub === "recorded" || rawSub === "recording" || rawSub === "recordings")   setLmsSub("recorded");
+          else if (rawSub === "quiz" || rawSub === "daily-quiz" || rawTab === "quiz")            setLmsSub("quiz");
+          else setLmsSub("resources");
         } 
         // 2. Test Portal Notifications Routing
-        else if (rawTab === "test" || rawTab === "tests" || rawTab === "test-portal") {
+        else if (rawTab === "test") {
           setActiveTab("test");
-          if (rawSub === "results" || rawSub === "evaluation")          setTestSub("results");
-          else if (rawSub === "creation" || rawSub === "create")       setTestSub("creation");
-          else                                                         setTestSub("available");
+          if (rawSub === "results" || rawSub === "evaluation" || rawSub === "evaluated" || rawSub === "score") setTestSub("results");
+          else if (rawSub === "feedback" || rawSub === "answers" || rawSub === "answer-keys" || rawSub === "key") setTestSub("feedback");
+          else if (rawSub === "creation" || rawSub === "create" || rawSub === "pdf-create") setTestSub("creation");
+          else setTestSub("available");
         } 
         // 3. ERP Notifications Routing
         else if (rawTab === "erp") {
           setActiveTab("erp");
-          if (rawSub === "my-profile" || rawSub === "profile")         setErpSub("my-profile");
-          else if (rawSub === "id-card" || rawSub === "idcard")        setErpSub("id-card");
-          else if (rawSub === "hall-ticket" || rawSub === "hallticket") setErpSub("hall-ticket");
-          else if (rawSub === "fees" || rawSub === "pay-fees")         setErpSub("fees");
-          else if (rawSub === "qr-permissions" || rawSub === "qr")     setErpSub("qr-permissions");
-          else if (rawSub === "analytics")                             setErpSub("analytics");
-          else if (rawSub === "approvals")                             setErpSub("approvals");
-          else if (rawSub === "students")                              setErpSub("students");
-          else if (rawSub === "staff")                                 setErpSub("staff");
-          else if (rawSub === "batch")                                 setErpSub("batch");
+          if (rawSub === "my-profile" || rawSub === "profile" || rawSub === "profile-requests") setErpSub("my-profile");
+          else if (rawSub === "id-card" || rawSub === "idcard" || rawSub === "card")        setErpSub("id-card");
+          else if (rawSub === "hall-ticket" || rawSub === "hallticket")                      setErpSub("hall-ticket");
+          else if (rawSub === "fees" || rawSub === "pay-fees" || rawSub === "qr-payment" || rawSub === "fee" || rawSub === "qr-approval") setErpSub("fees");
+          else if (rawSub === "qr-permissions" || rawSub === "qr")                          setErpSub("qr-permissions");
+          else if (rawSub === "analytics")                                                  setErpSub("analytics");
+          else if (rawSub === "approvals" || rawSub === "admin_approval")                    setErpSub("approvals");
+          else if (rawSub === "students")                                                   setErpSub("students");
+          else if (rawSub === "staff")                                                      setErpSub("staff");
+          else if (rawSub === "batch")                                                      setErpSub("batch");
+          else setErpSub(user?.role === "student" ? "fees" : "students");
         } 
         // 4. CRM Notifications Routing
         else if (rawTab === "crm") {
           setActiveTab("crm");
           if (rawSub === "feedback")                                   setCrmSub("feedback");
           else if (rawSub === "campaigns")                             setCrmSub("campaigns");
-          else if (rawSub === "admissions")                            setCrmSub("admissions");
+          else if (rawSub === "admissions" || rawSub === "admission")  setCrmSub("admissions");
+          else if (rawSub === "inquiries" || rawSub === "inquiry")     setCrmSub("inquiries");
           else if (rawSub === "custom-leads" || rawSub === "custom-form") setCrmSub("leads");
           else if (rawSub === "courses")                               setCrmSub("courses");
           else if (rawSub === "guest-posters" || rawSub === "posters") setCrmSub("posters");
@@ -1595,7 +1612,7 @@ export default function App() {
           else                                                         setCrmSub("leads");
         } 
         // 5. Dashboard / Notice Routing
-        else if (rawTab === "dashboard" || rawTab === "notices" || rawSub === "notices") {
+        else if (rawTab === "dashboard" || rawTab === "notices" || rawSub === "notices" || rawTab === "announcements" || rawSub === "announcements" || rawTab === "notice" || rawSub === "notice") {
           setActiveTab("dashboard");
         }
       } catch (_) {}
@@ -2160,10 +2177,10 @@ export default function App() {
     if (!user) return;
     try {
       const res = await api.get(`/lms/daily-quiz/today?studentId=${user.userId}`);
-      const quiz = res.data || res;
-      setTodayQuiz(quiz);
-      if (quiz.existingAttempt) {
-        setQuizScore(quiz.existingAttempt.correctCount);
+      const quiz = res?.data !== undefined ? res.data : res;
+      setTodayQuiz(quiz || null);
+      if (quiz && quiz.existingAttempt && Array.isArray(quiz.questions)) {
+        setQuizScore(typeof quiz.existingAttempt.correctCount === "number" ? quiz.existingAttempt.correctCount : 0);
         const attemptAnswers = quiz.existingAttempt.answers || quiz.existingAttempt.results || [];
         const feedback = quiz.questions.map((q: any, idx: number) => {
           let ansObj = null;
@@ -2193,10 +2210,10 @@ export default function App() {
     if (!user) return;
     try {
       const res = await api.get(`/lms/daily-quiz/${quizId}?studentId=${user.userId}`);
-      const quiz = res.data || res;
-      setTodayQuiz(quiz);
-      if (quiz.existingAttempt) {
-        setQuizScore(quiz.existingAttempt.correctCount);
+      const quiz = res?.data !== undefined ? res.data : res;
+      setTodayQuiz(quiz || null);
+      if (quiz && quiz.existingAttempt && Array.isArray(quiz.questions)) {
+        setQuizScore(typeof quiz.existingAttempt.correctCount === "number" ? quiz.existingAttempt.correctCount : 0);
         const attemptAnswers = quiz.existingAttempt.answers || quiz.existingAttempt.results || [];
         const feedback = quiz.questions.map((q: any, idx: number) => {
           let ansObj = null;
@@ -3344,12 +3361,13 @@ export default function App() {
   };
 
   const submitLmsQuiz = async () => {
-    if (!todayQuiz) return;
+    if (!todayQuiz || isSubmittingQuiz) return;
     const formattedAnswers = Object.entries(quizAnswers).map(([qIdx, oIdx]) => ({
       questionIndex: Number(qIdx),
       selectedOptionIndex: oIdx
     }));
 
+    setIsSubmittingQuiz(true);
     try {
       const res = await api.post("/lms/daily-quiz/submit", {
         studentId: user.userId,
@@ -3357,23 +3375,29 @@ export default function App() {
         answers: formattedAnswers,
         submittedBy: user.name
       });
-      setQuizScore(res.correctCount);
-      const attemptAnswers = res.answers || res.results || formattedAnswers;
-      const feedback = todayQuiz.questions.map((q: any, idx: number) => {
+      const score = typeof res?.correctCount === "number" ? res.correctCount : 0;
+      setQuizScore(score);
+      const attemptAnswers = res?.answers || res?.results || formattedAnswers;
+      const questionsList = (Array.isArray(res?.questions) && res.questions.length > 0)
+        ? res.questions
+        : (Array.isArray(todayQuiz?.questions) ? todayQuiz.questions : []);
+      const feedback = questionsList.map((q: any, idx: number) => {
         let ansObj = null;
         if (Array.isArray(attemptAnswers)) {
           ansObj = attemptAnswers.find((a: any) => a.questionIndex === idx);
         } else if (attemptAnswers && typeof attemptAnswers === "object") {
           ansObj = attemptAnswers[idx];
         }
-        const userAnswer = ansObj ? (ansObj.selectedOptionIndex !== undefined ? ansObj.selectedOptionIndex : ansObj) : undefined;
+        const userAnswer = q.userAnswer !== undefined
+          ? q.userAnswer
+          : (ansObj ? (ansObj.selectedOptionIndex !== undefined ? ansObj.selectedOptionIndex : ansObj) : undefined);
         return {
           ...q,
           userAnswer
         };
       });
       setQuizFeedbackQuestions(feedback);
-      Alert.alert("Quiz Completed!", `You scored ${res.correctCount} / ${res.totalQuestions}`);
+      Alert.alert("Quiz Completed!", `You scored ${score} / ${res?.totalQuestions || questionsList.length}`);
 
       // Clear answers state for the next quiz
       setQuizAnswers({});
@@ -3383,6 +3407,8 @@ export default function App() {
       await loadAllQuizzes();
     } catch (e: any) {
       Alert.alert("Submission Error", e.message || "Failed to submit answers.");
+    } finally {
+      setIsSubmittingQuiz(false);
     }
   };
 
@@ -3416,7 +3442,7 @@ export default function App() {
   // Exam Operations
   const getTestStatusForStudent = (test: any) => {
     // Find if student has completed or started this test
-    const attempt = studentAttempts.find((a: any) => a.testId === test.id);
+    const attempt = studentAttempts.find((a: any) => a.testId === test.id && !a.isOffline);
     const now = Date.now();
     const startTimeMs = test.startTime ? new Date(test.startTime).getTime() : 0;
     const endTimeMs = test.endTime ? new Date(test.endTime).getTime() : 0;
@@ -3474,6 +3500,324 @@ export default function App() {
     }
   };
 
+  const safeAtob = (str: string) => {
+    if (typeof atob === "function") return atob(str);
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+    let s = str.replace(/=+$/, "");
+    let out = "";
+    for (let bc = 0, bs = 0, buffer: any, idx = 0; buffer = s.charAt(idx++); ~buffer && (bs = bc % 4 ? bs * 64 + buffer : buffer, bc++ % 4) ? out += String.fromCharCode(255 & bs >> (-2 * bc & 6)) : 0) {
+      buffer = chars.indexOf(buffer);
+    }
+    return out;
+  };
+
+  const handleUploadOfflineExcel = async (testObj: any) => {
+    if (!testObj?.id) return;
+    try {
+      if (Platform.OS === "web") {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = ".xlsx, .xls, .csv";
+        input.onchange = async (e: any) => {
+          const file = e.target?.files?.[0];
+          if (!file) return;
+          setOfflineExcelUploading(true);
+          try {
+            const data = await file.arrayBuffer();
+            const workbook = XLSX.read(data, { type: "array" });
+            if (!workbook || !workbook.SheetNames || workbook.SheetNames.length === 0) {
+              Alert.alert("Empty File", "The uploaded Excel sheet contains no sheets.");
+              return;
+            }
+            const summarySheetName = workbook.SheetNames.find((s: string) => /marks\s*summary|summary|results/i.test(s.trim())) || workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[summarySheetName];
+            if (!worksheet) {
+              Alert.alert("Error", "Could not read sheet data from Excel file.");
+              return;
+            }
+            const jsonRows: any[] = XLSX.utils.sheet_to_json(worksheet);
+            if (!jsonRows || jsonRows.length === 0) {
+              Alert.alert("Empty File", "The uploaded Excel sheet contains no rows.");
+              return;
+            }
+
+            const parseNum = (val: any) => {
+              if (val === undefined || val === null || val === "") return undefined;
+              const n = Number(val);
+              return isNaN(n) ? undefined : n;
+            };
+
+            const records = jsonRows.map((row: any) => {
+              const nameKey = Object.keys(row).find(k => /^(student\s*name|name|student|candidate\s*name)$/i.test(k.trim()));
+              const rollKey = Object.keys(row).find(k => /^(roll\s*number|roll\s*no|mock\s*roll(?:\s*number|\s*no)?|roll|reg\s*no|registration\s*no)$/i.test(k.trim()));
+              const studentName = nameKey ? String(row[nameKey] || "").trim() : "Offline Student";
+              const rollNumber = rollKey ? String(row[rollKey] || "").trim() : "Guest";
+
+              const correctKey = Object.keys(row).find(k => /^(correct\s*answers?|correct|correct\s*count)$/i.test(k.trim()));
+              const wrongKey = Object.keys(row).find(k => /^(wrong\s*answers?|incorrect\s*answers?|wrong|incorrect|wrong\s*count)$/i.test(k.trim()));
+              const notAttemptedKey = Object.keys(row).find(k => /^(not\s*attempted|unattempted|skipped|unattended)$/i.test(k.trim()));
+              const totalMarksKey = Object.keys(row).find(k => /^(total\s*marks?|total\s*mark|marks|obtained\s*marks?|score)$/i.test(k.trim()));
+              const hasSummaryMarks = Boolean(correctKey || wrongKey || totalMarksKey);
+
+              const answers: Record<string, string> = {};
+              Object.keys(row).forEach(k => {
+                const qMatch = k.trim().match(/^(?:q|q\.|question)?\s*(\d+)$/i);
+                if (qMatch) {
+                  const qNum = qMatch[1];
+                  const val = String(row[k] || "").trim().toUpperCase();
+                  if (val) answers[qNum] = val;
+                }
+              });
+
+              return {
+                studentName,
+                rollNumber,
+                answers,
+                hasDirectMarks: hasSummaryMarks,
+                correct: parseNum(correctKey ? row[correctKey] : undefined),
+                wrong: parseNum(wrongKey ? row[wrongKey] : undefined),
+                skipped: parseNum(notAttemptedKey ? row[notAttemptedKey] : undefined),
+                obtainedMarks: parseNum(totalMarksKey ? row[totalMarksKey] : undefined)
+              };
+            });
+
+            const res = await api.post(`/test-portal/evaluation/offline-upload/${testObj.id}`, { records }, undefined, 120000);
+            Alert.alert("Success", res.message || `Uploaded and evaluated ${records.length} offline student(s)!`);
+            monitorTest(testObj.id);
+          } catch (err: any) {
+            console.error("Failed to parse and upload Excel:", err);
+            Alert.alert("Upload Error", err.message || "Failed to process offline Excel file.");
+          } finally {
+            setOfflineExcelUploading(false);
+          }
+        };
+        input.click();
+      } else {
+        // Native APK Document Picker
+        const result = await DocumentPicker.getDocumentAsync({
+          type: ["*/*"],
+          copyToCacheDirectory: true,
+          multiple: false
+        });
+
+        if (result.canceled || !result.assets || result.assets.length === 0) return;
+        const fileAsset = result.assets[0];
+        const fileName = (fileAsset.name || "").toLowerCase();
+        if (!/\.(xlsx|xls|csv)$/i.test(fileName)) {
+          Alert.alert("Invalid File", "Please select an Excel (.xlsx, .xls) or .csv file.");
+          return;
+        }
+
+        setOfflineExcelUploading(true);
+
+        let b64 = "";
+        try {
+          if (FileSystem && typeof (FileSystem as any).readAsStringAsync === "function") {
+            b64 = await (FileSystem as any).readAsStringAsync(fileAsset.uri, {
+              encoding: "base64"
+            });
+          }
+        } catch (fsErr) {
+          console.warn("[OfflineUpload] readAsStringAsync failed, falling back to fetch blob:", fsErr);
+        }
+
+        if (!b64) {
+          try {
+            const resp = await fetch(fileAsset.uri);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status} reading file`);
+            const blob = await resp.blob();
+            b64 = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onloadend = () => {
+                const r = (reader.result as string) || "";
+                resolve(r.includes(",") ? r.split(",")[1] : r);
+              };
+              reader.onerror = () => reject(new Error("FileReader failed to convert file blob"));
+              reader.readAsDataURL(blob);
+            });
+          } catch (fetchErr) {
+            console.error("[OfflineUpload] fetch blob read failed:", fetchErr);
+          }
+        }
+
+        if (!b64) {
+          throw new Error("Unable to read the selected file. Please ensure storage permissions are granted.");
+        }
+
+        const cleanB64 = b64.replace(/^data:.*?;base64,/, "").replace(/\s+/g, "");
+
+        let workbook: any = null;
+        try {
+          workbook = XLSX.read(cleanB64, { type: "base64" });
+        } catch (wbErr) {
+          console.warn("[OfflineUpload] Base64 parse failed, trying binary fallback:", wbErr);
+          try {
+            const binStr = safeAtob(cleanB64);
+            workbook = XLSX.read(binStr, { type: "binary" });
+          } catch (binErr: any) {
+            throw new Error("Failed to parse Excel workbook: " + (binErr?.message || wbErr));
+          }
+        }
+
+        if (!workbook || !workbook.SheetNames || workbook.SheetNames.length === 0) {
+          Alert.alert("Empty File", "The uploaded Excel sheet contains no sheets.");
+          return;
+        }
+
+        const sheetName = workbook.SheetNames.find((s: string) => /marks\s*summary|summary|results/i.test(s.trim())) || workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        if (!worksheet) {
+          Alert.alert("Error", "Could not read sheet data from Excel file.");
+          return;
+        }
+
+        const jsonRows: any[] = XLSX.utils.sheet_to_json(worksheet);
+
+        if (!jsonRows || jsonRows.length === 0) {
+          Alert.alert("Empty File", "The uploaded Excel sheet contains no rows.");
+          return;
+        }
+
+        const parseNum = (val: any) => {
+          if (val === undefined || val === null || val === "") return undefined;
+          const n = Number(val);
+          return isNaN(n) ? undefined : n;
+        };
+
+        const records = jsonRows.map((row: any) => {
+          const nameKey = Object.keys(row).find(k => /^(student\s*name|name|student|candidate\s*name)$/i.test(k.trim()));
+          const rollKey = Object.keys(row).find(k => /^(roll\s*number|roll\s*no|mock\s*roll(?:\s*number|\s*no)?|roll|reg\s*no|registration\s*no)$/i.test(k.trim()));
+          const studentName = nameKey ? String(row[nameKey] || "").trim() : "Offline Student";
+          const rollNumber = rollKey ? String(row[rollKey] || "").trim() : "Guest";
+
+          const correctKey = Object.keys(row).find(k => /^(correct\s*answers?|correct|correct\s*count)$/i.test(k.trim()));
+          const wrongKey = Object.keys(row).find(k => /^(wrong\s*answers?|incorrect\s*answers?|wrong|incorrect|wrong\s*count)$/i.test(k.trim()));
+          const notAttemptedKey = Object.keys(row).find(k => /^(not\s*attempted|unattempted|skipped|unattended)$/i.test(k.trim()));
+          const totalMarksKey = Object.keys(row).find(k => /^(total\s*marks?|total\s*mark|marks|obtained\s*marks?|score)$/i.test(k.trim()));
+          const hasSummaryMarks = Boolean(correctKey || wrongKey || totalMarksKey);
+
+          const answers: Record<string, string> = {};
+          Object.keys(row).forEach(k => {
+            const qMatch = k.trim().match(/^(?:q|q\.|question)?\s*(\d+)$/i);
+            if (qMatch) {
+              const qNum = qMatch[1];
+              const val = String(row[k] || "").trim().toUpperCase();
+              if (val) answers[qNum] = val;
+            }
+          });
+
+          return {
+            studentName,
+            rollNumber,
+            answers,
+            hasDirectMarks: hasSummaryMarks,
+            correct: parseNum(correctKey ? row[correctKey] : undefined),
+            wrong: parseNum(wrongKey ? row[wrongKey] : undefined),
+            skipped: parseNum(notAttemptedKey ? row[notAttemptedKey] : undefined),
+            obtainedMarks: parseNum(totalMarksKey ? row[totalMarksKey] : undefined)
+          };
+        });
+
+        const res = await api.post(`/test-portal/evaluation/offline-upload/${testObj.id}`, { records }, undefined, 120000);
+        Alert.alert("Success", res.message || `Uploaded and evaluated ${records.length} offline student(s)!`);
+        monitorTest(testObj.id);
+      }
+    } catch (e: any) {
+      console.error("Error in handleUploadOfflineExcel:", e);
+      Alert.alert("Error", e.message || "Failed to upload offline Excel.");
+    } finally {
+      setOfflineExcelUploading(false);
+    }
+  };
+
+  const downloadOfflineExcelTemplate = async (testObj: any) => {
+    try {
+      const qCount = Number(testObj?.totalQuestions) || (testObj?.questionIds ? testObj.questionIds.length : 100);
+
+      const summaryRows: any[] = [
+        {
+          "Roll Number": "181095",
+          "Student Name": "Dharshini",
+          "Correct Answers": 75,
+          "Wrong Answers": 13,
+          "Not Attempted": 12,
+          "Total Marks": 71.75
+        },
+        {
+          "Roll Number": "181061",
+          "Student Name": "Ashwanth",
+          "Correct Answers": 60,
+          "Wrong Answers": 15,
+          "Not Attempted": 25,
+          "Total Marks": 56.25
+        },
+        {
+          "Roll Number": "",
+          "Student Name": "",
+          "Correct Answers": "",
+          "Wrong Answers": "",
+          "Not Attempted": "",
+          "Total Marks": ""
+        }
+      ];
+
+      const sampleRow: any = {
+        "Roll Number": "182026",
+        "Student Name": "Sample Candidate"
+      };
+      for (let i = 1; i <= Math.min(qCount, 200); i++) {
+        sampleRow[`Q${i}`] = i % 4 === 0 ? "D" : i % 3 === 0 ? "C" : i % 2 === 0 ? "B" : "A";
+      }
+
+      const emptyRow1: any = { "Roll Number": "182027", "Student Name": "Student 1" };
+      for (let i = 1; i <= Math.min(qCount, 200); i++) {
+        emptyRow1[`Q${i}`] = "";
+      }
+
+      const wb = XLSX.utils.book_new();
+      const wsSummary = XLSX.utils.json_to_sheet(summaryRows);
+      XLSX.utils.book_append_sheet(wb, wsSummary, "Marks Summary");
+
+      const wsOMR = XLSX.utils.json_to_sheet([sampleRow, emptyRow1]);
+      XLSX.utils.book_append_sheet(wb, wsOMR, "OMR Answers");
+
+      const wboutBase64 = XLSX.write(wb, { type: "base64", bookType: "xlsx" });
+      const testName = (testObj?.title || "Test").replace(/[^a-zA-Z0-9_-]/g, "_");
+      const fileName = `${testName}_Offline_OMR_Template.xlsx`;
+
+      if (Platform.OS === "web") {
+        const binStr = safeAtob(wboutBase64);
+        const buf = new ArrayBuffer(binStr.length);
+        const view = new Uint8Array(buf);
+        for (let i = 0; i < binStr.length; i++) view[i] = binStr.charCodeAt(i) & 0xff;
+        const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        const fileUri = `${FileSystem.cacheDirectory || FileSystem.documentDirectory || ""}${fileName}`;
+        await FileSystem.writeAsStringAsync(fileUri, wboutBase64, {
+          encoding: "base64"
+        });
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(fileUri, {
+            mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            dialogTitle: "Offline Test Template",
+            UTI: "com.microsoft.excel.xlsx"
+          });
+        } else {
+          Alert.alert("Template Saved", `Template saved to ${fileUri}`);
+        }
+      }
+    } catch (e: any) {
+      console.error("Error creating offline Excel template:", e);
+      Alert.alert("Error", e.message || "Failed to create Excel template");
+    }
+  };
+
   const downloadSingleTestLeaderboard = async (t: any) => {
     if (!t || !t.id) return;
     setDownloadingTestId(t.id);
@@ -3499,8 +3843,8 @@ export default function App() {
         const total = e.totalMarks ?? (t.totalMarks || (t.questions?.length ? t.questions.length * (t.marksPerQuestion || 1) : 0));
         const pct = typeof e.percentage === "number" ? Math.round(e.percentage) : (total > 0 ? Math.round((obtained / total) * 100) : 0);
         const perf = getPerformanceStatus(obtained, total, pct);
-        const statusLabel = e.status ? String(e.status).toUpperCase() : perf.label;
-        const statusColor = (e.status === "pass" || perf.label === "PASSED" || perf.color === "#2e7d32") ? "#2e7d32" : "#c62828";
+        const statusLabel = perf.label;
+        const statusColor = perf.color;
 
         return `<tr style="border-bottom:1px solid #eee">
           <td style="padding:6px 8px;text-align:center">${rank}</td>
@@ -3515,7 +3859,50 @@ export default function App() {
         </tr>`;
       }).join("");
 
-      const testDate = t.createdAt ? new Date(t.createdAt).toLocaleDateString() : (t.startTime ? new Date(t.startTime).toLocaleDateString() : "N/A");
+      const formatLeaderboardTestDate = (testObj: any) => {
+        const tryParse = (val: any): Date | null => {
+          if (!val) return null;
+          if (typeof val?.toDate === "function") {
+            const d = val.toDate();
+            if (d instanceof Date && !isNaN(d.getTime())) return d;
+          }
+          if (typeof val === "object") {
+            const sec = val._seconds ?? val.seconds;
+            if (typeof sec === "number" && !isNaN(sec)) {
+              const d = new Date(sec * 1000);
+              if (!isNaN(d.getTime())) return d;
+            }
+          }
+          if (typeof val === "number" && !isNaN(val)) {
+            const d = new Date(val > 1e11 ? val : val * 1000);
+            if (!isNaN(d.getTime())) return d;
+          }
+          if (typeof val === "string") {
+            const s = val.trim();
+            const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+            if (dmy) {
+              const d = new Date(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1]));
+              if (!isNaN(d.getTime())) return d;
+            }
+            const d = new Date(s);
+            if (!isNaN(d.getTime())) return d;
+          }
+          return null;
+        };
+        const parsed = tryParse(testObj?.createdAt) || tryParse(testObj?.startTime) || tryParse(testObj?.startDate) || tryParse(testObj?.date) || tryParse(testObj?.updatedAt);
+        if (parsed) {
+          const day = String(parsed.getDate()).padStart(2, "0");
+          const month = String(parsed.getMonth() + 1).padStart(2, "0");
+          const year = parsed.getFullYear();
+          return `${day}/${month}/${year}`;
+        }
+        if (testObj?.title) {
+          const match = String(testObj.title).match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})/);
+          if (match) return match[1];
+        }
+        return "N/A";
+      };
+      const testDate = formatLeaderboardTestDate(t);
       const participants = entries.length;
       const marksPerQ = t.marksPerQuestion ?? 1;
       const negMarks = t.negativeMarks ?? 0;
@@ -3524,7 +3911,7 @@ export default function App() {
         <style>body{font-family:Arial,sans-serif;padding:20px}h2{color:#c62828}table{width:100%;border-collapse:collapse}th{background:#c62828;color:white;padding:8px;text-align:left}td{border-bottom:1px solid #eee;padding:6px 8px}</style></head>
         <body><h2>${testTitle}</h2>
         <p>Date: ${testDate} | Participants: ${participants} | Marks/Q: ${marksPerQ} | Negative: -${negMarks}</p>
-        <table><thead><tr><th>#</th><th>Roll No</th><th>Name</th><th>Correct</th><th>Wrong</th><th>Skipped</th><th>Marks</th><th>%</th><th>Result</th></tr></thead>
+        <table><thead><tr><th>#</th><th>Roll No</th><th>Name</th><th>Correct</th><th>Wrong</th><th>Not Attempted</th><th>Total Marks</th><th>%</th><th>Result</th></tr></thead>
         <tbody>${rows}</tbody></table></body></html>`;
 
       await downloadPdfDocument(html, `${testTitle}_Leaderboard.pdf`);
@@ -3561,6 +3948,7 @@ export default function App() {
             savedAns[ansObj.questionId] = ansObj.selectedAnswer;
           });
         }
+        selectedAnswersRef.current = savedAns;
         setSelectedAnswers(savedAns);
       } catch (e: any) {
         Alert.alert("Error Resuming Exam", e.message || "Could not resume test attempt.");
@@ -3580,6 +3968,7 @@ export default function App() {
       const qRes = await api.get(`/test-portal/examination/questions/${attemptData.attemptId}`, { "user-id": user.userId });
       setAttemptQuestions(qRes || []);
       setCurrentQIdx(0);
+      selectedAnswersRef.current = {};
       setSelectedAnswers({});
     } catch (e: any) {
       Alert.alert("Error Starting Exam", e.message || "Could not initialize test attempt.");
@@ -3590,24 +3979,61 @@ export default function App() {
     const activeQ = attemptQuestions[currentQIdx];
     if (!activeQ || !activeAttempt) return;
 
-    setSelectedAnswers(prev => ({ ...prev, [activeQ.id]: ans }));
+    const currentSelected = selectedAnswersRef.current[activeQ.id] ?? selectedAnswers[activeQ.id];
+    const isUnselecting = (currentSelected === ans);
 
-    try {
-      await api.post(`/test-portal/examination/answer/${activeAttempt.attemptId}`, {
-        questionId: activeQ.id,
-        answer: ans
-      }, { "user-id": user.userId });
-    } catch (e) {
-      console.log("Failed to save answer to server:", e);
+    if (isUnselecting) {
+      delete selectedAnswersRef.current[activeQ.id];
+      setSelectedAnswers(prev => {
+        const next = { ...prev };
+        delete next[activeQ.id];
+        return next;
+      });
+
+      try {
+        await api.post(`/test-portal/examination/answer/${activeAttempt.attemptId}`, {
+          questionId: activeQ.id,
+          answer: null
+        }, { "user-id": user.userId, "x-attempt-id": activeAttempt.attemptId });
+      } catch (e) {
+        console.log("Failed to save answer removal to server:", e);
+      }
+    } else {
+      selectedAnswersRef.current[activeQ.id] = ans;
+      setSelectedAnswers(prev => ({ ...prev, [activeQ.id]: ans }));
+
+      try {
+        await api.post(`/test-portal/examination/answer/${activeAttempt.attemptId}`, {
+          questionId: activeQ.id,
+          answer: ans
+        }, { "user-id": user.userId, "x-attempt-id": activeAttempt.attemptId });
+      } catch (e) {
+        console.log("Failed to save answer to server:", e);
+      }
     }
   };
 
   const submitTestAttempt = async () => {
     if (!activeAttempt) return;
     const attemptId = activeAttempt.attemptId;
+    const allAnswers = { ...selectedAnswers, ...selectedAnswersRef.current };
+    const formattedBatch = Object.entries(allAnswers)
+      .filter(([_, val]) => val !== null && val !== undefined && val !== "")
+      .map(([qId, val]) => ({ questionId: qId, answer: val }));
+
+    if (formattedBatch.length > 0) {
+      try {
+        await api.post(`/test-portal/examination/autosave/${attemptId}`, {
+          answers: formattedBatch
+        }, { "user-id": user.userId, "x-attempt-id": attemptId });
+      } catch (err) {
+        console.log("Pre-submit autosave note:", err);
+      }
+    }
+
     try {
-      await api.post(`/test-portal/examination/submit/${attemptId}`, {}, { "user-id": user.userId });
-      const evalRes = await api.post(`/test-portal/evaluation/evaluate/${attemptId}`, {});
+      await api.post(`/test-portal/examination/submit/${attemptId}`, {}, { "user-id": user.userId, "x-attempt-id": attemptId });
+      const evalRes = await api.post(`/test-portal/evaluation/evaluate/${attemptId}`, {}, { "x-attempt-id": attemptId });
       const evalData = evalRes?.data || evalRes;
 
       const obtained = evalData?.obtainedMarks ?? 0;
@@ -5334,7 +5760,7 @@ export default function App() {
               <Text style={{ fontSize: 11, fontWeight: "bold", color: "#757575", marginBottom: 6 }}>QUESTIONS NAVIGATOR:</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: "row", maxHeight: 40 }}>
                 {attemptQuestions.map((_, qIdx) => {
-                  const isAnswered = selectedAnswers[attemptQuestions[qIdx].id] !== undefined;
+                  const isAnswered = selectedAnswers[attemptQuestions[qIdx].id] !== undefined && selectedAnswers[attemptQuestions[qIdx].id] !== null && selectedAnswers[attemptQuestions[qIdx].id] !== "";
                   const isActive = qIdx === currentQIdx;
                   return (
                     <TouchableOpacity
@@ -7424,7 +7850,7 @@ export default function App() {
                       </View>
 
                       {closedTests.map((t: any) => {
-                        const hasAttempt = studentAttempts.find((a: any) => a.testId === t.id);
+                        const hasAttempt = studentAttempts.find((a: any) => a.testId === t.id && !a.isOffline);
                         const hasSubjects = Array.isArray(t.subjectSections) && t.subjectSections.length > 0;
 
                         return (
@@ -7712,6 +8138,17 @@ export default function App() {
                             <Text style={{ fontWeight: "bold", color: "#0288d1", marginBottom: 6, marginTop: 6, fontSize: 13 }}>📞 Contact Details</Text>
                             <TextInput style={styles.input} placeholder="Phone Number" placeholderTextColor="#999" value={editingStudent.phone} onChangeText={p => setEditingStudent({ ...editingStudent, phone: cleanPhone(p) })} maxLength={10} keyboardType="phone-pad" />
 
+                            {/* Special Mock Roll Number Input */}
+                            <Text style={{ fontWeight: "bold", color: "#7b1fa2", marginBottom: 6, marginTop: 8, fontSize: 13 }}>⭐ Special Mock Roll Number (Optional)</Text>
+                            <TextInput
+                              style={[styles.input, { borderColor: "#ce93d8", backgroundColor: darkMode ? "#2a1b3d" : "#faf5fc" }]}
+                              placeholder="e.g. 180013, 180261"
+                              placeholderTextColor="#999"
+                              value={editingStudent.mockRollNumber || editingStudent.specialRollNo || ""}
+                              onChangeText={mr => setEditingStudent({ ...editingStudent, mockRollNumber: mr.trim(), specialRollNo: mr.trim() })}
+                              keyboardType="numeric"
+                            />
+
                             {/* Batch & Course */}
                             <Text style={{ fontWeight: "bold", color: "#0288d1", marginBottom: 6, marginTop: 10, fontSize: 13 }}>📚 Batch & Course</Text>
                             {batches.length === 0 ? (
@@ -7941,6 +8378,17 @@ export default function App() {
                             <Text style={{ fontWeight: "bold", color: "#757575", marginBottom: 6, fontSize: 13 }}>📞 Contact Details</Text>
                             <TextInput style={styles.input} placeholder="Phone Number" placeholderTextColor="#999" value={newStudent.phone} onChangeText={p => setNewStudent({ ...newStudent, phone: cleanPhone(p) })} maxLength={10} keyboardType="phone-pad" />
 
+                            {/* Special Mock Roll Number Input */}
+                            <Text style={{ fontWeight: "bold", color: "#7b1fa2", marginBottom: 6, marginTop: 8, fontSize: 13 }}>⭐ Special Mock Roll Number (Optional)</Text>
+                            <TextInput
+                              style={[styles.input, { borderColor: "#ce93d8", backgroundColor: darkMode ? "#2a1b3d" : "#faf5fc" }]}
+                              placeholder="e.g. 180013, 180261"
+                              placeholderTextColor="#999"
+                              value={newStudent.mockRollNumber || newStudent.specialRollNo || ""}
+                              onChangeText={mr => setNewStudent({ ...newStudent, mockRollNumber: mr.trim(), specialRollNo: mr.trim() })}
+                              keyboardType="numeric"
+                            />
+
                             <TouchableOpacity
                               onPress={createStudentRecord}
                               style={[styles.primaryBtn, { marginTop: 10 }]}
@@ -8100,6 +8548,18 @@ export default function App() {
                                 return true;
                               });
 
+                              // Sort by roll number ascending when a specific batch is selected
+                              if (filterDirBatch !== "all") {
+                                filtered.sort((a: any, b: any) => {
+                                  const rollA = String(a.rollNumber || a.loginUsername || "");
+                                  const rollB = String(b.rollNumber || b.loginUsername || "");
+                                  if (!rollA && !rollB) return 0;
+                                  if (!rollA) return 1;
+                                  if (!rollB) return -1;
+                                  return rollA.localeCompare(rollB, undefined, { numeric: true, sensitivity: "base" });
+                                });
+                              }
+
                               if (filtered.length === 0) {
                                 return <Text style={styles.emptyText}>No matching students found.</Text>;
                               }
@@ -8122,7 +8582,7 @@ export default function App() {
                                     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                                       <View style={{ flex: 1 }}>
                                         <Text style={{ fontWeight: "bold", color: "#212121", fontSize: 13 }}>{getStudentName(s)}</Text>
-                                        <Text style={{ fontSize: 11, color: "#757575", marginTop: 2 }}>Roll: {s.rollNumber || "N/A"} | Batch: {s.batch || "N/A"}</Text>
+                                        <Text style={{ fontSize: 11, color: "#757575", marginTop: 2 }}>Roll: {s.rollNumber || "N/A"}{(s.mockRollNumber || s.specialRollNo) ? ` | Mock: ${s.mockRollNumber || s.specialRollNo}` : ""} | Batch: {s.batch || "N/A"}</Text>
                                       </View>
                                       <View style={{ paddingHorizontal: 10, paddingVertical: 5, backgroundColor: "#1976d2", borderRadius: 4 }}>
                                         <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "bold" }}>View Details</Text>
@@ -8197,6 +8657,14 @@ export default function App() {
 
                                       <View style={{ gap: 8, borderTopWidth: 1, borderTopColor: darkMode ? "#444" : "#eeeeee", paddingTop: 10 }}>
                                         <Text style={{ fontSize: 13, color: darkMode ? "#ccc" : "#555" }}><Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#212121" }}>Roll Number:</Text> {s.rollNumber || "N/A"}</Text>
+                                        {(s.mockRollNumber || s.specialRollNo) ? (
+                                          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: darkMode ? "#2a1b3d" : "#f3e5f5", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6, alignSelf: "flex-start", borderWidth: 1, borderColor: "#ce93d8" }}>
+                                            <Ionicons name="ribbon-outline" size={16} color="#7b1fa2" />
+                                            <Text style={{ fontSize: 13, color: "#7b1fa2", fontWeight: "bold" }}>
+                                              Special Mock Roll No: <Text style={{ fontSize: 14, fontWeight: "900", color: "#4a148c" }}>{s.mockRollNumber || s.specialRollNo}</Text>
+                                            </Text>
+                                          </View>
+                                        ) : null}
                                         <Text style={{ fontSize: 13, color: darkMode ? "#ccc" : "#555" }}><Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#212121" }}>Course:</Text> {s.course || "N/A"}</Text>
                                         <Text style={{ fontSize: 13, color: darkMode ? "#ccc" : "#555" }}><Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#212121" }}>Email:</Text> {s.email || "N/A"}</Text>
                                         <Text style={{ fontSize: 13, color: darkMode ? "#ccc" : "#555" }}><Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#212121" }}>Phone:</Text> {s.phone || "N/A"}</Text>
@@ -8277,8 +8745,26 @@ export default function App() {
                 )}
 
                 {erpSub === "announcements" && (user.role === "admin" || user.role === "staff") && (() => {
-                  // filter announcements
+                  // helper to detect individual student reminder alerts (profile & fee alerts)
+                  const isStudentActionAlert = (notice: any) => {
+                    const t = (notice.title || "").toLowerCase();
+                    const c = (notice.content || "").toLowerCase();
+                    return t.includes("complete your profile") ||
+                      c.includes("complete your profile") ||
+                      t.includes("fee payment alert") ||
+                      c.includes("pay your pending") ||
+                      c.includes("pending tuition fee");
+                  };
+
+                  const generalCount = announcements.filter(n => !isStudentActionAlert(n)).length;
+                  const studentAlertCount = announcements.filter(n => isStudentActionAlert(n)).length;
+
+                  // filter announcements by category, search query, and date
                   const filteredNotices = announcements.filter(notice => {
+                    const isAlert = isStudentActionAlert(notice);
+                    if (noticeCategoryFilter === "general" && isAlert) return false;
+                    if (noticeCategoryFilter === "student_alerts" && !isAlert) return false;
+
                     const q = searchNoticeQuery.toLowerCase();
                     const matchesKeyword = notice.title.toLowerCase().includes(q) ||
                       notice.content.toLowerCase().includes(q) ||
@@ -8555,7 +9041,66 @@ export default function App() {
 
                       {/* Search & Notice Registry */}
                       <View style={styles.card}>
-                        <Text style={styles.sectionTitle}>Active Notice Registry ({filteredNotices.length})</Text>
+                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+                          <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Active Notice Registry ({filteredNotices.length})</Text>
+
+                          {/* Category Filter Tabs */}
+                          <View style={{ flexDirection: "row", backgroundColor: darkMode ? "#1e293b" : "#f1f5f9", borderRadius: 8, padding: 3, gap: 4, flexWrap: "wrap" }}>
+                            <TouchableOpacity
+                              onPress={() => setNoticeCategoryFilter("general")}
+                              style={{
+                                paddingHorizontal: 12,
+                                paddingVertical: 6,
+                                borderRadius: 6,
+                                backgroundColor: noticeCategoryFilter === "general" ? (darkMode ? "#334155" : "#ffffff") : "transparent"
+                              }}
+                            >
+                              <Text style={{
+                                fontSize: 12,
+                                fontWeight: noticeCategoryFilter === "general" ? "bold" : "600",
+                                color: noticeCategoryFilter === "general" ? (darkMode ? "#ffffff" : "#1e293b") : (darkMode ? "#94a3b8" : "#64748b")
+                              }}>
+                                General Notices ({generalCount})
+                              </Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                              onPress={() => setNoticeCategoryFilter("student_alerts")}
+                              style={{
+                                paddingHorizontal: 12,
+                                paddingVertical: 6,
+                                borderRadius: 6,
+                                backgroundColor: noticeCategoryFilter === "student_alerts" ? (darkMode ? "#334155" : "#ffffff") : "transparent"
+                              }}
+                            >
+                              <Text style={{
+                                fontSize: 12,
+                                fontWeight: noticeCategoryFilter === "student_alerts" ? "bold" : "600",
+                                color: noticeCategoryFilter === "student_alerts" ? "#e65100" : (darkMode ? "#94a3b8" : "#64748b")
+                              }}>
+                                Student Reminders ({studentAlertCount})
+                              </Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                              onPress={() => setNoticeCategoryFilter("all")}
+                              style={{
+                                paddingHorizontal: 12,
+                                paddingVertical: 6,
+                                borderRadius: 6,
+                                backgroundColor: noticeCategoryFilter === "all" ? (darkMode ? "#334155" : "#ffffff") : "transparent"
+                              }}
+                            >
+                              <Text style={{
+                                fontSize: 12,
+                                fontWeight: noticeCategoryFilter === "all" ? "bold" : "600",
+                                color: noticeCategoryFilter === "all" ? (darkMode ? "#ffffff" : "#1e293b") : (darkMode ? "#94a3b8" : "#64748b")
+                              }}>
+                                All ({announcements.length})
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
 
                         {/* Search Controls */}
                         <View style={{ flexDirection: "row", gap: 8, marginBottom: 15 }}>
@@ -8578,6 +9123,44 @@ export default function App() {
                             />
                           </View>
                         </View>
+
+                        {/* Clear All Reminders Quick Action */}
+                        {noticeCategoryFilter === "student_alerts" && studentAlertCount > 0 && (
+                          <View style={{ marginBottom: 12, flexDirection: "row", justifyContent: "flex-end" }}>
+                            <TouchableOpacity
+                              onPress={() => {
+                                confirmAction("Clear All Student Reminders", `Are you sure you want to delete all ${studentAlertCount} student reminder notices at once?`, async () => {
+                                  try {
+                                    const alertsToDelete = announcements.filter(n => isStudentActionAlert(n));
+                                    for (const a of alertsToDelete) {
+                                      await api.delete(`/announcement/${a.id}`);
+                                    }
+                                    Alert.alert("Success", `Deleted ${alertsToDelete.length} student reminder notices.`);
+                                    loadAnnouncements();
+                                  } catch (err: any) {
+                                    Alert.alert("Error", err.message || "Failed to clear reminders.");
+                                  }
+                                });
+                              }}
+                              style={{
+                                flexDirection: "row",
+                                alignItems: "center",
+                                gap: 6,
+                                backgroundColor: "#ffebee",
+                                paddingHorizontal: 12,
+                                paddingVertical: 7,
+                                borderRadius: 6,
+                                borderWidth: 1,
+                                borderColor: "#ef9a9a"
+                              }}
+                            >
+                              <Ionicons name="trash-bin-outline" size={14} color="#c62828" />
+                              <Text style={{ fontSize: 12, fontWeight: "bold", color: "#c62828" }}>
+                                Clear All Student Reminders ({studentAlertCount})
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
 
                         {filteredNotices.length === 0 ? (
                           <Text style={styles.emptyText}>No notices match your filters.</Text>
@@ -8747,12 +9330,47 @@ export default function App() {
                 })()}
 
                 {/* STUDENT MY PROFILE SECTION */}
-                {erpSub === "my-profile" && user.role === "student" && (
-                  <View style={{ gap: 15 }}>
-                    <Text style={styles.sectionTitle}>My Profile</Text>
+                {erpSub === "my-profile" && user.role === "student" && (() => {
+                  const myStudent = getLoggedInStudent(user, students);
+                  return (
+                    <View style={{ gap: 15 }}>
+                      <Text style={styles.sectionTitle}>My Profile</Text>
 
-                    {/* Status Banner */}
-                    {myProfileRequest && (
+                      {/* Student Profile Quick Details Card */}
+                      {myStudent && (
+                        <View style={[styles.card, { borderLeftWidth: 4, borderLeftColor: "#7b1fa2" }]}>
+                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10, borderBottomWidth: 1, borderBottomColor: darkMode ? "#333" : "#f0f0f0", paddingBottom: 6 }}>
+                            <Text style={{ fontWeight: "bold", fontSize: 15, color: darkMode ? "#fff" : "#212121" }}>
+                              {myStudent.name || `${myStudent.firstName || ""} ${myStudent.lastName || ""}`.trim() || user.name || "Student"}
+                            </Text>
+                            <View style={{ backgroundColor: darkMode ? "#7b1fa220" : "#f3e5f5", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12 }}>
+                              <Text style={{ color: "#7b1fa2", fontWeight: "bold", fontSize: 11 }}>{(myStudent.type || user.type || "Enrolled").toUpperCase()}</Text>
+                            </View>
+                          </View>
+                          <View style={{ gap: 6 }}>
+                            <Text style={{ fontSize: 13, color: darkMode ? "#ccc" : "#555" }}>
+                              <Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#212121" }}>Roll Number:</Text> {myStudent.rollNumber || user.username || "—"}
+                            </Text>
+                            {(myStudent.mockRollNumber || myStudent.specialRollNo || user.mockRollNumber || user.specialRollNo) ? (
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: darkMode ? "#2a1b3d" : "#f3e5f5", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, alignSelf: "flex-start", marginVertical: 2, borderWidth: 1, borderColor: "#ce93d8" }}>
+                                <Ionicons name="ribbon-outline" size={15} color="#7b1fa2" />
+                                <Text style={{ fontSize: 12, color: "#7b1fa2", fontWeight: "bold" }}>
+                                  Special Mock Roll No: <Text style={{ fontSize: 13, fontWeight: "900", color: "#4a148c" }}>{myStudent.mockRollNumber || myStudent.specialRollNo || user.mockRollNumber || user.specialRollNo}</Text>
+                                </Text>
+                              </View>
+                            ) : null}
+                            <Text style={{ fontSize: 13, color: darkMode ? "#ccc" : "#555" }}>
+                              <Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#212121" }}>Batch:</Text> {myStudent.batch || user.batch || "—"}
+                            </Text>
+                            <Text style={{ fontSize: 13, color: darkMode ? "#ccc" : "#555" }}>
+                              <Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#212121" }}>Course:</Text> {myStudent.course || user.course || "—"}
+                            </Text>
+                          </View>
+                        </View>
+                      )}
+
+                      {/* Status Banner */}
+                      {myProfileRequest && (
                       <View style={[styles.card, { borderLeftWidth: 4, borderLeftColor: myProfileRequest.status === "approved" ? "#4caf50" : myProfileRequest.status === "pending" ? "#f57c00" : "#c62828" }]}>
                         {myProfileRequest.status === "approved" && <Text style={{ color: "#4caf50", fontWeight: "bold" }}>✅ Your profile has been approved! Welcome, {myProfileRequest.name}.</Text>}
                         {myProfileRequest.status === "pending" && <Text style={{ color: "#f57c00", fontWeight: "bold" }}>⏳ Your profile completion request is pending admin review.</Text>}
@@ -8938,7 +9556,8 @@ export default function App() {
                       );
                     })()}
                   </View>
-                )}
+                  );
+                })()}
 
                 {erpSub === "staff" && isAdmin && (
                   <View style={{ gap: 15 }}>
@@ -9420,7 +10039,10 @@ export default function App() {
                           <View style={[styles.card, { borderLeftWidth: 4, borderLeftColor: "#c62828" }]}>
                             <Text style={styles.sectionTitle}>My Profile</Text>
                             <Text style={{ color: "#212121", fontWeight: "bold" }}>{myStudent.firstName} {myStudent.lastName}</Text>
-                            <Text style={{ color: "#757575", fontSize: 12, marginTop: 2 }}>Roll: {myStudent.rollNumber} | Batch: {myStudent.batch || "N/A"}</Text>
+                            <Text style={{ color: "#757575", fontSize: 12, marginTop: 2 }}>
+                                Roll: {myStudent.rollNumber} | Batch: {myStudent.batch || "N/A"}
+                                {(myStudent.mockRollNumber || myStudent.specialRollNo) ? ` | Special Mock Roll: ${myStudent.mockRollNumber || myStudent.specialRollNo}` : ""}
+                              </Text>
                             <Text style={{ color: "#757575", fontSize: 12 }}>Course: {myStudent.course}</Text>
                           </View>
 
@@ -11587,13 +12209,14 @@ export default function App() {
                     ) : user?.role !== "student" ? (
                       <View>
                         <Text style={{ color: "#c62828", fontSize: 12, marginBottom: 12, fontWeight: "bold" }}>Quiz Date: {todayQuiz.quizDate}</Text>
-                        {todayQuiz.questions.map((q: any, idx: number) => (
+                        {(todayQuiz.questions || []).map((q: any, idx: number) => (
                           <View key={idx} style={{ padding: 12, backgroundColor: darkMode ? "#2a2a2a" : "#f9f9f9", borderRadius: 8, borderLeftWidth: 4, borderLeftColor: "#c62828", marginBottom: 15 }}>
                             <Text style={{ color: darkMode ? "#e0e0e0" : "#212121", fontWeight: "700", fontSize: 14, marginBottom: 8 }}>{idx + 1}. {q.questionText}</Text>
                             <View style={{ gap: 8, marginVertical: 6 }}>
-                              {q.options.map((opt: string, oIdx: number) => {
+                              {(q.options || []).map((opt: string, oIdx: number) => {
                                 const isCorrect = oIdx === q.correctOptionIndex;
-                                const pct = q.optionPercentages ? q.optionPercentages[oIdx] : 0;
+                                const rawPct = (q.optionPercentages && typeof q.optionPercentages[oIdx] === "number") ? q.optionPercentages[oIdx] : 0;
+                                const pct = isNaN(rawPct) ? 0 : Math.max(0, Math.min(100, rawPct));
                                 return (
                                   <View key={oIdx} style={{ backgroundColor: darkMode ? "#1e1e1e" : "#ffffff", borderWidth: 1, borderColor: isCorrect ? "#2e7d32" : darkMode ? "#333" : "#e0e0e0", borderRadius: 6, padding: 8 }}>
                                     <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
@@ -11618,7 +12241,7 @@ export default function App() {
                           <Ionicons name="trophy" size={36} color="#FFA000" />
                         </View>
                         <Text style={{ fontSize: 18, fontWeight: "bold", color: darkMode ? "#e0e0e0" : "#212121", marginBottom: 6 }}>Quiz Completed!</Text>
-                        <Text style={{ fontSize: 20, color: "#c62828", fontWeight: "bold" }}>Score: {quizScore} / {todayQuiz.questions.length}</Text>
+                        <Text style={{ fontSize: 20, color: "#c62828", fontWeight: "bold" }}>Score: {quizScore} / {Array.isArray(todayQuiz.questions) ? todayQuiz.questions.length : (quizFeedbackQuestions || []).length}</Text>
                         <View style={{ width: "100%", marginTop: 20, gap: 15 }}>
                           {/* Toggle button row */}
                           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
@@ -11644,15 +12267,17 @@ export default function App() {
                               <Text style={{ fontSize: 11, color: "#1565c0", flex: 1 }}>Reviewing without answers — try to recall each answer on your own for better retention!</Text>
                             </View>
                           )}
-                          {quizFeedbackQuestions.map((q, idx) => (
+                          {(quizFeedbackQuestions || []).map((q, idx) => (
                             <View key={idx} style={{ padding: 12, backgroundColor: darkMode ? "#2a2a2a" : "#f9f9f9", borderRadius: 8, borderLeftWidth: 4, borderLeftColor: "#c62828" }}>
                               <Text style={{ color: darkMode ? "#e0e0e0" : "#212121", fontWeight: "700", fontSize: 14, marginBottom: 8 }}>{idx + 1}. {q.questionText}</Text>
                               <View style={{ gap: 8, marginVertical: 6 }}>
-                                {q.options.map((opt: string, oIdx: number) => {
+                                {(q.options || []).map((opt: string, oIdx: number) => {
                                   const isCorrect = showAnswers && oIdx === q.correctOptionIndex;
                                   const isUserChoice = oIdx === q.userAnswer;
                                   const isWrong = showAnswers && isUserChoice && oIdx !== q.correctOptionIndex;
-                                  const pct = showAnswers && q.optionPercentages ? q.optionPercentages[oIdx] : null;
+                                  const hasPct = showAnswers && q.optionPercentages && typeof q.optionPercentages[oIdx] === "number";
+                                  const rawPct = hasPct ? q.optionPercentages[oIdx] : null;
+                                  const pct = (rawPct !== null && !isNaN(rawPct)) ? Math.max(0, Math.min(100, rawPct)) : null;
                                   return (
                                     <View key={oIdx} style={{ borderWidth: 1.5, borderColor: isCorrect ? "#2e7d32" : isWrong ? "#c62828" : isUserChoice ? "#1565c0" : darkMode ? "#333" : "#e0e0e0", borderRadius: 6, padding: 8, backgroundColor: isCorrect ? "#e8f5e9" : isWrong ? "#ffebee" : isUserChoice ? (darkMode ? "#0d1e35" : "#e3f2fd") : darkMode ? "#1e1e1e" : "#ffffff" }}>
                                       <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: pct !== null ? 4 : 0 }}>
@@ -11683,19 +12308,19 @@ export default function App() {
                     ) : (
                       // Active Quiz Attempt (Student)
                       (() => {
-                        const allQIds = todayQuiz.questions.map((_: any, i: number) => i);
+                        const questionsList = Array.isArray(todayQuiz.questions) ? todayQuiz.questions : [];
                         const answered = Object.keys(quizAnswers).length;
                         return (
                           <View>
                             <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 10 }}>
                               <Text style={{ color: "#c62828", fontWeight: "bold", fontSize: 12 }}>Date: {todayQuiz.quizDate}</Text>
-                              <Text style={{ color: darkMode ? "#9e9e9e" : "#757575", fontSize: 12 }}>{answered}/{todayQuiz.questions.length} answered</Text>
+                              <Text style={{ color: darkMode ? "#9e9e9e" : "#757575", fontSize: 12 }}>{answered}/{questionsList.length} answered</Text>
                             </View>
-                            {todayQuiz.questions.map((q: any, idx: number) => (
+                            {questionsList.map((q: any, idx: number) => (
                               <View key={idx} style={{ padding: 12, backgroundColor: darkMode ? "#2a2a2a" : "#f9f9f9", borderRadius: 10, marginBottom: 14, borderLeftWidth: 4, borderLeftColor: quizAnswers[idx] !== undefined ? "#2e7d32" : "#e0e0e0" }}>
                                 <Text style={{ color: darkMode ? "#e0e0e0" : "#212121", fontWeight: "700", fontSize: 14, marginBottom: 10 }}>{idx + 1}. {q.questionText}</Text>
                                 <View style={{ gap: 8 }}>
-                                  {q.options.map((opt: string, oIdx: number) => {
+                                  {(q.options || []).map((opt: string, oIdx: number) => {
                                     const selected = quizAnswers[idx] === oIdx;
                                     return (
                                       <TouchableOpacity key={oIdx} onPress={() => setQuizAnswers((prev: any) => ({ ...prev, [idx]: oIdx }))} style={{ flexDirection: "row", alignItems: "center", gap: 10, padding: 10, borderRadius: 8, borderWidth: 1.5, borderColor: selected ? "#c62828" : darkMode ? "#333" : "#e0e0e0", backgroundColor: selected ? "#ffebee" : darkMode ? "#1e1e1e" : "#ffffff" }}>
@@ -11709,8 +12334,12 @@ export default function App() {
                                 </View>
                               </View>
                             ))}
-                            <TouchableOpacity onPress={submitLmsQuiz} style={[styles.primaryBtn, { width: "100%", marginTop: 10 }]}>
-                              <Text style={styles.primaryBtnTxt}>Submit Quiz</Text>
+                            <TouchableOpacity
+                              onPress={submitLmsQuiz}
+                              disabled={isSubmittingQuiz}
+                              style={[styles.primaryBtn, { width: "100%", marginTop: 10, opacity: isSubmittingQuiz ? 0.6 : 1 }]}
+                            >
+                              <Text style={styles.primaryBtnTxt}>{isSubmittingQuiz ? "Submitting Quiz..." : "Submit Quiz"}</Text>
                             </TouchableOpacity>
                           </View>
                         );
@@ -12494,9 +13123,37 @@ export default function App() {
                     ) : (
                       <View style={{ borderTopWidth: 1, borderColor: "#eee" }}>
                         {leaderboard.map((entry: any, index: number) => {
-                          const studentObj = students.find((s: any) => s.id === entry.studentId || s.userId === entry.studentId);
-                          const studentName = studentObj ? `${studentObj.firstName || ""} ${studentObj.lastName || ""}`.trim() || studentObj.loginUsername || `Student (${entry.studentId})` : (entry.studentName || `Student (${entry.studentId})`);
+                          const entryRollStr = String(entry.rollNumber || "").trim().toLowerCase();
+                          const entryMockStr = String(entry.mockRollNumber || "").trim().toLowerCase();
+
+                          const studentObj = students.find((s: any) => {
+                            if (entry.studentId && (s.id === entry.studentId || s.userId === entry.studentId)) return true;
+                            const sRoll = String(s.rollNumber || "").trim().toLowerCase();
+                            const sRollNo = String(s.rollNo || "").trim().toLowerCase();
+                            const sMock = String(s.mockRollNumber || "").trim().toLowerCase();
+                            const sSpec = String(s.specialRollNo || "").trim().toLowerCase();
+                            const sUser = String(s.loginUsername || "").trim().toLowerCase();
+
+                            if (entryRollStr && entryRollStr !== "guest") {
+                              if (sRoll === entryRollStr || sRollNo === entryRollStr || sMock === entryRollStr || sSpec === entryRollStr || sUser === entryRollStr) return true;
+                              if (s.specialRollNumbers && typeof s.specialRollNumbers === "object") {
+                                if (Object.values(s.specialRollNumbers).some((v: any) => String(v).trim().toLowerCase() === entryRollStr)) return true;
+                              }
+                            }
+                            if (entryMockStr && entryMockStr !== "guest") {
+                              if (sMock === entryMockStr || sSpec === entryMockStr || sRoll === entryMockStr || sRollNo === entryMockStr) return true;
+                            }
+                            return false;
+                          });
+
+                          const studentName = studentObj ? `${studentObj.firstName || ""} ${studentObj.lastName || ""}`.trim() || studentObj.loginUsername || `Student (${entry.studentId})` : (entry.studentName && entry.studentName !== "Offline Student" ? entry.studentName : (entry.rollNumber ? `Student (${entry.rollNumber})` : "Offline Student"));
                           const rollNo = entry.rollNumber || (studentObj ? (studentObj.rollNumber || studentObj.rollNo || studentObj.loginUsername) : "");
+                          const mockRoll = entry.mockRollNumber || (studentObj ? (studentObj.mockRollNumber || studentObj.specialRollNo) : "");
+                          const displayRoll = mockRoll || rollNo;
+                          const isStudentUser = Boolean(user && (user.role === "student" || user.role === "user"));
+                          const correctCount = entry.correct ?? entry.correctCount ?? 0;
+                          const wrongCount = entry.wrong ?? entry.wrongCount ?? 0;
+                          const notAttemptedCount = entry.skipped ?? entry.skippedCount ?? entry.unattended ?? 0;
 
                           return (
                             <View key={entry.id || index} style={{
@@ -12509,11 +13166,20 @@ export default function App() {
                               <Text style={{ width: 30, fontWeight: "bold", color: index === 0 ? "#fbc02d" : "#757575", fontSize: 14 }}>
                                 #{index + 1}
                               </Text>
-                              <View style={{ flex: 1 }}>
-                                <Text style={{ fontWeight: "bold", color: "#212121" }}>{studentName}</Text>
-                                <Text style={{ fontSize: 11, color: "#1565c0", marginTop: 1 }}>{rollNo ? `Roll No: ${rollNo} · ` : ""}Status: {entry.status || "Completed"}</Text>
+                              <View style={{ flex: 1, marginRight: 8 }}>
+                                <Text style={{ fontWeight: "bold", color: "#212121" }}>
+                                  {isStudentUser ? (displayRoll || "Student") : `${studentName} ${mockRoll ? `(${mockRoll})` : (rollNo && rollNo !== "Guest" ? `(${rollNo})` : "")}`}
+                                </Text>
+                                <Text style={{ fontSize: 11, color: "#1565c0", marginTop: 1 }}>
+                                  {isStudentUser ? `Status: ${entry.status || "Completed"}` : `${mockRoll ? `Mock Roll: ${mockRoll} · ` : (rollNo ? `Roll No: ${rollNo} · ` : "")}Status: ${entry.status || "Completed"}`}
+                                </Text>
+                                <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 4 }}>
+                                  <Text style={{ fontSize: 10, color: "#2e7d32", fontWeight: "600" }}>Correct: <Text style={{ fontWeight: "bold" }}>{correctCount}</Text></Text>
+                                  <Text style={{ fontSize: 10, color: "#c62828", fontWeight: "600" }}>Wrong: <Text style={{ fontWeight: "bold" }}>{wrongCount}</Text></Text>
+                                  <Text style={{ fontSize: 10, color: "#757575", fontWeight: "600" }}>Not Attempted: <Text style={{ fontWeight: "bold" }}>{notAttemptedCount}</Text></Text>
+                                </View>
                               </View>
-                              <View style={{ alignItems: "flex-end" }}>
+                              <View style={{ alignItems: "flex-end", minWidth: 80 }}>
                                 <Text style={{ fontWeight: "bold", color: "#2e7d32", fontSize: 14 }}>
                                   {entry.obtainedMarks} / {entry.totalMarks}
                                 </Text>

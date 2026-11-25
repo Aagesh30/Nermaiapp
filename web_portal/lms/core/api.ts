@@ -11,7 +11,7 @@
 import axios, { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 
 // Dynamic Base URL Resolution (same as App.tsx)
-const DEFAULT_HOST_IP = "192.168.31.18";
+const DEFAULT_HOST_IP = "production";
 const getBaseUrl = (): string => {
   if (typeof process !== 'undefined' && (process.env as any).EXPO_PUBLIC_API_URL) {
     return (process.env as any).EXPO_PUBLIC_API_URL;

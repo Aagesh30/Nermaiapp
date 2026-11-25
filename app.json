@@ -3,7 +3,7 @@
     "name": "NERMAI IAS Academy",
     "slug": "nermai-ias-academy-web-portal",
     "scheme": "nermaiiasacademy",
-    "version": "1.0.0",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -17,7 +17,7 @@
     },
     "android": {
       "package": "com.nermai.iasacademy",
-      "versionCode": 7,
+      "versionCode": 8,
       "backgroundColor": "#7b0000",
       "splash": {
         "image": "./assets/splash-icon.png",

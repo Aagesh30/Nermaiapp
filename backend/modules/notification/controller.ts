@@ -341,13 +341,21 @@ export class NotificationController {
 
             let notifications = [...rawAnnouncements];
 
+            const authUser = (req as any).user;
+            const adminRoles = ["super_admin", "admin", "coordinator", "staff", "developer"];
+            const isCallerAdmin = authUser && adminRoles.includes(authUser.role);
+
+            const effectiveRole = isCallerAdmin ? (role ? String(role).toLowerCase() : authUser?.role) : (authUser?.role || "student");
+            const effectiveStudentId = isCallerAdmin ? (studentId ? String(studentId) : null) : String(authUser?.studentId || authUser?.userId || "");
+            const effectiveBatch = isCallerAdmin ? (batch ? String(batch).toLowerCase() : null) : String((authUser as any)?.batch || batch || "").toLowerCase();
+
             // Filter based on user target group
-            if (role) {
-                const userRole = String(role).toLowerCase();
+            if (effectiveRole) {
+                const userRole = effectiveRole;
                 notifications = notifications.filter((notif: any) => {
                     // Filter out private notifications meant for other students
                     if (userRole === "student" && notif.targetStudentId) {
-                        if (!studentId || String(notif.targetStudentId) !== String(studentId)) {
+                        if (!effectiveStudentId || String(notif.targetStudentId) !== effectiveStudentId) {
                             return false;
                         }
                     }
@@ -362,12 +370,12 @@ export class NotificationController {
                     if (userRole === "student") {
                         if (target === "paid" || target === "student") return true;
                         if (target === "batch") {
-                            if (!batch) return false;
-                            return String(notif.targetBatch).toLowerCase() === String(batch).toLowerCase();
+                            if (!effectiveBatch) return false;
+                            return String(notif.targetBatch).toLowerCase() === effectiveBatch;
                         }
                     }
 
-                    if (userRole === "admin" || userRole === "staff") return true;
+                    if (adminRoles.includes(userRole)) return true;
 
                     return false;
                 });
@@ -447,15 +455,29 @@ export class NotificationController {
             if (token) {
                 const cleanDocId = token.replace(/[^a-zA-Z0-9_-]/g, "_");
                 const webCleanDocId = "web_" + token.slice(-24).replace(/[^a-zA-Z0-9_-]/g, "_");
-                batch.delete(db.collection("device_push_tokens").doc(cleanDocId));
-                batch.delete(db.collection("device_push_tokens").doc(webCleanDocId));
-                count++;
+                const isPrivileged = user && ["super_admin", "admin", "coordinator", "staff", "developer"].includes(user.role);
+
+                for (const docId of [cleanDocId, webCleanDocId]) {
+                    const tokenDoc = await db.collection("device_push_tokens").doc(docId).get();
+                    if (tokenDoc.exists) {
+                        const tokenData = tokenDoc.data();
+                        const tokenUserId = tokenData?.userId;
+                        const tokenStudentId = tokenData?.studentId;
+                        const callerId = String(targetId || "");
+                        // Only delete if it belongs to the authenticated user, or if caller is privileged admin
+                        if (isPrivileged || (callerId && (tokenUserId === callerId || tokenStudentId === callerId))) {
+                            batch.delete(tokenDoc.ref);
+                            count++;
+                        }
+                    }
+                }
             }
 
             if (targetId) {
-                const q1 = await db.collection("device_push_tokens").where("userId", "==", String(targetId)).get();
+                const callerId = String(targetId);
+                const q1 = await db.collection("device_push_tokens").where("userId", "==", callerId).get();
                 q1.forEach((d) => batch.delete(d.ref));
-                const q2 = await db.collection("device_push_tokens").where("studentId", "==", String(targetId)).get();
+                const q2 = await db.collection("device_push_tokens").where("studentId", "==", callerId).get();
                 q2.forEach((d) => batch.delete(d.ref));
                 count += q1.size + q2.size;
             }
@@ -471,6 +493,61 @@ export class NotificationController {
             return res.status(500).json({
                 success: false,
                 message: error.message || "Failed to unregister token"
+            });
+        }
+    }
+
+    /**
+     * REGISTER DEVICE PUSH TOKEN
+     * POST /api/notification/register-token
+     * Allows mobile APK (and web) to securely register FCM device tokens
+     * with the correct role (guest, student, super_admin, admin) using
+     * root Firebase Admin SDK privileges to avoid permission denied errors.
+     */
+    static async registerToken(req: Request, res: Response) {
+        try {
+            const { token, role, userId, studentId, batch, batches, platform, assignedBatches } = req.body;
+            if (!token || typeof token !== "string") {
+                return res.status(400).json({ success: false, message: "Valid token is required" });
+            }
+
+            const cleanDocId = platform === "web"
+                ? "web_" + token.slice(-24).replace(/[^a-zA-Z0-9_-]/g, "_")
+                : token.replace(/[^a-zA-Z0-9_-]/g, "_");
+
+            const studentBatchesArr: string[] = [];
+            if (batch) studentBatchesArr.push(String(batch));
+            if (Array.isArray(batches)) {
+                batches.forEach((b: any) => {
+                    if (b && !studentBatchesArr.includes(String(b))) studentBatchesArr.push(String(b));
+                });
+            }
+
+            const payload: Record<string, any> = {
+                token,
+                userId: userId ? String(userId) : "anonymous",
+                studentId: studentId ? String(studentId) : null,
+                role: role ? String(role) : "guest",
+                batch: batch ? String(batch) : null,
+                batches: role === "student" ? studentBatchesArr : [],
+                platform: platform || "android",
+                assignedBatches: Array.isArray(assignedBatches) ? assignedBatches.map(String) : [],
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            };
+
+            await db.collection("device_push_tokens").doc(cleanDocId).set(payload, { merge: true });
+
+            return res.status(200).json({
+                success: true,
+                message: "Push token registered successfully",
+                role: payload.role,
+                platform: payload.platform
+            });
+        } catch (error: any) {
+            console.error("[NotificationController] registerToken error:", error);
+            return res.status(500).json({
+                success: false,
+                message: error.message || "Failed to register push token"
             });
         }
     }

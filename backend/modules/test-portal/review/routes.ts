@@ -1,15 +1,40 @@
-import { Router } from "express";
+import { Router, Request, Response, NextFunction } from "express";
 import { ReviewController } from "./controller";
+import { requireAuth, requireRole } from "../../../core/middleware/auth.middleware";
 
 const router = Router();
+
+/**
+ * Ownership guard — students can only access their own history and analytics.
+ * Admins (super_admin, admin, staff) bypass this and can view any student.
+ */
+const requireOwnerOrAdmin = (req: Request, res: Response, next: NextFunction) => {
+  const { studentId } = req.params;
+  const user = req.user!;
+  const adminRoles = ['super_admin', 'admin', 'staff'];
+  if (adminRoles.includes(user.role)) return next();
+  // Match against both the internal studentId and the userId (Firebase UID or custom ID)
+  if (user.studentId === studentId || user.userId === studentId) return next();
+  return res.status(403).json({
+    success: false,
+    message: 'Access denied: you can only view your own records.'
+  });
+};
 
 /**
  * ==========================================
  * REVIEW ROUTES
  * Base Route:
  * /api/test-portal/review
+ * SECURITY: All routes require authentication.
+ *           Admin-only management routes are further restricted by role.
  * ==========================================
  */
+
+// All review routes require an authenticated user
+router.use(requireAuth);
+
+const adminRoles = ['super_admin', 'admin', 'staff'];
 
 /**
  * Review complete attempt
@@ -28,7 +53,8 @@ router.get(
 );
 
 /**
- * Get correct answers
+ * Get correct answers — controller already gates on attempt being evaluated (in results collection).
+ * Auth layer ensures only signed-in users can even try.
  */
 router.get(
     "/answers/:attemptId",
@@ -60,10 +86,11 @@ router.get(
 );
 
 /**
- * Student Attempt History
+ * Student Attempt History — students see only their own history
  */
 router.get(
     "/history/:studentId",
+    requireOwnerOrAdmin,
     ReviewController.getAttemptHistory
 );
 
@@ -84,10 +111,11 @@ router.get(
 );
 
 /**
- * Student Analytics
+ * Student Analytics — students see only their own analytics
  */
 router.get(
     "/analytics/:studentId",
+    requireOwnerOrAdmin,
     ReviewController.getStudentAnalytics
 );
 
@@ -97,6 +125,7 @@ router.get(
  */
 router.get(
     "/results/all-tests",
+    requireRole(adminRoles),
     ReviewController.getAllTestResults
 );
 
@@ -105,6 +134,7 @@ router.get(
  */
 router.get(
     "/diagnostics/:testId",
+    requireRole(adminRoles),
     ReviewController.getTestSubjectDiagnostics
 );
 
@@ -113,7 +143,8 @@ router.get(
  */
 router.get(
     "/batch-analytics",
+    requireRole(adminRoles),
     ReviewController.getBatchAcademicAnalytics
 );
 
-export default router;
+export default router;

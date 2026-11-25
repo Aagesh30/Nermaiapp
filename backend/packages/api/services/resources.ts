@@ -8,7 +8,7 @@ export interface ResourceSyncPayload {
 }
 
 export const ResourceApi = {
-  list: (params: { visibility?: string; courseId?: string; subjectId?: string; topicId?: string; classId?: string; batchId?: string; categoryId?: string; search?: string }) => 
+  list: (params: { visibility?: string; courseId?: string; subjectId?: string; topicId?: string; classId?: string; batchId?: string; categoryId?: string; search?: string; subject?: string }) => 
     getApiClient().get('/resources', { params }),
   getCourseHierarchy: (courseId: string) => getApiClient().get(`/resources/course/${courseId}/hierarchy`),
   getResource: (id: string) => getApiClient().get(`/resources/${id}`),

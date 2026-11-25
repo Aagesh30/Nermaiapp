@@ -220,6 +220,8 @@ export class StudentController {
                 loginUsername: loginUsername || "",
                 loginPassword: loginPassword || "",
                 passwordHash,
+                mockRollNumber: req.body.mockRollNumber || req.body.specialRollNo || "",
+                specialRollNo: req.body.specialRollNo || req.body.mockRollNumber || "",
                 courseDuration: courseDuration || "",
                 modeOfPayment: modeOfPayment || "cash",
                 transactionId: transactionId || "",

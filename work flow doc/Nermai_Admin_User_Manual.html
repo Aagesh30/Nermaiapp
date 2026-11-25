@@ -1,0 +1,1248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NERMAI IAS ACADEMY - Admin Operations Manual & Complete CRUD Guide</title>
+  <style>
+    :root {
+      --primary: #8b0000;
+      --primary-dark: #660000;
+      --primary-light: #fef2f2;
+      --secondary: #0f172a;
+      --accent: #d97706;
+      --success: #15803d;
+      --danger: #b91c1c;
+      --warning: #b45309;
+      --info: #0284c7;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --border: #e2e8f0;
+      --text-main: #1e293b;
+      --text-muted: #64748b;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text-main);
+      line-height: 1.6;
+      padding: 0;
+      margin: 0;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    /* Print Controls Bar */
+    .top-action-bar {
+      position: sticky;
+      top: 0;
+      background: #ffffff;
+      border-bottom: 2px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 1000;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+    }
+
+    .top-action-bar h1 {
+      font-size: 1.1rem;
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn-print {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.95rem;
+      transition: background 0.2s;
+    }
+
+    .btn-print:hover {
+      background: var(--primary-dark);
+    }
+
+    .doc-container {
+      max-width: 1100px;
+      margin: 24px auto 60px;
+      background: var(--card-bg);
+      padding: 48px;
+      border-radius: 12px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
+    }
+
+    /* Header & Cover */
+    .doc-header {
+      border-bottom: 3px solid var(--primary);
+      padding-bottom: 24px;
+      margin-bottom: 36px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .doc-title-group h1 {
+      font-size: 2.2rem;
+      color: var(--primary);
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+
+    .doc-title-group .subtitle {
+      font-size: 1.15rem;
+      color: var(--accent);
+      font-weight: 600;
+      margin-top: 4px;
+    }
+
+    .doc-meta {
+      text-align: right;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .badge-admin {
+      display: inline-block;
+      background: #fee2e2;
+      color: var(--primary);
+      padding: 4px 12px;
+      border-radius: 9999px;
+      font-weight: 700;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      margin-top: 6px;
+    }
+
+    /* Table of Contents */
+    .toc-box {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-left: 5px solid var(--primary);
+      padding: 24px;
+      border-radius: 8px;
+      margin-bottom: 40px;
+    }
+
+    .toc-box h3 {
+      font-size: 1.2rem;
+      margin-bottom: 16px;
+      color: var(--secondary);
+    }
+
+    .toc-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+
+    .toc-item {
+      font-size: 0.92rem;
+    }
+
+    .toc-item a {
+      color: var(--primary);
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    .toc-item a:hover {
+      text-decoration: underline;
+    }
+
+    /* Section Styling */
+    .module-section {
+      margin-top: 48px;
+      padding-top: 24px;
+      border-top: 2px dashed var(--border);
+      page-break-before: always;
+    }
+
+    .module-badge {
+      display: inline-block;
+      background: var(--primary);
+      color: white;
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    .module-title {
+      font-size: 1.8rem;
+      color: var(--secondary);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .module-desc {
+      font-size: 1rem;
+      color: var(--text-muted);
+      margin-bottom: 24px;
+    }
+
+    /* Page Cards */
+    .page-card {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+    }
+
+    .page-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 12px;
+      margin-bottom: 16px;
+    }
+
+    .page-card-title {
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: var(--primary-dark);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .tab-route {
+      font-family: monospace;
+      font-size: 0.85rem;
+      background: #f1f5f9;
+      padding: 4px 10px;
+      border-radius: 4px;
+      color: #334155;
+    }
+
+    /* CRUD Table */
+    .crud-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      font-size: 0.92rem;
+    }
+
+    .crud-table th, .crud-table td {
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      text-align: left;
+    }
+
+    .crud-table th {
+      background: #f8fafc;
+      color: var(--secondary);
+      font-weight: 700;
+    }
+
+    .tag-crud {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-weight: 700;
+      font-size: 0.75rem;
+      text-align: center;
+      min-width: 55px;
+    }
+
+    .tag-c { background: #dcfce7; color: #166534; }
+    .tag-r { background: #e0f2fe; color: #075985; }
+    .tag-u { background: #fef3c7; color: #92400e; }
+    .tag-d { background: #fee2e2; color: #991b1b; }
+
+    /* Steps List */
+    .step-list {
+      margin: 16px 0;
+      padding-left: 20px;
+    }
+
+    .step-list li {
+      margin-bottom: 10px;
+      font-size: 0.95rem;
+    }
+
+    .step-title {
+      font-weight: 700;
+      color: var(--secondary);
+    }
+
+    /* Callout Alert */
+    .callout {
+      padding: 14px 18px;
+      border-radius: 6px;
+      margin: 16px 0;
+      font-size: 0.92rem;
+      border-left: 4px solid transparent;
+    }
+
+    .callout-info {
+      background: #f0f9ff;
+      border-left-color: var(--info);
+      color: #0369a1;
+    }
+
+    .callout-warning {
+      background: #fffbeb;
+      border-left-color: var(--warning);
+      color: #b45309;
+    }
+
+    .callout-success {
+      background: #f0fdf4;
+      border-left-color: var(--success);
+      color: #166534;
+    }
+
+    /* Print Rules */
+    @media print {
+      body {
+        background: white;
+      }
+      .top-action-bar {
+        display: none !important;
+      }
+      .doc-container {
+        box-shadow: none;
+        padding: 0;
+        margin: 0;
+        max-width: 100%;
+      }
+      .module-section {
+        page-break-before: always;
+      }
+      .page-card {
+        page-break-inside: avoid;
+        box-shadow: none;
+        border: 1px solid #ccc;
+      }
+      a {
+        text-decoration: none;
+        color: inherit;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Action Bar (Print / Export PDF) -->
+  <div class="top-action-bar">
+    <h1>
+      <span>🏛️</span> NERMAI IAS ACADEMY — System Administration Manual
+    </h1>
+    <button class="btn-print" onclick="window.print()">
+      <span>🖨️</span> Save as PDF / Print Manual
+    </button>
+  </div>
+
+  <div class="doc-container">
+
+    <!-- Document Header -->
+    <header class="doc-header">
+      <div class="doc-title-group">
+        <h1>NERMAI IAS ACADEMY</h1>
+        <div class="subtitle">Full Administrator User Manual & Comprehensive CRUD Operations Guide</div>
+        <div class="badge-admin">Admin & Super-Admin Edition</div>
+      </div>
+      <div class="doc-meta">
+        <div><strong>Version:</strong> 2.4.0 (Enterprise)</div>
+        <div><strong>Portal:</strong> Web & Desktop Operations</div>
+        <div><strong>Target Audience:</strong> Academy Directors & Staff</div>
+        <div><strong>Status:</strong> Approved Production Guide</div>
+      </div>
+    </header>
+
+    <!-- Table of Contents -->
+    <div class="toc-box">
+      <h3>📑 Table of Contents (Admin Operations)</h3>
+      <div class="toc-grid">
+        <div class="toc-item"><strong>1. MODULE 1: TEST PORTAL</strong>
+          <ul>
+            <li><a href="#test-available">1.1 Active & Scheduled Exams</a></li>
+            <li><a href="#test-create">1.2 AI Question Extraction & Builder</a></li>
+            <li><a href="#test-results">1.3 Offline / Online Results & Evaluation</a></li>
+            <li><a href="#test-feedback">1.4 Question Disputes & Student Feedback</a></li>
+          </ul>
+        </div>
+        <div class="toc-item"><strong>2. MODULE 2: ERP OPERATIONS</strong>
+          <ul>
+            <li><a href="#erp-students">2.1 Student Management & Bulk Upload</a></li>
+            <li><a href="#erp-fees">2.2 Fee Ledger, Invoices & Due Alerts</a></li>
+            <li><a href="#erp-batches">2.3 Batch Scheduling & Course Allotment</a></li>
+            <li><a href="#erp-faculty">2.4 Faculty / Staff Management</a></li>
+            <li><a href="#erp-attendance">2.5 Offline Attendance & QR Scanner</a></li>
+            <li><a href="#erp-profile">2.6 Profile Update Requests Desk</a></li>
+            <li><a href="#erp-cards">2.7 ID Cards & Hall Ticket Generator</a></li>
+          </ul>
+        </div>
+        <div class="toc-item"><strong>3. MODULE 3: LMS (LEARNING MGMT)</strong>
+          <ul>
+            <li><a href="#lms-hierarchy">3.1 4-Tier Curriculum Tree (Courses/Topics)</a></li>
+            <li><a href="#lms-daily">3.2 Daily Content & Current Affairs Desk</a></li>
+            <li><a href="#lms-resources">3.3 Digital Library & Audio Notes Repository</a></li>
+            <li><a href="#lms-live">3.4 Interactive Live Sessions & Zoom Control</a></li>
+            <li><a href="#lms-recorded">3.5 Recorded Classes & Anti-Piracy Player</a></li>
+            <li><a href="#lms-syllabus">3.6 Syllabus Tracker & Excel Importer</a></li>
+          </ul>
+        </div>
+        <div class="toc-item"><strong>4. MODULE 4: CRM (RELATIONSHIP MGMT)</strong>
+          <ul>
+            <li><a href="#crm-leads">4.1 Lead Pipeline & Conversion to ERP</a></li>
+            <li><a href="#crm-admissions">4.2 Online Admission Form Processing</a></li>
+            <li><a href="#crm-campaigns">4.3 Broadcast Campaigns & Push Alerts</a></li>
+            <li><a href="#crm-posters">4.4 Guest Banner Posters (Home Slider)</a></li>
+            <li><a href="#crm-custom">4.5 Custom Dynamic Registration Forms</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- MODULE 1: TEST PORTAL -->
+    <!-- ========================================================================= -->
+    <section class="module-section" id="module-test-portal">
+      <span class="module-badge">Module 1</span>
+      <h2 class="module-title">📝 Test Portal Administration</h2>
+      <p class="module-desc">
+        The Test Portal manages computerized mock exams, offline test mark registers, AI-driven question paper digitization, anti-cheat proctored examination monitoring, real-time leaderboards, and candidate performance analytics.
+      </p>
+
+      <!-- Page 1.1 -->
+      <div class="page-card" id="test-available">
+        <div class="page-card-header">
+          <div class="page-card-title">1.1 Available & Active Exams Dashboard</div>
+          <span class="tab-route">Sidebar ➔ Test Portal ➔ Available Exams (`testSub === "available"`)</span>
+        </div>
+        <p>This is the central examination command center. Admins can view all scheduled, live, and past examinations, monitor live attempts in real-time, toggle publish status, and adjust roll-number permissions.</p>
+
+        <table class="crud-table">
+          <thead>
+            <tr>
+              <th style="width: 120px;">CRUD Action</th>
+              <th>Trigger & Button in UI</th>
+              <th>System Workflow & Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="tag-crud tag-r">READ</span></td>
+              <td><strong>Test Directory Grid</strong></td>
+              <td>Displays list of tests with title, target course/batch, question count, duration (mins), total marks, and current status (Draft, Scheduled, Active, Ended). Filter by <em>Active</em>, <em>Upcoming</em>, <em>Offline</em>, or <em>Completed</em>.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-u">UPDATE</span></td>
+              <td><strong>Edit Test (`Edit` Icon)</strong></td>
+              <td>Opens modal to update Test Name, Instructions, Duration, Negative Marks per wrong answer, Target Batches, Pass Mark %, and Subject Section Configurator.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-u">UPDATE</span></td>
+              <td><strong>Publish / Unpublish Toggle</strong></td>
+              <td>Immediately toggles visibility of the exam to students in the mobile app and web portal. Unpublishing locks student entry instantly.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-r">READ</span></td>
+              <td><strong>Live Exam Proctor Monitor</strong></td>
+              <td>Opens the real-time proctor dashboard showing: (1) Active live test-taker count, (2) Real-time leaderboard with auto-refreshing scores, (3) Anti-cheat tab-switching / window blur security alerts, and (4) Absentee student roster.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-u">UPDATE</span></td>
+              <td><strong>Offline Permission Requests</strong></td>
+              <td>Review pending permission requests submitted by students who missed the exam deadline or need offline retakes. Click <strong>Approve</strong> or <strong>Reject</strong> with 1-click status update.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-d">DELETE</span></td>
+              <td><strong>Delete Test (`Trash` Icon)</strong></td>
+              <td>Triggers confirmation modal. Performs soft-delete (`isActive: false`), removing the test from student views while archiving exam results in the database.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="callout callout-info">
+          <strong>💡 Admin Pro-Tip: Special Mock Roll Number Configurator</strong><br>
+          For statewide scholarship exams or public mock tests, Admins can click <em>"Mock Roll Config"</em> to generate serialized candidate roll numbers (e.g., <code>NERMAI-MOCK-001</code>) and automatically sync them to unassigned applicants.
+        </div>
+      </div>
+
+      <!-- Page 1.2 -->
+      <div class="page-card" id="test-create">
+        <div class="page-card-header">
+          <div class="page-card-title">1.2 AI Question Paper Extraction & Manual Creator</div>
+          <span class="tab-route">Sidebar ➔ Test Portal ➔ Create Test (`testSub === "pdf-create"`)</span>
+        </div>
+        <p>Create new exams using either the automated AI extraction engine (which parses PDF/Word documents) or manual question-by-question authoring.</p>
+
+        <table class="crud-table">
+          <thead>
+            <tr>
+              <th style="width: 120px;">CRUD Action</th>
+              <th>Trigger & Button in UI</th>
+              <th>System Workflow & Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="tag-crud tag-c">CREATE</span></td>
+              <td><strong>Upload PDF / Word Document</strong></td>
+              <td>Admin selects Question Paper PDF and optional Answer Key PDF/CSV. Clicking <strong>Extract with AI</strong> forwards the document to Groq Llama-3.3-70b / Gemini 1.5 Flash. The AI extracts questions, bilingual translations (English & Tamil), 4 options, correct keys, and explanations into a structured JSON draft.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-c">CREATE</span></td>
+              <td><strong>Manual Add Question (`+ Add`)</strong></td>
+              <td>Inserts an empty question card into the test builder. Admin fills: Question text (English/Tamil), Options A/B/C/D, Correct Option selector, Explanation text, and Marks weightage.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-u">UPDATE</span></td>
+              <td><strong>Upload Diagram / Question Image</strong></td>
+              <td>Uploads question illustrations or charts to the secure Google Drive backend; binds the returned image URL directly to Question #N.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-u">UPDATE</span></td>
+              <td><strong>Subject Section Splitter</strong></td>
+              <td>Groups questions into distinct exam sections (e.g., Section A: History [Q1-25], Section B: Polity [Q26-50], Section C: Aptitude [Q51-100]) with individual section timers and negative mark rules.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-c">CREATE</span> / <span class="tag-crud tag-u">UPDATE</span></td>
+              <td><strong>Save Draft / Publish Immediately</strong></td>
+              <td>Writes test document to Firestore under <code>tests</code> collection. If marked published, it activates immediate push notifications to eligible batch students.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Page 1.3 -->
+      <div class="page-card" id="test-results">
+        <div class="page-card-header">
+          <div class="page-card-title">1.3 Exam Results, Evaluation & Offline Excel Upload</div>
+          <span class="tab-route">Sidebar ➔ Test Portal ➔ Results (`testSub === "results"`)</span>
+        </div>
+        <p>Review candidate attempts, upload OMR/offline test scores via Excel, re-evaluate marks upon question disputes, and export official rank lists.</p>
+
+        <table class="crud-table">
+          <thead>
+            <tr>
+              <th style="width: 120px;">CRUD Action</th>
+              <th>Trigger & Button in UI</th>
+              <th>System Workflow & Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="tag-crud tag-r">READ</span></td>
+              <td><strong>Candidate Results Table</strong></td>
+              <td>Displays Rank, Student Name, Roll Number, Correct Count, Wrong Count, Skipped Count, Total Marks Obtained, Percentage %, and Time Taken.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-c">CREATE</span></td>
+              <td><strong>Upload Offline Results Excel</strong></td>
+              <td>Click <em>"Upload Offline Excel"</em>. Admin uploads populated spreadsheet (`Sample_Offline_Results.xlsx`). System matches candidates by Roll Number, calculates scores, and merges offline marks directly into student ERP marksheets.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-u">UPDATE</span></td>
+              <td><strong>Recalculate Results (`Recalculate`)</strong></td>
+              <td>If an answer key error is corrected in a test, clicking <em>Recalculate</em> triggers background re-scoring across all student attempts, automatically refreshing ranks and percentile scores.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-r">READ</span></td>
+              <td><strong>Export Results (Excel / PDF)</strong></td>
+              <td>Downloads formatted Excel marksheet with question-level diagnostic data, topic accuracy breakdown, and statewide ranks.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-d">DELETE</span></td>
+              <td><strong>Reset / Delete Attempt (`Delete Result`)</strong></td>
+              <td>Super-Admin action to remove a glitchy or incomplete student attempt, allowing the student to re-take the exam under supervision.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Page 1.4 -->
+      <div class="page-card" id="test-feedback">
+        <div class="page-card-header">
+          <div class="page-card-title">1.4 Question Dispute & Student Feedback Desk</div>
+          <span class="tab-route">Sidebar ➔ Test Portal ➔ Test Feedback (`testSub === "feedback"`)</span>
+        </div>
+        <p>Track questions reported by students due to ambiguous wording, translation mismatches, or disputed answer keys.</p>
+
+        <table class="crud-table">
+          <thead>
+            <tr>
+              <th style="width: 120px;">CRUD Action</th>
+              <th>Trigger & Button in UI</th>
+              <th>System Workflow & Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="tag-crud tag-r">READ</span></td>
+              <td><strong>Dispute Feed</strong></td>
+              <td>Lists Test Name, Question ID, Student Name, Roll No, Disputed Reason, and Student Remarks/Proof.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-u">UPDATE</span></td>
+              <td><strong>Resolve & Update Key</strong></td>
+              <td>Admin can correct the question option or award full bonus marks for that question, then click <em>Mark Resolved</em>.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-d">DELETE</span></td>
+              <td><strong>Dismiss Report</strong></td>
+              <td>Archives invalid or baseless dispute tickets.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+
+    <!-- ========================================================================= -->
+    <!-- MODULE 2: ERP OPERATIONS -->
+    <!-- ========================================================================= -->
+    <section class="module-section" id="module-erp">
+      <span class="module-badge">Module 2</span>
+      <h2 class="module-title">🏛️ Enterprise Resource Planning (ERP)</h2>
+      <p class="module-desc">
+        The ERP Module controls institutional student directories, multi-tier fee ledgers, batch allocations, staff profiles, biometric & offline QR attendance, student profile change requests, digital ID cards, and exam hall tickets.
+      </p>
+
+      <!-- Page 2.1 -->
+      <div class="page-card" id="erp-students">
+        <div class="page-card-header">
+          <div class="page-card-title">2.1 Student Management Directory & Bulk Onboarding</div>
+          <span class="tab-route">Sidebar ➔ ERP ➔ Students (`erpSub === "students"`)</span>
+        </div>
+        <p>Complete lifecycle management of all academy candidates across Offline, Online, and Recorded batches.</p>
+
+        <table class="crud-table">
+          <thead>
+            <tr>
+              <th style="width: 120px;">CRUD Action</th>
+              <th>Trigger & Button in UI</th>
+              <th>System Workflow & Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="tag-crud tag-c">CREATE</span></td>
+              <td><strong>Add Student (`+ Add Student`)</strong></td>
+              <td>Opens multi-step modal:
+                <br>• <strong>Step 1 (Credentials):</strong> Username, Password, Role.
+                <br>• <strong>Step 2 (Academics):</strong> Course (UPSC, TNPSC, Banking, etc.), Batch selection, Mode (Offline / Online / Recorded), Roll No, Admission No.
+                <br>• <strong>Step 3 (Personal):</strong> Name, Phone, Email, DOB, Gender, Parent/Guardian details, Address, Photo ID document upload.
+                <br>• <strong>Step 4 (Finance):</strong> Total Course Fee, Initial Amount Paid, Payment Mode (Cash, UPI, Bank Transfer), Transaction ID.
+              </td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-c">CREATE</span></td>
+              <td><strong>Bulk Upload Excel (`Bulk Upload`)</strong></td>
+              <td>Download standard template (<code>Sample_Bulk_Students_Template.xlsx</code>). Upload populated sheet. Validates phone numbers, duplicates, and batch allocation, creating hundreds of accounts in a single batch.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-r">READ</span></td>
+              <td><strong>Student Profile & Filters</strong></td>
+              <td>Search by Name, Roll No, Phone, or Admission No. Filter by Course, Batch, Study Mode, or Fee Clearance status. Click student row to open 360° Academic Ledger.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-u">UPDATE</span></td>
+              <td><strong>Edit Student Profile (`Edit`)</strong></td>
+              <td>Update any personal detail, change batch allocation, reset password, update contact info, or upload updated passport photo.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-u">UPDATE</span></td>
+              <td><strong>Device Lock Reset (`Reset Device`)</strong></td>
+              <td>Clears student hardware fingerprint lock when a student changes their smartphone or laptop, allowing them to log in on their new device.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-d">DELETE</span></td>
+              <td><strong>Deactivate / Delete (`Delete`)</strong></td>
+              <td>Soft delete candidate record (`status: inactive`), locking portal access while preserving historical marks and payment records for auditing.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Page 2.2 -->
+      <div class="page-card" id="erp-fees">
+        <div class="page-card-header">
+          <div class="page-card-title">2.2 Fee Management, Invoicing & Due Collection</div>
+          <span class="tab-route">Sidebar ➔ ERP ➔ Fees (`erpSub === "fees"`)</span>
+        </div>
+        <p>Track total academy revenue, student installments, pending balances, fee defaulters, and issue official stamped PDF fee receipts.</p>
+
+        <table class="crud-table">
+          <thead>
+            <tr>
+              <th style="width: 120px;">CRUD Action</th>
+              <th>Trigger & Button in UI</th>
+              <th>System Workflow & Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="tag-crud tag-r">READ</span></td>
+              <td><strong>Financial Summary & Ledger</strong></td>
+              <td>Shows metric cards: Total Expected Revenue, Total Collected, Pending Dues, and Defaulter count. Table lists Student Name, Roll No, Total Fee, Amount Paid, Remaining Balance, and Payment Status (Paid, Partial, Unpaid).</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-c">CREATE</span></td>
+              <td><strong>Record Payment (`+ Collect Fee`)</strong></td>
+              <td>Modal form: Select Student, Enter Amount Paid, Select Payment Mode (Cash, GPay/PhonePe, Bank NEFT, Cheque), Enter Bank Ref/Transaction ID, Date of Payment, and Notes.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-r">READ</span></td>
+              <td><strong>Generate Fee Receipt (PDF)</strong></td>
+              <td>Generates instant printable/downloadable official payment receipt containing academy header, student roll no, GSTIN, amount breakdown, balance remaining, and digital stamp.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-u">UPDATE</span></td>
+              <td><strong>Fee Reminder & Portal Lock</strong></td>
+              <td>Click <em>Send Fee Reminder</em> to dispatch SMS/Push alert. Admin can toggle <em>Portal Access Lock</em> to restrict LMS/Test portal access until overdue installments are settled.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Page 2.3 & 2.4 -->
+      <div class="page-card" id="erp-batches">
+        <div class="page-card-header">
+          <div class="page-card-title">2.3 Batch Scheduling & Faculty Management</div>
+          <span class="tab-route">Sidebar ➔ ERP ➔ Batches (`erpSub === "batch"`) & Staff (`erpSub === "staff"`)</span>
+        </div>
+        <p>Configure academy classrooms, schedule batches across morning/evening/weekend timings, and manage faculty subject allotments.</p>
+
+        <table class="crud-table">
+          <thead>
+            <tr>
+              <th style="width: 120px;">CRUD Action</th>
+              <th>Trigger & Button in UI</th>
+              <th>System Workflow & Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="tag-crud tag-c">CREATE</span></td>
+              <td><strong>Create Batch (`+ New Batch`)</strong></td>
+              <td>Input Batch Name (e.g. <em>TNPSC Group 1 Morning 2026</em>), Course, Max Student Capacity, Start Date, End Date, Timings (09:00 AM - 01:00 PM), and Venue/Classroom.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-u">UPDATE</span></td>
+              <td><strong>Batch Reallocation</strong></td>
+              <td>Transfer students from one batch to another in bulk (e.g., from Weekday to Weekend batch).</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-c">CREATE</span> / <span class="tag-crud tag-u">UPDATE</span></td>
+              <td><strong>Staff Directory (`+ Add Faculty`)</strong></td>
+              <td>Create faculty profile with Name, Email, Mobile, Subject Specialization (e.g., Indian Economy, Current Affairs), and assign them to specific Course Batches.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-d">DELETE</span></td>
+              <td><strong>Archive Batch / Deactivate Staff</strong></td>
+              <td>Closes finished batches and removes staff credentials without impacting past recorded classes.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Page 2.5 -->
+      <div class="page-card" id="erp-attendance">
+        <div class="page-card-header">
+          <div class="page-card-title">2.5 Offline Attendance & Barcode/QR Scanner</div>
+          <span class="tab-route">Sidebar ➔ ERP ➔ Offline Attendance (`erpSub === "offline-attendance"`)</span>
+        </div>
+        <p>Track daily physical classroom attendance using webcam/handheld QR scanners or manual roster grids.</p>
+
+        <table class="crud-table">
+          <thead>
+            <tr>
+              <th style="width: 120px;">CRUD Action</th>
+              <th>Trigger & Button in UI</th>
+              <th>System Workflow & Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="tag-crud tag-c">CREATE</span> / <span class="tag-crud tag-u">UPDATE</span></td>
+              <td><strong>QR / Barcode Scanner</strong></td>
+              <td>Activate camera scanner. As students scan their physical ID card or mobile app QR code at the academy reception, system marks them <em>Present</em> with timestamp.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-u">UPDATE</span></td>
+              <td><strong>Manual Roster Toggle</strong></td>
+              <td>Select Course & Batch. Grid lists all students. Click status badge to toggle between <em>Present</em>, <em>Absent</em>, <em>Late</em>, or <em>Excused</em>.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-r">READ</span></td>
+              <td><strong>Export Monthly Attendance (Excel)</strong></td>
+              <td>Downloads complete monthly attendance sheet with percentage calculations and absentee flags.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Page 2.6 & 2.7 -->
+      <div class="page-card" id="erp-profile">
+        <div class="page-card-header">
+          <div class="page-card-title">2.6 Profile Requests, ID Cards & Hall Tickets</div>
+          <span class="tab-route">Sidebar ➔ ERP ➔ Profile Requests & ID Cards</span>
+        </div>
+        <p>Review student profile change requests, design digital student ID cards, and issue examination hall tickets.</p>
+
+        <table class="crud-table">
+          <thead>
+            <tr>
+              <th style="width: 120px;">CRUD Action</th>
+              <th>Trigger & Button in UI</th>
+              <th>System Workflow & Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="tag-crud tag-r">READ</span></td>
+              <td><strong>Profile Request Review Queue</strong></td>
+              <td>Lists pending student requests comparing Old Value vs. Requested New Value (e.g., name spelling, phone number change, address).</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-u">UPDATE</span></td>
+              <td><strong>Approve / Reject Request</strong></td>
+              <td>Clicking <strong>Approve</strong> writes changes directly to the student profile. Clicking <strong>Reject</strong> prompts for a reason sent to the student.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-c">CREATE</span> / <span class="tag-crud tag-r">READ</span></td>
+              <td><strong>Generate ID Card (`Generate ID`)</strong></td>
+              <td>Generates printable credit-card style identity badge with student photo, barcode/QR code, roll number, course, blood group, and emergency contact.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-c">CREATE</span> / <span class="tag-crud tag-r">READ</span></td>
+              <td><strong>Generate Hall Ticket (`Issue Hall Ticket`)</strong></td>
+              <td>Populates exam venue, date, seating instructions, and student signature box. Exportable as PDF.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+
+    <!-- ========================================================================= -->
+    <!-- MODULE 3: LMS (LEARNING MANAGEMENT SYSTEM) -->
+    <!-- ========================================================================= -->
+    <section class="module-section" id="module-lms">
+      <span class="module-badge">Module 3</span>
+      <h2 class="module-title">📚 Learning Management System (LMS)</h2>
+      <p class="module-desc">
+        The LMS delivers the academic core: a 4-tier structured syllabus hierarchy, daily current affairs publishing, digital study material repositories with DRM protection, Zoom/YouTube interactive live classes, watermarked video lectures, and syllabus progress tracking.
+      </p>
+
+      <!-- Page 3.1 -->
+      <div class="page-card" id="lms-hierarchy">
+        <div class="page-card-header">
+          <div class="page-card-title">3.1 4-Tier Academic Hierarchy (Courses ➔ Subjects ➔ Topics ➔ Subtopics)</div>
+          <span class="tab-route">Sidebar ➔ LMS ➔ Courses, Subjects, Topics, Subtopics</span>
+        </div>
+        <p>Build the academic syllabus structure into four nested levels to organize all study materials, videos, and quizzes.</p>
+
+        <table class="crud-table">
+          <thead>
+            <tr>
+              <th style="width: 120px;">CRUD Action</th>
+              <th>Hierarchy Level & UI Button</th>
+              <th>System Workflow & Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="tag-crud tag-c">CREATE</span> / <span class="tag-crud tag-u">UPDATE</span> / <span class="tag-crud tag-d">DELETE</span></td>
+              <td><strong>Level 1: Courses (`+ New Course`)</strong></td>
+              <td>Create main course program (e.g. <em>UPSC Civil Services Examination</em>). Set course code, thumbnail banner, target exam date, and assign course director.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-c">CREATE</span> / <span class="tag-crud tag-u">UPDATE</span> / <span class="tag-crud tag-d">DELETE</span></td>
+              <td><strong>Level 2: Subjects (`+ New Subject`)</strong></td>
+              <td>Link subject under Course (e.g. <em>Indian Polity & Constitution</em>, <em>Modern Indian History</em>). Reorder subjects, edit syllabus codes.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-c">CREATE</span> / <span class="tag-crud tag-u">UPDATE</span> / <span class="tag-crud tag-d">DELETE</span></td>
+              <td><strong>Level 3: Topics (`+ New Topic`)</strong></td>
+              <td>Link topic under Subject (e.g. <em>Fundamental Rights</em>, <em>Judiciary & Supreme Court</em>). Assign estimated lecture hours.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-c">CREATE</span> / <span class="tag-crud tag-u">UPDATE</span> / <span class="tag-crud tag-d">DELETE</span></td>
+              <td><strong>Level 4: Subtopics (`+ New Subtopic`)</strong></td>
+              <td>Sub-chapter level (e.g. <em>Article 21: Right to Life & Privacy</em>). Directly attach video classes, PDF handouts, and revision quizzes here.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Page 3.2 -->
+      <div class="page-card" id="lms-daily">
+        <div class="page-card-header">
+          <div class="page-card-title">3.2 Daily Content, Editorials & Current Affairs Desk</div>
+          <span class="tab-route">Sidebar ➔ LMS ➔ Daily Content (`lmsSub === "daily-content"`)</span>
+        </div>
+        <p>Publish daily study schedules, Hindu editorial summaries, PIB press releases, and current affairs capsules for students.</p>
+
+        <table class="crud-table">
+          <thead>
+            <tr>
+              <th style="width: 120px;">CRUD Action</th>
+              <th>Trigger & Button in UI</th>
+              <th>System Workflow & Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="tag-crud tag-c">CREATE</span></td>
+              <td><strong>Post Daily Content (`+ Add Content`)</strong></td>
+              <td>Modal form: Select Date (defaults to today), Category (<em>Daily News Analysis</em>, <em>Editorial</em>, <em>TNPSC Capsule</em>, <em>PIB Brief</em>), Article Title, Body content (Rich Text / Markdown), and Attachment upload (PDF notes or infographic).</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-r">READ</span></td>
+              <td><strong>Daily Content Calendar View</strong></td>
+              <td>Browse daily posts by calendar date. Filter by category or search by topic keywords. View student read-receipt counters.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-u">UPDATE</span></td>
+              <td><strong>Edit Content (`Edit`)</strong></td>
+              <td>Update article text, replace PDF documents, or correct typos in published news capsules.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-d">DELETE</span></td>
+              <td><strong>Delete Content (`Trash`)</strong></td>
+              <td>Removes the post from student daily feeds and deletes files from Google Drive storage.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Page 3.3 -->
+      <div class="page-card" id="lms-resources">
+        <div class="page-card-header">
+          <div class="page-card-title">3.3 Digital Resources Library & Audio Narration</div>
+          <span class="tab-route">Sidebar ➔ LMS ➔ Resources (`lmsSub === "resources"`)</span>
+        </div>
+        <p>Host academy reference books, NCERT summaries, previous year question compilations, and synced audio revision tracks.</p>
+
+        <table class="crud-table">
+          <thead>
+            <tr>
+              <th style="width: 120px;">CRUD Action</th>
+              <th>Trigger & Button in UI</th>
+              <th>System Workflow & Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="tag-crud tag-c">CREATE</span></td>
+              <td><strong>Upload Resource (`+ Upload`)</strong></td>
+              <td>Select Target Course & Subject. Enter Document Title, Document Type (Standard Text, Formula Sheet, Mindmap), upload primary PDF file (up to 150MB), and optional MP3 Audio Track for audio-guided study.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-r">READ</span></td>
+              <td><strong>Hierarchy Folder Browser</strong></td>
+              <td>Browse files by Course ➔ Subject ➔ Topic. Includes built-in secure PDF viewer preview and audio player.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-u">UPDATE</span></td>
+              <td><strong>Version Upload (`Upload New Version`)</strong></td>
+              <td>Replaces PDF file while keeping identical resource ID, preventing broken bookmarks for students.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-u">UPDATE</span></td>
+              <td><strong>Access Rules & Watermark Settings</strong></td>
+              <td>Lock resource to specific paid batches or enable public preview for guests. Toggle DRM dynamic student watermark on PDF pages.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-d">DELETE</span></td>
+              <td><strong>Delete Resource (`Trash`)</strong></td>
+              <td>Permanently deletes resource file and associated audio narration from cloud storage.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Page 3.4 & 3.5 -->
+      <div class="page-card" id="lms-live">
+        <div class="page-card-header">
+          <div class="page-card-title">3.4 Interactive Live Sessions & Recorded Video Classes</div>
+          <span class="tab-route">Sidebar ➔ LMS ➔ Live Classes (`lmsSub === "live-classes"`) & Recorded (`lmsSub === "recorded"`)</span>
+        </div>
+        <p>Schedule real-time Zoom/YouTube classrooms with anti-piracy features and maintain a searchable library of recorded lectures.</p>
+
+        <table class="crud-table">
+          <thead>
+            <tr>
+              <th style="width: 120px;">CRUD Action</th>
+              <th>Trigger & Button in UI</th>
+              <th>System Workflow & Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="tag-crud tag-c">CREATE</span></td>
+              <td><strong>Schedule Live Session (`+ Schedule`)</strong></td>
+              <td>Enter Session Title, Subject, Topic, Host Faculty, Date, Start Time, Duration. Select Provider: <em>Zoom Meeting SDK</em> or <em>YouTube Live</em>. Choose Zoom Account from the multi-account pool. Target specific Batches.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-u">UPDATE</span></td>
+              <td><strong>Live Host Command Controls</strong></td>
+              <td>During live session: (1) <strong>Start Attendance Polling</strong> (verifies student presence via heartbeat), (2) <strong>Live Chat Moderation</strong> (mute/kick unruly students, block globally), (3) <strong>Extend Session</strong> by 15/30 mins.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-u">UPDATE</span></td>
+              <td><strong>End Session & Convert to Recording</strong></td>
+              <td>Clicking <em>"End with Conversion"</em> automatically pulls Zoom cloud recording and publishes it into the LMS Recorded Lectures library under the matching Topic!</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-c">CREATE</span> / <span class="tag-crud tag-u">UPDATE</span></td>
+              <td><strong>Manual Recorded Video Upload</strong></td>
+              <td>Upload or embed past lecture video (Google Drive stream, Cloudinary, YouTube unlisted). Set dynamic floating watermark (Student Name + Phone + IP) to deter screen recording.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-d">DELETE</span></td>
+              <td><strong>Cancel Live / Delete Recording</strong></td>
+              <td>Cancel upcoming live class (notifies students via push alert) or delete obsolete lecture videos.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Page 3.6 -->
+      <div class="page-card" id="lms-syllabus">
+        <div class="page-card-header">
+          <div class="page-card-title">3.6 Syllabus Tracker & Excel Importer</div>
+          <span class="tab-route">Sidebar ➔ LMS ➔ Syllabus Tracker (`lmsSub === "lms-syllabus"`)</span>
+        </div>
+        <p>Monitor curriculum coverage percentages per batch and bulk-import full syllabus hierarchies from Excel.</p>
+
+        <table class="crud-table">
+          <thead>
+            <tr>
+              <th style="width: 120px;">CRUD Action</th>
+              <th>Trigger & Button in UI</th>
+              <th>System Workflow & Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="tag-crud tag-c">CREATE</span></td>
+              <td><strong>Bulk Excel Syllabus Import</strong></td>
+              <td>Upload multi-column syllabus sheet (Columns: Course, Subject, Topic, Subtopic, Hours). Auto-populates complete LMS tree without manual clicking.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-r">READ</span> / <span class="tag-crud tag-u">UPDATE</span></td>
+              <td><strong>Track Completion Percentage</strong></td>
+              <td>Displays progress bars: Completed hours vs. Total syllabus hours. Faculty marks topics <em>Covered</em> upon class completion.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+
+    <!-- ========================================================================= -->
+    <!-- MODULE 4: CRM (CUSTOMER RELATIONSHIP MANAGEMENT) -->
+    <!-- ========================================================================= -->
+    <section class="module-section" id="module-crm">
+      <span class="module-badge">Module 4</span>
+      <h2 class="module-title">🤝 Customer Relationship Management (CRM)</h2>
+      <p class="module-desc">
+        The CRM drives student enrollment pipelines: managing inbound course inquiries, processing online admissions from the public website, running targeted push broadcast campaigns, updating homepage guest promotional banners, and building custom inquiry forms.
+      </p>
+
+      <!-- Page 4.1 -->
+      <div class="page-card" id="crm-leads">
+        <div class="page-card-header">
+          <div class="page-card-title">4.1 Lead Intake Pipeline & 1-Click ERP Conversion</div>
+          <span class="tab-route">Sidebar ➔ CRM ➔ Leads (`crmSub === "leads"`)</span>
+        </div>
+        <p>Manage all prospective student inquiries arriving via website forms, Google Sign-in guest attempts, telephone calls, or social media ads.</p>
+
+        <table class="crud-table">
+          <thead>
+            <tr>
+              <th style="width: 120px;">CRUD Action</th>
+              <th>Trigger & Button in UI</th>
+              <th>System Workflow & Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="tag-crud tag-c">CREATE</span></td>
+              <td><strong>Add Walk-in Lead (`+ Add Lead`)</strong></td>
+              <td>Enter Candidate Full Name, Mobile Phone, Email, City, Target Course of interest, Preferred Study Mode (Offline/Online), and Lead Source (Walk-in, Phone Inquiry, Instagram, Reference).</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-r">READ</span></td>
+              <td><strong>Lead Pipeline & Status Filter</strong></td>
+              <td>Table displays leads categorized by stage: <em>New</em>, <em>Contacted</em>, <em>Counseling Scheduled</em>, <em>Follow-Up Needed</em>, <em>Interested</em>, <em>Converted</em>, <em>Dropped</em>.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-u">UPDATE</span></td>
+              <td><strong>Update Lead Status & Counselor Notes</strong></td>
+              <td>Click lead row to log counselor notes, schedule next callback date/time, and update lead interest temperature (Cold, Warm, Hot).</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-u">UPDATE</span></td>
+              <td><strong>Convert to Student (`Convert to Student`)</strong></td>
+              <td>The golden bridge between CRM and ERP! Clicking <strong>Convert to Student</strong> automatically transfers candidate details into the ERP Student Registration modal, creates their student account, and generates their unique Roll Number.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-d">DELETE</span></td>
+              <td><strong>Archive / Delete Lead (`Delete`)</strong></td>
+              <td>Purges duplicate or spam inquiries.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Page 4.2 -->
+      <div class="page-card" id="crm-admissions">
+        <div class="page-card-header">
+          <div class="page-card-title">4.2 Online Admission Form Processing</div>
+          <span class="tab-route">Sidebar ➔ CRM ➔ Admissions (`crmSub === "admissions"`)</span>
+        </div>
+        <p>Review comprehensive admission application forms submitted by visitors through the public website's "Apply Now" portal.</p>
+
+        <table class="crud-table">
+          <thead>
+            <tr>
+              <th style="width: 120px;">CRUD Action</th>
+              <th>Trigger & Button in UI</th>
+              <th>System Workflow & Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="tag-crud tag-r">READ</span></td>
+              <td><strong>Admission Application Cards</strong></td>
+              <td>Displays applicant's Full Name, Course Selected, Educational Qualifications, Father's Name, Permanent Address, Photo ID proof, and application timestamp. Filter by <em>Pending</em>, <em>Under Verification</em>, or <em>Approved</em>.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-u">UPDATE</span></td>
+              <td><strong>Direct Enroll (`Enroll Student`)</strong></td>
+              <td>Assigns batch, approves application, provisions login credentials, and sends welcome SMS/Email with portal access details.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-d">DELETE</span></td>
+              <td><strong>Reject Application (`Reject`)</strong></td>
+              <td>Rejects application with custom rejection remarks sent to the applicant.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Page 4.3 -->
+      <div class="page-card" id="crm-campaigns">
+        <div class="page-card-header">
+          <div class="page-card-title">4.3 Marketing Campaigns & Targeted Push Notifications</div>
+          <span class="tab-route">Sidebar ➔ CRM ➔ Campaigns (`crmSub === "campaigns"`)</span>
+        </div>
+        <p>Broadcast high-converting push notifications, exam announcements, and promotional popups to targeted user cohorts.</p>
+
+        <table class="crud-table">
+          <thead>
+            <tr>
+              <th style="width: 120px;">CRUD Action</th>
+              <th>Trigger & Button in UI</th>
+              <th>System Workflow & Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="tag-crud tag-c">CREATE</span></td>
+              <td><strong>Create Campaign (`+ New Campaign`)</strong></td>
+              <td>Modal form: Campaign Name, Notification Title, Body text, Optional Banner Image URL. Target Audience selector: (1) <em>All Registered Users</em>, (2) <em>Free / Guest Leads Only</em> (for enrollment upsell), or (3) <em>Paid Students Only</em>. Set Deep-Link action (e.g., opens specific Free Mock Test or Admission Page).</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-r">READ</span></td>
+              <td><strong>Campaign Performance Metrics</strong></td>
+              <td>View sent campaigns, dispatch timestamps, total recipients, delivery success rates, and student click-through percentages.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-d">DELETE</span></td>
+              <td><strong>Delete Campaign (`Trash`)</strong></td>
+              <td>Stops scheduled future recurring blasts and archives campaign logs.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Page 4.4 & 4.5 -->
+      <div class="page-card" id="crm-posters">
+        <div class="page-card-header">
+          <div class="page-card-title">4.4 Guest Promotional Posters & Custom Lead Forms</div>
+          <span class="tab-route">Sidebar ➔ CRM ➔ Guest Posters (`crmSub === "guest-posters"`) & Custom Forms</span>
+        </div>
+        <p>Control the public landing page hero banner slider and build dynamic survey/scholarship inquiry forms.</p>
+
+        <table class="crud-table">
+          <thead>
+            <tr>
+              <th style="width: 120px;">CRUD Action</th>
+              <th>Trigger & Button in UI</th>
+              <th>System Workflow & Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="tag-crud tag-c">CREATE</span></td>
+              <td><strong>Upload Guest Banner (`+ Upload Poster`)</strong></td>
+              <td>Upload high-resolution promotional poster graphic (1920x1080). Enter Poster Title, Call-to-Action (CTA) label (e.g., <em>"Apply for UPSC 2026 Batch"</em>), and redirect target URL.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-r">READ</span></td>
+              <td><strong>Poster Gallery & Live Preview</strong></td>
+              <td>Displays all active banners currently rotating on the public landing page. Reorder banners to change slide sequence.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-u">UPDATE</span></td>
+              <td><strong>Toggle Active Banner</strong></td>
+              <td>Turn individual banners ON or OFF with a single toggle switch without deleting the artwork.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-d">DELETE</span></td>
+              <td><strong>Delete Poster (`Trash`)</strong></td>
+              <td>Removes outdated banners from the website hero carousel immediately.</td>
+            </tr>
+            <tr>
+              <td><span class="tag-crud tag-c">CREATE</span> / <span class="tag-crud tag-r">READ</span></td>
+              <td><strong>Custom Lead Forms Builder</strong></td>
+              <td>Build custom registration forms with custom questions (e.g. <em>"Which optional subject have you chosen?"</em>, <em>"Are you preparing full-time or working?"</em>) and export submissions directly to Excel.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer style="margin-top: 60px; padding-top: 24px; border-top: 2px solid var(--border); text-align: center; color: var(--text-muted); font-size: 0.88rem;">
+      <p>© 2026 NERMAI IAS ACADEMY. All Rights Reserved. Enterprise Management System Documentation.</p>
+      <p style="margin-top: 4px;">Click the <strong>"Save as PDF / Print Manual"</strong> button at top right to export this user manual into a clean, paginated PDF.</p>
+    </footer>
+
+  </div>
+
+</body>
+</html>

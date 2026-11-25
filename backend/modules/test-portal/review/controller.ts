@@ -13,6 +13,45 @@ const db = admin.firestore();
 export class ReviewController {
 
     /**
+     * Checks if caller is authorized to view an attempt or its results.
+     * Privileged roles (super_admin, admin, staff, coordinator, teacher, developer) have full access.
+     * Students may only view attempts that belong to their own account.
+     */
+    private static async verifyAttemptOwnership(req: Request, studentIdInRecord: string): Promise<boolean> {
+        const user = req.user;
+        if (!user) return false;
+
+        const adminRoles = ["super_admin", "admin", "staff", "coordinator", "teacher", "developer"];
+        if (adminRoles.includes(user.role)) return true;
+
+        if (!studentIdInRecord) return false;
+
+        const target = String(studentIdInRecord);
+        if (user.studentId && String(user.studentId) === target) return true;
+        if (user.userId && String(user.userId) === target) return true;
+
+        // Fallback: check students or users mapping in Firestore
+        try {
+            const studentSnap = await db.collection("students").doc(target).get();
+            if (studentSnap.exists) {
+                const sData = studentSnap.data()!;
+                if (sData.userId === user.userId || sData.id === user.userId) {
+                    return true;
+                }
+            }
+            const userSnap = await db.collection("users").doc(user.userId).get();
+            if (userSnap.exists) {
+                const uData = userSnap.data()!;
+                if (uData.studentId && String(uData.studentId) === target) {
+                    return true;
+                }
+            }
+        } catch (_) {}
+
+        return false;
+    }
+
+    /**
      * REVIEW COMPLETE ATTEMPT
      * GET /attempt/:attemptId
      */
@@ -22,6 +61,41 @@ export class ReviewController {
 
             let resultDoc = await db.collection("results").doc(attemptId).get();
             if (!resultDoc.exists) {
+                // Check student_attempts first: ensure exists, not deleted, owned by caller, and submitted
+                const attemptDoc = await db.collection("student_attempts").doc(attemptId).get();
+                if (!attemptDoc.exists) {
+                    return res.status(404).json({
+                        success: false,
+                        message: "Attempt not found"
+                    });
+                }
+
+                const attemptData = attemptDoc.data()!;
+                if (attemptData.isDeleted) {
+                    return res.status(404).json({
+                        success: false,
+                        message: "This attempt review has been deleted"
+                    });
+                }
+
+                // Enforce ownership check before attempting on-the-fly evaluation
+                const isOwned = await ReviewController.verifyAttemptOwnership(req, attemptData.studentId);
+                if (!isOwned) {
+                    return res.status(403).json({
+                        success: false,
+                        message: "Access denied: you can only view your own test review"
+                    });
+                }
+
+                // Ensure attempt was submitted before allowing evaluation or answers revelation
+                const isSubmitted = attemptData.isSubmitted === true || attemptData.status === "submitted" || !!attemptData.submittedAt;
+                if (!isSubmitted) {
+                    return res.status(400).json({
+                        success: false,
+                        message: "Attempt review is not available until the test has been submitted."
+                    });
+                }
+
                 // Auto-evaluate unevaluated attempts on-the-fly
                 try {
                     const { EvaluationController } = await import("../evaluation/controller");
@@ -50,6 +124,15 @@ export class ReviewController {
                 return res.status(404).json({
                     success: false,
                     message: "This attempt review has been deleted"
+                });
+            }
+
+            // Enforce ownership check on existing evaluated result
+            const isAuthorized = await ReviewController.verifyAttemptOwnership(req, result.studentId);
+            if (!isAuthorized) {
+                return res.status(403).json({
+                    success: false,
+                    message: "Access denied: you can only view your own test review"
                 });
             }
 
@@ -106,7 +189,12 @@ export class ReviewController {
                     testTitle: test.title,
                     studentId: result.studentId,
                     totalMarks: result.totalMarks,
-                    obtainedMarks: result.obtainedMarks,
+                    obtainedMarks: (result.obtainedMarks === 0 && Array.isArray(result.questionDetails) && result.questionDetails.length > 0)
+                        ? (() => {
+                            const rawSum = Math.round(result.questionDetails.reduce((s: number, q: any) => s + (q.scoreAwarded || 0), 0) * 100) / 100;
+                            return rawSum < 0 ? rawSum : 0;
+                        })()
+                        : result.obtainedMarks,
                     percentage: result.percentage,
                     rank: result.rank,
                     percentile: result.percentile,
@@ -145,6 +233,14 @@ export class ReviewController {
                 return res.status(404).json({
                     success: false,
                     message: "Result deleted"
+                });
+            }
+
+            const isAuthorized = await ReviewController.verifyAttemptOwnership(req, result.studentId);
+            if (!isAuthorized) {
+                return res.status(403).json({
+                    success: false,
+                    message: "Access denied: you can only view your own test review"
                 });
             }
 
@@ -214,6 +310,14 @@ export class ReviewController {
                 });
             }
 
+            const isAuthorized = await ReviewController.verifyAttemptOwnership(req, result.studentId);
+            if (!isAuthorized) {
+                return res.status(403).json({
+                    success: false,
+                    message: "Access denied: you can only view your own test answers"
+                });
+            }
+
             const correctAnswers = (result.questionDetails || []).map((qd: any) => ({
                 questionId: qd.questionId,
                 correctAnswer: qd.correctAnswer
@@ -257,6 +361,14 @@ export class ReviewController {
                 return res.status(404).json({
                     success: false,
                     message: "Result deleted"
+                });
+            }
+
+            const isAuthorized = await ReviewController.verifyAttemptOwnership(req, result.studentId);
+            if (!isAuthorized) {
+                return res.status(403).json({
+                    success: false,
+                    message: "Access denied: you can only view explanations for your own test attempts"
                 });
             }
 
@@ -316,6 +428,14 @@ export class ReviewController {
                 return res.status(404).json({
                     success: false,
                     message: "Result deleted"
+                });
+            }
+
+            const isAuthorized = await ReviewController.verifyAttemptOwnership(req, result.studentId);
+            if (!isAuthorized) {
+                return res.status(403).json({
+                    success: false,
+                    message: "Access denied: you can only view topic analysis for your own test attempts"
                 });
             }
 
@@ -408,6 +528,14 @@ export class ReviewController {
                 return res.status(404).json({
                     success: false,
                     message: "Result deleted"
+                });
+            }
+
+            const isAuthorized = await ReviewController.verifyAttemptOwnership(req, result.studentId);
+            if (!isAuthorized) {
+                return res.status(403).json({
+                    success: false,
+                    message: "Access denied: you can only view difficulty analysis for your own test attempts"
                 });
             }
 
@@ -683,6 +811,7 @@ export class ReviewController {
             const enrichedEntries = await Promise.all(entries.map(async entry => {
                 let sName = entry.studentName || "";
                 let rNum = entry.rollNumber || "";
+                let stMockRoll = "";
 
                 if ((isGenericName(sName) || !rNum || isPhoneNum(rNum)) && entry.studentId) {
                     try {
@@ -693,20 +822,38 @@ export class ReviewController {
                             if (lData.name && !isGenericName(lData.name)) sName = lData.name;
                             rNum = "Guest";
                         }
+                        stMockRoll = "";
                         if (isGenericName(sName)) {
                             const userDoc = await db.collection("users").doc(sid).get();
                             if (userDoc.exists) {
                                 const uData = userDoc.data()!;
                                 sName = uData.name || uData.fullName || uData.username || "";
                                 rNum = uData.rollNumber || uData.username || "Guest";
+                                if (uData.mockRollNumber || uData.specialRollNo) {
+                                    stMockRoll = String(uData.mockRollNumber || uData.specialRollNo);
+                                }
+                                if (uData.studentId) {
+                                    try {
+                                        const sDoc2 = await db.collection("students").doc(uData.studentId).get();
+                                        if (sDoc2.exists) {
+                                            const sData2 = sDoc2.data()!;
+                                            if (sData2.mockRollNumber || sData2.specialRollNo) {
+                                                stMockRoll = String(sData2.mockRollNumber || sData2.specialRollNo);
+                                            }
+                                        }
+                                    } catch (_) {}
+                                }
                             }
                         }
-                        if (isGenericName(sName) || rNum === "Guest") {
+                        if (isGenericName(sName) || rNum === "Guest" || !stMockRoll) {
                             const studentDoc = await db.collection("students").doc(sid).get();
                             if (studentDoc.exists) {
                                 const stData = studentDoc.data()!;
                                 sName = `${stData.firstName || ""} ${stData.lastName || ""}`.trim() || stData.fullName || stData.name || sName;
                                 rNum = stData.rollNumber || stData.rollNo || rNum;
+                                if (stData.mockRollNumber || stData.specialRollNo) {
+                                    stMockRoll = String(stData.mockRollNumber || stData.specialRollNo);
+                                }
                             }
                         }
                     } catch (_) {}
@@ -714,6 +861,33 @@ export class ReviewController {
 
                 if (isGenericName(sName)) sName = "Guest User";
                 if (isGenericName(rNum) || isPhoneNum(rNum) || rNum === sName) rNum = "Guest";
+
+                // If sName is still generic or mockRollNumber missing, try matching by rNum in students collection
+                if ((isGenericName(sName) || !stMockRoll) && rNum && rNum !== "Guest") {
+                    try {
+                        const mockSnap = await db.collection("students").where("mockRollNumber", "==", rNum).limit(1).get();
+                        if (!mockSnap.empty) {
+                            const stData = mockSnap.docs[0].data();
+                            const foundName = `${stData.firstName || ""} ${stData.lastName || ""}`.trim() || stData.fullName || stData.name;
+                            if (foundName) sName = foundName;
+                            stMockRoll = stData.mockRollNumber || stData.specialRollNo || rNum;
+                        } else {
+                            const rollSnap = await db.collection("students").where("rollNumber", "==", rNum).limit(1).get();
+                            if (!rollSnap.empty) {
+                                const stData = rollSnap.docs[0].data();
+                                const foundName = `${stData.firstName || ""} ${stData.lastName || ""}`.trim() || stData.fullName || stData.name;
+                                if (foundName) sName = foundName;
+                                if (stData.mockRollNumber || stData.specialRollNo) {
+                                    stMockRoll = String(stData.mockRollNumber || stData.specialRollNo);
+                                }
+                            }
+                        }
+                    } catch (_) {}
+                }
+
+                if (entry.mockRollNumber && !stMockRoll) {
+                    stMockRoll = String(entry.mockRollNumber);
+                }
 
                 // Enrich with special batch roll number or mock roll number ONLY for special mock or special batch tests
                 const isMockOrSpecialTest = Boolean(isSpecialBatchTest || testData?.targetAudience === "special_mock" || testData?.isSpecialMock || testData?.testType === "special_mock");
@@ -724,20 +898,80 @@ export class ReviewController {
                         rNum = String(entry.specialRollNo);
                     } else if (entry.mockRollNumber) {
                         rNum = String(entry.mockRollNumber);
+                    } else if (stMockRoll) {
+                        rNum = stMockRoll;
+                    }
+                }
+
+                let effectiveMarks = typeof entry.obtainedMarks === "number" ? entry.obtainedMarks : 0;
+                if (effectiveMarks === 0 && Array.isArray(entry.questionDetails) && entry.questionDetails.length > 0) {
+                    const rawSum = Math.round(entry.questionDetails.reduce((sum: number, q: any) => sum + (q.scoreAwarded || 0), 0) * 100) / 100;
+                    if (rawSum < 0) {
+                        effectiveMarks = rawSum;
                     }
                 }
 
                 return {
-                    ...entry,
+                    id: entry.id || `${testId}_${entry.studentId}`,
+                    testId: entry.testId || testId,
+                    studentId: entry.studentId || "",
+                    attemptId: entry.attemptId || entry.id || "",
                     studentName: sName,
-                    rollNumber: rNum
+                    rollNumber: rNum,
+                    mockRollNumber: stMockRoll || entry.mockRollNumber || "",
+                    obtainedMarks: effectiveMarks,
+                    totalMarks: entry.totalMarks ?? 0,
+                    percentage: entry.percentage ?? 0,
+                    rank: entry.rank ?? 0,
+                    percentile: entry.percentile ?? 0,
+                    status: entry.status || "completed",
+                    correct: entry.correct ?? 0,
+                    wrong: entry.wrong ?? 0,
+                    skipped: entry.skipped ?? 0,
+                    tabLeaveCount: entry.tabLeaveCount ?? 0,
+                    updatedAt: entry.updatedAt || null,
+                    isOffline: Boolean(entry.isOffline)
                 };
             }));
 
+            // Deduplicate: Keep each unique student's BEST score (highest obtainedMarks, earliest submission)
+            const uniqueStudentMap = new Map<string, any>();
+            for (const entry of enrichedEntries) {
+                const roll = (entry.rollNumber || "").trim().toLowerCase();
+                const mockRoll = (entry.mockRollNumber || "").trim().toLowerCase();
+                const name = (entry.studentName || "").trim().toLowerCase();
+                const isRealRoll = roll && roll !== "guest" && roll !== "n/a" && !roll.startsWith("stu-");
+                const dedupeKey = isRealRoll
+                    ? `roll_${roll}`
+                    : (mockRoll ? `mock_${mockRoll}` : (entry.studentId ? `sid_${entry.studentId}` : `name_${name}`));
+
+                if (!uniqueStudentMap.has(dedupeKey)) {
+                    uniqueStudentMap.set(dedupeKey, entry);
+                } else {
+                    const existing = uniqueStudentMap.get(dedupeKey);
+                    const newScore = typeof entry.obtainedMarks === "number" ? entry.obtainedMarks : -Infinity;
+                    const oldScore = typeof existing.obtainedMarks === "number" ? existing.obtainedMarks : -Infinity;
+                    if (newScore > oldScore) {
+                        uniqueStudentMap.set(dedupeKey, entry);
+                    } else if (newScore === oldScore) {
+                        // Keep earlier submission on tie
+                        const timeNew = entry.updatedAt ? (entry.updatedAt.toDate ? entry.updatedAt.toDate().getTime() : new Date(entry.updatedAt).getTime()) : 0;
+                        const timeOld = existing.updatedAt ? (existing.updatedAt.toDate ? existing.updatedAt.toDate().getTime() : new Date(existing.updatedAt).getTime()) : 0;
+                        if (timeNew > 0 && timeNew < timeOld) {
+                            uniqueStudentMap.set(dedupeKey, entry);
+                        }
+                    }
+                }
+            }
+
+            const deduplicatedEntries = Array.from(uniqueStudentMap.values());
+
             // Sort by obtainedMarks desc, then by updatedAt asc to compute live dynamic ranks
-            enrichedEntries.sort((a: any, b: any) => {
-                if (b.obtainedMarks !== a.obtainedMarks) {
-                    return (b.obtainedMarks || 0) - (a.obtainedMarks || 0);
+            deduplicatedEntries.sort((a: any, b: any) => {
+                const scoreA = typeof a.obtainedMarks === "number" ? a.obtainedMarks : -Infinity;
+                const scoreB = typeof b.obtainedMarks === "number" ? b.obtainedMarks : -Infinity;
+                if (scoreB !== scoreA) {
+                    return scoreB - scoreA;
                 }
                 const timeA = a.updatedAt ? (a.updatedAt.toDate ? a.updatedAt.toDate().getTime() : new Date(a.updatedAt).getTime()) : 0;
                 const timeB = b.updatedAt ? (b.updatedAt.toDate ? b.updatedAt.toDate().getTime() : new Date(b.updatedAt).getTime()) : 0;
@@ -745,9 +979,18 @@ export class ReviewController {
             });
 
             // Assign ranks sequentially in memory
-            enrichedEntries.forEach((entry, index) => {
+            deduplicatedEntries.forEach((entry, index) => {
                 entry.rank = index + 1;
             });
+
+            // Student Side Privacy: Hide student names so only roll number / mock roll number shows
+            const callerRole = (req as any).user?.role;
+            const isStudentCaller = callerRole === "student" || callerRole === "user";
+            if (isStudentCaller) {
+                deduplicatedEntries.forEach(entry => {
+                    entry.studentName = "";
+                });
+            }
 
             return res.status(200).json({
                 success: true,
@@ -756,7 +999,7 @@ export class ReviewController {
                 isFinalized,
                 ranksLocked,
                 ranksReleaseAt: endTimeDate ? endTimeDate.toISOString() : null,
-                data: enrichedEntries
+                data: deduplicatedEntries
             });
 
         } catch (error: any) {
@@ -788,14 +1031,58 @@ export class ReviewController {
                 entries = resultsSnapshot.docs.map(doc => doc.data());
             }
             
-            // Sort in memory by rank asc
-            entries.sort((a, b) => (b.obtainedMarks || 0) - (a.obtainedMarks || 0));
-            const top10 = entries.slice(0, 10);
+            // Deduplicate: Keep each student's best score
+            const uniqueMap = new Map<string, any>();
+            for (const entry of entries as any[]) {
+                const roll = (entry.rollNumber || "").trim().toLowerCase();
+                const name = (entry.studentName || "").trim().toLowerCase();
+                const isRealRoll = roll && roll !== "guest" && roll !== "n/a" && !roll.startsWith("stu-");
+                const dedupeKey = isRealRoll
+                    ? `roll_${roll}`
+                    : (entry.studentId ? `sid_${entry.studentId}` : `name_${name}`);
+
+                if (!uniqueMap.has(dedupeKey)) {
+                    uniqueMap.set(dedupeKey, entry);
+                } else {
+                    const existing = uniqueMap.get(dedupeKey);
+                    const newScore = typeof entry.obtainedMarks === "number" ? entry.obtainedMarks : -Infinity;
+                    const oldScore = typeof existing.obtainedMarks === "number" ? existing.obtainedMarks : -Infinity;
+                    if (newScore > oldScore) {
+                        uniqueMap.set(dedupeKey, entry);
+                    }
+                }
+            }
+
+            const uniqueEntries = Array.from(uniqueMap.values());
+            uniqueEntries.sort((a, b) => {
+                const scoreA = typeof a.obtainedMarks === "number" ? a.obtainedMarks : -Infinity;
+                const scoreB = typeof b.obtainedMarks === "number" ? b.obtainedMarks : -Infinity;
+                return scoreB - scoreA;
+            });
+            const top10 = uniqueEntries.slice(0, 10);
+
+            // Sanitize: ensure only public ranking fields are returned, never results doc internals or answers
+            const sanitizedTop10 = top10.map((entry: any, index: number) => ({
+                id: entry.id || `${testId}_${entry.studentId}`,
+                testId: entry.testId || testId,
+                studentId: entry.studentId || "",
+                studentName: entry.studentName || "Student",
+                rollNumber: entry.rollNumber || "N/A",
+                obtainedMarks: entry.obtainedMarks ?? 0,
+                totalMarks: entry.totalMarks ?? 0,
+                percentage: entry.percentage ?? 0,
+                rank: entry.rank || index + 1,
+                percentile: entry.percentile ?? 0,
+                status: entry.status || "completed",
+                correct: entry.correct ?? 0,
+                wrong: entry.wrong ?? 0,
+                skipped: entry.skipped ?? 0
+            }));
 
             return res.status(200).json({
                 success: true,
                 message: "Top rankers retrieved successfully",
-                data: top10
+                data: sanitizedTop10
             });
 
         } catch (error: any) {
@@ -965,7 +1252,11 @@ export class ReviewController {
                 const testResults = allResults.filter(r => r.testId === test.id);
 
                 // Sort by obtainedMarks descending
-                testResults.sort((a, b) => (b.obtainedMarks || 0) - (a.obtainedMarks || 0));
+                testResults.sort((a, b) => {
+                    const scoreA = typeof a.obtainedMarks === "number" ? a.obtainedMarks : -Infinity;
+                    const scoreB = typeof b.obtainedMarks === "number" ? b.obtainedMarks : -Infinity;
+                    return scoreB - scoreA;
+                });
 
                 let totalScoreSum = 0;
                 let highestScore = 0;

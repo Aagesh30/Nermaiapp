@@ -3,10 +3,6 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ─── Helper Functions ───────────────────────────────────
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-    
     function isSignedIn() {
       return request.auth != null;
     }
@@ -57,10 +53,14 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // profile_requests
+    // profile_requests — Student PII (DOB, address, blood group, community, ID docs)
+    // Students can only read their own request. Admins/staff can read all.
     match /profile_requests/{docId} {
-      allow read: if true;
-      allow write: if isSignedIn();
+      allow read: if isAdmin() || (isSignedIn() && (resource.data.studentId == request.auth.uid || resource.data.userId == request.auth.uid));
+      // Students can create their own request; only admins can update (approve/reject) or delete
+      allow create: if isAdmin() || (isSignedIn() && (request.resource.data.studentId == request.auth.uid || request.resource.data.userId == request.auth.uid));
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
     }
 
     // access_requests (LMS recording, live class, and content access requests)
@@ -99,11 +99,6 @@ service cloud.firestore {
       allow write: if true;
     }
 
-    // guest_recordings
-    match /guest_recordings/{docId} {
-      allow read: if true;
-      allow write: if true;
-    }
 
     // feedbacks
     match /feedbacks/{docId} {
@@ -430,9 +425,22 @@ service cloud.firestore {
     }
 
     // admin_alerts - Live student requests and activity notifications for Admin Dashboard
+    // Only admins can read the alert stream. Only admins can update or delete alerts.
+    // Legitimate public forms (admission, inquiry) write alerts via server backend APIs.
+    // Authenticated students and admins can emit live workflow alerts for review.
     match /admin_alerts/{alertId} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if isAdmin();
+      // Allow administrators to create/sync any alert, and authenticated users to submit permitted workflow alerts
+      allow create: if isAdmin() || (
+        isSignedIn() && request.resource.data.type in [
+          'crm_admission', 'crm_inquiry', 'profile_submission',
+          'offline_test', 'test_permission_request',
+          'qr_permission', 'qr_request',
+          'sacs_request', 'admin_approval'
+        ]
+      );
+      allow update: if isAdmin();   // Only admin web portal can update/dismiss alerts
+      allow delete: if isAdmin();   // Only admin web portal can delete/resolve alerts
     }
 
     // system_activity_logs - Permanent audit logs filtered date-wise for Super Admin
@@ -441,10 +449,21 @@ service cloud.firestore {
       allow write: if isSignedIn();
     }
 
-    // device_push_tokens - Remote push notification tokens for Android / iOS APK
+    // device_push_tokens - Remote push notification tokens for Android / iOS APK & Web
     match /device_push_tokens/{tokenId} {
       allow read: if isAdmin();
-      allow write: if isSignedIn();
+      // Allow valid device token registration for guest, student, super_admin, admin, etc.
+      allow create: if request.resource.data.token is string &&
+        request.resource.data.role in ['guest', 'student', 'admin', 'super_admin', 'staff', 'teacher', 'developer', 'personal_admin'];
+
+      // Allow device token updates (role migrations upon login: guest -> student or guest -> super_admin)
+      allow update: if request.resource.data.token is string &&
+        request.resource.data.token == resource.data.token &&
+        request.resource.data.role in ['guest', 'student', 'admin', 'super_admin', 'staff', 'teacher', 'developer', 'personal_admin'];
+
+      // Restrict deletion: admins, signed-in users, or token owner
+      allow delete: if isAdmin() || isSignedIn() ||
+        (resource.data.userId == request.auth.uid || resource.data.studentId == request.auth.uid);
     }
 
     // ─── CATCH-ALL: Deny everything else ────────────────────

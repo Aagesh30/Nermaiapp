@@ -19,7 +19,7 @@ export class AnnouncementController {
      */
     static async create(req: Request, res: Response) {
         try {
-            const { title, content, priority, targetDashboard, targetBatch, publishedAt, expiresAt, timerOption, createdBy } = req.body;
+            const { title, content, priority, targetDashboard, targetBatch, publishedAt, expiresAt, timerOption, createdBy, targetStudentId, studentUsername, studentRoll } = req.body;
 
             if (!title || !title.trim()) {
                 return res.status(400).json({
@@ -44,7 +44,7 @@ export class AnnouncementController {
                 }
             }
 
-            const payload = {
+            const payload: any = {
                 id,
                 title: title.trim(),
                 content: content.trim(),
@@ -52,6 +52,9 @@ export class AnnouncementController {
                 targetDashboard: targetDashboard || "all", // "student", "staff", "all", "batch", "free", "paid"
                 targetAudience: targetDashboard || "all",
                 targetBatch: targetBatch || null,
+                targetStudentId: targetStudentId || null,
+                studentUsername: studentUsername || null,
+                studentRoll: studentRoll || null,
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
                 publishedAt: pubTimestamp,
@@ -69,8 +72,9 @@ export class AnnouncementController {
             // Dispatch remote push notification on notice creation (guests included for general notices)
             try {
                 const { sendPushNotification } = await import("../../services/pushService");
-                const isBatchSpecific = targetDashboard === "batch" || (!!targetBatch && targetBatch !== "all");
-                const targetRole = isBatchSpecific
+                const isStudentSpecific = !!targetStudentId;
+                const isBatchSpecific = !isStudentSpecific && (targetDashboard === "batch" || (!!targetBatch && targetBatch !== "all"));
+                const targetRole = isStudentSpecific || isBatchSpecific
                     ? "student"
                     : (targetDashboard === "free" ? "guest" : "all");
 
@@ -78,6 +82,7 @@ export class AnnouncementController {
                     title: title.trim(),
                     body: content.trim(),
                     targetRole: targetRole as any,
+                    targetUserId: isStudentSpecific ? String(targetStudentId) : null,
                     targetBatch: isBatchSpecific ? (targetBatch || null) : null,
                     excludeUserId: (req as any).user?.userId || (createdBy && createdBy !== "admin" ? createdBy : null) || null,
                     data: {
@@ -131,7 +136,7 @@ export class AnnouncementController {
      */
     static async getAll(req: Request, res: Response) {
         try {
-            const { role, batch } = req.query;
+            const { role, batch, studentId } = req.query;
 
             const snapshot = await db.collection(COLLECTION)
                 .where("isDeleted", "==", false)
@@ -157,21 +162,31 @@ export class AnnouncementController {
             // Filter out internal/developer notifications (e.g. approval requests)
             announcements = announcements.filter((ann: any) => ann.isNotification !== true);
 
-            // Filter out expired announcements for students/guests
+            const adminRolesList = ["super_admin", "admin", "coordinator", "staff", "editor", "contributor", "developer"];
+            const hasAdminAccess = Boolean((req as any).user && adminRolesList.includes((req as any).user.role));
+
+            // Filter out unpublished/future announcements for students/guests/public
             const now = Date.now();
+            if (!hasAdminAccess) {
+                announcements = announcements.filter((ann: any) => {
+                    if (ann.isPublished === false || ann.published === false || ann.status === 'draft') return false;
+                    if (ann.publishedAt) {
+                        const pubTime = new Date(ann.publishedAt).getTime();
+                        if (!isNaN(pubTime) && pubTime > now) return false;
+                    }
+                    return true;
+                });
+            }
+
+            // Filter out expired announcements for students/guests
             announcements = announcements.filter((ann: any) => {
                 if (ann.expiresAt) {
                     const expiry = new Date(ann.expiresAt).getTime();
                     if (!isNaN(expiry) && expiry < now) {
-                        if (role) {
-                            const userRole = String(role).toLowerCase();
-                            const adminRoles = ["super_admin", "admin", "staff", "editor", "contributor", "developer"];
-                            if (!adminRoles.includes(userRole)) {
-                                return false;
-                            }
-                        } else {
-                            return false;
+                        if (hasAdminAccess) {
+                            return true;
                         }
+                        return false;
                     }
                 }
                 return true;
@@ -192,6 +207,14 @@ export class AnnouncementController {
                     }
 
                     if (userRole === "student") {
+                        // Filter out private announcements meant for other students
+                        if (ann.targetStudentId) {
+                            const effectiveStudentId = String((req as any).user?.studentId || (req as any).user?.userId || studentId || "");
+                            if (!effectiveStudentId || String(ann.targetStudentId) !== effectiveStudentId) {
+                                return false;
+                            }
+                        }
+
                         // Paid students see "paid" and "student" targets only — NOT "free" (guest-only)
                         if (target === "paid" || target === "student") return true;
                         if (target === "batch") {
@@ -270,6 +293,20 @@ export class AnnouncementController {
             }
 
             const data = doc.data()!;
+
+            const adminRolesList = ["super_admin", "admin", "coordinator", "staff", "editor", "contributor", "developer"];
+            const isCallerAdmin = (req as any).user && adminRolesList.includes((req as any).user.role);
+            if (!isCallerAdmin) {
+                if (data.isPublished === false || data.published === false || data.status === "draft") {
+                    return res.status(404).json({ success: false, message: "Announcement not found" });
+                }
+                if (data.publishedAt) {
+                    const pubDate = typeof data.publishedAt.toDate === "function" ? data.publishedAt.toDate() : new Date(data.publishedAt);
+                    if (pubDate.getTime() > Date.now()) {
+                        return res.status(404).json({ success: false, message: "Announcement not found" });
+                    }
+                }
+            }
             return res.status(200).json({
                 success: true,
                 data: {

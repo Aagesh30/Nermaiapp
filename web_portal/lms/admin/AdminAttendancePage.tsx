@@ -523,6 +523,7 @@ export const AdminAttendancePage = () => {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-gray-50 dark:bg-gray-800/50">
+                    <th className="text-center px-3 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide w-12">#</th>
                     <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Student</th>
                     <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Class</th>
                     <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Date</th>
@@ -534,8 +535,11 @@ export const AdminAttendancePage = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-                  {records.map((r: any) => (
+                  {records.map((r: any, idx: number) => (
                     <tr key={r.id} className="hover:bg-gray-50/50 dark:hover:bg-white/3 transition-colors">
+                      <td className="px-3 py-4 text-center text-xs font-bold text-gray-400 dark:text-gray-500">
+                        {idx + 1}
+                      </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
                           <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center flex-shrink-0">
@@ -543,7 +547,14 @@ export const AdminAttendancePage = () => {
                           </div>
                           <div>
                             <p className="font-medium text-gray-900 dark:text-white text-xs">{r.studentName || r.studentId}</p>
-                            {r.batchName && <p className="text-[10px] text-gray-400">{r.batchName}</p>}
+                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                              {(r.rollNo || r.rollNumber || r.regNo) && (r.rollNo !== '-' && r.rollNumber !== '-') && (
+                                <span className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800/40">
+                                  Roll: {r.rollNo || r.rollNumber || r.regNo}
+                                </span>
+                              )}
+                              {r.batchName && <span className="text-[10px] text-gray-400">{r.batchName}</span>}
+                            </div>
                           </div>
                         </div>
                       </td>

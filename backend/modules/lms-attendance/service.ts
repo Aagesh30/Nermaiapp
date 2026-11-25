@@ -1,4 +1,5 @@
 import { db } from '../../infrastructure/firebase';
+import * as admin from 'firebase-admin';
 import { AppError } from '../../core/errors/AppError';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -30,6 +31,35 @@ export class LmsAttendanceService {
     batchName: string,
     mode: string = 'online'
   ) {
+    // Resolve student roll number and real name
+    let rollNo = '-';
+    let resolvedName = studentName;
+    try {
+      const sDoc = await db.collection('students').doc(studentId).get();
+      if (sDoc.exists) {
+        const d = sDoc.data()!;
+        rollNo = d.rollNumber || d.rollNo || d.regNo || d.registrationNumber || d.loginUsername || '-';
+        resolvedName = d.name || d.fullName || d.studentName || studentName;
+      } else {
+        const byUid = await db.collection('students').where('userId', '==', studentId).limit(1).get();
+        if (!byUid.empty) {
+          const d = byUid.docs[0].data()!;
+          rollNo = d.rollNumber || d.rollNo || d.regNo || d.registrationNumber || d.loginUsername || '-';
+          resolvedName = d.name || d.fullName || d.studentName || studentName;
+        } else {
+          const uDoc = await db.collection('users').doc(studentId).get();
+          if (uDoc.exists && uDoc.data()?.studentId) {
+            const mappedDoc = await db.collection('students').doc(uDoc.data()!.studentId).get();
+            if (mappedDoc.exists) {
+              const d = mappedDoc.data()!;
+              rollNo = d.rollNumber || d.rollNo || d.regNo || d.registrationNumber || d.loginUsername || '-';
+              resolvedName = d.name || d.fullName || d.studentName || studentName;
+            }
+          }
+        }
+      }
+    } catch (e) {}
+
     // Check if record already exists for this student+class
     const snap = await db.collection(ATTENDANCE_COL)
       .where('studentId', '==', studentId)
@@ -41,14 +71,18 @@ export class LmsAttendanceService {
 
     if (!snap.empty) {
       const existing = snap.docs[0].data();
-      // If attendance already submitted or marked, keep status as PRESENT
-      await snap.docs[0].ref.update({
+      const updateData: any = {
         joinedAt: now,
         status: 'PRESENT',
         mode: existing.mode || mode,
         updatedAt: now
-      });
-      return { id: snap.docs[0].id, ...existing, joinedAt: now, status: 'PRESENT' };
+      };
+      if ((!existing.rollNo || existing.rollNo === '-') && rollNo !== '-') {
+        updateData.rollNo = rollNo;
+        updateData.rollNumber = rollNo;
+      }
+      await snap.docs[0].ref.update(updateData);
+      return { id: snap.docs[0].id, ...existing, ...updateData };
     }
 
     // Create new record (attending live session automatically grants PRESENT)
@@ -56,7 +90,9 @@ export class LmsAttendanceService {
     const record = {
       id,
       studentId,
-      studentName,
+      studentName: resolvedName,
+      rollNo,
+      rollNumber: rollNo,
       classId,
       className,
       courseId,
@@ -278,6 +314,31 @@ export class LmsAttendanceService {
     const snap = await query.get();
     let records: any[] = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
 
+    // Enrich records missing rollNo from students collection
+    const missingIds = Array.from(new Set(records.filter((r: any) => !r.rollNo || r.rollNo === '-').map((r: any) => r.studentId).filter(Boolean)));
+    if (missingIds.length > 0) {
+      try {
+        const studentMap = new Map<string, string>();
+        for (let i = 0; i < missingIds.length; i += 30) {
+          const chunk = missingIds.slice(i, i + 30);
+          const sSnap = await db.collection('students').where(admin.firestore.FieldPath.documentId(), 'in', chunk).get();
+          sSnap.docs.forEach((doc: any) => {
+            const d = doc.data();
+            studentMap.set(doc.id, d.rollNumber || d.rollNo || d.regNo || d.registrationNumber || d.loginUsername || '-');
+          });
+        }
+        records.forEach((r: any) => {
+          if (!r.rollNo || r.rollNo === '-') {
+            const found = studentMap.get(r.studentId);
+            if (found && found !== '-') {
+              r.rollNo = found;
+              r.rollNumber = found;
+            }
+          }
+        });
+      } catch (e) {}
+    }
+
     // Post-filter (Firestore can't do compound inequalities + text)
     if (filters.studentName) {
       const q = filters.studentName.toLowerCase();
@@ -341,10 +402,20 @@ export class LmsAttendanceService {
     const id = uuidv4();
     const joinedAt = data.date ? new Date(data.date).toISOString() : now;
 
+    let rollNo = '-';
+    try {
+      const sDoc = await db.collection('students').doc(data.studentId).get();
+      if (sDoc.exists) {
+        rollNo = sDoc.data()?.rollNumber || sDoc.data()?.rollNo || sDoc.data()?.regNo || sDoc.data()?.loginUsername || '-';
+      }
+    } catch (e) {}
+
     const record = {
       id,
       studentId: data.studentId,
       studentName: data.studentName || 'Student',
+      rollNo,
+      rollNumber: rollNo,
       classId: `manual_${Date.now()}`,
       className: data.className || 'Manual Attendance',
       courseId: 'general',

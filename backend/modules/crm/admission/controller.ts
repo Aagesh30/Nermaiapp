@@ -105,6 +105,24 @@ export class AdmissionController {
                 }
             }).catch(err => console.log("[Push] Admission push note:", err?.message));
 
+            // Emit live admin alert for new admission application (Server Admin SDK)
+            try {
+                const admissionAlertId = `crm_admission_${id}`;
+                await db.collection("admin_alerts").doc(admissionAlertId).set({
+                    id: admissionAlertId,
+                    type: "crm_admission",
+                    title: "New Admission Application",
+                    subtitle: `${name} (${phone})`,
+                    message: `Applied for ${preferredCourse || course || "General"} (${preferredMode || mode || "Offline"})`,
+                    targetTab: "crm",
+                    targetSub: "admissions",
+                    createdAt: new Date().toISOString(),
+                    isDismissed: false
+                }, { merge: true });
+            } catch (err: any) {
+                console.log("[Alert] Admission admin_alert write note:", err?.message);
+            }
+
             return res.status(201).json({
                 success: true,
                 message: "Admission application submitted successfully",

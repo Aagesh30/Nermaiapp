@@ -1059,6 +1059,41 @@ ${chunkText}${cleanedAkText ? `\n\nAnswer Key:\n${cleanedAkText}` : ""}`;
     }
 
     /**
+     * GET TEST QUESTIONS (Admin & Student)
+     * GET /api/test-portal/test-creation/:id/questions
+     */
+    static async getTestQuestions(req: Request, res: Response) {
+        try {
+            const { id } = req.params;
+            const doc = await db.collection(COLLECTION).doc(id).get();
+            if (!doc.exists) {
+                return res.status(404).json({ success: false, message: "Test not found" });
+            }
+            const test = doc.data()!;
+            const qIds: string[] = test.questionIds || [];
+            if (qIds.length === 0) {
+                return res.status(200).json({ success: true, data: [] });
+            }
+
+            const questions: any[] = [];
+            // Firestore 'in' query allows up to 30 items per batch
+            for (let i = 0; i < qIds.length; i += 30) {
+                const chunk = qIds.slice(i, i + 30);
+                const snap = await db.collection("questions")
+                    .where(admin.firestore.FieldPath.documentId(), "in", chunk)
+                    .get();
+                snap.docs.forEach(d => questions.push({ id: d.id, ...d.data() }));
+            }
+
+            const qMap = new Map(questions.map(q => [q.id, q]));
+            const ordered = qIds.map(qid => qMap.get(qid)).filter(Boolean);
+            return res.status(200).json({ success: true, data: ordered });
+        } catch (error: any) {
+            return res.status(500).json({ success: false, message: error.message });
+        }
+    }
+
+    /**
      * UPDATE TEST
      */
     static async update(req: Request, res: Response) {
@@ -1071,17 +1106,94 @@ ${chunkText}${cleanedAkText ? `\n\nAnswer Key:\n${cleanedAkText}` : ""}`;
                 return res.status(404).json({ success: false, message: "Test not found" });
             }
 
-            await docRef.update({
+            const currentData = doc.data()!;
+
+            // Strict guard: once a test has started, it cannot be edited
+            if (currentData.startTime) {
+                const startMs = typeof currentData.startTime?.toDate === "function"
+                    ? currentData.startTime.toDate().getTime()
+                    : new Date(currentData.startTime).getTime();
+                if (startMs > 0 && Date.now() >= startMs) {
+                    return res.status(400).json({
+                        success: false,
+                        message: "Cannot edit this test because it has already started. Edits are only permitted before the scheduled start time."
+                    });
+                }
+            }
+
+            let newQuestionIds: string[] | null = null;
+
+            if (Array.isArray(req.body.questionsData) && req.body.questionsData.length > 0) {
+                newQuestionIds = [];
+                const batch = db.batch();
+                for (const q of req.body.questionsData) {
+                    const qId = q.id || randomUUID();
+                    const qRef = db.collection("questions").doc(qId);
+
+                    let opts = q.options;
+                    if (!opts || !Array.isArray(opts)) {
+                        opts = [
+                            String(q["option a"] || q["optionA"] || q.option_a || "").trim(),
+                            String(q["option b"] || q["optionB"] || q.option_b || "").trim(),
+                            String(q["option c"] || q["optionC"] || q.option_c || "").trim(),
+                            String(q["option d"] || q["optionD"] || q.option_d || "").trim()
+                        ];
+                    }
+
+                    let corr = String(q.correctAnswer || q["correct option"] || q.correctOption || "A").trim().toUpperCase();
+                    if (corr === "0") corr = "A";
+                    else if (corr === "1") corr = "B";
+                    else if (corr === "2") corr = "C";
+                    else if (corr === "3") corr = "D";
+                    else if (!["A", "B", "C", "D"].includes(corr)) {
+                        if (corr.startsWith("A")) corr = "A";
+                        else if (corr.startsWith("B")) corr = "B";
+                        else if (corr.startsWith("C")) corr = "C";
+                        else if (corr.startsWith("D")) corr = "D";
+                        else corr = "A";
+                    }
+
+                    batch.set(qRef, {
+                        id: qId,
+                        question: q.question || q.questionEn || "",
+                        questionEn: q.questionEn || q.question || "",
+                        questionTa: q.questionTa || "",
+                        options: opts,
+                        optionsTa: Array.isArray(q.optionsTa) ? q.optionsTa : [],
+                        correctAnswer: corr,
+                        explanation: q.explanation || q.notes || "",
+                        type: "MCQ",
+                        marks: Number(req.body.marksPerQuestion || currentData.marksPerQuestion || 1),
+                        negativeMarks: Number(req.body.negativeMarks || currentData.negativeMarks || 0.33),
+                        isDeleted: false,
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                    }, { merge: true });
+
+                    newQuestionIds.push(qId);
+                }
+                await batch.commit();
+            }
+
+            const updatePayload: any = {
                 ...req.body,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
                 updatedBy: req.body.updatedBy || "system"
-            });
+            };
+
+            if (newQuestionIds) {
+                updatePayload.questionIds = newQuestionIds;
+                updatePayload.totalQuestions = newQuestionIds.length;
+                updatePayload.totalMarks = newQuestionIds.length * Number(req.body.marksPerQuestion || currentData.marksPerQuestion || 1);
+            }
+            delete updatePayload.questionsData;
+
+            await docRef.update(updatePayload);
 
             // Invalidate test cache so student side reflects changes immediately
             testDetailsCache.delete(`test_${id}`);
             testQuestionsCache.delete(`test_${id}`);
 
-            return res.status(200).json({ success: true, message: "Test updated successfully" });
+            return res.status(200).json({ success: true, message: "Test updated successfully", questionCount: newQuestionIds ? newQuestionIds.length : (currentData.totalQuestions || 0) });
         } catch (error: any) {
             return res.status(500).json({ success: false, message: error.message });
         }
@@ -1334,6 +1446,162 @@ ${chunkText}${cleanedAkText ? `\n\nAnswer Key:\n${cleanedAkText}` : ""}`;
         } catch (error: any) {
             console.error("[TestCreation] uploadQuestionImage error:", error);
             return res.status(500).json({ success: false, message: error.message || "Failed to upload question image" });
+        }
+    }
+
+    /**
+     * UPLOAD EXPLANATION DOCUMENT (PDF / DOC) TO GOOGLE DRIVE
+     * POST /api/test-portal/test-creation/upload-explanation-doc
+     * Body: { base64: string, fileName?: string, testTitle?: string }
+     */
+    static async uploadExplanationDoc(req: Request, res: Response) {
+        try {
+            const { base64, fileName, testTitle } = req.body;
+            if (!base64) {
+                return res.status(400).json({ success: false, message: "base64 file data is required" });
+            }
+
+            const rawBase64 = base64.startsWith("data:") ? base64.split(",")[1] : base64;
+            if (!rawBase64) {
+                return res.status(400).json({ success: false, message: "Invalid base64 file data" });
+            }
+
+            const buffer = Buffer.from(rawBase64, "base64");
+            let mimeType = "application/pdf";
+            if (base64.startsWith("data:")) {
+                const mimeMatch = base64.match(/^data:([^;]+);base64,/);
+                if (mimeMatch) mimeType = mimeMatch[1];
+            } else if (fileName) {
+                const lowerName = fileName.toLowerCase();
+                if (lowerName.endsWith(".docx")) {
+                    mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+                } else if (lowerName.endsWith(".doc")) {
+                    mimeType = "application/msword";
+                } else if (lowerName.endsWith(".pdf")) {
+                    mimeType = "application/pdf";
+                }
+            }
+
+            const safeName = (fileName || `explanation-doc-${Date.now()}`).replace(/[^a-zA-Z0-9._-]/g, "_");
+            const driveFileName = safeName.includes(".") ? safeName : `${safeName}.pdf`;
+
+            const today = new Date();
+            const dd = String(today.getDate()).padStart(2, '0');
+            const mm = String(today.getMonth() + 1).padStart(2, '0');
+            const yyyy = today.getFullYear();
+            const dateStr = `${dd}-${mm}-${yyyy}`;
+            const folderTitle = (testTitle || "Test").trim().replace(/[\/\\?%*:|"<>\s]+/g, "_");
+            const subPath = `Test Portal/${folderTitle}_${dateStr}/Explanations`;
+
+            const driveResult = await uploadFileToGoogleDrive({
+                fileName: driveFileName,
+                mimeType,
+                buffer,
+                subPath
+            });
+
+            if (!driveResult?.previewUrl && !driveResult?.fileId) {
+                return res.status(500).json({ success: false, message: "Failed to upload document to Google Drive." });
+            }
+
+            const fileId = driveResult.fileId;
+            const previewUrl = fileId ? `https://drive.google.com/file/d/${fileId}/preview` : driveResult.previewUrl;
+
+            return res.status(200).json({
+                success: true,
+                docUrl: previewUrl,
+                fileId,
+                fileName: driveFileName,
+                previewUrl,
+                webViewLink: driveResult.webViewLink
+            });
+        } catch (error: any) {
+            console.error("[TestCreation] uploadExplanationDoc error:", error);
+            return res.status(500).json({ success: false, message: error.message || "Failed to upload explanation document" });
+        }
+    }
+
+    /**
+     * UPDATE EXPLANATIONS FOR A TEST
+     * PATCH /api/test-portal/test-creation/:id/explanations
+     * Body: { explanationDoc?: { url, name, provider }, explanationVideo?: { url, videoId, provider } }
+     */
+    static async updateExplanations(req: Request, res: Response) {
+        try {
+            const { id } = req.params;
+            const docRef = db.collection(COLLECTION).doc(id);
+            const doc = await docRef.get();
+
+            if (!doc.exists) {
+                return res.status(404).json({ success: false, message: "Test not found" });
+            }
+
+            const { explanationDoc, explanationVideo } = req.body;
+            const updatePayload: Record<string, any> = {
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                updatedBy: (req as any).user?.userId || "admin"
+            };
+
+            // Normalize Explanation Doc
+            if (explanationDoc !== undefined) {
+                if (explanationDoc && explanationDoc.url) {
+                    let docUrl = String(explanationDoc.url).trim();
+                    const gDriveMatch = docUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+                    if (gDriveMatch && gDriveMatch[1]) {
+                        docUrl = `https://drive.google.com/file/d/${gDriveMatch[1]}/preview`;
+                    } else {
+                        const idMatch = docUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+                        if (idMatch && idMatch[1]) {
+                            docUrl = `https://drive.google.com/file/d/${idMatch[1]}/preview`;
+                        }
+                    }
+                    updatePayload.explanationDoc = {
+                        url: docUrl,
+                        name: explanationDoc.name || "Explanation Document",
+                        provider: explanationDoc.provider || (docUrl.includes("drive.google.com") ? "google_drive" : "external"),
+                        updatedAt: new Date().toISOString()
+                    };
+                } else {
+                    updatePayload.explanationDoc = admin.firestore.FieldValue.delete();
+                }
+            }
+
+            // Normalize Explanation Video
+            if (explanationVideo !== undefined) {
+                if (explanationVideo && explanationVideo.url) {
+                    let videoUrl = String(explanationVideo.url).trim();
+                    let videoId = "";
+                    const ytMatch = videoUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
+                    if (ytMatch && ytMatch[1]) {
+                        videoId = ytMatch[1];
+                        videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+                    }
+                    updatePayload.explanationVideo = {
+                        url: videoUrl,
+                        videoId: videoId || "",
+                        provider: videoId ? "youtube" : "external",
+                        updatedAt: new Date().toISOString()
+                    };
+                } else {
+                    updatePayload.explanationVideo = admin.firestore.FieldValue.delete();
+                }
+            }
+
+            await docRef.update(updatePayload);
+
+            testDetailsCache.delete(`test_${id}`);
+
+            return res.status(200).json({
+                success: true,
+                message: "Test explanations updated successfully",
+                data: {
+                    explanationDoc: updatePayload.explanationDoc,
+                    explanationVideo: updatePayload.explanationVideo
+                }
+            });
+        } catch (error: any) {
+            console.error("[TestCreation] updateExplanations error:", error);
+            return res.status(500).json({ success: false, message: error.message || "Failed to update explanations" });
         }
     }
 }
@@ -1642,6 +1910,59 @@ export class OfflineTestRequestController {
             if (!testId || !studentId) {
                 return res.status(400).json({ success: false, message: "testId and studentId are required" });
             }
+
+            // Check if student has ALREADY completed this test
+            const candidateIds = new Set<string>([String(studentId).trim()]);
+            if (username) candidateIds.add(String(username).trim());
+            if (rollNumber) candidateIds.add(String(rollNumber).trim());
+            try {
+                const sDoc = await db.collection("students").doc(studentId).get();
+                if (sDoc.exists) {
+                    const s = sDoc.data()!;
+                    if (s.userId) candidateIds.add(String(s.userId).trim());
+                    if (s.rollNumber) candidateIds.add(String(s.rollNumber).trim());
+                    if (s.mockRollNumber) candidateIds.add(String(s.mockRollNumber).trim());
+                    if (s.specialRollNo) candidateIds.add(String(s.specialRollNo).trim());
+                }
+            } catch (_) {}
+            try {
+                const uDoc = await db.collection("users").doc(studentId).get();
+                if (uDoc.exists) {
+                    const u = uDoc.data()!;
+                    if (u.studentId) candidateIds.add(String(u.studentId).trim());
+                    if (u.rollNumber) candidateIds.add(String(u.rollNumber).trim());
+                }
+            } catch (_) {}
+
+            const cList = Array.from(candidateIds).filter(Boolean);
+            const [attSnap, resSnap] = await Promise.all([
+                Promise.all(cList.map(cid =>
+                    db.collection("student_attempts")
+                        .where("testId", "==", testId)
+                        .where("studentId", "==", cid)
+                        .where("isDeleted", "==", false)
+                        .get()
+                )),
+                Promise.all(cList.map(cid =>
+                    db.collection("results")
+                        .where("testId", "==", testId)
+                        .where("studentId", "==", cid)
+                        .where("isDeleted", "==", false)
+                        .get()
+                ))
+            ]);
+
+            const hasCompleted = attSnap.some(s => s.docs.some(d => {
+                const dt = d.data();
+                return dt.status === "submitted" || dt.status === "evaluated" || dt.isSubmitted === true;
+            })) || resSnap.some(s => s.docs.length > 0);
+
+            if (hasCompleted) {
+                return res.status(400).json({
+                    success: false,
+                    message: "You have already completed this test. Multiple attempts are not permitted."
+                });
+            }
             const reqId = id || `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
             const payload = {
                 id: reqId,
@@ -1830,6 +2151,40 @@ export class OfflineTestRequestController {
             const reqDoc = await db.collection(OFFLINE_REQUESTS_COLLECTION).doc(id).get();
             const reqData = reqDoc.exists ? (reqDoc.data() || {}) : {};
 
+            if (status === "approved" && reqData.testId && reqData.studentId) {
+                // Verify student hasn't already completed this test
+                const cIds = new Set<string>([String(reqData.studentId).trim()]);
+                if (reqData.username) cIds.add(String(reqData.username).trim());
+                if (reqData.rollNumber) cIds.add(String(reqData.rollNumber).trim());
+                try {
+                    const sDoc = await db.collection("students").doc(reqData.studentId).get();
+                    if (sDoc.exists) {
+                        const s = sDoc.data()!;
+                        if (s.userId) cIds.add(String(s.userId).trim());
+                        if (s.rollNumber) cIds.add(String(s.rollNumber).trim());
+                        if (s.mockRollNumber) cIds.add(String(s.mockRollNumber).trim());
+                        if (s.specialRollNo) cIds.add(String(s.specialRollNo).trim());
+                    }
+                } catch (_) {}
+
+                const cArr = Array.from(cIds).filter(Boolean);
+                const resultsSnap = await Promise.all(cArr.map(cid =>
+                    db.collection("results")
+                        .where("testId", "==", reqData.testId)
+                        .where("studentId", "==", cid)
+                        .where("isDeleted", "==", false)
+                        .get()
+                ));
+
+                if (resultsSnap.some(s => s.docs.length > 0)) {
+                    await db.collection(OFFLINE_REQUESTS_COLLECTION).doc(id).delete().catch(() => {});
+                    return res.status(400).json({
+                        success: false,
+                        message: "Cannot approve: Student has already completed this test (Score recorded)."
+                    });
+                }
+            }
+
             await db.collection(OFFLINE_REQUESTS_COLLECTION).doc(id).update({
                 status,
                 updatedAt: new Date().toISOString()
@@ -1837,7 +2192,7 @@ export class OfflineTestRequestController {
 
             if (status === "approved" || status === "rejected") {
                 try {
-                    const studentTarget = reqData.studentId || reqData.username;
+                    const studentTarget = reqData.studentId || reqData.username || reqData.rollNumber;
                     const tTitle = reqData.testTitle || "Test";
                     const isApp = status === "approved";
                     if (studentTarget) {

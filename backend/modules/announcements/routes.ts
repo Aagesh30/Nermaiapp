@@ -16,32 +16,34 @@ const attachAccessContext = (req: any, res: any, next: any) => {
 const router = Router();
 const controller = new AnnouncementController();
 
+const adminRoles = ['admin', 'super_admin', 'superadmin', 'coordinator'];
+
 // Admin Routes
 router.post(
   '/admin',
   requireAuth,
-  requireRole(['admin', 'superadmin']),
+  requireRole(adminRoles),
   (req, res, next) => controller.createAnnouncement(req, res).catch(next)
 );
 
 router.get(
   '/admin',
   requireAuth,
-  requireRole(['admin', 'superadmin']),
+  requireRole(adminRoles),
   (req, res, next) => controller.listAnnouncements(req, res).catch(next)
 );
 
 router.patch(
   '/admin/:id',
   requireAuth,
-  requireRole(['admin', 'superadmin']),
+  requireRole(adminRoles),
   (req, res, next) => controller.updateAnnouncement(req, res).catch(next)
 );
 
 router.delete(
   '/admin/:id',
   requireAuth,
-  requireRole(['admin', 'superadmin']),
+  requireRole(adminRoles),
   (req, res, next) => controller.deleteAnnouncement(req, res).catch(next)
 );
 

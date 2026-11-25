@@ -139,9 +139,7 @@ export const ResourceApi = {
   getCourseHierarchy: (courseId: string) => api.get(`/resources/course/${courseId}/hierarchy`),
   getResource: (id: string) => api.get(`/resources/${id}`),
   getAccess: (id: string) => api.get(`/resources/${id}/access`),
-  createResource: (data: FormData | any) => api.post('/resources', data, {
-    headers: data instanceof FormData ? { 'Content-Type': 'multipart/form-data' } : undefined
-  }),
+  createResource: (data: FormData | any) => api.post('/resources', data),
   updateResource: (id: string, data: any) => api.put(`/resources/${id}`, data),
   uploadNewVersion: (id: string, data: FormData) => api.post(`/resources/${id}/version`, data, {
     headers: { 'Content-Type': 'multipart/form-data' }

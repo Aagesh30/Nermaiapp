@@ -22,7 +22,7 @@ import * as ScreenCapture from 'expo-screen-capture';
 import { ResourceViewerSkeleton } from '../components/ui/Skeleton';
 import { WatermarkOverlay } from '../components/ui/WatermarkOverlay';
 // @ts-ignore
-import logoImg from '../../assets/logo.png';
+import logoImg from '../../assets/logo.webp';
 
 const SecurePDFViewer = lazy(() =>
   import('../components/ui/SecurePDFViewer').then(m => ({ default: m.SecurePDFViewer }))
@@ -186,7 +186,19 @@ export const ResourceViewer: React.FC<ResourceViewerProps> = ({ resourceId, onCl
     const handleWindowBlur = (e: any) => {
       if (isInteractingRef.current) return;
       if (e && e.target && e.target !== window && e.target !== document) return;
-      triggerScreenshotBlock();
+      // Allow interaction and zooming inside viewer iframes (e.g. Google Drive preview)
+      setTimeout(() => {
+        if (typeof document !== 'undefined') {
+          const activeEl = document.activeElement;
+          if (activeEl && (activeEl.tagName === 'IFRAME' || activeEl.closest?.('#pdf-canvas-body, #pdf-secure-root, [data-secure-viewer]'))) {
+            return;
+          }
+          if (document.hasFocus && document.hasFocus()) {
+            return;
+          }
+        }
+        triggerScreenshotBlock();
+      }, 200);
     };
 
     const handleVisibilityChange = () => {
@@ -207,16 +219,10 @@ export const ResourceViewer: React.FC<ResourceViewerProps> = ({ resourceId, onCl
 
     const handleTouchGesture = (e: TouchEvent) => {
       if (isInteractingRef.current) return;
-      // Intercept 3-finger swipe screenshot gestures on mobile OS
+      // Intercept 3-finger swipe screenshot gestures on mobile OS, but ignore 2-finger pinch zoom
       if (e.touches && e.touches.length >= 3) {
         triggerScreenshotBlock(e);
       }
-    };
-
-    const handleTouchCancel = (e: TouchEvent) => {
-      if (isInteractingRef.current) return;
-      // Android OS hardware button screenshots (Power + Vol Down) trigger touchcancel
-      triggerScreenshotBlock(e);
     };
 
     window.addEventListener('keydown', handleKeyEvent, true);
@@ -227,7 +233,6 @@ export const ResourceViewer: React.FC<ResourceViewerProps> = ({ resourceId, onCl
     document.addEventListener('visibilitychange', handleVisibilityChange, true);
     window.addEventListener('pagehide', handlePageHide, true);
     window.addEventListener('touchstart', handleTouchGesture, { passive: true });
-    window.addEventListener('touchcancel', handleTouchCancel, { passive: true });
     document.addEventListener('fullscreenchange', handleFullscreenChange);
 
     return () => {
@@ -239,7 +244,6 @@ export const ResourceViewer: React.FC<ResourceViewerProps> = ({ resourceId, onCl
       document.removeEventListener('visibilitychange', handleVisibilityChange, true);
       window.removeEventListener('pagehide', handlePageHide, true);
       window.removeEventListener('touchstart', handleTouchGesture);
-      window.removeEventListener('touchcancel', handleTouchCancel);
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
   }, [onClose, triggerScreenshotBlock, isImage]);
@@ -499,6 +503,8 @@ export const ResourceViewer: React.FC<ResourceViewerProps> = ({ resourceId, onCl
             title={resource?.title || 'Resource Document'}
             onDownload={handleDownload}
             isSecure={isSecure}
+            audioUrl={access?.audioUrl || resource?.audioUrl || null}
+            driveId={access?.driveId || null}
           />
         </Suspense>
       </div>

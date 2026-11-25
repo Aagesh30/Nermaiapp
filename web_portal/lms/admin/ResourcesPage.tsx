@@ -11,6 +11,14 @@ export function ResourcesPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [categoryId, setCategoryId] = useState('');
+  const [subjectFilter, setSubjectFilter] = useState('');
+
+  const SUBJECT_OPTIONS = [
+    'History', 'Geography', 'Polity', 'Economy', 'Science & Technology',
+    'Environment', 'Current Affairs', 'Ethics', 'Art & Culture',
+    'International Relations', 'Internal Security', 'Social Issues',
+    'Disaster Management', 'General Studies', 'CSAT', 'Tamil Nadu Affairs', 'Other'
+  ];
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingResource, setEditingResource] = useState<any>(null);
@@ -22,7 +30,7 @@ export function ResourcesPage() {
   const fetchResources = async () => {
     setLoading(true);
     try {
-      const { data } = await ResourceApi.list({ search, categoryId });
+      const { data } = await ResourceApi.list({ search, categoryId, subject: subjectFilter || undefined });
       setResources(data.data);
     } catch (error) {
       console.error('Failed to fetch resources', error);
@@ -33,7 +41,7 @@ export function ResourcesPage() {
 
   useEffect(() => {
     fetchResources();
-  }, [search, categoryId]);
+  }, [search, categoryId, subjectFilter]);
 
   const performDelete = async (id: string) => {
     setIsDeleting(true);
@@ -68,8 +76,8 @@ export function ResourcesPage() {
 
       <div className="bg-white dark:bg-[#1a1a2e] border border-gray-200 dark:border-[#8B0000]/30 rounded-2xl overflow-hidden shadow-sm">
         {/* Filters */}
-        <div className="p-4 border-b border-gray-200 dark:border-[#8B0000]/30 flex gap-4 bg-gray-50 dark:bg-[#0f0f1a]">
-          <div className="relative flex-1">
+        <div className="p-4 border-b border-gray-200 dark:border-[#8B0000]/30 flex flex-wrap gap-3 bg-gray-50 dark:bg-[#0f0f1a]">
+          <div className="relative flex-1 min-w-[180px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
@@ -79,6 +87,17 @@ export function ResourcesPage() {
               className="w-full bg-white dark:bg-[#0f0f1a] border border-gray-200 dark:border-[#8B0000]/30 rounded-xl pl-9 pr-4 py-2 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:border-[#8B0000] transition-colors"
             />
           </div>
+          {/* Subject Filter Dropdown */}
+          <select
+            value={subjectFilter}
+            onChange={e => setSubjectFilter(e.target.value)}
+            className="bg-white dark:bg-[#0f0f1a] border border-gray-200 dark:border-[#8B0000]/30 rounded-xl px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#8B0000] transition-colors min-w-[160px]"
+          >
+            <option value="">All Subjects</option>
+            {SUBJECT_OPTIONS.map(s => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
         </div>
 
         {/* Table */}

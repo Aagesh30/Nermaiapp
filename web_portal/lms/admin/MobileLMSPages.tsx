@@ -2867,7 +2867,9 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
                             }}
                           >
                             <Ionicons name="people-outline" size={15} color="#fff" />
-                            <Text style={{ color: '#fff', fontSize: 14, fontWeight: 'bold' }}>View Attendance</Text>
+                            <Text style={{ color: '#fff', fontSize: 14, fontWeight: 'bold' }}>
+                              View Attendance{cls.attendedCount != null || cls.totalAttended != null ? ` (${cls.attendedCount ?? cls.totalAttended})` : (cls.liveSession?.joinedParticipantsDetails ? ` (${Object.keys(cls.liveSession.joinedParticipantsDetails).length})` : '')}
+                            </Text>
                           </TouchableOpacity>
                         </>
                       ) : (
@@ -3090,61 +3092,91 @@ export const MobileLMSPages: React.FC<MobileLMSPagesProps> = ({
 
                     {(() => {
                       const safeList = Array.isArray(attendanceList) ? attendanceList : [];
-                      if (attendanceLoading) {
-                        return <ActivityIndicator color={themeRed} size="large" style={{ marginVertical: 20 }} />;
-                      }
-                      if (safeList.length === 0) {
-                        return (
-                          <View style={{ paddingVertical: 22, alignItems: 'center' }}>
-                            <Ionicons name="people-outline" size={32} color={textSecondary} />
-                            <Text style={{ fontSize: 14, color: textSecondary, marginTop: 8 }}>No attendance recorded yet for this session.</Text>
-                          </View>
-                        );
-                      }
-                      return (
-                        <ScrollView style={{ maxHeight: 300 }}>
-                          {safeList.map((att: any, idx: number) => {
-                            const name = att.studentName || att.userName || att.name || att.studentId || `Student ${idx + 1}`;
-                            const email = att.studentEmail || att.email || att.regNo || '';
-                            const joinTime = att.joinedAt ? new Date(att.joinedAt).toLocaleTimeString() : (att.timestamp ? new Date(att.timestamp).toLocaleTimeString() : '');
-                            const status = att.status || (att.joinedAt || att.timestamp ? 'PRESENT' : 'ABSENT');
-                            const isPresent = String(status).toUpperCase() === 'PRESENT';
+                      const attendedCount = safeList.filter((att: any) => String(att.status || '').toUpperCase() !== 'ABSENT').length;
 
-                            return (
-                              <View
-                                key={att.id || att._id || att.studentId || idx}
-                                style={{
-                                  flexDirection: 'row',
-                                  justifyContent: 'space-between',
-                                  alignItems: 'center',
-                                  paddingVertical: 10,
-                                  borderBottomWidth: 1,
-                                  borderBottomColor: borderColor
-                                }}
-                              >
-                                <View style={{ flex: 1, marginRight: 8 }}>
-                                  <Text style={{ fontSize: 14, fontWeight: 'bold', color: textPrimary }}>{name}</Text>
-                                  {email ? <Text style={{ fontSize: 12, color: textSecondary }}>{email}</Text> : null}
-                                </View>
-                                <View style={{ alignItems: 'flex-end', gap: 2 }}>
-                                  <View style={{
-                                    paddingHorizontal: 8,
-                                    paddingVertical: 2,
-                                    borderRadius: 4,
-                                    backgroundColor: isPresent ? '#e8f5e9' : '#ffebee'
-                                  }}>
-                                    <Text style={{ fontSize: 11, fontWeight: 'bold', color: isPresent ? '#2e7d32' : '#c62828' }}>
-                                      {status}
-                                    </Text>
-                                  </View>
-                                  {joinTime ? (
-                                    <Text style={{ fontSize: 11, color: textSecondary }}>{joinTime}</Text>
-                                  ) : null}
-                                </View>
+                      return (
+                        <>
+                          {/* Total Students Attended Count Banner */}
+                          {!attendanceLoading && (
+                            <View style={{
+                              backgroundColor: isDark ? '#1b3320' : '#e8f5e9',
+                              borderWidth: 1.5,
+                              borderColor: '#2e7d32',
+                              borderRadius: 10,
+                              paddingVertical: 10,
+                              paddingHorizontal: 14,
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              marginBottom: 12
+                            }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                <Ionicons name="people" size={20} color="#2e7d32" />
+                                <Text style={{ fontSize: 13, fontWeight: 'bold', color: isDark ? '#81c784' : '#2e7d32' }}>
+                                  Total Students Attended:
+                                </Text>
                               </View>
-                            );
-                          })}
-                        </ScrollView>
+                              <View style={{ backgroundColor: '#2e7d32', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12 }}>
+                                <Text style={{ color: '#fff', fontSize: 15, fontWeight: 'bold' }}>
+                                  {attendedCount}
+                                </Text>
+                              </View>
+                            </View>
+                          )}
+
+                          {attendanceLoading ? (
+                            <ActivityIndicator color={themeRed} size="large" style={{ marginVertical: 20 }} />
+                          ) : safeList.length === 0 ? (
+                            <View style={{ paddingVertical: 22, alignItems: 'center' }}>
+                              <Ionicons name="people-outline" size={32} color={textSecondary} />
+                              <Text style={{ fontSize: 14, color: textSecondary, marginTop: 8 }}>No attendance recorded yet for this session.</Text>
+                            </View>
+                          ) : (
+                            <ScrollView style={{ maxHeight: 300 }}>
+                              {safeList.map((att: any, idx: number) => {
+                                const name = att.studentName || att.userName || att.name || att.studentId || `Student ${idx + 1}`;
+                                const email = att.studentEmail || att.email || att.regNo || '';
+                                const joinTime = att.joinedAt ? new Date(att.joinedAt).toLocaleTimeString() : (att.timestamp ? new Date(att.timestamp).toLocaleTimeString() : '');
+                                const status = att.status || (att.joinedAt || att.timestamp ? 'PRESENT' : 'ABSENT');
+                                const isPresent = String(status).toUpperCase() === 'PRESENT';
+
+                                return (
+                                  <View
+                                    key={att.id || att._id || att.studentId || idx}
+                                    style={{
+                                      flexDirection: 'row',
+                                      justifyContent: 'space-between',
+                                      alignItems: 'center',
+                                      paddingVertical: 10,
+                                      borderBottomWidth: 1,
+                                      borderBottomColor: borderColor
+                                    }}
+                                  >
+                                    <View style={{ flex: 1, marginRight: 8 }}>
+                                      <Text style={{ fontSize: 14, fontWeight: 'bold', color: textPrimary }}>{name}</Text>
+                                      {email ? <Text style={{ fontSize: 12, color: textSecondary }}>{email}</Text> : null}
+                                    </View>
+                                    <View style={{ alignItems: 'flex-end', gap: 2 }}>
+                                      <View style={{
+                                        paddingHorizontal: 8,
+                                        paddingVertical: 2,
+                                        borderRadius: 4,
+                                        backgroundColor: isPresent ? '#e8f5e9' : '#ffebee'
+                                      }}>
+                                        <Text style={{ fontSize: 11, fontWeight: 'bold', color: isPresent ? '#2e7d32' : '#c62828' }}>
+                                          {status}
+                                        </Text>
+                                      </View>
+                                      {joinTime ? (
+                                        <Text style={{ fontSize: 11, color: textSecondary }}>{joinTime}</Text>
+                                      ) : null}
+                                    </View>
+                                  </View>
+                                );
+                              })}
+                            </ScrollView>
+                          )}
+                        </>
                       );
                     })()}
                   </View>

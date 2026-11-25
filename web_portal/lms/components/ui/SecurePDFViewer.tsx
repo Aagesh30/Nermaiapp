@@ -9,7 +9,14 @@ import {
   RefreshCw,
   AlertCircle,
   ZoomIn,
-  ZoomOut
+  ZoomOut,
+  Play,
+  Pause,
+  SkipBack,
+  SkipForward,
+  Volume2,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { Platform } from 'react-native';
 import * as ScreenCapture from 'expo-screen-capture';
@@ -36,6 +43,8 @@ interface SecurePDFViewerProps {
   title?: string;
   onDownload?: () => void;
   isSecure?: boolean;
+  audioUrl?: string | null;
+  driveId?: string | null;
 }
 
 export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({
@@ -44,7 +53,9 @@ export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({
   onClose,
   title = 'Document',
   onDownload,
-  isSecure = true
+  isSecure = true,
+  audioUrl,
+  driveId: propDriveId
 }) => {
   const [numPages, setNumPages] = useState<number | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -54,6 +65,53 @@ export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({
   const [zoomScale, setZoomScale] = useState<number>(1);
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [useIframeFallback, setUseIframeFallback] = useState<boolean>(false);
+
+  // ── Audio Player State ──────────────────────────────────────────────────────
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [audioPlaying, setAudioPlaying] = useState(false);
+  const [audioDuration, setAudioDuration] = useState(0);
+  const [audioCurrentTime, setAudioCurrentTime] = useState(0);
+  const [audioSpeed, setAudioSpeed] = useState(1);
+  const [audioPlayerCollapsed, setAudioPlayerCollapsed] = useState(false);
+  const [audioReady, setAudioReady] = useState(false);
+
+  const SPEED_OPTIONS = [0.75, 1, 1.25, 1.5, 2];
+
+  const formatTime = (secs: number) => {
+    if (!isFinite(secs) || isNaN(secs)) return '0:00';
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const handleAudioPlayPause = () => {
+    if (!audioRef.current) return;
+    if (audioPlaying) {
+      audioRef.current.pause();
+    } else {
+      audioRef.current.play().catch(() => {});
+    }
+  };
+
+  const handleAudioSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!audioRef.current) return;
+    audioRef.current.currentTime = Number(e.target.value);
+    setAudioCurrentTime(Number(e.target.value));
+  };
+
+  const handleAudioSkip = (delta: number) => {
+    if (!audioRef.current) return;
+    audioRef.current.currentTime = Math.max(0, Math.min(audioDuration, audioRef.current.currentTime + delta));
+  };
+
+  const handleAudioSpeedChange = (speed: number) => {
+    setAudioSpeed(speed);
+    if (audioRef.current) audioRef.current.playbackRate = speed;
+  };
+
+  // Audio events are wired via React props on the <audio> element directly
+  // (useEffect + ref doesn't work reliably on conditionally rendered elements)
+
 
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
@@ -99,7 +157,7 @@ export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({
     return null;
   };
 
-  const driveId = getDriveId(cleanUrl) || getDriveId(fallbackUrl || '') || getDriveId(url || '');
+  const driveId = (propDriveId && String(propDriveId).trim()) || getDriveId(cleanUrl) || getDriveId(fallbackUrl || '') || getDriveId(url || '');
   const apiOrigin = typeof window !== 'undefined' && window.location?.origin && !window.location.origin.includes('localhost')
     ? window.location.origin
     : 'https://nermaiiasacademy-519c8.web.app';
@@ -434,7 +492,19 @@ export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({
     const handleWindowBlur = (e: any) => {
       if (isInteractingRef.current) return;
       if (e && e.target && e.target !== window && e.target !== document) return;
-      triggerScreenshotBlock();
+      // Allow interaction and zooming inside viewer iframes (e.g. Google Drive preview)
+      setTimeout(() => {
+        if (typeof document !== 'undefined') {
+          const activeEl = document.activeElement;
+          if (activeEl && (activeEl.tagName === 'IFRAME' || activeEl.closest?.('#pdf-canvas-body, #pdf-secure-root, [data-secure-viewer]'))) {
+            return;
+          }
+          if (document.hasFocus && document.hasFocus()) {
+            return;
+          }
+        }
+        triggerScreenshotBlock();
+      }, 200);
     };
 
     const handleVisibilityChange = () => {
@@ -455,16 +525,10 @@ export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({
 
     const handleTouchGesture = (e: TouchEvent) => {
       if (isInteractingRef.current) return;
-      // Intercept 3-finger swipe screenshot gestures on mobile OS
+      // Intercept 3-finger swipe screenshot gestures on mobile OS, but ignore 2-finger pinch zoom
       if (e.touches && e.touches.length >= 3) {
         triggerScreenshotBlock(e);
       }
-    };
-
-    const handleTouchCancel = (e: TouchEvent) => {
-      if (isInteractingRef.current) return;
-      // Android OS hardware button screenshots (Power + Vol Down) trigger touchcancel
-      triggerScreenshotBlock(e);
     };
 
     // Listen to BOTH keydown and keyup on window AND document (Windows Chrome dispatches PrintScreen on keyup)
@@ -476,7 +540,6 @@ export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({
     document.addEventListener('visibilitychange', handleVisibilityChange, true);
     window.addEventListener('pagehide', handlePageHide, true);
     window.addEventListener('touchstart', handleTouchGesture, { passive: true });
-    window.addEventListener('touchcancel', handleTouchCancel, { passive: true });
     document.addEventListener('fullscreenchange', handleFullscreenChange);
 
     return () => {
@@ -488,7 +551,6 @@ export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({
       document.removeEventListener('visibilitychange', handleVisibilityChange, true);
       window.removeEventListener('pagehide', handlePageHide, true);
       window.removeEventListener('touchstart', handleTouchGesture);
-      window.removeEventListener('touchcancel', handleTouchCancel);
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
   }, [onClose, triggerScreenshotBlock]);
@@ -669,7 +731,7 @@ export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({
             transition: 'filter 0.1s ease, opacity 0.1s ease'
           }}
         >
-          {useIframeFallback && driveId ? (
+          {driveId ? (
             <div className="relative w-full h-full min-h-[500px] flex-1">
               <iframe
                 src={`https://drive.google.com/file/d/${driveId}/preview`}
@@ -754,6 +816,165 @@ export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({
           <WatermarkOverlay pageNumber={1} />
         </div>
       </div>
+
+      {/* ── BOTTOM AUDIO PLAYER BAR (shown only when audioUrl is provided) ── */}
+      {audioUrl && (
+        <>
+          {/* Hidden native audio element */}
+          <audio
+            ref={audioRef}
+            src={audioUrl}
+            preload="auto"
+            onPlay={() => setAudioPlaying(true)}
+            onPause={() => setAudioPlaying(false)}
+            onTimeUpdate={() => {
+              if (audioRef.current) setAudioCurrentTime(audioRef.current.currentTime);
+            }}
+            onDurationChange={() => {
+              if (audioRef.current && isFinite(audioRef.current.duration)) {
+                setAudioDuration(audioRef.current.duration);
+              }
+            }}
+            onLoadedMetadata={() => {
+              setAudioReady(true);
+              if (audioRef.current && isFinite(audioRef.current.duration)) {
+                setAudioDuration(audioRef.current.duration);
+              }
+            }}
+            onCanPlay={() => setAudioReady(true)}
+            onError={(e) => {
+              const target = e.currentTarget as HTMLAudioElement;
+              console.error('[AudioPlayer] Failed to load audio. Code:', target.error?.code, 'src:', target.src);
+            }}
+          />
+
+          {/* Player Bar */}
+          <div
+            className="shrink-0 w-full z-30 select-none"
+            style={{
+              background: 'linear-gradient(to top, rgba(10,14,26,0.98) 0%, rgba(15,20,35,0.95) 100%)',
+              backdropFilter: 'blur(20px)',
+              WebkitBackdropFilter: 'blur(20px)',
+              borderTop: '1px solid rgba(139,92,246,0.25)',
+              boxShadow: '0 -4px 30px rgba(0,0,0,0.5)',
+            }}
+          >
+            {/* Collapse Toggle Handle */}
+            <button
+              onClick={() => setAudioPlayerCollapsed(prev => !prev)}
+              className="w-full flex items-center justify-center py-1 hover:bg-white/5 transition-colors group"
+              title={audioPlayerCollapsed ? 'Expand audio player' : 'Collapse audio player'}
+            >
+              <div className="w-8 h-1 bg-white/20 rounded-full group-hover:bg-purple-400/40 transition-colors" />
+            </button>
+
+            {!audioPlayerCollapsed && (
+              <div className="px-3 sm:px-5 pb-3 pt-1 space-y-2">
+                {/* Seek scrubber row */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] sm:text-xs text-gray-400 tabular-nums w-8 sm:w-10 text-right shrink-0">{formatTime(audioCurrentTime)}</span>
+                  <div className="relative flex-1 h-2 group/seek">
+                    <div className="absolute inset-y-0 left-0 my-auto h-1 rounded-full bg-purple-600/30 w-full" />
+                    <div
+                      className="absolute inset-y-0 left-0 my-auto h-1 rounded-full bg-purple-500 pointer-events-none transition-all"
+                      style={{ width: audioDuration > 0 ? `${(audioCurrentTime / audioDuration) * 100}%` : '0%' }}
+                    />
+                    <input
+                      type="range"
+                      min={0}
+                      max={audioDuration || 0}
+                      step={0.5}
+                      value={audioCurrentTime}
+                      onChange={handleAudioSeek}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    />
+                  </div>
+                  <span className="text-[10px] sm:text-xs text-gray-400 tabular-nums w-8 sm:w-10 shrink-0">{formatTime(audioDuration)}</span>
+                </div>
+
+                {/* Controls row */}
+                <div className="flex items-center justify-between gap-2">
+                  {/* Audio label */}
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    <Volume2 size={13} className="text-purple-400 shrink-0" />
+                    <span className="text-[10px] sm:text-xs text-gray-400 truncate">Audio Narration</span>
+                  </div>
+
+                  {/* Playback Controls */}
+                  <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+                    {/* Skip -10s */}
+                    <button
+                      onClick={() => handleAudioSkip(-10)}
+                      className="p-1 sm:p-1.5 rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors flex flex-col items-center"
+                      title="Rewind 10 seconds"
+                    >
+                      <SkipBack size={14} className="sm:w-4 sm:h-4" />
+                      <span className="text-[8px] text-gray-500 leading-none">10s</span>
+                    </button>
+
+                    {/* Play / Pause */}
+                    <button
+                      onClick={handleAudioPlayPause}
+                      disabled={!audioReady}
+                      className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-purple-600 hover:bg-purple-500 disabled:opacity-40 flex items-center justify-center shadow-lg shadow-purple-600/30 transition-all active:scale-95"
+                      title={audioPlaying ? 'Pause' : 'Play'}
+                    >
+                      {audioPlaying
+                        ? <Pause size={16} className="sm:w-5 sm:h-5 text-white" fill="white" />
+                        : <Play size={16} className="sm:w-5 sm:h-5 text-white ml-0.5" fill="white" />
+                      }
+                    </button>
+
+                    {/* Skip +10s */}
+                    <button
+                      onClick={() => handleAudioSkip(10)}
+                      className="p-1 sm:p-1.5 rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors flex flex-col items-center"
+                      title="Forward 10 seconds"
+                    >
+                      <SkipForward size={14} className="sm:w-4 sm:h-4" />
+                      <span className="text-[8px] text-gray-500 leading-none">10s</span>
+                    </button>
+                  </div>
+
+                  {/* Speed Selector */}
+                  <div className="flex items-center gap-1 shrink-0">
+                    {SPEED_OPTIONS.map(sp => (
+                      <button
+                        key={sp}
+                        onClick={() => handleAudioSpeedChange(sp)}
+                        className={`text-[9px] sm:text-[10px] font-bold px-1 sm:px-1.5 py-0.5 rounded transition-colors ${
+                          audioSpeed === sp
+                            ? 'bg-purple-600 text-white'
+                            : 'text-gray-400 hover:text-white hover:bg-white/10'
+                        }`}
+                      >
+                        {sp}×
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Mini collapsed pill */}
+            {audioPlayerCollapsed && (
+              <div className="flex items-center justify-center gap-3 pb-2 px-4">
+                <button
+                  onClick={handleAudioPlayPause}
+                  disabled={!audioReady}
+                  className="w-7 h-7 rounded-full bg-purple-600 hover:bg-purple-500 disabled:opacity-40 flex items-center justify-center shadow-lg shadow-purple-600/30 transition-all"
+                >
+                  {audioPlaying
+                    ? <Pause size={12} className="text-white" fill="white" />
+                    : <Play size={12} className="text-white ml-0.5" fill="white" />
+                  }
+                </button>
+                <span className="text-[10px] text-gray-400 tabular-nums">{formatTime(audioCurrentTime)} / {formatTime(audioDuration)}</span>
+              </div>
+            )}
+          </div>
+        </>
+      )}
 
       {/* ── TEST PORTAL STYLE SECURITY VEIL & ALERT (0ms Synchronous Mask, Heavy Background Blur, Solid Opaque Card) ── */}
       <div

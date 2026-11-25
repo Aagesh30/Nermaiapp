@@ -12,9 +12,17 @@ export const CourseResources: React.FC<CourseResourcesProps> = ({ courseId }) =>
   const [groups, setGroups] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [subjectFilter, setSubjectFilter] = useState('');
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null);
+
+  const SUBJECT_OPTIONS = [
+    'History', 'Geography', 'Polity', 'Economy', 'Science & Technology',
+    'Environment', 'Current Affairs', 'Ethics', 'Art & Culture',
+    'International Relations', 'Internal Security', 'Social Issues',
+    'Disaster Management', 'General Studies', 'CSAT', 'Tamil Nadu Affairs', 'Other'
+  ];
 
   useEffect(() => {
     const fetchHierarchy = async () => {
@@ -83,25 +91,42 @@ export const CourseResources: React.FC<CourseResourcesProps> = ({ courseId }) =>
   return (
     <div className="mt-8 animate-in fade-in slide-in-from-bottom-4">
       
-      {/* Unified Search */}
-      <div className="mb-8 relative">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-        <input 
-          type="text" 
-          placeholder="Search across all resources..." 
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
-          className="w-full bg-surface border border-white/10 rounded-2xl pl-12 pr-4 py-4 text-white focus:border-accent focus:outline-none transition-colors"
-        />
+      {/* Search & Subject Filter */}
+      <div className="mb-6 flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+          <input 
+            type="text" 
+            placeholder="Search across all resources..." 
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            className="w-full bg-surface border border-white/10 rounded-2xl pl-12 pr-4 py-3.5 text-white focus:border-accent focus:outline-none transition-colors"
+          />
+        </div>
+        {/* Subject Filter */}
+        <select
+          value={subjectFilter}
+          onChange={e => setSubjectFilter(e.target.value)}
+          className="bg-surface border border-white/10 rounded-2xl px-4 py-3 text-white text-sm focus:border-accent focus:outline-none transition-colors min-w-[160px]"
+        >
+          <option value="">📚 All Subjects</option>
+          {SUBJECT_OPTIONS.map(s => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
       </div>
 
       <div className="space-y-4">
         {groups.map((group: any) => {
-          // Client side search filtering
-          const filteredResources = group.resources?.filter((r: any) => 
-            r.title?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-            r.description?.toLowerCase().includes(searchQuery.toLowerCase())
-          ) || [];
+          // Client side search + subject filtering
+          const filteredResources = group.resources?.filter((r: any) => {
+            const matchesSearch = !searchQuery ||
+              r.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+              r.description?.toLowerCase().includes(searchQuery.toLowerCase());
+            const matchesSubject = !subjectFilter ||
+              (r.subject || '').toLowerCase() === subjectFilter.toLowerCase();
+            return matchesSearch && matchesSubject;
+          }) || [];
 
           // Don't hide the group entirely if searching, just show empty. 
           // If not searching and count is 0, show it as collapsed.
@@ -153,6 +178,17 @@ export const CourseResources: React.FC<CourseResourcesProps> = ({ courseId }) =>
                             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-gray-500">
                               <span className="uppercase tracking-wider font-semibold text-gray-400">{res.type}</span>
                               
+                              {res.subject && (
+                                <span className="bg-purple-500/10 text-purple-300 border border-purple-500/20 px-1.5 py-0.5 rounded text-[10px] font-semibold">{res.subject}</span>
+                              )}
+                              
+                              {res.hasAudio && (
+                                <span className="bg-green-500/10 text-green-400 border border-green-500/20 px-1.5 py-0.5 rounded text-[10px] font-semibold flex items-center gap-0.5">
+                                  <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z" /></svg>
+                                  Audio
+                                </span>
+                              )}
+
                               {res.pageCount && (
                                 <><span>•</span><span>{res.pageCount} Pages</span></>
                               )}

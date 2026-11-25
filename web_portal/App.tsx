@@ -18,7 +18,8 @@ import {
   Animated,
   Easing,
   StatusBar as RNStatusBar,
-  AppState
+  AppState,
+  BackHandler
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView, initialWindowMetrics, useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -145,7 +146,6 @@ const TestWatermarkOverlay: React.FC<{ studentText?: string }> = ({ studentText 
         justifyContent: "center",
         alignItems: "center",
         zIndex: 1,
-        pointerEvents: "none",
         overflow: "hidden"
       }}
       pointerEvents="none"
@@ -170,9 +170,7 @@ const TestWatermarkOverlay: React.FC<{ studentText?: string }> = ({ studentText 
             justifyContent: "space-around",
             alignItems: "center",
             opacity: 0.08,
-            transform: [{ rotate: "-22deg" }, { scale: 1.15 }],
-            pointerEvents: "none",
-            userSelect: "none"
+            transform: [{ rotate: "-22deg" }, { scale: 1.15 }]
           }}
           pointerEvents="none"
         >
@@ -185,7 +183,6 @@ const TestWatermarkOverlay: React.FC<{ studentText?: string }> = ({ studentText 
                 color: "#c62828",
                 letterSpacing: 2,
                 textAlign: "center",
-                width: "140%",
                 textTransform: "uppercase"
               }}
               numberOfLines={1}
@@ -198,6 +195,72 @@ const TestWatermarkOverlay: React.FC<{ studentText?: string }> = ({ studentText 
     </View>
   );
 };
+
+const resolveWatermarkStudentName = (s: any) => {
+  if (!s) return "";
+  if (s.fullName && String(s.fullName).trim()) return String(s.fullName).trim();
+  if (s.name && String(s.name).trim()) return String(s.name).trim();
+  if (s.studentName && String(s.studentName).trim()) return String(s.studentName).trim();
+  if (s.candidateName && String(s.candidateName).trim()) return String(s.candidateName).trim();
+  const first = s.firstName || "";
+  const last = s.lastName || "";
+  const full = `${first} ${last}`.trim();
+  if (full) return full;
+  return s.username || s.loginUsername || s.email || "";
+};
+
+const resolveWatermarkStudent = (userObj: any, studentList?: any[]) => {
+  if (!userObj) return null;
+  if (Array.isArray(studentList) && studentList.length > 0) {
+    const found = studentList.find((s: any) => {
+      if (userObj.studentId && s.id === userObj.studentId) return true;
+      if (userObj.username && s.rollNumber && String(s.rollNumber).toLowerCase() === String(userObj.username).toLowerCase()) return true;
+      if (userObj.username && s.loginUsername && String(s.loginUsername).toLowerCase() === String(userObj.username).toLowerCase()) return true;
+      if (userObj.userId && s.id === userObj.userId) return true;
+      if (userObj.email && String(userObj.email).trim() !== "" && s.email && String(s.email).trim().toLowerCase() === String(userObj.email).trim().toLowerCase()) return true;
+      if (userObj.phone && String(userObj.phone).trim() !== "" && s.phone && String(s.phone).trim() === String(userObj.phone).trim()) return true;
+      return false;
+    });
+    if (found) return found;
+  }
+  return userObj;
+};
+
+const getExamWatermarkStudentText = (user: any, students?: any[], testObj?: any, attemptObj?: any) => {
+  if (!user) return attemptObj?.userId || "Student";
+  const loggedInStudent = resolveWatermarkStudent(user, students);
+  const sName = resolveWatermarkStudentName(loggedInStudent) || user?.name || user?.username || "Student";
+
+  const isSpecial = Boolean(
+    testObj?.isSpecialBatchTest ||
+    testObj?.isSpecialMock ||
+    testObj?.testType === "special_mock" ||
+    testObj?.targetAudience === "special_mock" ||
+    attemptObj?.isSpecialBatchTest ||
+    (testObj?.mockConfig?.mockRollNumbers && Object.keys(testObj.mockConfig.mockRollNumbers).length > 0)
+  );
+
+  let roll = "";
+  if (isSpecial) {
+    roll = testObj?.mockConfig?.mockRollNumbers?.[loggedInStudent?.id || ""] ||
+           testObj?.mockConfig?.mockRollNumbers?.[user?.userId || ""] ||
+           attemptObj?.specialRollNo ||
+           attemptObj?.mockRollNumber ||
+           loggedInStudent?.mockRollNumber ||
+           loggedInStudent?.specialRollNo ||
+           user?.mockRollNumber ||
+           user?.specialRollNo ||
+           "";
+  }
+  if (!roll) {
+    roll = attemptObj?.rollNumber || loggedInStudent?.rollNumber || user?.rollNumber || user?.username || "";
+  }
+
+  const rollPart = roll ? ` (${roll})` : "";
+  const emailPart = user?.email ? ` • ${user.email}` : "";
+  return `${sName}${rollPart}${emailPart}`;
+};
+
 
 const NativeDocumentWatermark: React.FC<{ user?: any; isDarkBackground?: boolean }> = ({ user, isDarkBackground = false }) => {
   const [phone, setPhone] = useState<string>("");
@@ -428,6 +491,7 @@ const Alert = {
 };
 
 import { StatusBar } from "expo-status-bar";
+import * as Font from "expo-font";
 import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
@@ -435,8 +499,8 @@ import * as ImageManipulator from "expo-image-manipulator";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { handleFirebaseGoogleSignIn, db } from "./firebaseConfig";
-import { initNotifications, requestNotificationPermission, showPhoneNotification, setupNotificationClickListener, registerForPushNotificationsAsync, sendRemotePushNotification, unregisterPushTokenAsync } from "./notifications";
-import { doc, setDoc, onSnapshot, collection, deleteDoc, query, where, addDoc, getDocs, orderBy, serverTimestamp } from "firebase/firestore";
+import { initNotifications, requestNotificationPermission, showPhoneNotification, setupNotificationClickListener, registerForPushNotificationsAsync, sendRemotePushNotification, unregisterPushTokenAsync, getLastNotificationData } from "./notifications";
+import { doc, setDoc, onSnapshot, collection, deleteDoc, query, where, limit, addDoc, getDocs, orderBy, serverTimestamp } from "firebase/firestore";
 
 const USE_NATIVE_DRIVER = Platform.OS !== "web";
 
@@ -837,8 +901,10 @@ if (Platform.OS === "web" && typeof document !== "undefined") {
   }
 }
 
-// Configure your Host IP address for local network connections
-const DEFAULT_HOST_IP = "192.168.0.120";
+// Production cloud API base URL
+const PRODUCTION_API_URL = "https://nermaiiasacademy-519c8.web.app/api";
+// Configure your Host IP address for local network connections ("production" routes to cloud backend)
+const DEFAULT_HOST_IP = "production";
 // Timeout in ms for all API calls — 30s to handle Firebase Cloud Function cold starts
 const API_TIMEOUT_MS = 30000;
 
@@ -1749,40 +1815,43 @@ function DatePickerField({
                 </TouchableOpacity>
               </View>
 
-              <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
+              <View style={{ flexDirection: "row", marginBottom: 8 }}>
                 {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map(d => (
-                  <Text key={d} style={{ width: 36, textAlign: "center", fontSize: 11, fontWeight: "bold", color: "#888" }}>{d}</Text>
+                  <View key={d} style={{ width: `${100 / 7}%`, alignItems: "center", justifyContent: "center" }}>
+                    <Text style={{ fontSize: 11, fontWeight: "bold", color: "#888" }}>{d}</Text>
+                  </View>
                 ))}
               </View>
 
               <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
                 {Array.from({ length: firstDayOfWeek }).map((_, i) => (
-                  <View key={`empty-${i}`} style={{ width: 36, height: 36 }} />
+                  <View key={`empty-${i}`} style={{ width: `${100 / 7}%`, height: 38 }} />
                 ))}
                 {Array.from({ length: daysInMonth }).map((_, i) => {
                   const day = i + 1;
                   const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
                   const isSel = value === dateStr;
                   return (
-                    <TouchableOpacity
-                      key={`day-${day}`}
-                      onPress={() => {
-                        onChange(dateStr);
-                        setShowModal(false);
-                      }}
-                      style={{
-                        width: 36,
-                        height: 36,
-                        justifyContent: "center",
-                        alignItems: "center",
-                        borderRadius: 18,
-                        backgroundColor: isSel ? "#c62828" : "transparent"
-                      }}
-                    >
-                      <Text style={{ fontSize: 12, color: isSel ? "#fff" : (darkMode ? "#ddd" : "#212121"), fontWeight: isSel ? "bold" : "normal" }}>
-                        {day}
-                      </Text>
-                    </TouchableOpacity>
+                    <View key={`day-${day}`} style={{ width: `${100 / 7}%`, height: 38, alignItems: "center", justifyContent: "center" }}>
+                      <TouchableOpacity
+                        onPress={() => {
+                          onChange(dateStr);
+                          setShowModal(false);
+                        }}
+                        style={{
+                          width: 32,
+                          height: 32,
+                          justifyContent: "center",
+                          alignItems: "center",
+                          borderRadius: 16,
+                          backgroundColor: isSel ? "#c62828" : "transparent"
+                        }}
+                      >
+                        <Text style={{ fontSize: 12, color: isSel ? "#fff" : (darkMode ? "#ddd" : "#212121"), fontWeight: isSel ? "bold" : "normal" }}>
+                          {day}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   );
                 })}
               </View>
@@ -1969,7 +2038,7 @@ function SplashScreen({ onDone }: { onDone: () => void }) {
           overflow: "hidden"
         }}>
           <Image
-            source={require("./assets/logo.png")}
+            source={require("./assets/logo.webp")}
             style={{ width: 120, height: 120, borderRadius: 60 }}
             resizeMode="cover"
           />
@@ -2198,7 +2267,7 @@ function OnboardingScreens({ onDone }: { onDone: () => void }) {
         {/* Header */}
         <View style={{ paddingTop: Math.max(insets.top, 20) + (isCompactHeight ? 6 : 14), paddingHorizontal: 24, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-            <Image source={require("./assets/logo.png")} style={{ width: 34, height: 34, borderRadius: 17, borderWidth: 1.5, borderColor: isGold ? "rgba(198,40,40,0.3)" : "rgba(255,255,255,0.4)" }} />
+            <Image source={require("./assets/logo.webp")} style={{ width: 34, height: 34, borderRadius: 17, borderWidth: 1.5, borderColor: isGold ? "rgba(198,40,40,0.3)" : "rgba(255,255,255,0.4)" }} />
             <View>
               <Text style={{ fontSize: 13, fontWeight: "900", color: headerLogoTextCol, letterSpacing: 0.8 }}>NERMAI</Text>
               <Text style={{ fontSize: 9, fontWeight: "700", color: isGold ? "rgba(198,40,40,0.75)" : "rgba(255,255,255,0.75)", letterSpacing: 1.2 }}>IAS ACADEMY</Text>
@@ -2832,7 +2901,9 @@ const NativeDailyImageZoomView = ({ imgSrc, darkMode }: { imgSrc: string; darkMo
 };
 
 const buildNativePdfViewerHtml = (sourceUrlOrBase64: string, docTitle: string = "Document Viewer", watermarkStr: string = "") => {
-  const isDataUri = sourceUrlOrBase64.startsWith("data:") || !sourceUrlOrBase64.startsWith("http");
+  // file:// URIs are passed as a URL directly to PDF.js (no Base64 embedding needed)
+  const isFileUri = sourceUrlOrBase64.startsWith("file://");
+  const isDataUri = !isFileUri && (sourceUrlOrBase64.startsWith("data:") || !sourceUrlOrBase64.startsWith("http"));
   let base64Clean = "";
   if (isDataUri) {
     base64Clean = sourceUrlOrBase64.replace(/^data:[^;]+;base64,/, "").replace(/\s+/g, "");
@@ -2984,15 +3055,15 @@ const buildNativePdfViewerHtml = (sourceUrlOrBase64: string, docTitle: string = 
     function renderPdf() {
       try {
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-        var loadingTask = ${isDataUri ? `pdfjsLib.getDocument({ data: atob("${base64Clean}") })` : `pdfjsLib.getDocument("${sourceUrlOrBase64}")`};
+        // file:// and http(s):// URIs are loaded as a URL; Base64 data URIs are decoded inline
+        var loadingTask = ${isDataUri ? `pdfjsLib.getDocument({ data: atob("${base64Clean}") })` : `pdfjsLib.getDocument({ url: "${sourceUrlOrBase64}", isEvalSupported: false })`};
         loadingTask.promise.then(function(pdf) {
           pdfDoc = pdf;
-          statusMsg.style.display = 'none';
           pageCounter.innerText = pdf.numPages + ' Page' + (pdf.numPages === 1 ? '' : 's');
           var renderPage = function(num) {
             if (num > pdf.numPages) return;
             pdf.getPage(num).then(function(page) {
-              var viewport = page.getViewport({ scale: 2.0 });
+              var viewport = page.getViewport({ scale: 1.5 });
               var wrapper = document.createElement('div');
               wrapper.className = 'pdf-page-wrapper';
               var canvas = document.createElement('canvas');
@@ -3002,7 +3073,10 @@ const buildNativePdfViewerHtml = (sourceUrlOrBase64: string, docTitle: string = 
               wrapper.appendChild(canvas);
               container.appendChild(wrapper);
               page.render({ canvasContext: ctx, viewport: viewport }).promise.then(function() {
-                renderPage(num + 1);
+                if (num === 1) {
+                  statusMsg.style.display = 'none';
+                }
+                setTimeout(function() { renderPage(num + 1); }, 16);
               });
             });
           };
@@ -3074,6 +3148,279 @@ const hidePopOutJs = `
   true;
 `;
 
+const getNativeFileSystem = () => {
+  if (Platform.OS === "web") return null;
+  try {
+    return require("expo-file-system/legacy");
+  } catch (_) {
+    try {
+      return require("expo-file-system");
+    } catch (_) {
+      return null;
+    }
+  }
+};
+const buildNativeAudioPlayerHtml = (audioUrl: string) => {
+  const safeAudioUrl = (audioUrl || '').replace(/"/g, '&quot;');
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    background: linear-gradient(to top, rgba(10,14,26,0.98) 0%, rgba(15,20,35,0.95) 100%);
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+    height: 100%;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .player-wrap {
+    padding: 6px 14px 8px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    height: 100%;
+    justify-content: center;
+  }
+  .scrubber-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+  }
+  .time-txt {
+    font-size: 10px;
+    color: #9ca3af;
+    font-variant-numeric: tabular-nums;
+    min-width: 30px;
+  }
+  .time-right { text-align: right; }
+  .track-wrap {
+    position: relative;
+    flex: 1;
+    height: 16px;
+    display: flex;
+    align-items: center;
+  }
+  .track-bg {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: rgba(139, 92, 246, 0.25);
+    border-radius: 4px;
+  }
+  .track-fill {
+    position: absolute;
+    left: 0;
+    height: 4px;
+    background: #8b5cf6;
+    border-radius: 4px;
+    width: 0%;
+  }
+  .scrubber {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    margin: 0;
+    cursor: pointer;
+  }
+  .controls-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
+  .label-group {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: #a78bfa;
+    font-weight: 600;
+  }
+  .center-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .btn-skip {
+    background: none;
+    border: none;
+    color: #9ca3af;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 4px;
+  }
+  .btn-skip svg { width: 16px; height: 16px; fill: currentColor; }
+  .btn-skip span { font-size: 8px; color: #6b7280; margin-top: 1px; }
+  .btn-play {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #8b5cf6;
+    border: none;
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
+  }
+  .btn-play:active { transform: scale(0.95); }
+  .btn-play svg { width: 18px; height: 18px; fill: #fff; }
+  .speed-group {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .speed-btn {
+    background: none;
+    border: none;
+    color: #9ca3af;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 5px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .speed-btn.active {
+    background: #8b5cf6;
+    color: #fff;
+  }
+</style>
+</head>
+<body>
+  <audio id="audio" src="${safeAudioUrl}" preload="auto" playsinline></audio>
+  <div class="player-wrap">
+    <div class="scrubber-row">
+      <span id="cur-time" class="time-txt">0:00</span>
+      <div class="track-wrap">
+        <div class="track-bg"></div>
+        <div id="track-fill" class="track-fill"></div>
+        <input id="scrubber" class="scrubber" type="range" min="0" max="0" step="0.5" value="0">
+      </div>
+      <span id="dur-time" class="time-txt time-right">0:00</span>
+    </div>
+    <div class="controls-row">
+      <div class="label-group">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
+        <span>Audio</span>
+      </div>
+      <div class="center-controls">
+        <button id="btn-back" class="btn-skip" title="Rewind 10s">
+          <svg viewBox="0 0 24 24"><polygon points="19 20 9 12 19 4 19 20"></polygon><line x1="5" y1="19" x2="5" y2="5" stroke="currentColor" stroke-width="2"></line></svg>
+          <span>10s</span>
+        </button>
+        <button id="btn-play" class="btn-play" title="Play">
+          <svg id="icon-play" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+          <svg id="icon-pause" viewBox="0 0 24 24" style="display:none;"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+        </button>
+        <button id="btn-fwd" class="btn-skip" title="Forward 10s">
+          <svg viewBox="0 0 24 24"><polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" stroke-width="2"></line></svg>
+          <span>10s</span>
+        </button>
+      </div>
+      <div class="speed-group">
+        <button class="speed-btn" data-speed="1">1×</button>
+        <button class="speed-btn active" data-speed="1.25">1.25×</button>
+        <button class="speed-btn" data-speed="1.5">1.5×</button>
+      </div>
+    </div>
+  </div>
+  <script>
+    var audio = document.getElementById('audio');
+    var curTime = document.getElementById('cur-time');
+    var durTime = document.getElementById('dur-time');
+    var trackFill = document.getElementById('track-fill');
+    var scrubber = document.getElementById('scrubber');
+    var btnPlay = document.getElementById('btn-play');
+    var iconPlay = document.getElementById('icon-play');
+    var iconPause = document.getElementById('icon-pause');
+    var btnBack = document.getElementById('btn-back');
+    var btnFwd = document.getElementById('btn-fwd');
+    var speedBtns = document.querySelectorAll('.speed-btn');
+
+    audio.playbackRate = 1.25;
+
+    function formatTime(s) {
+      if (!s || !isFinite(s) || s < 0) return '0:00';
+      var m = Math.floor(s / 60);
+      var sec = Math.floor(s % 60);
+      return m + ':' + (sec < 10 ? '0' : '') + sec;
+    }
+
+    function updateProgress() {
+      var d = audio.duration || 0;
+      var c = audio.currentTime || 0;
+      curTime.innerText = formatTime(c);
+      if (isFinite(d) && d > 0) {
+        durTime.innerText = formatTime(d);
+        scrubber.max = d;
+        scrubber.value = c;
+        trackFill.style.width = (c / d * 100) + '%';
+      }
+    }
+
+    audio.addEventListener('timeupdate', updateProgress);
+    audio.addEventListener('loadedmetadata', updateProgress);
+    audio.addEventListener('durationchange', updateProgress);
+    audio.addEventListener('canplay', function() {
+      updateProgress();
+    });
+
+    audio.addEventListener('play', function() {
+      iconPlay.style.display = 'none';
+      iconPause.style.display = 'block';
+    });
+    audio.addEventListener('pause', function() {
+      iconPlay.style.display = 'block';
+      iconPause.style.display = 'none';
+    });
+
+    btnPlay.addEventListener('click', function() {
+      if (audio.paused) {
+        audio.play().catch(function(err) { console.error('Audio play error:', err); });
+      } else {
+        audio.pause();
+      }
+    });
+
+    btnBack.addEventListener('click', function() {
+      audio.currentTime = Math.max(0, audio.currentTime - 10);
+      updateProgress();
+    });
+    btnFwd.addEventListener('click', function() {
+      audio.currentTime = Math.min((audio.duration || 0), audio.currentTime + 10);
+      updateProgress();
+    });
+
+    scrubber.addEventListener('input', function() {
+      audio.currentTime = parseFloat(scrubber.value);
+      updateProgress();
+    });
+
+    speedBtns.forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        speedBtns.forEach(function(b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        var sp = parseFloat(btn.getAttribute('data-speed'));
+        audio.playbackRate = sp;
+      });
+    });
+  </script>
+</body>
+</html>`;
+};
+
 const NativeResourceModal = React.memo(({
   resourceId,
   onClose,
@@ -3090,18 +3437,85 @@ const NativeResourceModal = React.memo(({
   getBaseUrl?: () => string;
 }) => {
   const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<{ url: string; title: string; type: string; isDrive: boolean; drivePreviewUrl: string } | null>(null);
+  const [data, setData] = useState<{ url: string; title: string; type: string; isDrive: boolean; drivePreviewUrl: string; audioUrl?: string | null } | null>(null);
   const [error, setError] = useState('');
+
+  // ── Screen capture prevention for secure study material viewing ──
+  useEffect(() => {
+    try {
+      ScreenCapture.preventScreenCaptureAsync().catch(() => { });
+    } catch (_) { }
+    return () => {
+      try {
+        ScreenCapture.allowScreenCaptureAsync().catch(() => { });
+      } catch (_) { }
+    };
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
     (async () => {
+      const fs = getNativeFileSystem();
+      const cacheFilePath = fs?.cacheDirectory ? `${fs.cacheDirectory}res_pdf_${resourceId}.pdf` : null;
+      let hasLoadedFromCache = false;
+
+      // ── Step 1: Instant local phone sandbox cache lookup (opens in ~0.05s) ──
+      // Read local cache file into Base64 for small files (<= 3MB) to protect against OOM crashes
+      if (cacheFilePath) {
+        try {
+          const info = await fs.getInfoAsync(cacheFilePath);
+          if (info?.exists && (info?.size ?? 0) > 1000 && (info?.size ?? 0) <= 3 * 1024 * 1024) {
+            const b64 = await fs.readAsStringAsync(cacheFilePath, {
+              encoding: fs.EncodingType?.Base64 || "base64"
+            });
+            if (b64 && b64.length > 100 && isMounted) {
+              hasLoadedFromCache = true;
+              setData({
+                url: `data:application/pdf;base64,${b64}`,
+                title: 'Study Material',
+                type: 'pdf',
+                isDrive: false,
+                drivePreviewUrl: ''
+              });
+              setLoading(false);
+            }
+          }
+        } catch (cacheErr) {
+          console.log("Local PDF cache check note:", cacheErr);
+        }
+      }
+
+      // ── Step 2: Parallel metadata & access validation with backend ──
       try {
-        const res = await api.get(`/resources/${resourceId}`);
+        const [res, acc] = await Promise.all([
+          api.get(`/resources/${resourceId}`).catch((e: any) => ({ error: e })),
+          api.get(`/resources/${resourceId}/access`).catch((e: any) => ({ error: e }))
+        ]);
+
         const resource = res?.data !== undefined ? (res?.data?.data || res?.data) : (res || {});
-        const acc = await api.get(`/resources/${resourceId}/access`);
         const access = acc?.data !== undefined ? (acc?.data?.data || acc?.data) : (acc || {});
+
+        // If admin deleted the resource or access is revoked, purge local cache immediately
+        if (resource?.isDeleted || res?.error?.status === 404 || String(res?.error?.message || '').includes('404')) {
+          if (cacheFilePath && fs) {
+            try {
+              await fs.deleteAsync(cacheFilePath, { idempotent: true });
+            } catch (_) {}
+          }
+          if (isMounted) {
+            setData(null);
+            setError("This study material has been removed by the academy.");
+            setLoading(false);
+          }
+          return;
+        }
+
         const fallbackBase = getBaseUrl ? getBaseUrl() : 'https://nermaiiasacademy-519c8.web.app/api';
+        let rawAudioUrl = access?.audioUrl || resource?.audioUrl || null;
+        if (rawAudioUrl && rawAudioUrl.startsWith('/')) {
+          const baseOrigin = fallbackBase.replace(/\/api\/?$/, '');
+          rawAudioUrl = `${baseOrigin}${rawAudioUrl}`;
+        }
         let targetUrl = access?.viewerUrl || access?.signedUrl || resource?.sourceUrl || `${fallbackBase}/resources/${resourceId}/content?token=${user?.token || ""}`;
 
         const rawType = (resource?.type || '').toLowerCase();
@@ -3135,21 +3549,22 @@ const NativeResourceModal = React.memo(({
           targetUrl.startsWith('data:image/')
         );
 
-        // Extract drive ID ONLY if this resource is actually hosted on Google Drive
-        const isGoogleDriveProvider = resource?.provider === 'google_drive' || String(resource?.sourceUrl || '').includes('drive.google.com') || String(access?.viewerUrl || '').includes('drive.google.com');
-        let driveId: string | null = null;
-        if (isGoogleDriveProvider) {
-          const driveCandidates = [resource?.sourceUrl, resource?.url, access?.viewerUrl, targetUrl].filter(Boolean);
-          for (const cand of driveCandidates) {
-            const str = String(cand);
-            const m1 = str.match(/\/file\/d\/([-\w]{25,})/);
-            if (m1 && m1[1]) { driveId = m1[1]; break; }
-            const m2 = str.match(/[?&]id=([-\w]{25,})/);
-            if (m2 && m2[1]) { driveId = m2[1]; break; }
-            if (str.includes('drive.google.com') || str.includes('docs.google.com')) {
-              const m3 = str.match(/([-\w]{25,})/);
-              if (m3 && m3[1]) { driveId = m3[1]; break; }
-            }
+        // ── Drive ID resolution: use backend's authoritative driveId first ──
+        // access.driveId is set by the backend whenever the resource's storage path
+        // decrypts to a Google Drive URL (even if provider is mislabeled as firebase_storage).
+        // This avoids regex-guessing against encrypted ciphertext, which was causing
+        // garbage driveIds and falling through to the 56MB download + base64 path.
+        let driveId: string | null = access?.driveId || null;
+
+        // Only fall back to string extraction when the backend didn't supply driveId.
+        // This preserves the existing behavior for genuinely non-Drive resources.
+        if (!driveId) {
+          const rawDriveStr = candidateStrings.find(s => s.includes('drive.google.com') || s.includes('/file/d/')) || resource?.sourceUrl || resource?.url || (access?.viewerUrl?.includes('drive.google.com') ? access.viewerUrl : '') || (targetUrl.includes('drive.google.com') ? targetUrl : '');
+          // Only match against strings that actually contain drive.google.com — do NOT
+          // fall through to the loose /([-\w]{25,})/ regex on encrypted storagePath ciphertext.
+          if (rawDriveStr) {
+            const driveMatch = String(rawDriveStr).match(/\/file\/d\/([-\w]{25,})/) || String(rawDriveStr).match(/[?&]id=([-\w]{25,})/);
+            driveId = driveMatch ? (driveMatch[1] || driveMatch[0]) : null;
           }
         }
 
@@ -3195,8 +3610,6 @@ const NativeResourceModal = React.memo(({
         if (isImg) {
           if (driveId) {
             targetUrl = `https://lh3.googleusercontent.com/d/${driveId}`;
-          } else if (access?.viewerUrl && (access.viewerUrl.startsWith('http://') || access.viewerUrl.startsWith('https://'))) {
-            targetUrl = access.viewerUrl;
           } else if (access?.cdnUrl && (access.cdnUrl.startsWith('http://') || access.cdnUrl.startsWith('https://'))) {
             targetUrl = access.cdnUrl;
           } else if (access?.signedUrl && (access.signedUrl.startsWith('http://') || access.signedUrl.startsWith('https://'))) {
@@ -3204,22 +3617,98 @@ const NativeResourceModal = React.memo(({
           } else if (resource?.sourceUrl && (resource.sourceUrl.startsWith('http://') || resource.sourceUrl.startsWith('https://'))) {
             targetUrl = resource.sourceUrl;
           }
+
+          if (isMounted) {
+            setData({
+              url: targetUrl,
+              title: resource?.title || 'Resource Image',
+              type: 'image',
+              isDrive: false,
+              drivePreviewUrl: '',
+              audioUrl: rawAudioUrl
+            });
+            setLoading(false);
+          }
+          return;
         }
 
         const drivePreviewUrl = driveId ? `https://drive.google.com/file/d/${driveId}/preview` : '';
-        const isDrive = Boolean(driveId && !isImg);
+        const isDrive = Boolean(driveId);
+
+        // ── Step 3: Drive resources open instantly via cloud preview — no download or Base64 needed ──
+        if (isDrive) {
+          // Purge any bloated local file from previous failed attempts to prevent memory exhaustion
+          if (cacheFilePath && fs) {
+            fs.deleteAsync(cacheFilePath, { idempotent: true }).catch(() => {});
+          }
+          if (isMounted) {
+            setData({
+              url: drivePreviewUrl,
+              title: resource?.title || 'Resource Document',
+              type: 'pdf',
+              isDrive: true,
+              drivePreviewUrl,
+              audioUrl: rawAudioUrl
+            });
+            setLoading(false);
+          }
+          return;
+        }
+
+        // ── If already loaded from cache, just update the real title and audioUrl and return ──
+        if (hasLoadedFromCache) {
+          if (isMounted) {
+            setData(prev => prev ? { ...prev, title: resource?.title || prev.title, audioUrl: rawAudioUrl } : null);
+          }
+          return;
+        }
+
+        // For non-Drive resources only: download to phone local sandbox cache.
+        let downloadUrl = "";
+        if (access?.signedUrl && (access.signedUrl.startsWith('http://') || access.signedUrl.startsWith('https://'))) {
+          downloadUrl = access.signedUrl;
+        } else if (access?.cdnUrl && (access.cdnUrl.startsWith('http://') || access.cdnUrl.startsWith('https://'))) {
+          downloadUrl = access.cdnUrl;
+        } else {
+          downloadUrl = `${fallbackBase}/resources/${resourceId}/content?token=${user?.token || ""}`;
+        }
+
+        if (cacheFilePath && fs && downloadUrl) {
+          try {
+            const dlResult = await fs.downloadAsync(downloadUrl, cacheFilePath, {
+              headers: user?.token ? { Authorization: `Bearer ${user.token}` } : {}
+            });
+            if (dlResult && dlResult.status === 200 && dlResult.uri) {
+              const fileStat = await fs.getInfoAsync(dlResult.uri);
+              // Only convert to Base64 if small (<= 3MB) to protect against Out-Of-Memory crashes
+              if ((fileStat?.size ?? 0) <= 3 * 1024 * 1024) {
+                const b64 = await fs.readAsStringAsync(dlResult.uri, {
+                  encoding: fs.EncodingType?.Base64 || "base64"
+                });
+                if (b64 && b64.length > 100) {
+                  targetUrl = `data:application/pdf;base64,${b64}`;
+                }
+              } else {
+                targetUrl = dlResult.uri;
+              }
+            }
+          } catch (dlErr) {
+            console.log("PDF download to cache note:", dlErr);
+          }
+        }
 
         if (isMounted) {
           setData({
             url: targetUrl,
             title: resource?.title || 'Resource Document',
-            type: isImg ? 'image' : 'pdf',
-            isDrive,
-            drivePreviewUrl
+            type: 'pdf',
+            isDrive: false,
+            drivePreviewUrl: '',
+            audioUrl: rawAudioUrl
           });
         }
       } catch (err: any) {
-        if (isMounted) setError(err.message || 'Failed to load resource');
+        if (isMounted && !hasLoadedFromCache) setError(err.message || 'Failed to load resource');
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -3232,42 +3721,52 @@ const NativeResourceModal = React.memo(({
   const uPhone = user?.phone || user?.mobile || user?.phoneNumber || user?.email || "";
   const nativeWatermarkText = uPhone ? `${uName} • ${uPhone}` : uName;
 
+  const docUrl = data?.url || "";
+  const isExternalHttp = docUrl.startsWith("http://") || docUrl.startsWith("https://");
+  const webViewSource = useMemo(() => {
+    if (!docUrl) return { html: "<div></div>" };
+    if (isExternalHttp) {
+      return { uri: docUrl.includes('drive.google.com') ? docUrl : `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(docUrl)}` };
+    }
+    return { html: buildNativePdfViewerHtml(docUrl, "Document", nativeWatermarkText) };
+  }, [docUrl, isExternalHttp, nativeWatermarkText]);
+
   return (
     <Modal visible={true} transparent={false} animationType="fade" onRequestClose={onClose}>
       <SafeAreaView style={{ flex: 1, backgroundColor: "#0f1219" }}>
         {/* Header */}
         <View style={{
-          height: 54,
+          height: 60,
           borderBottomWidth: 1,
           borderBottomColor: "rgba(255,255,255,0.08)",
           backgroundColor: "#151923",
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "space-between",
-          paddingHorizontal: 12
+          paddingHorizontal: 16
         }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1, marginRight: 8 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1, marginRight: 8 }}>
             <TouchableOpacity onPress={onClose} style={{ padding: 6, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.06)" }}>
-              <Ionicons name="close" size={18} color="#fff" />
+              <Ionicons name="close" size={20} color="#fff" />
             </TouchableOpacity>
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 13, flexShrink: 1 }} numberOfLines={1}>
+                <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 14, flexShrink: 1 }} numberOfLines={1}>
                   {data?.title || "Resource"}
                 </Text>
-                <View style={{ backgroundColor: "rgba(16,185,129,0.2)", paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 4, flexDirection: "row", alignItems: "center", gap: 2 }}>
-                  <Ionicons name="shield-checkmark" size={9} color="#34d399" />
-                  <Text style={{ color: "#34d399", fontSize: 8.5, fontWeight: "bold" }}>SECURE</Text>
+                <View style={{ backgroundColor: "rgba(16,185,129,0.2)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, flexDirection: "row", alignItems: "center", gap: 3 }}>
+                  <Ionicons name="shield-checkmark" size={10} color="#34d399" />
+                  <Text style={{ color: "#34d399", fontSize: 9, fontWeight: "bold" }}>SECURE</Text>
                 </View>
               </View>
-              <Text style={{ color: "#9ca3af", fontSize: 10 }}>{isImg ? "IMAGE" : "PDF"} • v1</Text>
+              <Text style={{ color: "#9ca3af", fontSize: 11 }}>{isImg ? "IMAGE" : "PDF"} • In-App Fast Viewer</Text>
             </View>
           </View>
 
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            <View style={{ backgroundColor: "rgba(239,68,68,0.15)", borderWidth: 1, borderColor: "rgba(239,68,68,0.3)", paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 3 }}>
-              <Ionicons name="eye-off-outline" size={11} color="#f87171" />
-              <Text style={{ color: "#f87171", fontSize: 9.5, fontWeight: "bold" }}>No Download</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <View style={{ backgroundColor: "rgba(239,68,68,0.15)", borderWidth: 1, borderColor: "rgba(239,68,68,0.3)", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 4 }}>
+              <Ionicons name="eye-off-outline" size={12} color="#f87171" />
+              <Text style={{ color: "#f87171", fontSize: 10, fontWeight: "bold" }}>No Download</Text>
             </View>
           </View>
         </View>
@@ -3277,7 +3776,7 @@ const NativeResourceModal = React.memo(({
           {loading ? (
             <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
               <ActivityIndicator size="large" color="#c62828" />
-              <Text style={{ color: "#fff", marginTop: 12, fontSize: 12 }}>Loading secure viewer...</Text>
+              <Text style={{ color: "#fff", marginTop: 12, fontSize: 12 }}>Loading secure document...</Text>
             </View>
           ) : error ? (
             <View style={{ flex: 1, padding: 24, justifyContent: "center", alignItems: "center" }}>
@@ -3302,7 +3801,7 @@ const NativeResourceModal = React.memo(({
                     domStorageEnabled={true}
                     thirdPartyCookiesEnabled={true}
                     sharedCookiesEnabled={true}
-                    scalesPageToFit={true}
+                    userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
                     injectedJavaScript={hidePopOutJs}
                     onShouldStartLoadWithRequest={(req) => {
                       if (
@@ -3352,21 +3851,20 @@ const NativeResourceModal = React.memo(({
           ) : (
             (() => {
               const { WebView } = require("react-native-webview");
-              const docUrl = data?.url || "";
-              const isExternalHttp = docUrl.startsWith("http://") || docUrl.startsWith("https://");
-              const webViewSource = isExternalHttp
-                ? { uri: docUrl.includes('drive.google.com') ? docUrl : `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(docUrl)}` }
-                : { html: buildNativePdfViewerHtml(docUrl, data?.title, nativeWatermarkText) };
               return (
                 <View style={{ flex: 1, width: "100%", height: "100%", position: "relative" }}>
                   <WebView
+                    key={docUrl}
                     source={webViewSource}
                     style={{ flex: 1, width: "100%", height: "100%", backgroundColor: "#0b0e17" }}
                     javaScriptEnabled={true}
                     domStorageEnabled={true}
                     thirdPartyCookiesEnabled={true}
                     sharedCookiesEnabled={true}
-                    scalesPageToFit={true}
+                    allowFileAccess={true}
+                    allowFileAccessFromFileURLs={true}
+                    allowUniversalAccessFromFileURLs={true}
+                    userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
                     injectedJavaScript={hidePopOutJs}
                     onShouldStartLoadWithRequest={(req) => {
                       if (
@@ -3416,6 +3914,31 @@ const NativeResourceModal = React.memo(({
           {/* Native Static 2-Location Watermark overlaying document/image */}
           <NativeDocumentWatermark user={user} isDarkBackground={isImg} />
         </View>
+
+        {/* ── Native Mobile Bottom Audio Player Bar ── */}
+        {Boolean(data?.audioUrl) && (() => {
+          const { WebView } = require("react-native-webview");
+          return (
+            <View style={{
+              height: 74,
+              width: "100%",
+              backgroundColor: "#0a0e1a",
+              borderTopWidth: 1,
+              borderTopColor: "rgba(139,92,246,0.3)"
+            }}>
+              <WebView
+                source={{ html: buildNativeAudioPlayerHtml(data!.audioUrl!) }}
+                style={{ flex: 1, backgroundColor: "#0a0e1a" }}
+                javaScriptEnabled={true}
+                domStorageEnabled={true}
+                mediaPlaybackRequiresUserAction={false}
+                allowsInlineMediaPlayback={true}
+                originWhitelist={['*']}
+                scrollEnabled={false}
+              />
+            </View>
+          );
+        })()}
       </SafeAreaView>
     </Modal>
   );
@@ -3434,6 +3957,9 @@ const NativeDailyContentModal = React.memo(({
   darkMode: boolean;
   user: any;
 }) => {
+  const [loading, setLoading] = useState(true);
+  const [dataUri, setDataUri] = useState<string | null>(null);
+
   const rawType = (content?.type || '').toLowerCase();
   const rawUrl = content?.url || displaySrc || '';
 
@@ -3473,6 +3999,78 @@ const NativeDailyContentModal = React.memo(({
   if (isImg && driveId) {
     targetSrc = `https://lh3.googleusercontent.com/d/${driveId}`;
   }
+
+  // ── Screen capture prevention for secure daily document viewing ──
+  useEffect(() => {
+    try {
+      ScreenCapture.preventScreenCaptureAsync().catch(() => { });
+    } catch (_) { }
+    return () => {
+      try {
+        ScreenCapture.allowScreenCaptureAsync().catch(() => { });
+      } catch (_) { }
+    };
+  }, []);
+
+  // ── Local caching for Daily Content PDF ──
+  useEffect(() => {
+    let isMounted = true;
+    if (isImg || !targetSrc) {
+      setLoading(false);
+      return;
+    }
+
+    (async () => {
+      const fs = getNativeFileSystem();
+      const dailyKey = content?.id || driveId || 'daily_doc';
+      const cacheFilePath = fs?.cacheDirectory ? `${fs.cacheDirectory}daily_pdf_${dailyKey}.pdf` : null;
+
+      if (cacheFilePath) {
+        try {
+          const info = await fs.getInfoAsync(cacheFilePath);
+          if (info?.exists && info?.size > 1000) {
+            const b64 = await fs.readAsStringAsync(cacheFilePath, {
+              encoding: fs.EncodingType?.Base64 || "base64"
+            });
+            if (b64 && b64.length > 100 && isMounted) {
+              setDataUri(`data:application/pdf;base64,${b64}`);
+              setLoading(false);
+              return;
+            }
+          }
+        } catch (cErr) {
+          console.log("Daily PDF cache check note:", cErr);
+        }
+      }
+
+      // If not cached, download to local cache
+      const downloadUrl = driveId
+        ? `https://nermaiiasacademy-519c8.web.app/api/resources/stream/drive/${driveId}`
+        : targetSrc;
+
+      if (cacheFilePath && fs && downloadUrl && (downloadUrl.startsWith("http://") || downloadUrl.startsWith("https://"))) {
+        try {
+          const dlResult = await fs.downloadAsync(downloadUrl, cacheFilePath);
+          if (dlResult && dlResult.status === 200 && dlResult.uri) {
+            const b64 = await fs.readAsStringAsync(dlResult.uri, {
+              encoding: fs.EncodingType?.Base64 || "base64"
+            });
+            if (b64 && b64.length > 100 && isMounted) {
+              setDataUri(`data:application/pdf;base64,${b64}`);
+              setLoading(false);
+              return;
+            }
+          }
+        } catch (dlErr) {
+          console.log("Daily PDF download note:", dlErr);
+        }
+      }
+
+      if (isMounted) setLoading(false);
+    })();
+
+    return () => { isMounted = false; };
+  }, [content?.id, driveId, targetSrc, isImg]);
 
   const contentTypeLabel = isImg ? 'IMAGE' : (content?.type ? content.type.toUpperCase() : 'PDF');
   const uName = user?.name || user?.username || user?.displayName || "Student";
@@ -3521,7 +4119,12 @@ const NativeDailyContentModal = React.memo(({
 
         {/* Content */}
         <View style={{ flex: 1, backgroundColor: "#000", width: "100%", position: "relative" }}>
-          {!targetSrc ? (
+          {loading ? (
+            <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+              <ActivityIndicator size="large" color="#c62828" />
+              <Text style={{ color: "#fff", marginTop: 12, fontSize: 12 }}>Loading document...</Text>
+            </View>
+          ) : !targetSrc ? (
             <View style={{ flex: 1, padding: 24, justifyContent: "center", alignItems: "center" }}>
               <Ionicons name="alert-circle-outline" size={48} color="#ef4444" />
               <Text style={{ color: "#fff", fontSize: 15, fontWeight: "bold", marginTop: 8 }}>Content Not Available</Text>
@@ -3532,14 +4135,19 @@ const NativeDailyContentModal = React.memo(({
             </View>
           ) : isImg ? (
             <NativeDailyImageZoomView imgSrc={targetSrc} darkMode={true} />
-          ) : driveId ? (
+          ) : (
             (() => {
               const { WebView } = require("react-native-webview");
-              const drivePreview = `https://drive.google.com/file/d/${driveId}/preview`;
+              const pdfSrc = dataUri || (driveId ? `https://drive.google.com/file/d/${driveId}/preview` : targetSrc);
+              const isHtml = Boolean(dataUri || (!pdfSrc.startsWith("http://") && !pdfSrc.startsWith("https://")));
+              const webSource = isHtml
+                ? { html: buildNativePdfViewerHtml(dataUri || pdfSrc, content?.title, nativeWatermarkText) }
+                : { uri: pdfSrc };
+
               return (
                 <View style={{ flex: 1, width: "100%", height: "100%", position: "relative" }}>
                   <WebView
-                    source={{ uri: drivePreview }}
+                    source={webSource}
                     style={{ flex: 1, width: "100%", height: "100%", backgroundColor: "#0b0e17" }}
                     javaScriptEnabled={true}
                     domStorageEnabled={true}
@@ -3549,7 +4157,7 @@ const NativeDailyContentModal = React.memo(({
                     injectedJavaScript={hidePopOutJs}
                     onShouldStartLoadWithRequest={(req) => {
                       if (
-                        req.url === drivePreview ||
+                        req.url === pdfSrc ||
                         req.url.startsWith("https://drive.google.com/file/d/") ||
                         req.url.startsWith("https://docs.google.com") ||
                         req.url.startsWith("https://accounts.google.com") ||
@@ -3567,7 +4175,7 @@ const NativeDailyContentModal = React.memo(({
                       </View>
                     )}
                   />
-                  {/* Security overlay blocking Google Drive pop-out button */}
+                  {/* Security overlay */}
                   <View
                     pointerEvents="auto"
                     style={{
@@ -3589,27 +4197,6 @@ const NativeDailyContentModal = React.memo(({
                     <Ionicons name="shield-checkmark" size={16} color="#34d399" />
                     <Text style={{ color: "#9ca3af", fontSize: 9, fontWeight: "bold", marginTop: 2 }}>PROTECTED</Text>
                   </View>
-                </View>
-              );
-            })()
-          ) : (
-            (() => {
-              const { WebView } = require("react-native-webview");
-              return (
-                <View style={{ flex: 1, width: "100%", height: "100%", position: "relative" }}>
-                  <WebView
-                    source={{ html: buildNativePdfViewerHtml(targetSrc, content?.title, nativeWatermarkText) }}
-                    style={{ flex: 1, width: "100%", height: "100%", backgroundColor: "#0b0e17" }}
-                    javaScriptEnabled={true}
-                    domStorageEnabled={true}
-                    startInLoadingState={true}
-                    renderLoading={() => (
-                      <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "center", alignItems: "center", backgroundColor: "#0f1219" }}>
-                        <ActivityIndicator size="large" color="#c62828" />
-                        <Text style={{ color: "#ccc", marginTop: 10, fontSize: 12 }}>Loading document…</Text>
-                      </View>
-                    )}
-                  />
                 </View>
               );
             })()
@@ -4129,12 +4716,12 @@ function MainApp() {
         <View style={{ alignItems: "center", marginBottom: 20, padding: 10, backgroundColor: "#fff", borderRadius: 8, borderWidth: 1, borderColor: "#eeeeee" }}>
           {contactQrPlatform === "android" ? (
             <Image
-              source={require("./assets/android_qr.png")}
+              source={require("./assets/android_qr.webp")}
               style={{ width: 180, height: 180, resizeMode: "contain" }}
             />
           ) : (
             <Image
-              source={require("./assets/ios_qr.png")}
+              source={require("./assets/ios_qr.webp")}
               style={{ width: 180, height: 180, resizeMode: "contain" }}
             />
           )}
@@ -4376,8 +4963,28 @@ function MainApp() {
   const [isSubmittingProfile, setIsSubmittingProfile] = useState(false);
   const [showProfileSuccessModal, setShowProfileSuccessModal] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [hostIp, setHostIp] = useState(DEFAULT_HOST_IP);
+  const [hostIp, setHostIpState] = useState(DEFAULT_HOST_IP);
   const hostIpRef = useRef(DEFAULT_HOST_IP);
+  const setHostIp = (newIp: string) => {
+    const val = (newIp || "").trim();
+    setHostIpState(val);
+    hostIpRef.current = val;
+    AsyncStorage.setItem("nermai_host_ip", val).catch(() => {});
+  };
+  useEffect(() => {
+    AsyncStorage.getItem("nermai_host_ip").then(savedIp => {
+      const trimmed = (savedIp || "").trim();
+      // Automatically reset any stale or obsolete local LAN IPs back to production
+      if (!trimmed || trimmed === "10.113.229.38" || trimmed === "192.168.0.120" || trimmed === "192.168.31.18" || trimmed === "production") {
+        setHostIpState(DEFAULT_HOST_IP);
+        hostIpRef.current = DEFAULT_HOST_IP;
+        AsyncStorage.setItem("nermai_host_ip", DEFAULT_HOST_IP).catch(() => {});
+      } else {
+        setHostIpState(trimmed);
+        hostIpRef.current = trimmed;
+      }
+    }).catch(() => {});
+  }, []);
   const [hostIpInput, setHostIpInput] = useState(DEFAULT_HOST_IP);
   const cleanPhone = (val: string) => {
     let cleaned = String(val || "").replace(/\D/g, "");
@@ -4976,6 +5583,14 @@ function MainApp() {
   };
   const [lmsResourceSearch, setLmsResourceSearch] = useState("");
   const [lmsResourceCategory, setLmsResourceCategory] = useState("All");
+  const [lmsResourceSubject, setLmsResourceSubject] = useState("All");
+
+  const SUBJECT_OPTIONS = [
+    'History', 'Geography', 'Polity', 'Economy', 'Science & Technology',
+    'Environment', 'Current Affairs', 'Ethics', 'Art & Culture',
+    'International Relations', 'Internal Security', 'Social Issues',
+    'Disaster Management', 'General Studies', 'CSAT', 'Tamil Nadu Affairs', 'Other'
+  ];
   const [selectedLiveSession, setSelectedLiveSession] = useState<any>(null);
   const [selectedRecordedClass, setSelectedRecordedClass] = useState<any>(null);
   const [showDailyContentModal, setShowDailyContentModal] = useState<boolean>(false);
@@ -5033,6 +5648,7 @@ function MainApp() {
   const [resourceForm, setResourceForm] = useState<any>({
     title: "",
     description: "",
+    subject: "",
     type: "PDF",
     categoryId: "reference",
     displayGroup: "normal",
@@ -5045,6 +5661,9 @@ function MainApp() {
     file: null,
     fileBase64: "",
     fileName: "",
+    audioFile: null,
+    audioFileName: "",
+    audioUrl: "",
     externalUrl: "",
     distributions: [] // Array of { type: 'course', courseId: '', subjectId: '', topicId: '', classId: '' }
   });
@@ -5185,6 +5804,7 @@ function MainApp() {
     return "home";
   });
   const [guestResourceSearch, setGuestResourceSearch] = useState("");
+  const [guestResourceSubject, setGuestResourceSubject] = useState("All");
   const [guestResourceMobileFilter, setGuestResourceMobileFilter] = useState<"daily" | "resources">("daily");
   const [selectedPosterPreview, setSelectedPosterPreview] = useState<any>(null);
   const [showNoticesPanel, setShowNoticesPanel] = useState(false);
@@ -5327,23 +5947,6 @@ function MainApp() {
         }
       }
     }
-
-    const unsubscribeClick = setupNotificationClickListener((data: Record<string, any>) => {
-      try {
-        const rawTab = String(data?.targetTab || data?.screen || "").toLowerCase();
-        const rawSub = String(data?.targetSub || data?.subTab || "").toLowerCase();
-        if (rawTab) {
-          setActiveTab(rawTab);
-          if (rawSub && typeof window !== "undefined") {
-            window.location.hash = `#${rawTab}/${rawSub}`;
-          }
-        }
-      } catch (_) {}
-    });
-
-    return () => {
-      if (typeof unsubscribeClick === "function") unsubscribeClick();
-    };
   }, [user]);
 
   const handleEnableWebPushClick = async () => {
@@ -5485,6 +6088,7 @@ function MainApp() {
   const [noticeTab, setNoticeTab] = useState<"notices" | "notifications">("notices");
   const [searchNoticeQuery, setSearchNoticeQuery] = useState("");
   const [searchNoticeDate, setSearchNoticeDate] = useState("");
+  const [noticeCategoryFilter, setNoticeCategoryFilter] = useState<"general" | "student_alerts" | "all">("general");
   // noticeTick removed — countdown display is no longer shown on student notice board
 
   const calculateExpiry = (timerOption: any, customExpiresAt: any) => {
@@ -5728,6 +6332,17 @@ function MainApp() {
     return { allocations, mockRollMap, nextStartRoll: currentRoll, totalAssigned: Object.keys(mockRollMap).length };
   };
 
+    const safeAtob = (str: string) => {
+    if (typeof atob === "function") return atob(str);
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+    let s = str.replace(/=+$/, "");
+    let out = "";
+    for (let bc = 0, bs = 0, buffer: any, idx = 0; buffer = s.charAt(idx++); ~buffer && (bs = bc % 4 ? bs * 64 + buffer : buffer, bc++ % 4) ? out += String.fromCharCode(255 & bs >> (-2 * bc & 6)) : 0) {
+      buffer = chars.indexOf(buffer);
+    }
+    return out;
+  };
+
   const handleUploadOfflineExcel = async (testObj: any) => {
     if (!testObj?.id) return;
     try {
@@ -5742,8 +6357,16 @@ function MainApp() {
           try {
             const data = await file.arrayBuffer();
             const workbook = XLSX.read(data, { type: "array" });
-            const sheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[sheetName];
+            if (!workbook || !workbook.SheetNames || workbook.SheetNames.length === 0) {
+              Alert.alert("Empty File", "The uploaded Excel sheet contains no sheets.");
+              return;
+            }
+            const summarySheetName = workbook.SheetNames.find((s: string) => /marks\s*summary|summary|results/i.test(s.trim())) || workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[summarySheetName];
+            if (!worksheet) {
+              Alert.alert("Error", "Could not read sheet data from Excel file.");
+              return;
+            }
             const jsonRows: any[] = XLSX.utils.sheet_to_json(worksheet);
 
             if (!jsonRows || jsonRows.length === 0) {
@@ -5751,11 +6374,23 @@ function MainApp() {
               return;
             }
 
+            const parseNum = (val: any) => {
+              if (val === undefined || val === null || val === "") return undefined;
+              const n = Number(val);
+              return isNaN(n) ? undefined : n;
+            };
+
             const records = jsonRows.map((row: any) => {
               const nameKey = Object.keys(row).find(k => /^(student\s*name|name|student|candidate\s*name)$/i.test(k.trim()));
-              const rollKey = Object.keys(row).find(k => /^(roll\s*number|roll\s*no|roll|reg\s*no|registration\s*no)$/i.test(k.trim()));
+              const rollKey = Object.keys(row).find(k => /^(roll\s*number|roll\s*no|mock\s*roll(?:\s*number|\s*no)?|roll|reg\s*no|registration\s*no)$/i.test(k.trim()));
               const studentName = nameKey ? String(row[nameKey] || "").trim() : "Offline Student";
               const rollNumber = rollKey ? String(row[rollKey] || "").trim() : "Guest";
+
+              const correctKey = Object.keys(row).find(k => /^(correct\s*answers?|correct|correct\s*count)$/i.test(k.trim()));
+              const wrongKey = Object.keys(row).find(k => /^(wrong\s*answers?|incorrect\s*answers?|wrong|incorrect|wrong\s*count)$/i.test(k.trim()));
+              const notAttemptedKey = Object.keys(row).find(k => /^(not\s*attempted|unattempted|skipped|unattended)$/i.test(k.trim()));
+              const totalMarksKey = Object.keys(row).find(k => /^(total\s*marks?|total\s*mark|marks|obtained\s*marks?|score)$/i.test(k.trim()));
+              const hasSummaryMarks = Boolean(correctKey || wrongKey || totalMarksKey);
 
               const answers: Record<string, string> = {};
               Object.keys(row).forEach(k => {
@@ -5767,12 +6402,23 @@ function MainApp() {
                 }
               });
 
-              return { studentName, rollNumber, answers };
+              return {
+                studentName,
+                rollNumber,
+                answers,
+                hasDirectMarks: hasSummaryMarks,
+                correct: parseNum(correctKey ? row[correctKey] : undefined),
+                wrong: parseNum(wrongKey ? row[wrongKey] : undefined),
+                skipped: parseNum(notAttemptedKey ? row[notAttemptedKey] : undefined),
+                obtainedMarks: parseNum(totalMarksKey ? row[totalMarksKey] : undefined)
+              };
             });
 
-            const res = await api.post(`/test-portal/evaluation/offline-upload/${testObj.id}`, { records });
+            const res = await api.post(`/test-portal/evaluation/offline-upload/${testObj.id}`, { records }, undefined, 120000);
             Alert.alert("Success", res.message || `Uploaded and evaluated ${records.length} offline student(s)!`);
-            loadStudentLeaderboard(testObj.id, testObj);
+            if (typeof loadStudentLeaderboard === "function") {
+              loadStudentLeaderboard(testObj.id, testObj);
+            }
           } catch (err: any) {
             console.error("Failed to parse and upload Excel:", err);
             Alert.alert("Upload Error", err.message || "Failed to process offline Excel file.");
@@ -5782,53 +6428,84 @@ function MainApp() {
         };
         input.click();
       } else {
+        // Native Android / iOS Document Picker (Universal */* to prevent intent crashes)
         const result = await DocumentPicker.getDocumentAsync({
-          type: [
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "application/vnd.ms-excel",
-            "text/csv"
-          ],
-          copyToCacheDirectory: true
+          type: ["*/*"],
+          copyToCacheDirectory: true,
+          multiple: false
         });
 
         if (result.canceled || !result.assets || result.assets.length === 0) return;
         const fileAsset = result.assets[0];
+        const fileName = (fileAsset.name || "").toLowerCase();
+        if (!/\.(xlsx|xls|csv)$/i.test(fileName)) {
+          Alert.alert("Invalid File", "Please select an Excel (.xlsx, .xls) or .csv file.");
+          return;
+        }
+
         setOfflineExcelUploading(true);
 
         let b64 = "";
         try {
           if (FileSystem && typeof (FileSystem as any).readAsStringAsync === "function") {
             b64 = await (FileSystem as any).readAsStringAsync(fileAsset.uri, {
-              encoding: (FileSystem as any).EncodingType?.Base64 || "base64"
+              encoding: "base64"
             });
-          } else {
-            throw new Error("readAsStringAsync unavailable");
           }
         } catch (fsErr) {
+          console.warn("[OfflineUpload] readAsStringAsync failed, falling back to fetch blob:", fsErr);
+        }
+
+        if (!b64) {
           try {
-            const fsFile = new (FileSystem as any).File(fileAsset.uri);
-            if (typeof fsFile.base64 === "function") {
-              b64 = await fsFile.base64();
-            } else {
-              throw new Error("File.base64 unavailable");
-            }
-          } catch {
-            const res = await fetch(fileAsset.uri);
-            const blob = await res.blob();
+            const resp = await fetch(fileAsset.uri);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status} reading file`);
+            const blob = await resp.blob();
             b64 = await new Promise<string>((resolve, reject) => {
               const reader = new FileReader();
-              reader.onload = () => {
-                const r = reader.result as string;
-                resolve(r.split(",")[1] || r);
+              reader.onloadend = () => {
+                const r = (reader.result as string) || "";
+                resolve(r.includes(",") ? r.split(",")[1] : r);
               };
-              reader.onerror = reject;
+              reader.onerror = () => reject(new Error("FileReader failed to convert file blob"));
               reader.readAsDataURL(blob);
             });
+          } catch (fetchErr) {
+            console.error("[OfflineUpload] fetch blob read failed:", fetchErr);
           }
         }
-        const workbook = XLSX.read(b64, { type: "base64" });
-        const sheetName = workbook.SheetNames[0];
+
+        if (!b64) {
+          throw new Error("Unable to read the selected file. Please ensure storage permissions are granted.");
+        }
+
+        const cleanB64 = b64.replace(/^data:.*?;base64,/, "").replace(/\s+/g, "");
+
+        let workbook: any = null;
+        try {
+          workbook = XLSX.read(cleanB64, { type: "base64" });
+        } catch (wbErr) {
+          console.warn("[OfflineUpload] Base64 parse failed, trying binary fallback:", wbErr);
+          try {
+            const binStr = safeAtob(cleanB64);
+            workbook = XLSX.read(binStr, { type: "binary" });
+          } catch (binErr: any) {
+            throw new Error("Failed to parse Excel workbook: " + (binErr?.message || wbErr));
+          }
+        }
+
+        if (!workbook || !workbook.SheetNames || workbook.SheetNames.length === 0) {
+          Alert.alert("Empty File", "The uploaded Excel sheet contains no sheets.");
+          return;
+        }
+
+        const sheetName = workbook.SheetNames.find((s: string) => /marks\s*summary|summary|results/i.test(s.trim())) || workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
+        if (!worksheet) {
+          Alert.alert("Error", "Could not read sheet data from Excel file.");
+          return;
+        }
+
         const jsonRows: any[] = XLSX.utils.sheet_to_json(worksheet);
 
         if (!jsonRows || jsonRows.length === 0) {
@@ -5836,11 +6513,23 @@ function MainApp() {
           return;
         }
 
+        const parseNum = (val: any) => {
+          if (val === undefined || val === null || val === "") return undefined;
+          const n = Number(val);
+          return isNaN(n) ? undefined : n;
+        };
+
         const records = jsonRows.map((row: any) => {
           const nameKey = Object.keys(row).find(k => /^(student\s*name|name|student|candidate\s*name)$/i.test(k.trim()));
-          const rollKey = Object.keys(row).find(k => /^(roll\s*number|roll\s*no|roll|reg\s*no|registration\s*no)$/i.test(k.trim()));
+          const rollKey = Object.keys(row).find(k => /^(roll\s*number|roll\s*no|mock\s*roll(?:\s*number|\s*no)?|roll|reg\s*no|registration\s*no)$/i.test(k.trim()));
           const studentName = nameKey ? String(row[nameKey] || "").trim() : "Offline Student";
           const rollNumber = rollKey ? String(row[rollKey] || "").trim() : "Guest";
+
+          const correctKey = Object.keys(row).find(k => /^(correct\s*answers?|correct|correct\s*count)$/i.test(k.trim()));
+          const wrongKey = Object.keys(row).find(k => /^(wrong\s*answers?|incorrect\s*answers?|wrong|incorrect|wrong\s*count)$/i.test(k.trim()));
+          const notAttemptedKey = Object.keys(row).find(k => /^(not\s*attempted|unattempted|skipped|unattended)$/i.test(k.trim()));
+          const totalMarksKey = Object.keys(row).find(k => /^(total\s*marks?|total\s*mark|marks|obtained\s*marks?|score)$/i.test(k.trim()));
+          const hasSummaryMarks = Boolean(correctKey || wrongKey || totalMarksKey);
 
           const answers: Record<string, string> = {};
           Object.keys(row).forEach(k => {
@@ -5852,12 +6541,23 @@ function MainApp() {
             }
           });
 
-          return { studentName, rollNumber, answers };
+          return {
+            studentName,
+            rollNumber,
+            answers,
+            hasDirectMarks: hasSummaryMarks,
+            correct: parseNum(correctKey ? row[correctKey] : undefined),
+            wrong: parseNum(wrongKey ? row[wrongKey] : undefined),
+            skipped: parseNum(notAttemptedKey ? row[notAttemptedKey] : undefined),
+            obtainedMarks: parseNum(totalMarksKey ? row[totalMarksKey] : undefined)
+          };
         });
 
-        const res = await api.post(`/test-portal/evaluation/offline-upload/${testObj.id}`, { records });
+        const res = await api.post(`/test-portal/evaluation/offline-upload/${testObj.id}`, { records }, undefined, 120000);
         Alert.alert("Success", res.message || `Uploaded and evaluated ${records.length} offline student(s)!`);
-        loadStudentLeaderboard(testObj.id, testObj);
+        if (typeof loadStudentLeaderboard === "function") {
+          loadStudentLeaderboard(testObj.id, testObj);
+        }
       }
     } catch (e: any) {
       console.error("Error in handleUploadOfflineExcel:", e);
@@ -5870,24 +6570,54 @@ function MainApp() {
   const downloadOfflineExcelTemplate = (testObj: any) => {
     try {
       const qCount = Number(testObj?.totalQuestions) || (testObj?.questionIds ? testObj.questionIds.length : 100);
+
+      // Primary Sheet: Marks Summary (Roll Number, Student Name, Correct Answers, Wrong Answers, Not Attempted, Total Marks)
+      const summaryRows: any[] = [
+        {
+          "Roll Number": "181095",
+          "Student Name": "Dharshini",
+          "Correct Answers": 75,
+          "Wrong Answers": 13,
+          "Not Attempted": 12,
+          "Total Marks": 71.75
+        },
+        {
+          "Roll Number": "181061",
+          "Student Name": "Ashwanth",
+          "Correct Answers": 60,
+          "Wrong Answers": 15,
+          "Not Attempted": 25,
+          "Total Marks": 56.25
+        },
+        {
+          "Roll Number": "",
+          "Student Name": "",
+          "Correct Answers": "",
+          "Wrong Answers": "",
+          "Not Attempted": "",
+          "Total Marks": ""
+        }
+      ];
+
       const sampleRow: any = {
-        "Student Name": "Sample Candidate",
-        "Roll Number": "182026"
+        "Roll Number": "182026",
+        "Student Name": "Sample Candidate"
       };
       for (let i = 1; i <= Math.min(qCount, 200); i++) {
         sampleRow[`Q${i}`] = i % 4 === 0 ? "D" : i % 3 === 0 ? "C" : i % 2 === 0 ? "B" : "A";
       }
 
-      const emptyRow1: any = { "Student Name": "Student 1", "Roll Number": "182027" };
-      const emptyRow2: any = { "Student Name": "Student 2", "Roll Number": "182028" };
+      const emptyRow1: any = { "Roll Number": "182027", "Student Name": "Student 1" };
       for (let i = 1; i <= Math.min(qCount, 200); i++) {
         emptyRow1[`Q${i}`] = "";
-        emptyRow2[`Q${i}`] = "";
       }
 
-      const ws = XLSX.utils.json_to_sheet([sampleRow, emptyRow1, emptyRow2]);
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Offline Answers");
+      const wsSummary = XLSX.utils.json_to_sheet(summaryRows);
+      XLSX.utils.book_append_sheet(wb, wsSummary, "Marks Summary");
+
+      const wsOMR = XLSX.utils.json_to_sheet([sampleRow, emptyRow1]);
+      XLSX.utils.book_append_sheet(wb, wsOMR, "OMR Answers");
 
       const wbout = XLSX.write(wb, { type: "binary", bookType: "xlsx" });
 
@@ -6056,8 +6786,17 @@ function MainApp() {
       const hash = window.location.hash.replace(/^#\/?/, "");
       if (!hash) return;
       const parts = hash.split("/");
-      const main = parts[0];
-      const sub = parts[1];
+      let main = parts[0]?.toLowerCase();
+      let sub = parts[1]?.toLowerCase();
+
+      // Normalize main tab aliases
+      if (main === "test-portal" || main === "tests" || main === "exam" || main === "exams") main = "test";
+      if (main === "classes" || main === "class") main = "lms";
+      if (main === "notices" || main === "notice" || main === "announcements") {
+        main = "dashboard";
+        setShowNoticesPanel(true);
+        setNoticeTab("notices");
+      }
 
       if (main) {
         if (main === "guest") {
@@ -6074,8 +6813,12 @@ function MainApp() {
         } else {
           setActiveTab(main);
           let normSub = sub;
-          if (main === "lms" && (normSub === "daily_content" || normSub === "dailycontent")) normSub = "daily-content";
-          if (main === "erp") {
+          if (main === "lms") {
+            if (normSub === "daily_content" || normSub === "dailycontent") normSub = "daily-content";
+            else if (normSub === "live") normSub = "live-classes";
+            else if (normSub === "recordings" || normSub === "recording") normSub = "recorded";
+            if (normSub) setLmsSub(normSub);
+          } else if (main === "erp") {
             if (normSub === "fees" || normSub === "pay-fees") {
               normSub = user?.role === "student" ? "pay-fees" : "fees";
             } else if (normSub === "id-card" || normSub === "idcard") {
@@ -6088,10 +6831,14 @@ function MainApp() {
               normSub = "qr-permissions";
             }
             if (normSub) setErpSub(normSub);
-          } else {
-            if (main === "lms" && sub) setLmsSub(normSub);
-            if (main === "crm" && sub) setCrmSub(normSub);
-            if (main === "test" && sub) setTestSub(normSub);
+          } else if (main === "test") {
+            if (normSub === "results" || normSub === "evaluation" || normSub === "evaluated") normSub = "results";
+            else if (normSub === "feedback" || normSub === "answers" || normSub === "answer-keys" || normSub === "key") normSub = "feedback";
+            else if (normSub === "pdf-create" || normSub === "create") normSub = "pdf-create";
+            else normSub = "available";
+            if (normSub) setTestSub(normSub);
+          } else if (main === "crm") {
+            if (normSub) setCrmSub(normSub);
           }
         }
       }
@@ -6103,11 +6850,33 @@ function MainApp() {
 
   // ── Notification Click Listener & Cold-Start Redirection Dispatcher ────────
   const pendingNotificationNavRef = useRef<any>(null);
+  const coldStartHandledRef = useRef(false);
+
+  // Cold-start tap handler (runs on app mount):
+  useEffect(() => {
+    getLastNotificationData().then((data) => {
+      if (data && !coldStartHandledRef.current) {
+        coldStartHandledRef.current = true;
+        if (user) {
+          handleNotificationNavigation(data);
+        } else {
+          pendingNotificationNavRef.current = data;
+        }
+      }
+    }).catch(() => {});
+  }, []);
 
   const handleNotificationNavigation = (data: Record<string, any>) => {
     if (!data) return;
-    const rawTab = String(data.targetTab || data.screen || data.tab || "").trim().toLowerCase();
-    const rawSub = String(data.targetSub || data.subTab || data.sub || "").trim().toLowerCase();
+    let rawTab = String(data.targetTab || data.screen || data.tab || "").trim().toLowerCase();
+    let rawSub = String(data.targetSub || data.subTab || data.sub || "").trim().toLowerCase();
+
+    // Map common aliases
+    if (rawTab === "test-portal" || rawTab === "tests" || rawTab === "exam" || rawTab === "exams") {
+      rawTab = "test";
+    } else if (rawTab === "classes" || rawTab === "class") {
+      rawTab = "lms";
+    }
 
     // Buffer destination if user state hasn't resolved yet (e.g. cold start)
     if (!user) {
@@ -6120,7 +6889,7 @@ function MainApp() {
 
       // ── 1. GUEST VIEW NAVIGATION ──
       if (role === "guest") {
-        if (rawTab === "recordings" || rawSub === "recordings" || rawTab === "classes" || rawSub === "classes") {
+        if (rawTab === "recordings" || rawSub === "recordings" || rawTab === "classes" || rawSub === "classes" || rawSub === "recorded") {
           setGuestTab("recordings");
           setGuestContentTab("recordings");
         } else if (rawTab === "test" || rawTab === "tests" || rawSub === "tests" || rawSub === "available") {
@@ -6129,9 +6898,14 @@ function MainApp() {
         } else if (rawTab === "resources" || rawSub === "resources" || rawTab === "lms" || rawSub === "daily-content") {
           setGuestTab("resources");
           setGuestContentTab("resources");
-        } else if (rawTab === "crm" || rawSub === "admissions" || rawSub === "apply") {
+        } else if (rawTab === "crm" || rawSub === "admissions" || rawSub === "apply" || rawSub === "courses") {
           setGuestTab("apply");
           setGuestContentTab("apply");
+        } else if (rawTab === "notices" || rawTab === "announcements" || rawTab === "dashboard") {
+          setGuestTab("home");
+          setGuestContentTab("home");
+          setShowNoticesPanel(true);
+          setNoticeTab("notices");
         } else {
           setGuestTab("home");
           setGuestContentTab("home");
@@ -6152,7 +6926,18 @@ function MainApp() {
           ) {
             return s;
           }
-          if (s === "test-list" || s === "tests" || s === "requests" || s === "offline_requests" || s === "offline-requests") return "available";
+          if (s === "result" || s === "results" || s === "evaluation" || s === "evaluated" || s === "evaluated-copy" || s === "rank" || s === "score") {
+            return "results";
+          }
+          if (s === "answer-keys" || s === "answer-key" || s === "answers" || s === "key" || s === "exam-feedback" || s === "review" || s === "feedback") {
+            return "feedback";
+          }
+          if (s === "create" || s === "create-test" || s === "pdf" || s === "pdf-create") {
+            return "pdf-create";
+          }
+          if (s === "mock" || s === "special" || s === "special-mock") {
+            return "special-mock";
+          }
           return "available";
         }
         if (tab === "lms") {
@@ -6178,9 +6963,12 @@ function MainApp() {
           ) {
             return s;
           }
-          if (s === "live") return "live-classes";
-          if (s === "recording" || s === "recordings") return "recorded";
-          if (s === "daily" || s === "daily_content") return "daily-content";
+          if (s === "live" || s === "class" || s === "classes" || s === "rescheduled" || s === "live-classes") return "live-classes";
+          if (s === "recording" || s === "recordings" || s === "class-recording" || s === "recorded") return "recorded";
+          if (s === "daily" || s === "daily_content" || s === "daily-content" || s === "editorial" || s === "current-affairs") return "daily-content";
+          if (s === "daily-quiz" || s === "mcq" || s === "quiz") return "quiz";
+          if (s === "materials" || s === "study" || s === "study-material" || s === "notes" || s === "resources") return "resources";
+          if (s === "access" || s === "requests" || s === "sacs" || s === "lms-access") return "lms-access";
           return "resources";
         }
         return s;
@@ -6188,13 +6976,22 @@ function MainApp() {
 
       // ── 2. STUDENT NAVIGATION ──
       if (role === "student") {
-        if (rawTab === "announcements" || rawTab === "notices" || rawTab === "notice" || rawTab === "dashboard" || rawTab === "home") {
+        // Notice / Announcement / Dashboard
+        if (rawTab === "announcements" || rawTab === "notices" || rawTab === "notice" || rawSub === "announcements" || rawSub === "notices" || rawSub === "notice") {
           setActiveTab("dashboard");
-        } else if (rawTab === "test" || rawTab === "tests") {
+          setShowNoticesPanel(true);
+          setNoticeTab("notices");
+        } else if (rawTab === "dashboard" || rawTab === "home") {
+          setActiveTab("dashboard");
+        }
+        // Test Portal (all 5 notification types: Published, Scheduled, Mains, Answer Key, Results)
+        else if (rawTab === "test" || rawTab === "tests" || rawTab === "test-portal") {
           setActiveTab("test");
           const normTestSub = normalizeSubTab("test", rawSub);
           changeTestSub(normTestSub);
-        } else if (rawTab === "lms" || rawTab === "classes" || rawTab === "class" || rawTab === "resources" || rawTab === "recorded" || rawTab === "live" || rawTab === "daily-content" || rawTab === "quiz") {
+        }
+        // LMS (all 6 notification types: Live Class, Rescheduled, Daily Content, Daily Quiz, Study Material, Recording)
+        else if (rawTab === "lms" || rawTab === "classes" || rawTab === "class" || rawTab === "resources" || rawTab === "recorded" || rawTab === "live" || rawTab === "daily-content" || rawTab === "quiz") {
           setActiveTab("lms");
           let sub = rawSub;
           if (!sub && (rawTab === "resources" || rawTab === "recorded" || rawTab === "live" || rawTab === "daily-content" || rawTab === "quiz")) {
@@ -6202,40 +6999,51 @@ function MainApp() {
           }
           const normLmsSub = normalizeSubTab("lms", sub);
           changeLmsSub(normLmsSub);
-        } else if (rawTab === "erp" || rawTab === "profile" || rawTab === "my-profile") {
+        }
+        // ERP (all notification types: Fee Reminder, QR Payment Approval, ID Card, Hall Ticket, Profile)
+        else if (rawTab === "erp" || rawTab === "profile" || rawTab === "my-profile") {
           setActiveTab("erp");
-          if (rawSub === "fees" || rawSub === "pay-fees") {
+          if (rawSub === "fees" || rawSub === "pay-fees" || rawSub === "fee" || rawSub === "qr-payment" || rawSub === "payment" || rawSub === "pay" || rawSub === "qr" || rawSub === "qr-approval" || rawSub === "qr-permissions") {
             changeErpSub("pay-fees");
-          } else if (rawSub === "id-card" || rawSub === "idcard") {
+          } else if (rawSub === "id-card" || rawSub === "idcard" || rawSub === "card") {
             changeErpSub("id-card");
             setMyCardSubTab("idcard");
           } else if (rawSub === "hall-ticket" || rawSub === "hallticket") {
             changeErpSub("id-card");
             setMyCardSubTab("hallticket");
-          } else {
+          } else if (rawSub === "profile" || rawSub === "my-profile" || rawSub === "profile-requests") {
             changeErpSub("my-profile");
+          } else {
+            changeErpSub("pay-fees");
           }
+        }
+        // CRM
+        else if (rawTab === "crm") {
+          setActiveTab("dashboard");
         } else {
           setActiveTab("dashboard");
         }
         return;
       }
 
-      // ── 3. ADMIN & SUPER ADMIN NAVIGATION ──
-      if (rawTab === "test" || rawTab === "tests") {
+      // ── 3. ADMIN & SUPER ADMIN & STAFF NAVIGATION ──
+      // Test Portal
+      if (rawTab === "test" || rawTab === "tests" || rawTab === "test-portal") {
         setActiveTab("test");
         if (rawSub === "requests" || rawSub === "offline-requests" || rawSub === "offline_requests") {
           changeTestSub("available");
-          loadOfflineTestRequests();
+          if (typeof loadOfflineTestRequests === "function") loadOfflineTestRequests();
         } else if (rawSub) {
           const normAdminTestSub = normalizeSubTab("test", rawSub);
           changeTestSub(normAdminTestSub);
-          if (normAdminTestSub === "available") loadOfflineTestRequests();
+          if (normAdminTestSub === "available" && typeof loadOfflineTestRequests === "function") loadOfflineTestRequests();
         } else {
           changeTestSub("available");
-          loadOfflineTestRequests();
+          if (typeof loadOfflineTestRequests === "function") loadOfflineTestRequests();
         }
-      } else if (rawTab === "lms" || rawTab === "classes") {
+      }
+      // LMS
+      else if (rawTab === "lms" || rawTab === "classes") {
         setActiveTab("lms");
         if (rawSub === "requests" || rawSub === "lms-access" || rawSub === "access" || rawSub === "sacs") {
           changeLmsSub("lms-access");
@@ -6249,28 +7057,43 @@ function MainApp() {
         } else {
           changeLmsSub("resources");
         }
-      } else if (rawTab === "crm") {
+      }
+      // CRM
+      else if (rawTab === "crm") {
         setActiveTab("crm");
-        if (rawSub) changeCrmSub(rawSub);
+        if (rawSub === "inquiries" || rawSub === "inquiry") changeCrmSub("inquiries");
+        else if (rawSub === "admissions" || rawSub === "admission") changeCrmSub("admissions");
+        else if (rawSub === "custom-leads") changeCrmSub("custom-leads");
+        else if (rawSub === "feedback") changeCrmSub("feedback");
+        else if (rawSub === "campaigns") changeCrmSub("campaigns");
+        else if (rawSub) changeCrmSub(rawSub);
         else changeCrmSub("leads");
-      } else if (rawTab === "erp" || rawTab === "announcements" || rawTab === "notices") {
+      }
+      // ERP / Notices
+      else if (rawTab === "erp" || rawTab === "announcements" || rawTab === "notices" || rawTab === "notice") {
         setActiveTab("erp");
-        if (rawTab === "announcements" || rawTab === "notices" || rawSub === "announcements" || rawSub === "notices") {
+        if (rawTab === "announcements" || rawTab === "notices" || rawTab === "notice" || rawSub === "announcements" || rawSub === "notices" || rawSub === "notice") {
           changeErpSub("announcements");
-        } else if (rawSub === "profile-requests" || rawSub === "profile_requests") {
+        } else if (rawSub === "profile-requests" || rawSub === "profile_requests" || rawSub === "profile") {
           changeErpSub("profile-requests");
-          setProfileRequestsTab("requests");
+          if (typeof setProfileRequestsTab === "function") setProfileRequestsTab("requests");
         } else if (rawSub === "approvals" || rawSub === "admin_approval") {
           changeErpSub("approvals");
-          loadPendingApprovals();
-        } else if (rawSub === "qr" || rawSub === "qr-permissions") {
+          if (typeof loadPendingApprovals === "function") loadPendingApprovals();
+        } else if (rawSub === "qr" || rawSub === "qr-permissions" || rawSub === "qr-approval") {
           changeErpSub("qr-permissions");
+        } else if (rawSub === "fees" || rawSub === "pay-fees") {
+          changeErpSub("fees");
+        } else if (rawSub === "id-card" || rawSub === "idcard") {
+          changeErpSub("id-card");
         } else if (rawSub) {
           changeErpSub(rawSub);
         } else {
           changeErpSub("students");
         }
-      } else if (rawTab === "audit-logs" && (user?.role === "super_admin" || user?.role === "developer")) {
+      }
+      // Audit Logs
+      else if (rawTab === "audit-logs" && (user?.role === "super_admin" || user?.role === "developer")) {
         setActiveTab("audit-logs");
       } else {
         setActiveTab("dashboard");
@@ -6348,6 +7171,7 @@ function MainApp() {
   const [showLangDropdown, setShowLangDropdown] = useState(false);
   const [attemptQuestions, setAttemptQuestions] = useState<any[]>([]);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string>>({});
+  const selectedAnswersRef = useRef<Record<string, string>>({});
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
   const [selectedAlertIds, setSelectedAlertIds] = useState<string[]>([]);
   const [notifyMsg, setNotifyMsg] = useState({ title: "", message: "" });
@@ -6399,6 +7223,590 @@ function MainApp() {
   const [expandedQuestionMap, setExpandedQuestionMap] = useState<Record<string, boolean>>({});
   const [expandedClosedTestDiagId, setExpandedClosedTestDiagId] = useState<string | null>(null);
   const [mobileSubjectAnalyticsModalTest, setMobileSubjectAnalyticsModalTest] = useState<any | null>(null);
+
+  // ── Test Explanations (Doc & Video) State & Handlers ──
+  const [adminExplanationModalTest, setAdminExplanationModalTest] = useState<any | null>(null);
+  const [adminExpDocUrl, setAdminExpDocUrl] = useState<string>("");
+  const [adminExpDocName, setAdminExpDocName] = useState<string>("");
+  const [adminExpVideoUrl, setAdminExpVideoUrl] = useState<string>("");
+  const [adminExpSaving, setAdminExpSaving] = useState<boolean>(false);
+  const [adminExpUploadingDoc, setAdminExpUploadingDoc] = useState<boolean>(false);
+
+  // ── Scheduled / Active Test Edit State & Handlers ──
+  const [editingTestModalItem, setEditingTestModalItem] = useState<any | null>(null);
+  const [editingTestForm, setEditingTestForm] = useState<any>({
+    title: "",
+    description: "",
+    duration: "60",
+    passingMarks: "0",
+    startTime: "",
+    endTime: "",
+    testType: "mock",
+    testMode: "online",
+    targetAudience: "all",
+    targetBatch: "",
+    subject: "",
+    topic: "",
+    schedulingMode: "fixed",
+    subjectSections: []
+  });
+  const [editingTestSaving, setEditingTestSaving] = useState<boolean>(false);
+  const [showEditingTestBatchDropdown, setShowEditingTestBatchDropdown] = useState<boolean>(false);
+  const [editingTestQuestionsJson, setEditingTestQuestionsJson] = useState<string>("");
+  const [editingTestLoadingQuestions, setEditingTestLoadingQuestions] = useState<boolean>(false);
+  const [showEditTestQuestionsSection, setShowEditTestQuestionsSection] = useState<boolean>(false);
+  const [editingTestActiveTab, setEditingTestActiveTab] = useState<"schedule" | "questions">("schedule");
+
+  const [viewingExplanationDoc, setViewingExplanationDoc] = useState<{ url: string; title: string; name?: string } | null>(null);
+  const [viewingExplanationVideo, setViewingExplanationVideo] = useState<{ url: string; videoId?: string; title: string } | null>(null);
+
+  const extractYtId = (url: string) => {
+    if (!url) return "";
+    const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
+    return match ? match[1] : "";
+  };
+
+  const buildExplanationPlayerHtml = (videoId: string, title: string, studentName?: string, studentEmail?: string): string => {
+    const escHtml = (s: string) => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+    const escTitle = escHtml(title || 'Explanation Video');
+    const escName  = escHtml(studentName || 'NERMAI IAS');
+    const escEmail = escHtml(studentEmail || 'Explanation Video');
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>${escTitle} — NERMAI IAS</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { background: #000; width: 100%; height: 100%; overflow: hidden; user-select: none; -webkit-user-select: none; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; cursor: default; }
+    #player-wrapper { position: relative; width: 100%; height: 100%; background: #000; overflow: hidden; }
+    #frame { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none; display: block; pointer-events: none; }
+    #interaction-shield { position: absolute; top: 0; left: 0; width: 100%; height: calc(100% - 64px); z-index: 10; background: transparent; cursor: pointer; }
+    /* Top-right watermark */
+    #watermark { position: absolute; top: 12px; right: 14px; z-index: 22; padding: 5px 12px; border-radius: 8px; background: rgba(15,23,42,.8); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,.12); pointer-events: none; display: flex; flex-direction: column; text-align: right; }
+    .wm-name { font-size: 11px; font-weight: 700; color: #fbbf24; letter-spacing: 0.4px; }
+    .wm-sub  { font-size: 9px; color: #94a3b8; margin-top: 1px; }
+    /* Center play button */
+    #center-play-overlay { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); z-index: 25; width: 66px; height: 66px; border-radius: 50%; background: rgba(15,23,42,.88); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border: 1px solid rgba(255,255,255,.25); box-shadow: 0 10px 32px rgba(0,0,0,.7); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 24px; cursor: pointer; transition: all .25s cubic-bezier(.4,0,.2,1); pointer-events: auto; }
+    #center-play-overlay:hover { transform: translate(-50%,-50%) scale(1.1); background: rgba(15,23,42,.95); border-color: #38bdf8; color: #38bdf8; }
+    #center-play-overlay.playing { opacity: 0; pointer-events: none; }
+    /* End screen */
+    #end-screen-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 30; background: rgba(15,23,42,.96); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); display: none; flex-direction: column; align-items: center; justify-content: center; color: #fff; padding: 24px; text-align: center; }
+    #end-screen-overlay.active { display: flex; }
+    #end-screen-title { font-size: 18px; font-weight: 700; margin-bottom: 6px; color: #f8fafc; }
+    #end-screen-sub   { font-size: 13px; color: #94a3b8; margin-bottom: 24px; }
+    .replay-btn { background: linear-gradient(135deg,#2563eb,#1d4ed8); color: #fff; border: none; padding: 12px 28px; border-radius: 9999px; font-weight: 600; font-size: 14px; cursor: pointer; display: flex; align-items: center; gap: 8px; box-shadow: 0 4px 16px rgba(37,99,235,.4); transition: all .2s; }
+    .replay-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(37,99,235,.6); }
+    /* Controls bar */
+    #custom-controls { position: absolute; bottom: 0; left: 0; width: 100%; height: 64px; z-index: 35; background: #0f172a; border-top: 1px solid rgba(255,255,255,.15); box-shadow: 0 -8px 24px rgba(0,0,0,.6); display: flex; align-items: center; padding: 0 16px; gap: 12px; transition: opacity .3s ease, transform .3s ease; }
+    #custom-controls.hidden { opacity: 0; transform: translateY(100%); pointer-events: none; }
+    .ctrl-btn { background: transparent; border: none; color: #e2e8f0; font-size: 16px; width: 36px; height: 36px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all .15s ease; flex-shrink: 0; }
+    .ctrl-btn:hover { background: rgba(255,255,255,.12); color: #38bdf8; }
+    #ctrl-time { color: #94a3b8; font-size: 12px; font-weight: 600; letter-spacing: .3px; white-space: nowrap; flex-shrink: 0; min-width: 90px; }
+    .scrubber-container { flex: 1; position: relative; display: flex; align-items: center; height: 24px; cursor: pointer; }
+    .scrubber-track { width: 100%; height: 4px; background: rgba(255,255,255,.2); border-radius: 2px; position: relative; overflow: hidden; }
+    .scrubber-fill { position: absolute; top: 0; left: 0; height: 100%; background: #38bdf8; border-radius: 2px; width: 0%; }
+    .scrubber-input { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; margin: 0; }
+    .vol-container { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+    .vol-slider { width: 60px; height: 4px; accent-color: #38bdf8; cursor: pointer; }
+    .secure-badge { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: #64748b; letter-spacing: .6px; user-select: none; flex-shrink: 0; }
+    .secure-dot { width: 6px; height: 6px; border-radius: 50%; background: #38bdf8; }
+    @media (max-width: 640px) { .vol-slider, .secure-badge { display: none; } #ctrl-time { font-size: 11px; min-width: 70px; } #custom-controls { padding: 0 10px; gap: 8px; } #watermark { top: 8px; right: 10px; padding: 4px 8px; } .wm-name { font-size: 9px; } .wm-sub { font-size: 8px; } }
+  </style>
+</head>
+<body>
+  <div id="player-wrapper">
+    <div id="frame"></div>
+    <div id="interaction-shield"></div>
+    <div id="watermark">
+      <span class="wm-name">${escName}</span>
+      <span class="wm-sub">${escEmail}</span>
+    </div>
+    <div id="center-play-overlay">&#9654;</div>
+    <div id="end-screen-overlay">
+      <div id="end-screen-title">${escTitle}</div>
+      <div id="end-screen-sub">Video Completed</div>
+      <button class="replay-btn" id="replay-btn"><span>&#x1F504;</span> Replay Video</button>
+    </div>
+    <div id="custom-controls">
+      <button class="ctrl-btn" id="ctrl-play-btn" title="Play/Pause">&#9654;</button>
+      <span id="ctrl-time">0:00 / 0:00</span>
+      <div class="scrubber-container">
+        <div class="scrubber-track"><div class="scrubber-fill" id="scrubber-fill"></div></div>
+        <input type="range" id="ctrl-scrubber" class="scrubber-input" min="0" max="100" value="0" step="0.1" />
+      </div>
+      <div class="vol-container">
+        <button class="ctrl-btn" id="ctrl-mute-btn" title="Mute/Unmute">&#128266;</button>
+        <input type="range" id="ctrl-vol-slider" class="vol-slider" min="0" max="100" value="100" />
+      </div>
+      <div class="secure-badge"><span class="secure-dot"></span> <span>NERMAI SECURE</span></div>
+      <button class="ctrl-btn" id="ctrl-fs-btn" title="Toggle Fullscreen">&#x26F6;</button>
+    </div>
+  </div>
+
+<script>
+  let player;
+  let isSeeking = false;
+  let hideControlsTimer = null;
+
+  function formatTime(sec) {
+    if (!sec || isNaN(sec)) return '0:00';
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  function updateScrubber() {
+    if (!player || typeof player.getCurrentTime !== 'function' || isSeeking) return;
+    const current = player.getCurrentTime() || 0;
+    const duration = player.getDuration() || 0;
+    const fill = document.getElementById('scrubber-fill');
+    const input = document.getElementById('ctrl-scrubber');
+    const timeEl = document.getElementById('ctrl-time');
+    if (duration > 0) {
+      const pct = (current / duration) * 100;
+      if (fill) fill.style.width = pct + '%';
+      if (input) input.value = pct;
+      if (timeEl) timeEl.textContent = formatTime(current) + ' / ' + formatTime(duration);
+    }
+  }
+
+  function togglePlay() {
+    if (!player || typeof player.getPlayerState !== 'function') return;
+    const state = player.getPlayerState();
+    const endOverlay = document.getElementById('end-screen-overlay');
+    if (state === 1) {
+      player.pauseVideo();
+    } else {
+      if (endOverlay) endOverlay.classList.remove('active');
+      player.playVideo();
+    }
+  }
+
+  function initCustomControls() {
+    const wrapper = document.getElementById('player-wrapper');
+    const shield = document.getElementById('interaction-shield');
+    const centerBtn = document.getElementById('center-play-overlay');
+    const playBtn = document.getElementById('ctrl-play-btn');
+    const scrubber = document.getElementById('ctrl-scrubber');
+    const fill = document.getElementById('scrubber-fill');
+    const muteBtn = document.getElementById('ctrl-mute-btn');
+    const volSlider = document.getElementById('ctrl-vol-slider');
+    const fsBtn = document.getElementById('ctrl-fs-btn');
+    const controls = document.getElementById('custom-controls');
+    const endOverlay = document.getElementById('end-screen-overlay');
+    const replayBtn = document.getElementById('replay-btn');
+
+    if (shield) shield.addEventListener('click', togglePlay);
+    if (centerBtn) centerBtn.addEventListener('click', togglePlay);
+    if (playBtn) playBtn.addEventListener('click', togglePlay);
+    if (replayBtn) replayBtn.addEventListener('click', () => {
+      if (endOverlay) endOverlay.classList.remove('active');
+      if (player && player.seekTo) { player.seekTo(0, true); player.playVideo(); }
+    });
+
+    if (scrubber) {
+      scrubber.addEventListener('input', (e) => {
+        isSeeking = true;
+        const pct = parseFloat(e.target.value);
+        if (fill) fill.style.width = pct + '%';
+      });
+      scrubber.addEventListener('change', (e) => {
+        if (!player || typeof player.getDuration !== 'function') return;
+        const duration = player.getDuration() || 0;
+        const pct = parseFloat(e.target.value);
+        player.seekTo(duration * (pct / 100), true);
+        isSeeking = false;
+      });
+    }
+    if (muteBtn) muteBtn.addEventListener('click', () => {
+      if (!player || !player.isMuted) return;
+      if (player.isMuted()) { player.unMute(); muteBtn.textContent = '\uD83D\uDD0A'; }
+      else { player.mute(); muteBtn.textContent = '\uD83D\uDD07'; }
+    });
+    if (volSlider) volSlider.addEventListener('input', (e) => {
+      if (!player || !player.setVolume) return;
+      const val = parseInt(e.target.value, 10);
+      player.setVolume(val);
+      if (val === 0) player.mute(); else player.unMute();
+      if (muteBtn) muteBtn.textContent = val === 0 ? '\uD83D\uDD07' : '\uD83D\uDD0A';
+    });
+    if (fsBtn) fsBtn.addEventListener('click', () => {
+      if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+        if (wrapper.requestFullscreen) wrapper.requestFullscreen();
+        else if (wrapper.webkitRequestFullscreen) wrapper.webkitRequestFullscreen();
+      } else {
+        if (document.exitFullscreen) document.exitFullscreen();
+        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+      }
+    });
+    function resetHideTimer() {
+      if (controls) controls.classList.remove('hidden');
+      if (hideControlsTimer) clearTimeout(hideControlsTimer);
+      hideControlsTimer = setTimeout(() => {
+        if (player && player.getPlayerState && player.getPlayerState() === 1)
+          if (controls) controls.classList.add('hidden');
+      }, 5000);
+    }
+    if (wrapper) { wrapper.addEventListener('mousemove', resetHideTimer); wrapper.addEventListener('touchstart', resetHideTimer); }
+    setInterval(updateScrubber, 250);
+  }
+
+  function onPlayerReady() { initCustomControls(); }
+
+  function onPlayerStateChange(event) {
+    const centerBtn = document.getElementById('center-play-overlay');
+    const playBtn = document.getElementById('ctrl-play-btn');
+    const endOverlay = document.getElementById('end-screen-overlay');
+    if (event.data === 1) {
+      if (centerBtn) centerBtn.classList.add('playing');
+      if (playBtn) playBtn.innerHTML = '&#10074;&#10074;';
+      if (endOverlay) endOverlay.classList.remove('active');
+    } else if (event.data === 2) {
+      if (centerBtn) centerBtn.classList.remove('playing');
+      if (playBtn) playBtn.innerHTML = '&#9654;';
+    } else if (event.data === 0) {
+      if (centerBtn) centerBtn.classList.remove('playing');
+      if (playBtn) playBtn.innerHTML = '&#9654;';
+      if (endOverlay) endOverlay.classList.add('active');
+    }
+  }
+
+  function onYouTubeIframeAPIReady() {
+    const domain = (window.location && window.location.origin && window.location.origin !== 'null') ? window.location.origin : 'https://nermaiias.in';
+    player = new YT.Player('frame', {
+      height: '100%', width: '100%',
+      videoId: "${videoId}",
+      playerVars: { autoplay: 1, controls: 0, disablekb: 1, modestbranding: 1, rel: 0, iv_load_policy: 3, color: 'white', enablejsapi: 1, fs: 0, playsinline: 1, origin: domain },
+      events: { 'onReady': onPlayerReady, 'onStateChange': onPlayerStateChange }
+    });
+  }
+</script>
+<script src="https://www.youtube.com/iframe_api"></script>
+<script>
+  if (window.YT && typeof window.YT.Player === 'function' && !player) { onYouTubeIframeAPIReady(); }
+</script>
+</body>
+</html>`;
+  };
+
+
+  const openAdminExplanationModal = (testItem: any) => {
+    setAdminExplanationModalTest(testItem);
+    setAdminExpDocUrl(testItem?.explanationDoc?.url || "");
+    setAdminExpDocName(testItem?.explanationDoc?.name || "");
+    setAdminExpVideoUrl(testItem?.explanationVideo?.url || "");
+  };
+
+  const handleSaveAdminExplanations = async () => {
+    if (!adminExplanationModalTest) return;
+    setAdminExpSaving(true);
+    try {
+      const docClean = adminExpDocUrl.trim();
+      const videoClean = adminExpVideoUrl.trim();
+      const payload: any = {
+        explanationDoc: docClean ? {
+          url: docClean,
+          name: adminExpDocName.trim() || `${adminExplanationModalTest.title || 'Test'} Explanation Document`,
+          provider: docClean.includes("drive.google.com") ? "google_drive" : "external"
+        } : null,
+        explanationVideo: videoClean ? {
+          url: videoClean
+        } : null
+      };
+
+      // Save via backend API (admin SDK writes to Firestore — works from both APK and web)
+      await api.patch(`/test-portal/test-creation/${adminExplanationModalTest.id}/explanations`, payload);
+
+      Alert.alert("Success", "Test explanation document and video updated successfully.");
+      setAdminExplanationModalTest(null);
+      await loadTests();
+    } catch (e: any) {
+      console.error("[SaveExplanations] Error:", e);
+      const msg = e?.message || "Failed to save test explanations.";
+      if (Platform.OS !== "web" && (msg.includes("Endpoint not found") || msg.includes("404"))) {
+        Alert.alert(
+          "Connection Error",
+          `Could not reach the server at ${getBaseUrl()}.\n\nPlease check your internet connection or verify the server status.`
+        );
+      } else {
+        Alert.alert("Error", msg);
+      }
+    } finally {
+      setAdminExpSaving(false);
+    }
+  };
+
+  const openEditTestModal = (t: any) => {
+    if (!t) return;
+    setEditingTestModalItem(t);
+
+    const formatIsoForPicker = (val: any) => {
+      if (!val) return "";
+      try {
+        const d = new Date(val._seconds ? val._seconds * 1000 : val);
+        if (isNaN(d.getTime())) return "";
+        return d.getFullYear() + "-" +
+          String(d.getMonth() + 1).padStart(2, "0") + "-" +
+          String(d.getDate()).padStart(2, "0") + "T" +
+          String(d.getHours()).padStart(2, "0") + ":" +
+          String(d.getMinutes()).padStart(2, "0");
+      } catch (_) {
+        return "";
+      }
+    };
+
+    setEditingTestForm({
+      title: t.title || "",
+      description: t.description || "",
+      duration: String(t.durationMinutes || t.duration || "60"),
+      passingMarks: String(t.passingMarks ?? "0"),
+      startTime: formatIsoForPicker(t.startTime),
+      endTime: formatIsoForPicker(t.endTime),
+      testType: t.testType || "mock",
+      testMode: t.testMode || "online",
+      targetAudience: t.targetAudience || "all",
+      targetBatch: t.targetBatch || "",
+      subject: t.subject || "",
+      topic: t.topic || "",
+      schedulingMode: t.schedulingMode || "fixed",
+      subjectSections: Array.isArray(t.subjectSections) ? t.subjectSections : []
+    });
+    setShowEditingTestBatchDropdown(false);
+    setEditingTestQuestionsJson("");
+    setEditingTestLoadingQuestions(true);
+    setShowEditTestQuestionsSection(true);
+    setEditingTestActiveTab("schedule");
+
+    api.get(`/test-portal/test-creation/${t.id}/questions`)
+      .then((res: any) => {
+        const rawData = res?.data !== undefined ? (res.data?.data !== undefined ? res.data.data : res.data) : (res?.data || res || []);
+        const qList = Array.isArray(rawData) ? rawData : (Array.isArray(res) ? res : []);
+        if (Array.isArray(qList) && qList.length > 0) {
+          const extractOpt = (q: any, letter: string, idx: number) => {
+            if (Array.isArray(q.options)) {
+              const o = q.options[idx];
+              return typeof o === "string" ? o : (o?.en || "");
+            }
+            if (q.options && typeof q.options === "object") {
+              const o = q.options[letter] || q.options[letter.toLowerCase()];
+              return typeof o === "string" ? o : (o?.en || "");
+            }
+            return q[`option${letter}`] || q[`option_${letter.toLowerCase()}`] || q[`opt${idx}`] || "";
+          };
+
+          const formatted = qList.map((q: any) => ({
+            question: q.question || q.questionEn || q.questionText || "",
+            ...(q.questionTa ? { questionTa: q.questionTa } : {}),
+            "option a": extractOpt(q, "A", 0),
+            "option b": extractOpt(q, "B", 1),
+            "option c": extractOpt(q, "C", 2),
+            "option d": extractOpt(q, "D", 3),
+            "correct option": String(q.correctAnswer || q.correctOption || q["correct option"] || "A").trim().toUpperCase(),
+            explanation: q.explanation || ""
+          }));
+          setEditingTestQuestionsJson(JSON.stringify(formatted, null, 2));
+        }
+      })
+      .catch((err: any) => {
+        console.warn("[EditTest] Could not load questions:", err);
+      })
+      .finally(() => {
+        setEditingTestLoadingQuestions(false);
+      });
+  };
+
+  const handleSaveEditTest = async () => {
+    if (!editingTestModalItem) return;
+    if (!editingTestForm.title.trim()) {
+      Alert.alert("Error", "Please enter a test title.");
+      return;
+    }
+    if (!editingTestForm.startTime || !editingTestForm.endTime) {
+      Alert.alert("Error", "Scheduled Start Time and End Time are mandatory.");
+      return;
+    }
+    const startMs = new Date(editingTestForm.startTime).getTime();
+    const endMs = new Date(editingTestForm.endTime).getTime();
+    if (endMs <= startMs) {
+      Alert.alert("Error", "End Time must be after Start Time.");
+      return;
+    }
+
+    let parsedQuestionsData: any[] | null = null;
+    if (editingTestQuestionsJson.trim()) {
+      try {
+        const parsedQ = JSON.parse(editingTestQuestionsJson);
+        if (Array.isArray(parsedQ) && parsedQ.length > 0) {
+          parsedQuestionsData = parsedQ;
+        }
+      } catch (e: any) {
+        Alert.alert("Invalid Questions JSON", "Please check your questions JSON format: " + e.message);
+        return;
+      }
+    }
+
+    setEditingTestSaving(true);
+    try {
+      const payload: any = {
+        title: editingTestForm.title.trim(),
+        description: editingTestForm.description.trim(),
+        durationMinutes: Number(editingTestForm.duration) || 60,
+        passingMarks: Number(editingTestForm.passingMarks) || 0,
+        startTime: editingTestForm.startTime,
+        endTime: editingTestForm.endTime,
+        testType: editingTestForm.testType || "mock",
+        testMode: editingTestForm.testMode || "online",
+        targetAudience: editingTestForm.targetAudience || "all",
+        targetBatch: editingTestForm.targetAudience === "batch" ? (editingTestForm.targetBatch || "") : "",
+        subject: editingTestForm.subject || "",
+        topic: editingTestForm.topic || "",
+        schedulingMode: editingTestForm.schedulingMode || "fixed",
+        updatedBy: user?.name || user?.username || "admin"
+      };
+      if (editingTestForm.subjectSections && editingTestForm.subjectSections.length > 0) {
+        payload.subjectSections = editingTestForm.subjectSections;
+      }
+      if (parsedQuestionsData) {
+        payload.questionsData = parsedQuestionsData;
+      }
+
+      await api.put(`/test-portal/test-creation/${editingTestModalItem.id}`, payload);
+      Alert.alert("Success", "Test schedule and questions updated successfully!");
+      setEditingTestModalItem(null);
+      await loadTests();
+    } catch (e: any) {
+      console.error("[EditTest] Error:", e);
+      Alert.alert("Error", e.message || "Failed to update test.");
+    } finally {
+      setEditingTestSaving(false);
+    }
+  };
+
+  const handleAdminDocFileUpload = async (event: any) => {
+    const file = event.target?.files?.[0];
+    if (!file || !adminExplanationModalTest) return;
+    setAdminExpUploadingDoc(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async (e: any) => {
+        try {
+          const base64 = e.target?.result as string;
+          const res = await api.post("/test-portal/test-creation/upload-explanation-doc", {
+            base64,
+            fileName: file.name,
+            testTitle: adminExplanationModalTest.title
+          });
+          const uploadedUrl = res?.data?.docUrl || res?.docUrl || res?.previewUrl;
+          if (uploadedUrl) {
+            setAdminExpDocUrl(uploadedUrl);
+            setAdminExpDocName(file.name);
+            Alert.alert("Success", "Document uploaded to Google Drive successfully.");
+          } else {
+            throw new Error("No URL returned from Google Drive upload");
+          }
+        } catch (err: any) {
+          Alert.alert("Upload Failed", err.message || "Failed to upload document file.");
+        } finally {
+          setAdminExpUploadingDoc(false);
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "Failed to read document file.");
+      setAdminExpUploadingDoc(false);
+    }
+  };
+
+  const handleAdminPickDocFile = async () => {
+    if (!adminExplanationModalTest) return;
+    if (Platform.OS === "web") {
+      const inputEl = typeof document !== "undefined" ? document.getElementById("admin-exp-doc-upload") : null;
+      if (inputEl) (inputEl as any).click();
+    } else {
+      try {
+        const res = await DocumentPicker.getDocumentAsync({
+          type: [
+            "application/pdf",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "*/*"
+          ],
+          copyToCacheDirectory: true
+        });
+        if (!res.canceled && res.assets && res.assets.length > 0) {
+          const asset = res.assets[0];
+          setAdminExpUploadingDoc(true);
+          try {
+            let base64Str = "";
+            // On Android (Expo Go or standalone), ExponentFileSystem.readAsStringAsync
+            // throws java.io.IOException on DocumentPicker cache URIs due to scoped storage.
+            // The only reliable approach is: fetch the URI (uses Android ContentResolver)
+            // → get Blob → read as base64 via FileReader.
+            const resp = await fetch(asset.uri);
+            if (!resp.ok) throw new Error(`Failed to read file: HTTP ${resp.status}`);
+            const blob = await resp.blob();
+            base64Str = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onloadend = () => {
+                const r = (reader.result as string) || "";
+                // result is "data:<mime>;base64,<data>" — strip the prefix
+                resolve(r.includes(",") ? r.split(",")[1] : r);
+              };
+              reader.onerror = () => reject(new Error("FileReader failed to read document blob"));
+              reader.readAsDataURL(blob);
+            });
+            if (!base64Str) throw new Error("Could not read document file — base64 result was empty");
+
+            const mimeType = asset.mimeType || blob.type || "application/pdf";
+            const base64WithMime = base64Str.startsWith("data:")
+              ? base64Str
+              : `data:${mimeType};base64,${base64Str}`;
+
+            const apiRes = await api.post(
+              "/test-portal/test-creation/upload-explanation-doc",
+              {
+                base64: base64WithMime,
+                fileName: asset.name,
+                testTitle: adminExplanationModalTest.title
+              },
+              undefined,
+              120000 // 2 minutes timeout for document uploads
+            );
+            const uploadedUrl = apiRes?.data?.docUrl || apiRes?.docUrl || apiRes?.previewUrl;
+            if (uploadedUrl) {
+              setAdminExpDocUrl(uploadedUrl);
+              setAdminExpDocName(asset.name);
+              Alert.alert("Uploaded!", `"${asset.name}" uploaded to Google Drive successfully. Tap Save Explanations to link it to this test.`);
+            } else {
+              throw new Error("No URL returned from Google Drive upload");
+            }
+          } catch (err: any) {
+            console.error("[DocUpload] Upload failed:", err);
+            const errMsg = err?.message || String(err);
+            if (errMsg.includes("Endpoint not found") || errMsg.includes("404")) {
+              Alert.alert(
+                "Server Not Reachable",
+                `Cannot reach the backend server at ${getBaseUrl()}. Please check your internet connection.`
+              );
+            } else {
+              setAdminExpDocName(asset.name);
+              Alert.alert(
+                "Upload Failed",
+                `Error: ${errMsg}\n\nYou can also paste a Google Drive link manually in the document URL field.`
+              );
+            }
+          } finally {
+            setAdminExpUploadingDoc(false);
+          }
+        }
+      } catch (e: any) {
+        Alert.alert("Error", "Document selection failed: " + (e.message || e));
+        setAdminExpUploadingDoc(false);
+      }
+    }
+  };
 
   useEffect(() => {
     try {
@@ -6553,8 +7961,8 @@ function MainApp() {
         }
       } catch (storageErr) { }
 
-      // Keep UI state synced; status bar push notifications are delivered by backend push
-      if (Platform.OS === "web" && !isFirstSnapshot) {
+      // Keep UI state synced; real-time alerts fire on both Web and Android APK
+      if (!isFirstSnapshot) {
         snapshot.docChanges().forEach((change) => {
           if (change.type === "modified" || change.type === "added") {
             const data = change.doc.data() as any;
@@ -6616,23 +8024,46 @@ function MainApp() {
       ...(Array.isArray(studentAttempts) ? studentAttempts : []),
       ...flatResults
     ];
+
+    const reqSId = String(req.studentId || "").trim().toLowerCase();
+    const reqRoll = String(req.rollNumber || "").trim().toLowerCase();
+    const reqUser = String(req.username || "").trim().toLowerCase();
+    const reqName = String(req.studentName || "").trim().toLowerCase();
+
+    // Resolve matching student in directory to gather ALL roll numbers (mock roll, normal roll, admission no)
+    const matchedStudent = (students || []).find((s: any) => {
+      const sId = String(s.id || "").trim().toLowerCase();
+      const uId = String(s.userId || "").trim().toLowerCase();
+      const rNum = String(s.rollNumber || s.rollNo || "").trim().toLowerCase();
+      const mRoll = String(s.mockRollNumber || s.specialRollNo || "").trim().toLowerCase();
+      const lUser = String(s.loginUsername || "").trim().toLowerCase();
+      return (sId && sId === reqSId) || (uId && uId === reqSId) || (rNum && (rNum === reqRoll || rNum === reqUser)) || (mRoll && mRoll === reqRoll) || (lUser && lUser === reqUser);
+    });
+
+    const knownIds = new Set<string>();
+    if (reqSId) knownIds.add(reqSId);
+    if (reqRoll) knownIds.add(reqRoll);
+    if (reqUser) knownIds.add(reqUser);
+    if (matchedStudent) {
+      if (matchedStudent.id) knownIds.add(String(matchedStudent.id).toLowerCase());
+      if (matchedStudent.userId) knownIds.add(String(matchedStudent.userId).toLowerCase());
+      if (matchedStudent.rollNumber) knownIds.add(String(matchedStudent.rollNumber).toLowerCase());
+      if (matchedStudent.rollNo) knownIds.add(String(matchedStudent.rollNo).toLowerCase());
+      if (matchedStudent.mockRollNumber) knownIds.add(String(matchedStudent.mockRollNumber).toLowerCase());
+      if (matchedStudent.specialRollNo) knownIds.add(String(matchedStudent.specialRollNo).toLowerCase());
+      if (matchedStudent.loginUsername) knownIds.add(String(matchedStudent.loginUsername).toLowerCase());
+    }
+
     return attempts.some((att: any) => {
       const attTestId = String(att.testId || att.test?._id || att.test || '').trim();
       const reqTestId = String(req.testId || '').trim();
       if (attTestId && reqTestId && attTestId !== reqTestId) return false;
 
       const attStudentId = String(att.studentId || att.userId || att.username || att.rollNumber || '').trim().toLowerCase();
-      const reqStudentId = String(req.studentId || req.username || req.rollNumber || '').trim().toLowerCase();
-
       const attRoll = String(att.rollNumber || att.rollNo || '').trim().toLowerCase();
-      const reqRoll = String(req.rollNumber || '').trim().toLowerCase();
-
       const attName = String(att.studentName || att.name || '').trim().toLowerCase();
-      const reqName = String(req.studentName || '').trim().toLowerCase();
 
-      const isUserMatch = (reqStudentId && attStudentId === reqStudentId) ||
-        (reqRoll && (attRoll === reqRoll || attStudentId === reqRoll || attRoll === reqStudentId)) ||
-        (reqStudentId && attRoll === reqStudentId);
+      const isUserMatch = (attStudentId && knownIds.has(attStudentId)) || (attRoll && knownIds.has(attRoll));
       const isNameMatch = reqName && attName && attName === reqName;
 
       const isCompleted = att.status === "submitted" || att.status === "evaluated" || att.status === "pass" || att.status === "fail" || att.isSubmitted || !!att.submittedAt || att.obtainedMarks !== undefined;
@@ -6661,7 +8092,7 @@ function MainApp() {
 
       // Check if test is OVER (endTime has passed)
       // Note: Never auto-delete or invalidate if already approved — allow approved students to see permission granted
-      if (req.status !== "approved" && matchingTest.endTime) {
+      if (req.status !== "approved" && req.status !== "pending" && matchingTest.endTime) {
         const endTimeMs = typeof matchingTest.endTime?.toDate === "function"
           ? matchingTest.endTime.toDate().getTime()
           : new Date(matchingTest.endTime).getTime();
@@ -6687,14 +8118,10 @@ function MainApp() {
       const res = await api.get(url);
       const data = res?.data || res || [];
       if (Array.isArray(data)) {
-        const activeRequests = data.filter((req: any) => {
-          const invalidOrCompleted = isRequestInvalidOrCompleted(req);
-          if (invalidOrCompleted && req.id && isAdmin) {
-            api.delete(`/test-portal/test-creation/permission-requests/${req.id}`).catch(() => { });
-            return false;
-          }
-          return !invalidOrCompleted;
-        });
+        // Admin sees ALL requests (never auto-delete); students only see their active ones
+        const activeRequests = isAdmin
+          ? data
+          : data.filter((req: any) => !isRequestInvalidOrCompleted(req));
         setOfflineTestRequests(activeRequests);
         try {
           if (typeof localStorage !== "undefined") {
@@ -6726,28 +8153,11 @@ function MainApp() {
     return () => unsub();
   }, [isAdmin]);
 
-  // Initial load & smart polling fallback for offline test requests (alongside onSnapshot real-time sync)
+  // Initial load for offline test requests (real-time sync is handled by onSnapshot listener)
   useEffect(() => {
     if (!user || activeTab !== "test") return;
     loadOfflineTestRequests();
-
-    // Safety polling net:
-    // For student: poll every 5s if a request is pending so approval transitions immediately
-    // For admin: poll every 8s while viewing available exams tab
-    const pollIntervalMs = !isAdmin ? 5000 : 8000;
-    const pollTimer = setInterval(() => {
-      if (!isAdmin) {
-        const hasPending = (offlineTestRequests || []).some((r: any) => r.status === "pending" && !isRequestInvalidOrCompleted(r));
-        if (hasPending) {
-          loadOfflineTestRequests();
-        }
-      } else if (testSub === "available") {
-        loadOfflineTestRequests();
-      }
-    }, pollIntervalMs);
-
-    return () => clearInterval(pollTimer);
-  }, [user, activeTab, isAdmin, testSub, offlineTestRequests]);
+  }, [user?.id, activeTab, isAdmin, testSub]);
 
   const saveOfflineTestRequests = async (newList: any[]) => {
     setOfflineTestRequests(newList);
@@ -6769,8 +8179,8 @@ function MainApp() {
         list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
         setAdminAlerts(list);
 
-        // Keep UI state synced; status bar push notifications are delivered by backend push
-        if (Platform.OS === "web" && !isFirstSnapshot) {
+        // Keep UI state synced; real-time alerts fire on both Web and Android APK
+        if (!isFirstSnapshot) {
           snapshot.docChanges().forEach((change) => {
             if (change.type === "added") {
               const alert = change.doc.data() as any;
@@ -6914,7 +8324,7 @@ function MainApp() {
 
     // 1. Sync pending offline test requests
     (offlineTestRequests || []).forEach((req: any) => {
-      if (req && req.status === "pending" && !isRequestInvalidOrCompleted(req)) {
+      if (req && req.status === "pending") {
         const alertId = `offline_test_${req.id}`;
         if (!dismissedSet.has(alertId) && !adminAlerts.some(a => a.id === alertId)) {
           setDoc(doc(db, "admin_alerts", alertId), {
@@ -7054,6 +8464,21 @@ function MainApp() {
     (adminAlerts || []).forEach((alert: any) => {
       if (alert && alert.type === "sacs_request" && alert.sourceDocId) {
         if (!pendingSacsIds.has(alert.sourceDocId)) {
+          deleteDoc(doc(db, "admin_alerts", alert.id)).catch(() => { });
+          setAdminAlerts(prev => prev.filter(a => a.id !== alert.id));
+        }
+      }
+    });
+
+    // 4c. Reconcile and purge any obsolete profile_submission alerts whose requests are no longer pending (e.g. approved or rejected)
+    const pendingProfileReqIds = new Set(
+      (profileRequests || [])
+        .filter((r: any) => r && r.status === "pending")
+        .map((r: any) => r.id || r._id || r.studentId)
+    );
+    (adminAlerts || []).forEach((alert: any) => {
+      if (alert && (alert.type === "profile_submission" || alert.type === "profile_edit") && alert.sourceDocId) {
+        if (!pendingProfileReqIds.has(alert.sourceDocId)) {
           deleteDoc(doc(db, "admin_alerts", alert.id)).catch(() => { });
           setAdminAlerts(prev => prev.filter(a => a.id !== alert.id));
         }
@@ -7353,6 +8778,12 @@ function MainApp() {
   ];
 
   const getBaseUrl = () => {
+    // 1. Explicit environment variable if configured via Expo
+    if (typeof process !== "undefined" && (process.env as any)?.EXPO_PUBLIC_API_URL) {
+      return (process.env as any).EXPO_PUBLIC_API_URL;
+    }
+
+    // 2. Web browser environment
     if (Platform.OS === "web" && typeof window !== "undefined" && window.location && window.location.hostname) {
       const hostname = window.location.hostname;
       if (hostname === "localhost" || hostname === "127.0.0.1" || hostname.startsWith("192.168.") || hostname.startsWith("10.") || hostname.startsWith("172.")) {
@@ -7360,10 +8791,12 @@ function MainApp() {
       }
       return `https://${hostname}/api`;
     }
-    if (hostIpRef.current && hostIpRef.current !== DEFAULT_HOST_IP) {
+
+    // 3. Native Mobile (APK / Android / iOS)
+    if (hostIpRef.current && hostIpRef.current !== DEFAULT_HOST_IP && hostIpRef.current !== "production") {
       return `http://${hostIpRef.current}:5000/api`;
     }
-    return "https://nermaiiasacademy-519c8.web.app/api";
+    return PRODUCTION_API_URL;
   };
   const extractionAbortRef = useRef<AbortController | null>(null);
   // Auth token ref — always holds the latest JWT so api methods can inject without stale closures
@@ -8124,6 +9557,7 @@ function MainApp() {
   const [quizAnswers, setQuizAnswers] = useState<Record<number, number>>({});
   const [quizFeedbackQuestions, setQuizFeedbackQuestions] = useState<any[]>([]);
   const [showAnswers, setShowAnswers] = useState(true);
+  const [isSubmittingQuiz, setIsSubmittingQuiz] = useState(false);
   const [studyShowAnswers, setStudyShowAnswers] = useState(true);
   const [reviewQuestionFilter, setReviewQuestionFilter] = useState<'all' | 'correct' | 'wrong' | 'unattempted'>('all');
 
@@ -9483,21 +10917,17 @@ function MainApp() {
           if (data.status === "approved") {
             const reloaders = getFeatureReloaders();
             reloaders[data.feature]?.();
-            if (Platform.OS === "web") {
-              showPhoneNotification(
-                "✅ Submission Approved",
-                `Your submission for ${data.feature?.replace(/_/g, " ") || "item"} was approved!`,
-                { targetTab: "erp", dedupeId: `sub_app_${change.doc.id}` }
-              );
-            }
+            showPhoneNotification(
+              "✅ Submission Approved",
+              `Your submission for ${data.feature?.replace(/_/g, " ") || "item"} was approved!`,
+              { targetTab: "erp", dedupeId: `sub_app_${change.doc.id}` }
+            );
           } else if (data.status === "rejected") {
-            if (Platform.OS === "web") {
-              showPhoneNotification(
-                "❌ Submission Update",
-                `Your submission for ${data.feature?.replace(/_/g, " ") || "item"} was rejected.`,
-                { targetTab: "erp", dedupeId: `sub_rej_${change.doc.id}` }
-              );
-            }
+            showPhoneNotification(
+              "❌ Submission Update",
+              `Your submission for ${data.feature?.replace(/_/g, " ") || "item"} was rejected.`,
+              { targetTab: "erp", dedupeId: `sub_rej_${change.doc.id}` }
+            );
           }
 
           // Remove from pendingSubmissions regardless of outcome
@@ -9957,6 +11387,104 @@ function MainApp() {
       setFullscreenGateRequired(false);
     }
 
+    // ── SCREEN WAKE LOCK: Keep screen continuously awake during active exam ──
+    // Prevents device display timeout (e.g. 15s sleep) while student performs rough work/math calculations
+    let isMounted = true;
+    let wakeLockSentinel: any = null;
+    let wakeLockVideoFallback: any = null;
+
+    const acquireScreenWakeLock = async () => {
+      if (!isMounted) return;
+
+      // 1. Web: Modern W3C Screen Wake Lock API (Chrome, Edge, Safari 16.4+, Android Chrome)
+      if (Platform.OS === "web" && typeof navigator !== "undefined" && "wakeLock" in navigator) {
+        try {
+          if (wakeLockSentinel && !wakeLockSentinel.released) {
+            return;
+          }
+          wakeLockSentinel = await (navigator as any).wakeLock.request("screen");
+          wakeLockSentinel.addEventListener("release", () => {
+            // Automatically re-acquire when student returns to visible tab
+            if (isMounted && typeof document !== "undefined" && document.visibilityState === "visible") {
+              acquireScreenWakeLock();
+            }
+          });
+          console.log("[Exam Proctoring] Screen Wake Lock acquired successfully.");
+        } catch (err: any) {
+          console.warn("[Exam Proctoring] Wake Lock request error (fallback will engage):", err?.message || err);
+        }
+      }
+
+      // 2. Web: Silent Video Fallback (for older browsers/WebViews where wakeLock is unavailable)
+      if (Platform.OS === "web" && typeof document !== "undefined" && !wakeLockSentinel) {
+        try {
+          if (!wakeLockVideoFallback) {
+            const vid = document.createElement("video");
+            vid.setAttribute("playsinline", "true");
+            vid.setAttribute("webkit-playsinline", "true");
+            vid.setAttribute("muted", "true");
+            vid.setAttribute("loop", "true");
+            vid.muted = true;
+            vid.loop = true;
+            vid.style.position = "fixed";
+            vid.style.top = "-9999px";
+            vid.style.left = "-9999px";
+            vid.style.width = "1px";
+            vid.style.height = "1px";
+            vid.style.opacity = "0.001";
+            vid.style.pointerEvents = "none";
+            // 1-pixel silent base64 WebM video
+            vid.src = "data:video/webm;base64,GkXfo0AgQoaBAUL3gQFC8oEEQvOBCEKCQAR3ZWJtQoeBAkKFgQIYUkoakCaVhldEluqih1ZQOISIQcKEZr7gkCDAQcY=";
+            document.body.appendChild(vid);
+            vid.play().catch(() => { });
+            wakeLockVideoFallback = vid;
+          } else {
+            wakeLockVideoFallback.play().catch(() => { });
+          }
+        } catch (_) { }
+      }
+
+      // 3. React Native Mobile APK (expo-keep-awake)
+      if (Platform.OS !== "web") {
+        try {
+          const KeepAwake = require("expo-keep-awake");
+          if (KeepAwake?.activateKeepAwakeAsync) {
+            KeepAwake.activateKeepAwakeAsync("NERMAI_EXAM_WAKELOCK").catch(() => { });
+          }
+        } catch (_) { }
+      }
+    };
+
+    const releaseScreenWakeLock = async () => {
+      isMounted = false;
+      try {
+        if (wakeLockSentinel) {
+          await wakeLockSentinel.release();
+          wakeLockSentinel = null;
+        }
+      } catch (_) { }
+
+      try {
+        if (wakeLockVideoFallback) {
+          wakeLockVideoFallback.pause();
+          wakeLockVideoFallback.remove();
+          wakeLockVideoFallback = null;
+        }
+      } catch (_) { }
+
+      if (Platform.OS !== "web") {
+        try {
+          const KeepAwake = require("expo-keep-awake");
+          if (KeepAwake?.deactivateKeepAwake) {
+            KeepAwake.deactivateKeepAwake("NERMAI_EXAM_WAKELOCK").catch(() => { });
+          }
+        } catch (_) { }
+      }
+    };
+
+    // Immediately request screen wake lock on exam launch/resume
+    acquireScreenWakeLock();
+
     const clearRootBlur = () => {
       if (Platform.OS === "web" && typeof document !== "undefined") {
         try {
@@ -10064,8 +11592,9 @@ function MainApp() {
       }
     }, 1000);
 
-    // ── MOBILE APP (APK) PROCTORING: AppState background/active listener ──
+    // ── MOBILE APP (APK) PROCTORING: AppState background/active listener & BackHandler ──
     let mobileAppStateSub: any = null;
+    let mobileBackSub: any = null;
     if (Platform.OS !== "web") {
       try {
         const handleMobileAppStateChange = (nextState: string) => {
@@ -10076,8 +11605,27 @@ function MainApp() {
           }
         };
         mobileAppStateSub = AppState.addEventListener("change", handleMobileAppStateChange);
+
+        const handleHardwareBackPress = () => {
+          if (previewImageUri) {
+            setPreviewImageUri(null);
+            setPreviewImageTitle("");
+            return true;
+          }
+          if (currentQIdx > 0) {
+            setCurrentQIdx(prev => Math.max(0, prev - 1));
+            return true;
+          }
+          RNAlert.alert(
+            "Exit Exam?",
+            "Leaving the exam will submit your test attempt or trigger a proctoring violation. Please submit your exam when finished.",
+            [{ text: "Continue Exam", style: "cancel" }]
+          );
+          return true;
+        };
+        mobileBackSub = BackHandler.addEventListener("hardwareBackPress", handleHardwareBackPress);
       } catch (e) {
-        console.log("Failed to attach mobile AppState listener:", e);
+        console.log("Failed to attach mobile AppState/BackHandler listener:", e);
       }
     }
 
@@ -10111,6 +11659,8 @@ function MainApp() {
           onUserLeft("Tab switched / minimized");
         } else {
           removeShieldBlur();
+          // Always re-acquire wake lock when student returns to visible tab
+          acquireScreenWakeLock();
           onUserReturned("Tab switched / minimized");
         }
       };
@@ -10139,6 +11689,8 @@ function MainApp() {
 
       const handleWindowFocus = () => {
         removeShieldBlur();
+        // Always re-acquire wake lock on window focus
+        acquireScreenWakeLock();
         onUserReturned("Window blur / focus lost");
       };
 
@@ -10184,6 +11736,11 @@ function MainApp() {
 
       // ── Mobile Touch & Screenshot Gesture Proctoring (Phone View Website) ──
       const handleTouchStart = (e: TouchEvent) => {
+        // Ensure wake lock is engaged on user touch gesture (required by some mobile browsers)
+        if (!wakeLockSentinel) {
+          acquireScreenWakeLock();
+        }
+
         // Multi-touch screenshot gesture (Android 3-finger swipe)
         if (e.touches && e.touches.length >= 3) {
           e.preventDefault();
@@ -10202,17 +11759,16 @@ function MainApp() {
         }
       };
 
-      const handleTouchCancel = (e: TouchEvent) => {
-        // Mobile hardware button screenshots (Power + Vol Down) trigger touchcancel
-        applyShieldBlur();
-        triggerViolationStrike("Screen capture gesture / power action", 1);
-        setTimeout(removeShieldBlur, 250);
-      };
-
       const handleTouchEnd = () => {
         if (tabLeaveStartTimeRef.current) {
           removeShieldBlur();
           onUserReturned("Status bar / notification pull-down");
+        }
+      };
+
+      const handleUserClick = () => {
+        if (!wakeLockSentinel) {
+          acquireScreenWakeLock();
         }
       };
 
@@ -10228,11 +11784,12 @@ function MainApp() {
       document.addEventListener("keyup", handleKeyDown);
       document.addEventListener("touchstart", handleTouchStart, { passive: false });
       document.addEventListener("touchend", handleTouchEnd, { passive: true });
-      document.addEventListener("touchcancel", handleTouchCancel, { passive: true });
+      document.addEventListener("click", handleUserClick, { passive: true });
 
       return () => {
         clearInterval(awayWatcher);
         mobileAppStateSub?.remove?.();
+        releaseScreenWakeLock();
         removeShieldBlur();
         document.removeEventListener("visibilitychange", handleVisibilityChange);
         document.removeEventListener("fullscreenchange", handleFullscreenChange);
@@ -10246,13 +11803,15 @@ function MainApp() {
         document.removeEventListener("keyup", handleKeyDown);
         document.removeEventListener("touchstart", handleTouchStart);
         document.removeEventListener("touchend", handleTouchEnd);
-        document.removeEventListener("touchcancel", handleTouchCancel);
+        document.removeEventListener("click", handleUserClick);
       };
     }
 
     return () => {
       clearInterval(awayWatcher);
       mobileAppStateSub?.remove?.();
+      mobileBackSub?.remove?.();
+      releaseScreenWakeLock();
     };
   }, [activeAttempt]);
 
@@ -10282,10 +11841,18 @@ function MainApp() {
         // is reading a question without having changed any answer yet.
         if (currentHash === lastSyncedHash) return;
 
-        const formattedBatch = Object.entries(draft.answers).map(([qId, val]) => ({
-          questionId: qId,
-          answer: val
-        }));
+        const qList = (draft.questions && draft.questions.length > 0)
+          ? draft.questions
+          : (attemptQuestions || []);
+
+        const formattedBatch = (qList && qList.length > 0)
+          ? qList.map((q: any) => ({
+              questionId: q.id,
+              answer: (draft.answers[q.id] !== undefined && draft.answers[q.id] !== null && draft.answers[q.id] !== "")
+                ? draft.answers[q.id]
+                : null
+            }))
+          : Object.entries(draft.answers).map(([qId, val]) => ({ questionId: qId, answer: val || null }));
 
         if (formattedBatch.length > 0) {
           // Include x-attempt-id header as bypass so this still works if JWT session expired.
@@ -10332,11 +11899,13 @@ function MainApp() {
     // silently dropping every answer save.
     const refreshExamToken = async () => {
       try {
-        if (typeof localStorage === "undefined") return;
-        const stored = JSON.parse(localStorage.getItem("nermai_auth_user") || "{}");
+        const stored = (typeof localStorage !== "undefined")
+          ? JSON.parse(localStorage.getItem("nermai_auth_user") || "{}")
+          : (await userStorage.get() || {});
         if (!stored.refreshToken || !stored.sessionId) return;
         const baseUrl = getBaseUrl();
-        const res = await fetch(`${baseUrl}/api/auth/refresh`, {
+        const refreshEndpoint = baseUrl.endsWith("/api") ? `${baseUrl}/auth/refresh` : `${baseUrl}/api/auth/refresh`;
+        const res = await fetch(refreshEndpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ refreshToken: stored.refreshToken, sessionId: stored.sessionId })
@@ -10346,7 +11915,7 @@ function MainApp() {
           stored.token = data.data.token;
           if (data.data.refreshToken) stored.refreshToken = data.data.refreshToken;
           if (data.data.sessionId) stored.sessionId = data.data.sessionId;
-          localStorage.setItem("nermai_auth_user", JSON.stringify(stored));
+          await userStorage.save(stored);
           console.log("[ExamTokenRefresh] Token refreshed successfully during exam.");
         }
       } catch (e) {
@@ -10400,9 +11969,17 @@ function MainApp() {
           try { draft = JSON.parse(localStorage.getItem(key) || "{}"); } catch (_) { continue; }
           if (!draft || !draft.answers) continue;
 
-          const formattedBatch = Object.entries(draft.answers)
-            .filter(([_, val]) => val !== null && val !== undefined && val !== "")
-            .map(([qId, val]) => ({ questionId: qId, answer: val }));
+          const qList = (draft.questions && draft.questions.length > 0) ? draft.questions : [];
+          const formattedBatch = (qList.length > 0)
+            ? qList.map((q: any) => ({
+                questionId: q.id,
+                answer: (draft.answers[q.id] !== undefined && draft.answers[q.id] !== null && draft.answers[q.id] !== "")
+                  ? draft.answers[q.id]
+                  : null
+              }))
+            : Object.entries(draft.answers)
+                .filter(([_, val]) => val !== null && val !== undefined && val !== "")
+                .map(([qId, val]) => ({ questionId: qId, answer: val }));
 
           if (formattedBatch.length === 0) {
             // Draft has no answers — just clear the stale key
@@ -10592,11 +12169,10 @@ function MainApp() {
     const myStudent = getLoggedInStudent(user, students);
     const studentBatch = (myStudent?.batch || user.batch || "").trim().toLowerCase();
 
-    // Real-time Firestore listener for non-deleted announcements
-    const announcementsQuery = query(
-      collection(db, "announcements"),
-      where("isDeleted", "==", false)
-    );
+    // Real-time Firestore listener for non-deleted announcements (capped at 35 for students to prevent 190+ doc reads)
+    const announcementsQuery = isAdmin
+      ? query(collection(db, "announcements"), where("isDeleted", "==", false))
+      : query(collection(db, "announcements"), where("isDeleted", "==", false), limit(35));
 
     let isFirstAnnouncementsSnapshot = true;
     const unsubscribe = onSnapshot(
@@ -10666,8 +12242,8 @@ function MainApp() {
 
             const targetStudentId = ann.targetStudentId;
             const currentStudentId = myStudent?.id || user?.studentId || user?.userId;
-            if (targetStudentId && currentStudentId && String(targetStudentId) === String(currentStudentId)) {
-              return true;
+            if (targetStudentId) {
+              return !!currentStudentId && String(targetStudentId) === String(currentStudentId);
             }
 
             const lowerTitle = (ann.title || "").toLowerCase();
@@ -10710,8 +12286,7 @@ function MainApp() {
             if (!playedNoticeIdsRef.current.has(n.id)) {
               playedNoticeIdsRef.current.add(n.id);
               hasNewlyPlayed = true;
-              // Audio announcements stay in-app; remote push notifications are handled by backend FCM push
-              if (Platform.OS === "web" && !isFirstAnnouncementsSnapshot) {
+              if (!isFirstAnnouncementsSnapshot) {
                 const isFeeAlert = (n.title || "").includes("Fee Payment Alert") ||
                   (n.content || "").toLowerCase().includes("pay your pending") ||
                   (n.content || "").toLowerCase().includes("pending tuition fee");
@@ -10789,7 +12364,7 @@ function MainApp() {
               return [updatedStudent];
             });
 
-            if (Platform.OS === "web" && !isFirstStudentSnapshot) {
+            if (!isFirstStudentSnapshot) {
               if (data.idCardGenerated) {
                 showPhoneNotification(
                   "🪪 ID Card Released",
@@ -10839,7 +12414,7 @@ function MainApp() {
         });
         setProfileRequests(requests);
 
-        if (Platform.OS === "web" && !isFirstProfileReqSnapshot) {
+        if (!isFirstProfileReqSnapshot) {
           snapshot.docChanges().forEach((change) => {
             if (change.type === "added") {
               const data = change.doc.data() as any;
@@ -11040,7 +12615,7 @@ function MainApp() {
           list.sort(sortDailyContentDesc);
           setLmsDailyContent(list);
 
-          if (Platform.OS === "web" && !isFirstDailySnapshot) {
+          if (!isFirstDailySnapshot) {
             snapshot.docChanges().forEach((change) => {
               if (change.type === "added") {
                 const data = change.doc.data() as any;
@@ -11094,7 +12669,7 @@ function MainApp() {
             loadTodayQuiz();
           }
 
-          if (Platform.OS === "web" && !isFirstQuizSnapshot) {
+          if (!isFirstQuizSnapshot) {
             snapshot.docChanges().forEach((change) => {
               if (change.type === "added") {
                 const qData = change.doc.data() as any;
@@ -11138,7 +12713,7 @@ function MainApp() {
           });
           setAdmissions(list);
 
-          if (Platform.OS === "web" && !isFirstAdmissionSnapshot) {
+          if (!isFirstAdmissionSnapshot) {
             snapshot.docChanges().forEach((change) => {
               if (change.type === "added") {
                 const data = change.doc.data() as any;
@@ -11182,7 +12757,7 @@ function MainApp() {
           });
           setLeads(list);
 
-          if (Platform.OS === "web" && !isFirstLeadSnapshot) {
+          if (!isFirstLeadSnapshot) {
             snapshot.docChanges().forEach((change) => {
               if (change.type === "added") {
                 const data = change.doc.data() as any;
@@ -11207,9 +12782,9 @@ function MainApp() {
     } catch (_) { }
   }, [user]);
 
-  // True Real-Time Snapshot Listener for Custom Application Leads
+  // True Real-Time Snapshot Listener for Custom Application Leads (Admin Only)
   useEffect(() => {
-    if (!user) return;
+    if (!user || !isAdmin) return;
     try {
       const customLeadsQuery = query(collection(db, "custom_application_leads"), where("isDeleted", "==", false), orderBy("createdAt", "desc"));
       const unsubscribe = onSnapshot(
@@ -11222,7 +12797,7 @@ function MainApp() {
       );
       return () => unsubscribe();
     } catch (_) { }
-  }, [user]);
+  }, [user, isAdmin]);
 
   // True Real-Time (0-second delay) Snapshot Listener for Campaigns & Banners
   useEffect(() => {
@@ -11263,7 +12838,7 @@ function MainApp() {
           });
           setEnquiries(list);
 
-          if (Platform.OS === "web" && !isFirstInquirySnapshot) {
+          if (!isFirstInquirySnapshot) {
             snapshot.docChanges().forEach((change) => {
               if (change.type === "added") {
                 const data = change.doc.data() as any;
@@ -11381,7 +12956,7 @@ function MainApp() {
 
           setTests(filteredList);
 
-          if (Platform.OS === "web" && !isFirstTestSnapshot) {
+          if (!isFirstTestSnapshot) {
             snapshot.docChanges().forEach((change) => {
               if (change.type === "added") {
                 const data = change.doc.data() as any;
@@ -11440,7 +13015,8 @@ function MainApp() {
       const batch = myStudent?.batch || user?.batch ||
         (Array.isArray(myStudent?.batches) ? myStudent.batches[0] : null) ||
         (Array.isArray(user?.batches) ? user.batches[0] : null) || "";
-      const res = await api.get(`/announcement?role=${role}&batch=${encodeURIComponent(batch)}`);
+      const studentId = myStudent?.id || user?.studentId || user?.userId || "";
+      const res = await api.get(`/announcement?role=${role}&batch=${encodeURIComponent(batch)}&studentId=${encodeURIComponent(studentId)}`);
       const rawData = res?.data !== undefined ? res.data : res;
       let notices: any[] = Array.isArray(rawData)
         ? rawData
@@ -11460,6 +13036,11 @@ function MainApp() {
           const isProfileAlert = (ann.title || "").toLowerCase().includes("complete your profile") ||
             (ann.content || "").toLowerCase().includes("complete your profile");
           if (!isFeeAlert && !isProfileAlert) return true;
+          const targetStudentId = ann.targetStudentId;
+          const currentStudentId = myStudent?.id || user?.studentId || user?.userId;
+          if (targetStudentId) {
+            return !!currentStudentId && String(targetStudentId) === String(currentStudentId);
+          }
           const lowerTitle = (ann.title || "").toLowerCase();
           const lowerContent = (ann.content || "").toLowerCase();
           const stdNameLower = myStudentName.toLowerCase().trim();
@@ -12297,8 +13878,8 @@ function MainApp() {
       if (quiz) {
         appDataCache.set("today_quiz", quiz);
       }
-      if (quiz && quiz.existingAttempt) {
-        setQuizScore(quiz.existingAttempt.correctCount);
+      if (quiz && quiz.existingAttempt && Array.isArray(quiz.questions)) {
+        setQuizScore(typeof quiz.existingAttempt.correctCount === "number" ? quiz.existingAttempt.correctCount : 0);
         const attemptAnswers = quiz.existingAttempt.answers || quiz.existingAttempt.results || [];
         const feedback = quiz.questions.map((q: any, idx: number) => {
           let ansObj = null;
@@ -12333,10 +13914,10 @@ function MainApp() {
     if (!user) return;
     try {
       const res = await api.get(`/lms/daily-quiz/${quizId}?studentId=${user.userId}`);
-      const quiz = res.data || res;
-      setTodayQuiz(quiz);
-      if (quiz.existingAttempt) {
-        setQuizScore(quiz.existingAttempt.correctCount);
+      const quiz = res?.data !== undefined ? res.data : res;
+      setTodayQuiz(quiz || null);
+      if (quiz && quiz.existingAttempt && Array.isArray(quiz.questions)) {
+        setQuizScore(typeof quiz.existingAttempt.correctCount === "number" ? quiz.existingAttempt.correctCount : 0);
         const attemptAnswers = quiz.existingAttempt.answers || quiz.existingAttempt.results || [];
         const feedback = quiz.questions.map((q: any, idx: number) => {
           let ansObj = null;
@@ -12566,8 +14147,12 @@ function MainApp() {
     let isInitialLive = true;
 
     try {
+      const qLive = (isAdmin || user.role === "staff" || user.role === "teacher")
+        ? collection(db, "live_sessions")
+        : query(collection(db, "live_sessions"), where("isDeleted", "==", false), limit(2));
+
       unsubLive = onSnapshot(
-        collection(db, "live_sessions"),
+        qLive,
         (snapshot) => {
           if (isInitialLive) {
             isInitialLive = false;
@@ -12585,7 +14170,7 @@ function MainApp() {
     return () => {
       if (unsubLive) unsubLive();
     };
-  }, [user?.id, user?.userId, user?.role]);
+  }, [user?.id, user?.userId, user?.role, isAdmin]);
 
   // ── Real-Time Sync: Recorded Classes (Classes Collection) ────────────────────
   // Watches the classes collection in Firestore in real time across Website and APK.
@@ -12600,7 +14185,10 @@ function MainApp() {
     let isInitialClasses = true;
 
     try {
-      const qClasses = query(collection(db, "classes"), where("isDeleted", "==", false));
+      const qClasses = (isAdmin || user.role === "staff" || user.role === "teacher")
+        ? query(collection(db, "classes"), where("isDeleted", "==", false))
+        : query(collection(db, "classes"), where("isDeleted", "==", false), limit(3));
+
       unsubClasses = onSnapshot(
         qClasses,
         (snapshot) => {
@@ -12611,25 +14199,23 @@ function MainApp() {
           console.log("[ClassesSync] Classes snapshot update detected. Reloading recorded classes in real-time...");
           loadRecordedClasses();
 
-          if (Platform.OS === "web") {
-            snapshot.docChanges().forEach((change) => {
-              if (change.type === "added") {
-                const data = change.doc.data() as any;
-                const isRecorded = data.classType === "recorded" || data.classType === "youtube_recorded" || !!data.encryptedVideoId;
-                if (!isRecorded) return;
+          snapshot.docChanges().forEach((change) => {
+            if (change.type === "added") {
+              const data = change.doc.data() as any;
+              const isRecorded = data.classType === "recorded" || data.classType === "youtube_recorded" || !!data.encryptedVideoId;
+              if (!isRecorded) return;
 
-                const createdMs = data.createdAt ? (data.createdAt.toDate ? data.createdAt.toDate().getTime() : new Date(data.createdAt).getTime()) : 0;
-                if (createdMs > 0 && createdMs < (appStartTimeRef.current - 60000)) {
-                  return;
-                }
-                showPhoneNotification(
-                  "📹 New Recorded Class Available",
-                  data.title || data.name || "A new recorded lecture has been uploaded.",
-                  { targetTab: "lms", targetSub: "recorded", dedupeId: `rec_${change.doc.id}` }
-                );
+              const createdMs = data.createdAt ? (data.createdAt.toDate ? data.createdAt.toDate().getTime() : new Date(data.createdAt).getTime()) : 0;
+              if (createdMs > 0 && createdMs < (appStartTimeRef.current - 60000)) {
+                return;
               }
-            });
-          }
+              showPhoneNotification(
+                "📹 New Recorded Class Available",
+                data.title || data.name || "A new recorded lecture has been uploaded.",
+                { targetTab: "lms", targetSub: "recorded", dedupeId: `rec_${change.doc.id}` }
+              );
+            }
+          });
         },
         (err) => console.log("Real-time classes listener note:", err?.message)
       );
@@ -12640,12 +14226,12 @@ function MainApp() {
     return () => {
       if (unsubClasses) unsubClasses();
     };
-  }, [user?.id, user?.userId, user?.role]);
+  }, [user?.id, user?.userId, user?.role, isAdmin]);
 
-  // ── Real-Time Sync: Batches Collection ──────────────────────────────────────
+  // ── Real-Time Sync: Batches Collection (Admin & Staff ERP) ───────────────────
   // Syncs ERP & LMS batch lists in real time when any batch is created/edited.
   useEffect(() => {
-    if (!user) return;
+    if (!user || (!isAdmin && user.role !== "staff")) return;
 
     let unsubBatches: (() => void) | null = null;
     let isInitialBatches = true;
@@ -12676,10 +14262,10 @@ function MainApp() {
     };
   }, [user?.id, user?.role, isAdmin]);
 
-  // ── Real-Time Sync: Courses Collection ──────────────────────────────────────
+  // ── Real-Time Sync: Courses Collection (Admin & Staff ERP) ───────────────────
   // Syncs curriculum courses in real time across Web & APK.
   useEffect(() => {
-    if (!user) return;
+    if (!user || (!isAdmin && user.role !== "staff")) return;
 
     let unsubCourses: (() => void) | null = null;
     let isInitialCourses = true;
@@ -12708,7 +14294,7 @@ function MainApp() {
     return () => {
       if (unsubCourses) unsubCourses();
     };
-  }, [user?.id, user?.role]);
+  }, [user?.id, user?.role, isAdmin]);
 
   const loadLmsDailyContent = async () => {
     if (!user) return;
@@ -12999,10 +14585,11 @@ function MainApp() {
     }
   };
 
-  // ── Real-Time Sync: Curriculum Hierarchy (Subjects, Topics, Subtopics) ──────
+  // ── Real-Time Sync: Curriculum Hierarchy (Subjects, Topics, Subtopics) (Admin ERP) ──
   // Keeps LMS hierarchy dropdowns, course builder, and subject filters in sync across Web & APK.
   useEffect(() => {
-    if (!user) return;
+    if (!user || (!isAdmin && user.role !== "staff" && user.role !== "teacher")) return;
+    if (activeTab !== "erp" && activeTab !== "lms" && activeTab !== "home") return;
 
     let unsubSubjects: (() => void) | null = null;
     let unsubTopics: (() => void) | null = null;
@@ -13034,12 +14621,13 @@ function MainApp() {
       if (unsubTopics) unsubTopics();
       if (unsubSubtopics) unsubSubtopics();
     };
-  }, [user?.id, user?.role, isAdmin]);
+  }, [user?.id, user?.role, isAdmin, activeTab]);
 
   // ── Real-Time Sync: Students Directory (ERP & Admin) ────────────────────────
   // When an admin edits a student, changes a batch, or an admission is confirmed, syncs live.
+  // Note: Individual students sync their own single profile document via real-time doc listener above.
   useEffect(() => {
-    if (!user || user.role === "guest") return;
+    if (!user || (!isAdmin && user.role !== "staff" && user.role !== "teacher")) return;
 
     let unsubStudents: (() => void) | null = null;
     let debounceTimer: any = null;
@@ -13069,7 +14657,7 @@ function MainApp() {
       clearTimeout(debounceTimer);
       if (unsubStudents) unsubStudents();
     };
-  }, [user?.id, user?.role]);
+  }, [user?.id, user?.role, isAdmin]);
 
   // ── Real-Time Sync: Staff Members (ERP) ─────────────────────────────────────
   // Syncs staff list, teachers, and role assignments in real time across Web & APK.
@@ -13106,10 +14694,10 @@ function MainApp() {
     };
   }, [user?.id, user?.role]);
 
-  // ── Real-Time Sync: Fees & Payments (ERP) ───────────────────────────────────
-  // Syncs payments, fee collections, and student payment receipts in real time.
+  // ── Real-Time Sync: Fees & Payments (Admin & Staff ERP) ─────────────────────
+  // Syncs payments, fee collections, and student payment receipts in real time for ERP management.
   useEffect(() => {
-    if (!user) return;
+    if (!user || (!isAdmin && user.role !== "staff")) return;
 
     let unsubFees: (() => void) | null = null;
     let debounceTimer: any = null;
@@ -13139,7 +14727,7 @@ function MainApp() {
       clearTimeout(debounceTimer);
       if (unsubFees) unsubFees();
     };
-  }, [user?.id, user?.role]);
+  }, [user?.id, user?.role, isAdmin]);
 
   // ── Real-Time Sync: Device Alerts (Admin Security) ──────────────────────────
   // Alerts admin immediately if an unauthorized device or concurrent login is logged.
@@ -13211,34 +14799,17 @@ function MainApp() {
     };
   }, [user?.id, user?.role]);
 
-  // ── Real-Time Sync: Tests & Examination Schedule ───────────────────────────
-  // Syncs tests list, new exams, and live leaderboard changes silently in real time.
+  // ── Real-Time Sync: Live Leaderboard Changes ─────────────────────────────────
+  // Syncs live leaderboard changes when viewing a leaderboard.
+  // Note: Tests real-time sync is handled above by primary listener (line 12475).
   useEffect(() => {
     if (!user) return;
+    if (!studentLeaderboardTest?.id && !isAdmin) return;
 
-    let unsubTests: (() => void) | null = null;
     let unsubLeaderboards: (() => void) | null = null;
-    let debounceTimer: any = null;
-    let isInitialTests = true;
     let isInitialLeaderboards = true;
 
     try {
-      unsubTests = onSnapshot(
-        collection(db, "tests"),
-        () => {
-          if (isInitialTests) {
-            isInitialTests = false;
-            return;
-          }
-          clearTimeout(debounceTimer);
-          debounceTimer = setTimeout(() => {
-            console.log("[TestsSync] tests collection update detected. Reloading tests...");
-            loadTests(true);
-          }, 400);
-        },
-        (err) => console.log("Real-time tests listener note:", err?.message)
-      );
-
       unsubLeaderboards = onSnapshot(
         collection(db, "leaderboards"),
         () => {
@@ -13254,15 +14825,13 @@ function MainApp() {
         (err) => console.log("Real-time leaderboards listener note:", err?.message)
       );
     } catch (e) {
-      console.log("Failed attaching tests/leaderboards listener:", e);
+      console.log("Failed attaching leaderboards listener:", e);
     }
 
     return () => {
-      clearTimeout(debounceTimer);
-      if (unsubTests) unsubTests();
       if (unsubLeaderboards) unsubLeaderboards();
     };
-  }, [user?.id, user?.role, studentLeaderboardTest?.id]);
+  }, [user?.id, user?.role, studentLeaderboardTest?.id, isAdmin]);
 
   const loadSacsRequests = async () => {
     if (!user || !isAdmin) return;
@@ -13468,7 +15037,7 @@ function MainApp() {
 
   const handleSaveResource = async () => {
     if (isSavingResource) return;
-    const { title, description, type, categoryId, displayGroup, visibility, offlineAvailable, isSecure, targetBatchIds, uploadMode, file, externalUrl } = resourceForm;
+    const { title, description, subject, type, categoryId, displayGroup, visibility, offlineAvailable, isSecure, targetBatchIds, uploadMode, file, audioFile, externalUrl } = resourceForm;
     if (!title || !description) {
       Alert.alert("Required", "Please enter Title and Description.");
       return;
@@ -13517,6 +15086,7 @@ function MainApp() {
         const updatePayload = {
           title,
           description,
+          subject: subject || "",
           type,
           categoryId,
           displayGroup,
@@ -13562,6 +15132,7 @@ function MainApp() {
         const formData = new FormData();
         formData.append("title", title);
         formData.append("description", description);
+        formData.append("subject", subject || "");
         formData.append("type", type);
         formData.append("categoryId", categoryId);
         formData.append("displayGroup", displayGroup);
@@ -13592,7 +15163,25 @@ function MainApp() {
           }
         } else {
           formData.append("externalUrl", externalUrl);
-          formData.append("provider", "external_link");
+          if (externalUrl.includes("drive.google.com") || externalUrl.includes("docs.google.com")) {
+            formData.append("googleDriveUrl", externalUrl);
+            formData.append("provider", "google_drive");
+          } else {
+            formData.append("provider", "external_link");
+          }
+        }
+
+        if (audioFile) {
+          if (Platform.OS !== 'web' && audioFile.uri) {
+            const audioObj = {
+              uri: audioFile.uri,
+              name: audioFile.name || "narration.mp3",
+              type: audioFile.mimeType || audioFile.type || "audio/mpeg"
+            };
+            formData.append("audioFile", audioObj as any);
+          } else {
+            formData.append("audioFile", audioFile);
+          }
         }
 
         await uploadWithFormData("POST", "/resources", formData);
@@ -14992,6 +16581,8 @@ function MainApp() {
       showToast(`Welcome back, ${userData.name || userData.username || "User"}! 👋`, "success");
       // Re-register push token now that we have the user's batch info (works for Web + APK)
       registerForPushNotificationsAsync(userData).catch(() => {});
+      // Retry after 4s in case first attempt fails (e.g. APK network delay at login)
+      setTimeout(() => registerForPushNotificationsAsync(userData).catch(() => {}), 4000);
     } catch (e: any) {
       const isNetwork =
         (typeof navigator !== "undefined" && navigator.onLine === false) ||
@@ -15174,7 +16765,9 @@ function MainApp() {
       name: studentName,
       firstName: studentName,
       rollNumber: roll,
-      loginPassword: generatedPassword
+      loginPassword: generatedPassword,
+      mockRollNumber: (newStudent.mockRollNumber || newStudent.specialRollNo || "").trim() || undefined,
+      specialRollNo: (newStudent.mockRollNumber || newStudent.specialRollNo || "").trim() || undefined
     };
 
     const hasBatches = studentToSave.batches && studentToSave.batches.length > 0;
@@ -16501,12 +18094,13 @@ function MainApp() {
   };
 
   const submitLmsQuiz = async () => {
-    if (!todayQuiz) return;
+    if (!todayQuiz || isSubmittingQuiz) return;
     const formattedAnswers = Object.entries(quizAnswers).map(([qIdx, oIdx]) => ({
       questionIndex: Number(qIdx),
       selectedOptionIndex: oIdx
     }));
 
+    setIsSubmittingQuiz(true);
     try {
       const res = await api.post("/lms/daily-quiz/submit", {
         studentId: user.userId,
@@ -16514,23 +18108,29 @@ function MainApp() {
         answers: formattedAnswers,
         submittedBy: user.name
       });
-      setQuizScore(res.correctCount);
-      const attemptAnswers = res.answers || res.results || formattedAnswers;
-      const feedback = todayQuiz.questions.map((q: any, idx: number) => {
+      const score = typeof res?.correctCount === "number" ? res.correctCount : 0;
+      setQuizScore(score);
+      const attemptAnswers = res?.answers || res?.results || formattedAnswers;
+      const questionsList = (Array.isArray(res?.questions) && res.questions.length > 0)
+        ? res.questions
+        : (Array.isArray(todayQuiz?.questions) ? todayQuiz.questions : []);
+      const feedback = questionsList.map((q: any, idx: number) => {
         let ansObj = null;
         if (Array.isArray(attemptAnswers)) {
           ansObj = attemptAnswers.find((a: any) => a.questionIndex === idx);
         } else if (attemptAnswers && typeof attemptAnswers === "object") {
           ansObj = attemptAnswers[idx];
         }
-        const userAnswer = ansObj ? (ansObj.selectedOptionIndex !== undefined ? ansObj.selectedOptionIndex : ansObj) : undefined;
+        const userAnswer = q.userAnswer !== undefined
+          ? q.userAnswer
+          : (ansObj ? (ansObj.selectedOptionIndex !== undefined ? ansObj.selectedOptionIndex : ansObj) : undefined);
         return {
           ...q,
           userAnswer
         };
       });
       setQuizFeedbackQuestions(feedback);
-      Alert.alert("Quiz Completed!", `You scored ${res.correctCount} / ${res.totalQuestions}`);
+      Alert.alert("Quiz Completed!", `You scored ${score} / ${res?.totalQuestions || questionsList.length}`);
 
       // Clear answers state for the next quiz
       setQuizAnswers({});
@@ -16540,6 +18140,8 @@ function MainApp() {
       await loadAllQuizzes();
     } catch (e: any) {
       Alert.alert("Submission Error", e.message || "Failed to submit answers.");
+    } finally {
+      setIsSubmittingQuiz(false);
     }
   };
 
@@ -17520,7 +19122,7 @@ function MainApp() {
   // Exam Operations
   const getTestStatusForStudent = (test: any) => {
     // Find if student has completed or started this test
-    const attempt = studentAttempts.find((a: any) => a.testId === test.id);
+    const attempt = studentAttempts.find((a: any) => a.testId === test.id && !a.isOffline);
     const now = Date.now();
     // Use IST-aware parsing to avoid timezone scheduling bugs
     const startTimeMs = test.startTime ? parseTestTimeMs(test.startTime) : 0;
@@ -17674,8 +19276,8 @@ function MainApp() {
         const total = e.totalMarks ?? (t.totalMarks || (t.questions?.length ? t.questions.length * (t.marksPerQuestion || 1) : 0));
         const pct = typeof e.percentage === "number" ? Math.round(e.percentage) : (total > 0 ? Math.round((obtained / total) * 100) : 0);
         const perf = getPerformanceStatus(obtained, total, pct);
-        const statusLabel = e.status ? String(e.status).toUpperCase() : perf.label;
-        const statusColor = (e.status === "pass" || perf.label === "PASSED" || perf.color === "#2e7d32") ? "#2e7d32" : "#c62828";
+        const statusLabel = perf.label;
+        const statusColor = perf.color;
 
         return `<tr style="border-bottom:1px solid #eee">
           <td style="padding:6px 8px;text-align:center">${rank}</td>
@@ -17690,7 +19292,50 @@ function MainApp() {
         </tr>`;
       }).join("");
 
-      const testDate = t.createdAt ? new Date(t.createdAt).toLocaleDateString() : (t.startTime ? new Date(t.startTime).toLocaleDateString() : "N/A");
+      const formatLeaderboardTestDate = (testObj: any) => {
+        const tryParse = (val: any): Date | null => {
+          if (!val) return null;
+          if (typeof val?.toDate === "function") {
+            const d = val.toDate();
+            if (d instanceof Date && !isNaN(d.getTime())) return d;
+          }
+          if (typeof val === "object") {
+            const sec = val._seconds ?? val.seconds;
+            if (typeof sec === "number" && !isNaN(sec)) {
+              const d = new Date(sec * 1000);
+              if (!isNaN(d.getTime())) return d;
+            }
+          }
+          if (typeof val === "number" && !isNaN(val)) {
+            const d = new Date(val > 1e11 ? val : val * 1000);
+            if (!isNaN(d.getTime())) return d;
+          }
+          if (typeof val === "string") {
+            const s = val.trim();
+            const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+            if (dmy) {
+              const d = new Date(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1]));
+              if (!isNaN(d.getTime())) return d;
+            }
+            const d = new Date(s);
+            if (!isNaN(d.getTime())) return d;
+          }
+          return null;
+        };
+        const parsed = tryParse(testObj?.createdAt) || tryParse(testObj?.startTime) || tryParse(testObj?.startDate) || tryParse(testObj?.date) || tryParse(testObj?.updatedAt);
+        if (parsed) {
+          const day = String(parsed.getDate()).padStart(2, "0");
+          const month = String(parsed.getMonth() + 1).padStart(2, "0");
+          const year = parsed.getFullYear();
+          return `${day}/${month}/${year}`;
+        }
+        if (testObj?.title) {
+          const match = String(testObj.title).match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})/);
+          if (match) return match[1];
+        }
+        return "N/A";
+      };
+      const testDate = formatLeaderboardTestDate(t);
       const participants = entries.length;
       const marksPerQ = t.marksPerQuestion ?? 1;
       const negMarks = t.negativeMarks ?? 0;
@@ -17699,7 +19344,7 @@ function MainApp() {
         <style>body{font-family:Arial,sans-serif;padding:20px}h2{color:#c62828}table{width:100%;border-collapse:collapse}th{background:#c62828;color:white;padding:8px;text-align:left}td{border-bottom:1px solid #eee;padding:6px 8px}</style></head>
         <body><h2>${testTitle}</h2>
         <p>Date: ${testDate} | Participants: ${participants} | Marks/Q: ${marksPerQ} | Negative: -${negMarks}</p>
-        <table><thead><tr><th>#</th><th>Roll No</th><th>Name</th><th>Correct</th><th>Wrong</th><th>Skipped</th><th>Marks</th><th>%</th><th>Result</th></tr></thead>
+        <table><thead><tr><th>#</th><th>Roll No</th><th>Name</th><th>Correct</th><th>Wrong</th><th>Not Attempted</th><th>Total Marks</th><th>%</th><th>Result</th></tr></thead>
         <tbody>${rows}</tbody></table></body></html>`;
 
       await downloadPdfDocument(html, `${testTitle}_Leaderboard.pdf`);
@@ -17747,14 +19392,16 @@ function MainApp() {
         setExploredQuestions(new Set([0]));
         // Load progress & merge with local answers draft and violation count
         const progressRes = await api.get(`/test-portal/examination/progress/${statusInfo.attemptId}`, { "user-id": user.userId });
+        const hasLocalDraft = !!(localDraft && localDraft.answers && Object.keys(localDraft.answers).length > 0);
         const savedAns: Record<string, string> = { ...(localDraft?.answers || {}) };
-        if (progressRes && progressRes.answers) {
+        if (!hasLocalDraft && progressRes && progressRes.answers) {
           progressRes.answers.forEach((ansObj: any) => {
-            if (!savedAns[ansObj.questionId]) {
+            if (ansObj.selectedAnswer) {
               savedAns[ansObj.questionId] = ansObj.selectedAnswer;
             }
           });
         }
+        selectedAnswersRef.current = savedAns;
         setSelectedAnswers(savedAns);
 
         const restoredStrikes = Math.max(
@@ -17816,6 +19463,7 @@ function MainApp() {
       const qRes = await api.get(`/test-portal/examination/questions/${attemptData.attemptId}`, { "user-id": user.userId });
       setAttemptQuestions(qRes || []);
       setCurrentQIdx(0);
+      selectedAnswersRef.current = {};
       setSelectedAnswers({});
       // Reset explored questions — mark Q1 as explored since it's auto-opened
       setExploredQuestions(new Set([0]));
@@ -17849,7 +19497,17 @@ function MainApp() {
     const activeQ = attemptQuestions[currentQIdx];
     if (!activeQ || !activeAttempt) return;
 
-    const newAnswers = { ...selectedAnswers, [activeQ.id]: ans };
+    const currentSelected = selectedAnswersRef.current[activeQ.id] ?? selectedAnswers[activeQ.id];
+    const isUnselecting = (currentSelected === ans);
+
+    const newAnswers = { ...selectedAnswers, ...selectedAnswersRef.current };
+    if (isUnselecting) {
+      delete newAnswers[activeQ.id];
+      delete selectedAnswersRef.current[activeQ.id];
+    } else {
+      newAnswers[activeQ.id] = ans;
+    }
+    selectedAnswersRef.current = newAnswers;
     setSelectedAnswers(newAnswers);
 
     // Instant local storage save so no answer is lost even if browser reloads or network drops
@@ -17861,6 +19519,14 @@ function MainApp() {
       answers: newAnswers,
       tabLeaveCount: tabLeaveCountRef.current
     });
+
+    // Also notify server immediately in background so server attempt record stays in sync
+    try {
+      api.post(`/test-portal/examination/answer/${activeAttempt.attemptId}`, {
+        questionId: activeQ.id,
+        answer: isUnselecting ? null : ans
+      }, { "user-id": user?.userId || "", "x-attempt-id": activeAttempt.attemptId }).catch(() => {});
+    } catch (_) {}
   };
 
   const submitTestAttempt = async (isTimeoutArg: any = false) => {
@@ -17875,7 +19541,9 @@ function MainApp() {
     // Read local draft from LocalStorage to guarantee all offline selected answers are merged
     const localDraft = examLocalStorage.getDraft(attemptId);
     const draftAnswers = localDraft && localDraft.answers ? localDraft.answers : {};
-    const answersToFlush = { ...draftAnswers, ...selectedAnswers };
+    const answersToFlush = (selectedAnswersRef.current && Object.keys(selectedAnswersRef.current).length > 0)
+      ? selectedAnswersRef.current
+      : (draftAnswers && Object.keys(draftAnswers).length > 0 ? draftAnswers : selectedAnswers);
 
     // IMMEDIATELY CLOSE THE EXAM VIEW so the student is never stuck on 00:00 or questions page
     exitFullscreen();
@@ -17892,23 +19560,24 @@ function MainApp() {
       // This is critical — if the session expired mid-exam, we get a fresh token
       // so the subsequent API calls work normally (x-attempt-id is the backup).
       try {
-        if (typeof localStorage !== "undefined") {
-          const stored = JSON.parse(localStorage.getItem("nermai_auth_user") || "{}");
-          if (stored.refreshToken && stored.sessionId) {
-            const baseUrl = getBaseUrl();
-            const refreshRes = await fetch(`${baseUrl}/api/auth/refresh`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ refreshToken: stored.refreshToken, sessionId: stored.sessionId })
-            });
-            const refreshData = await refreshRes.json();
-            if (refreshData?.data?.token) {
-              stored.token = refreshData.data.token;
-              if (refreshData.data.refreshToken) stored.refreshToken = refreshData.data.refreshToken;
-              if (refreshData.data.sessionId) stored.sessionId = refreshData.data.sessionId;
-              localStorage.setItem("nermai_auth_user", JSON.stringify(stored));
-              console.log("[Submit] Token refreshed before submit.");
-            }
+        const stored = (typeof localStorage !== "undefined")
+          ? JSON.parse(localStorage.getItem("nermai_auth_user") || "{}")
+          : (await userStorage.get() || {});
+        if (stored.refreshToken && stored.sessionId) {
+          const baseUrl = getBaseUrl();
+          const refreshEndpoint = baseUrl.endsWith("/api") ? `${baseUrl}/auth/refresh` : `${baseUrl}/api/auth/refresh`;
+          const refreshRes = await fetch(refreshEndpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ refreshToken: stored.refreshToken, sessionId: stored.sessionId })
+          });
+          const refreshData = await refreshRes.json();
+          if (refreshData?.data?.token) {
+            stored.token = refreshData.data.token;
+            if (refreshData.data.refreshToken) stored.refreshToken = refreshData.data.refreshToken;
+            if (refreshData.data.sessionId) stored.sessionId = refreshData.data.sessionId;
+            await userStorage.save(stored);
+            console.log("[Submit] Token refreshed before submit.");
           }
         }
       } catch (refreshErr) {
@@ -17919,9 +19588,18 @@ function MainApp() {
       // ── Step 1: Flush local answers to server with retry (CRITICAL — never silently drop) ──
       // Retries up to 3 times with 2s delays. x-attempt-id header bypasses JWT auth
       // so this works even if the token refresh above failed.
-      const formattedBatch = Object.entries(answersToFlush)
-        .filter(([_, val]) => val !== null && val !== undefined && val !== "")
-        .map(([qId, val]) => ({ questionId: qId, answer: val }));
+      const qList = (attemptQuestions && attemptQuestions.length > 0)
+        ? attemptQuestions
+        : (localDraft?.questions || []);
+
+      const formattedBatch = (qList.length > 0)
+        ? qList.map((q: any) => ({
+            questionId: q.id,
+            answer: (answersToFlush[q.id] !== undefined && answersToFlush[q.id] !== null && answersToFlush[q.id] !== "")
+              ? answersToFlush[q.id]
+              : null
+          }))
+        : Object.entries(answersToFlush).map(([qId, val]) => ({ questionId: qId, answer: val || null }));
 
       let autosaveOk = false;
       if (formattedBatch.length > 0) {
@@ -18312,7 +19990,7 @@ function MainApp() {
         <View style={[styles.header, darkMode && styles.headerDark]}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
             <View style={[styles.headerLogo, { backgroundColor: "transparent", borderWidth: 0 }]}>
-              <Image source={require("./assets/logo.png")} style={{ width: 34, height: 34, borderRadius: 17 }} />
+              <Image source={require("./assets/logo.webp")} style={{ width: 34, height: 34, borderRadius: 17 }} />
             </View>
             <View>
               <Text style={[styles.headerTitle, darkMode && { color: "#f5f5f5" }]}>Nermai IAS</Text>
@@ -20757,6 +22435,20 @@ function MainApp() {
                     onChangeText={txt => setResourceForm({ ...resourceForm, description: txt })}
                   />
 
+                  <View>
+                    <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Subject (Optional)</Text>
+                    <UniversalDropdown
+                      value={resourceForm.subject || ""}
+                      darkMode={darkMode}
+                      placeholder="Select Subject (e.g. History, Polity, Geography...)"
+                      options={[
+                        { label: "-- Select Subject --", value: "" },
+                        ...SUBJECT_OPTIONS.map(s => ({ label: s, value: s }))
+                      ]}
+                      onSelect={val => setResourceForm({ ...resourceForm, subject: val })}
+                    />
+                  </View>
+
                   <View style={{ flexDirection: "row", gap: 10 }}>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.label, darkMode && { color: "#aaa" }]}>Asset Type</Text>
@@ -20983,6 +22675,106 @@ function MainApp() {
                       />
                     </View>
                   )}
+
+                  {/* Audio Narration / Podcast Attachment (Optional) */}
+                  <View style={{
+                    marginTop: 10,
+                    padding: 12,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: darkMode ? "#444" : "#e0e0e0",
+                    backgroundColor: darkMode ? "#222" : "#fbfbfb"
+                  }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        <Ionicons name="musical-notes" size={16} color="#2e7d32" />
+                        <Text style={[styles.label, darkMode && { color: "#ddd" }, { marginBottom: 0, fontWeight: "bold" }]}>
+                          Audio Narration / Podcast (Optional)
+                        </Text>
+                      </View>
+                      {resourceForm.audioFileName ? (
+                        <TouchableOpacity onPress={() => setResourceForm({ ...resourceForm, audioFile: null, audioFileName: "", audioUrl: "" })}>
+                          <Ionicons name="trash-outline" size={16} color="#c62828" />
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+                    <Text style={{ fontSize: 11, color: darkMode ? "#888" : "#666", marginBottom: 8 }}>
+                      Attach an MP3/M4A/WAV audio file. A floating audio player will dock at the bottom when reading the PDF.
+                    </Text>
+
+                    {Platform.OS === 'web' && (
+                      <input
+                        type="file"
+                        id="resource-audio-picker"
+                        accept="audio/*"
+                        style={{ display: "none" }}
+                        onChange={e => {
+                          const fileObj = (e.target as any).files?.[0];
+                          if (fileObj) {
+                            setResourceForm((prev: any) => ({
+                              ...prev,
+                              audioFile: fileObj,
+                              audioFileName: fileObj.name
+                            }));
+                          }
+                        }}
+                      />
+                    )}
+
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                      <TouchableOpacity
+                        onPress={async () => {
+                          if (Platform.OS === 'web') {
+                            const el = typeof document !== 'undefined' ? document.getElementById("resource-audio-picker") : null;
+                            if (el) el.click();
+                          } else {
+                            try {
+                              const res = await DocumentPicker.getDocumentAsync({ type: 'audio/*', copyToCacheDirectory: true });
+                              if (!res.canceled && res.assets && res.assets.length > 0) {
+                                const asset = res.assets[0];
+                                setResourceForm((prev: any) => ({
+                                  ...prev,
+                                  audioFile: asset,
+                                  audioFileName: asset.name
+                                }));
+                              }
+                            } catch (e) {
+                              console.warn("DocumentPicker error:", e);
+                            }
+                          }
+                        }}
+                        style={{
+                          backgroundColor: darkMode ? "#333" : "#e8f5e9",
+                          borderWidth: 1,
+                          borderColor: "#2e7d32",
+                          paddingHorizontal: 12,
+                          paddingVertical: 7,
+                          borderRadius: 6,
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 6
+                        }}
+                      >
+                        <Ionicons name="mic-outline" size={14} color="#2e7d32" />
+                        <Text style={{ color: "#2e7d32", fontSize: 12, fontWeight: "bold" }}>
+                          {resourceForm.audioFileName ? "Change Audio" : "Choose Audio File"}
+                        </Text>
+                      </TouchableOpacity>
+
+                      {resourceForm.audioFileName ? (
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 4, flex: 1 }}>
+                          <Ionicons name="checkmark-circle" size={14} color="#2e7d32" />
+                          <Text style={{ fontSize: 12, color: "#2e7d32", fontWeight: "600" }} numberOfLines={1}>
+                            {resourceForm.audioFileName}
+                          </Text>
+                        </View>
+                      ) : (
+                        <Text style={{ fontSize: 11, color: darkMode ? "#666" : "#999", fontStyle: "italic" }}>
+                          No audio selected
+                        </Text>
+                      )}
+                    </View>
+                  </View>
                 </ScrollView>
 
                 <View style={{ flexDirection: "row", gap: 10, marginTop: 15 }}>
@@ -21012,14 +22804,44 @@ function MainApp() {
           <Modal visible={true} animationType="fade" transparent>
             <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", alignItems: "center", padding: 20 }}>
               <View style={[styles.feedbackSheet, darkMode && styles.feedbackSheetDark, { width: "100%", maxWidth: 800, borderRadius: 16, padding: 20, alignSelf: "center", maxHeight: "90%" }]}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 }}>
-                  <Text style={[styles.feedbackTitle, darkMode && { color: "#f0f0f0" }, { fontSize: 16, fontWeight: "800" }]}>
-                    Attendance: {selectedAttendanceTitle}
-                  </Text>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <View style={{ flex: 1, marginRight: 10 }}>
+                    <Text style={[styles.feedbackTitle, darkMode && { color: "#f0f0f0" }, { fontSize: 16, fontWeight: "800" }]}>
+                      Attendance: {selectedAttendanceTitle}
+                    </Text>
+                  </View>
                   <TouchableOpacity onPress={() => { setShowAttendanceModal(false); setAttendanceSearchQuery(""); }}>
                     <Ionicons name="close" size={24} color={darkMode ? "#9e9e9e" : "#757575"} />
                   </TouchableOpacity>
                 </View>
+
+                {/* Total Students Attended Count Banner */}
+                {!attendanceLoading && (
+                  <View style={{
+                    backgroundColor: darkMode ? "#1b3320" : "#e8f5e9",
+                    borderWidth: 1.5,
+                    borderColor: "#2e7d32",
+                    borderRadius: 10,
+                    paddingVertical: 10,
+                    paddingHorizontal: 14,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    marginBottom: 12
+                  }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <Ionicons name="people" size={22} color="#2e7d32" />
+                      <Text style={{ fontSize: 14, fontWeight: "bold", color: darkMode ? "#81c784" : "#2e7d32" }}>
+                        Total Students Attended:
+                      </Text>
+                    </View>
+                    <View style={{ backgroundColor: "#2e7d32", paddingHorizontal: 14, paddingVertical: 4, borderRadius: 12 }}>
+                      <Text style={{ color: "#ffffff", fontSize: 16, fontWeight: "900" }}>
+                        {attendanceList.filter((p: any) => p.status !== 'ABSENT').length}
+                      </Text>
+                    </View>
+                  </View>
+                )}
 
                 {/* Search / Filter Input */}
                 {!attendanceLoading && attendanceList.length > 0 && (
@@ -22157,7 +23979,7 @@ function MainApp() {
         )}
         <ImageBackground
           {...(!isMobile ? ({ nativeID: "login-laptop-bg", id: "login-laptop-bg" } as any) : {})}
-          source={!isMobile ? require("./assets/login_bg_laptop.png") : require("./assets/login_bg_phone.png")}
+          source={!isMobile ? require("./assets/login_bg_laptop.webp") : require("./assets/login_bg_phone.webp")}
           style={{ flex: 1, width: "100%", height: "100%" }}
           resizeMode="cover"
         >
@@ -22696,7 +24518,7 @@ function MainApp() {
         ]}>
           {/* Left: Logo + Name */}
           <View style={{ flexDirection: "row", alignItems: "center", gap: isMobile ? 8 : 10, flex: 1, minWidth: 0, marginRight: 6 }}>
-            <Image source={require("./assets/logo.png")} style={{ width: 34, height: 34, borderRadius: 17, borderWidth: 1.5, borderColor: darkMode ? "#c62828" : "#e0e0e0", flexShrink: 0 }} />
+            <Image source={require("./assets/logo.webp")} style={{ width: 34, height: 34, borderRadius: 17, borderWidth: 1.5, borderColor: darkMode ? "#c62828" : "#e0e0e0", flexShrink: 0 }} />
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={[styles.headerTitle, darkMode && { color: "#f5f5f5" }, { fontSize: isMobile ? 13 : 14 }]} numberOfLines={1}>NERMAI IAS ACADEMY</Text>
               <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: darkMode ? "#b0b0b0" : "#757575", fontSize: isMobile ? 9.5 : 10 }}>
@@ -23064,7 +24886,7 @@ function MainApp() {
               <View style={{ backgroundColor: "#ffffff", borderRadius: 16, padding: 20, shadowColor: "#000", shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.12, shadowRadius: 16, elevation: 8 }}>
                 {/* Header */}
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 16, paddingBottom: 14, borderBottomWidth: 1, borderColor: "#f0f0f0" }}>
-                  <Image source={require("./assets/logo.png")} style={{ width: 38, height: 38, borderRadius: 19 }} />
+                  <Image source={require("./assets/logo.webp")} style={{ width: 38, height: 38, borderRadius: 19 }} />
                   <View>
                     <Text style={{ fontSize: 15, fontWeight: "800", color: !showAuthFlip ? "#c62828" : "#1565c0" }}>NERMAI IAS ACADEMY</Text>
                     <Text style={{ fontSize: 11, color: "#757575" }}>{!showAuthFlip ? "New Student Registration" : "Student & Staff Sign In"}</Text>
@@ -23501,7 +25323,7 @@ function MainApp() {
             <View style={[styles.authCard, { width: "100%", maxWidth: 440, padding: 24, borderRadius: 16, backgroundColor: "#ffffff" }]}>
               <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                  <Image source={require("./assets/logo.png")} style={{ width: 38, height: 38, borderRadius: 19 }} />
+                  <Image source={require("./assets/logo.webp")} style={{ width: 38, height: 38, borderRadius: 19 }} />
                   <View>
                     <Text style={{ fontSize: 15, fontWeight: "bold", color: "#c62828" }}>NERMAI IAS ACADEMY</Text>
                     <Text style={{ fontSize: 11, color: "#757575" }}>Guest Access Portal</Text>
@@ -24077,11 +25899,14 @@ function MainApp() {
               }).sort(sortDailyContentDesc);
 
               const filteredResources = rawResources.filter((res: any) => {
-                if (!query) return true;
-                const t = (res.title || res.name || "").toLowerCase();
-                const d = (res.description || "").toLowerCase();
-                const ft = (res.type || res.fileType || "").toLowerCase();
-                return t.includes(query) || d.includes(query) || ft.includes(query);
+                const matchQuery = !query ||
+                  (res.title || res.name || "").toLowerCase().includes(query) ||
+                  (res.description || "").toLowerCase().includes(query) ||
+                  (res.type || res.fileType || "").toLowerCase().includes(query) ||
+                  (res.subject || res.subjectName || "").toLowerCase().includes(query);
+                const matchSubject = guestResourceSubject === "All" ||
+                  (res.subject || res.subjectName || "").toLowerCase() === guestResourceSubject.toLowerCase();
+                return matchQuery && matchSubject;
               });
 
               const totalResults = (user ? filteredDaily.length : 0) + (user ? filteredResources.length : 0);
@@ -24313,15 +26138,28 @@ function MainApp() {
                                   ]}
                                 >
                                   <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-                                    <View style={{
-                                      backgroundColor: darkMode ? "#0f2744" : "#e0f2fe",
-                                      paddingHorizontal: 8,
-                                      paddingVertical: 2,
-                                      borderRadius: 6
-                                    }}>
-                                      <Text style={{ fontSize: 10, fontWeight: "800", color: "#0284c7" }}>
-                                        {isPdf ? "PDF RESOURCE" : isImage ? "IMAGE RESOURCE" : `${resType.toUpperCase()} RESOURCE`}
-                                      </Text>
+                                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                      <View style={{
+                                        backgroundColor: darkMode ? "#0f2744" : "#e0f2fe",
+                                        paddingHorizontal: 8,
+                                        paddingVertical: 2,
+                                        borderRadius: 6
+                                      }}>
+                                        <Text style={{ fontSize: 10, fontWeight: "800", color: "#0284c7" }}>
+                                          {isPdf ? "PDF RESOURCE" : isImage ? "IMAGE RESOURCE" : `${resType.toUpperCase()} RESOURCE`}
+                                        </Text>
+                                      </View>
+                                      {(res.subject || res.subjectName) ? (
+                                        <View style={{ backgroundColor: darkMode ? "#311b92" : "#ede7f6", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                                          <Text style={{ fontSize: 10, color: darkMode ? "#d1c4e9" : "#512da8", fontWeight: "bold" }}>{res.subject || res.subjectName}</Text>
+                                        </View>
+                                      ) : null}
+                                      {(res.hasAudio || res.audioUrl) ? (
+                                        <View style={{ flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: darkMode ? "#1b5e20" : "#e8f5e9", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                                          <Ionicons name="musical-notes" size={10} color={darkMode ? "#a5d6a7" : "#2e7d32"} />
+                                          <Text style={{ fontSize: 10, color: darkMode ? "#a5d6a7" : "#2e7d32", fontWeight: "bold" }}>Audio</Text>
+                                        </View>
+                                      ) : null}
                                     </View>
                                     {resDate ? (
                                       <Text style={{ fontSize: 11, color: darkMode ? "#888" : "#6b7280" }}>
@@ -24456,6 +26294,37 @@ function MainApp() {
                       </View>
                     )}
                   </View>
+
+                  {/* ── Subject Filter Pills (guest free resources) ─────────────── */}
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={{ gap: 6, paddingHorizontal: 2 }}
+                    style={{ marginBottom: 2 }}
+                  >
+                    {["All", ...SUBJECT_OPTIONS].map((subj) => (
+                      <TouchableOpacity
+                        key={subj}
+                        onPress={() => setGuestResourceSubject(subj)}
+                        style={{
+                          paddingHorizontal: 12,
+                          paddingVertical: 6,
+                          borderRadius: 20,
+                          backgroundColor: guestResourceSubject === subj ? "#c62828" : darkMode ? "#2a2a2a" : "#f3f4f6",
+                          borderWidth: 1,
+                          borderColor: guestResourceSubject === subj ? "#c62828" : darkMode ? "#3a3a3a" : "#e5e7eb"
+                        }}
+                      >
+                        <Text style={{
+                          fontSize: 11,
+                          fontWeight: "600",
+                          color: guestResourceSubject === subj ? "#fff" : darkMode ? "#bbb" : "#555"
+                        }}>
+                          {subj === "All" ? "All Subjects" : subj}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
 
                   {/* ── Mobile / Phone View (2-Tab Segmented Pill Switcher) ────────── */}
                   {isMobile ? (
@@ -24793,7 +26662,7 @@ function MainApp() {
     return (
       <SafeAreaView style={[styles.modalContainer, { flex: 1, backgroundColor: "#ffffff", position: "relative" }]}>
         <StatusBar style="light" />
-        <TestWatermarkOverlay studentText={user ? `${user.username || user.rollNumber || user.name || "Student"}${user.rollNumber && !user.username?.includes(user.rollNumber) ? ` (${user.rollNumber})` : ''} • ${user.email || ""}` : (activeAttempt?.userId || "Student")} />
+        <TestWatermarkOverlay studentText={getExamWatermarkStudentText(user, students, activeAttempt, activeAttempt)} />
 
         {/* ── EXAM HEADER ─────────────────────────────────── */}
         <View style={[styles.header, {
@@ -24810,9 +26679,25 @@ function MainApp() {
           {/* Top Row: Title & Prominently Pinned Timer */}
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
             <View style={{ flex: 1, marginRight: 8 }}>
-              <Text style={[styles.headerTitle, { fontSize: isMobile ? 12 : 13, fontWeight: "800" }]} numberOfLines={1}>
-                Nermai IAS — {activeAttempt.title || "Examination in Progress"}
-              </Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <Text style={[styles.headerTitle, { fontSize: isMobile ? 12 : 13, fontWeight: "800" }]} numberOfLines={1}>
+                  Nermai IAS — {activeAttempt.title || "Examination in Progress"}
+                </Text>
+                <View style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  backgroundColor: "rgba(46, 125, 50, 0.4)",
+                  borderColor: "rgba(129, 199, 132, 0.7)",
+                  borderWidth: 1,
+                  paddingHorizontal: 6,
+                  paddingVertical: 1.5,
+                  borderRadius: 10,
+                  gap: 3
+                }}>
+                  <Ionicons name="sunny" size={10} color="#a5d6a7" />
+                  <Text style={{ fontSize: 9, fontWeight: "800", color: "#e8f5e9" }}>Screen Awake Active</Text>
+                </View>
+              </View>
               {user && (
                 <Text style={{ fontSize: isMobile ? 10 : 11, color: "rgba(255, 255, 255, 0.95)", fontWeight: "600", marginTop: 1 }} numberOfLines={1}>
                   Student: {user.name || user.fullName || user.username || "Student"} {user.rollNumber ? `(${user.rollNumber})` : ''}
@@ -25108,28 +26993,36 @@ function MainApp() {
 
         {/* ── INSTRUCTIONS MODAL ──────────────────────────── */}
         <Modal transparent animationType="fade" visible={showInstructions} onRequestClose={() => setShowInstructions(false)}>
-          <TouchableOpacity
-            activeOpacity={1}
-            onPress={() => setShowInstructions(false)}
-            style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.65)", justifyContent: "center", alignItems: "center", padding: isMobile ? 12 : 20 }}
+          <View
+            style={{
+              flex: 1,
+              backgroundColor: "rgba(0,0,0,0.65)",
+              justifyContent: "center",
+              alignItems: "center",
+              padding: isMobile ? 16 : 24
+            }}
           >
             <TouchableOpacity
               activeOpacity={1}
-              onPress={e => e.stopPropagation()}
+              onPress={() => setShowInstructions(false)}
+              style={StyleSheet.absoluteFillObject}
+            />
+            <View
               style={{
                 backgroundColor: "#ffffff",
                 borderRadius: 16,
                 padding: isMobile ? 16 : 22,
                 width: "100%",
                 maxWidth: 480,
-                maxHeight: "85%",
-                display: "flex",
+                height: isMobile ? "80%" : "75%",
+                maxHeight: 650,
                 flexDirection: "column",
                 elevation: 10,
                 shadowColor: "#000",
                 shadowOffset: { width: 0, height: 4 },
                 shadowOpacity: 0.25,
-                shadowRadius: 8
+                shadowRadius: 8,
+                zIndex: 10
               }}
             >
               {/* Header Pinned */}
@@ -25141,7 +27034,12 @@ function MainApp() {
               </View>
 
               {/* Scrollable Content */}
-              <ScrollView showsVerticalScrollIndicator={true} style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 10 }}>
+              <ScrollView
+                showsVerticalScrollIndicator={true}
+                nestedScrollEnabled={true}
+                style={{ flex: 1 }}
+                contentContainerStyle={{ paddingBottom: 16, flexGrow: 1 }}
+              >
                 {/* Color Legend */}
                 <Text style={{ fontWeight: "800", fontSize: 12, color: "#555", marginBottom: 10, letterSpacing: 0.5 }}>QUESTION NAVIGATOR LEGEND</Text>
                 {[
@@ -25166,6 +27064,7 @@ function MainApp() {
                 {[
                   "📱 Phone Call & DND Warning: Answering or receiving phone calls puts the app in the background and triggers a cheating violation strike. Keep 'Do Not Disturb' (DND) ON.",
                   "⚠️ 4-Strike Proctoring Policy: You get 3 warning chances for tab switches / focus loss. On the 4th violation, your test AUTO-SUBMITS automatically.",
+                  "🔆 Screen Kept Awake: Screen auto-sleep is automatically prevented during the exam so you can do math calculations on paper without the display turning off.",
                   "📶 Offline Answer Persistence: If your internet drops, keep answering! Your responses save locally and will auto-submit & evaluate once reconnected.",
                   "🚫 No Tab Switch or Minimize: Tab switching, minimizing the browser, and DevTools are strictly monitored.",
                   "🔒 Copying & Shortcut Block: Right-click, Copy, Cut, and PrintScreen operations are blocked.",
@@ -25183,8 +27082,8 @@ function MainApp() {
               >
                 <Text style={{ color: "#ffffff", fontWeight: "800", fontSize: 14 }}>Got it — Back to Exam</Text>
               </TouchableOpacity>
-            </TouchableOpacity>
-          </TouchableOpacity>
+            </View>
+          </View>
         </Modal>
 
         {attemptQuestions[currentQIdx] ? (
@@ -25257,7 +27156,7 @@ function MainApp() {
               </View>
               <ScrollView ref={qNavScrollViewRef} horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: "row", maxHeight: isMobile ? 34 : 40 }}>
                 {attemptQuestions.map((_, qIdx) => {
-                  const isAnswered = selectedAnswers[attemptQuestions[qIdx].id] !== undefined;
+                  const isAnswered = selectedAnswers[attemptQuestions[qIdx].id] !== undefined && selectedAnswers[attemptQuestions[qIdx].id] !== null && selectedAnswers[attemptQuestions[qIdx].id] !== "";
                   const isActive = qIdx === currentQIdx;
                   const isExplored = exploredQuestions.has(qIdx);
                   // Priority: active > answered > explored-not-answered > not-visited
@@ -25598,7 +27497,7 @@ function MainApp() {
     return (
       <SafeAreaView style={[styles.modalContainer, { flex: 1, backgroundColor: "#ffffff", position: "relative" }]}>
         <StatusBar style="dark" />
-        <TestWatermarkOverlay studentText={user ? `${user.username || user.rollNumber || user.name || "Student"}${user.rollNumber && !user.username?.includes(user.rollNumber) ? ` (${user.rollNumber})` : ''} • ${user.email || ""}` : "Student"} />
+        <TestWatermarkOverlay studentText={getExamWatermarkStudentText(user, students, studyModeData, null)} />
         <View style={{ backgroundColor: "#5c6bc0", padding: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
           <View style={{ flex: 1 }}>
             <Text style={{ color: "#fff", fontWeight: "900", fontSize: 15 }} numberOfLines={1}>{studyModeData.testTitle || "Past Test Study"}</Text>
@@ -25755,7 +27654,7 @@ function MainApp() {
     return (
       <SafeAreaView style={[styles.modalContainer, { flex: 1, backgroundColor: "#ffffff", position: "relative" }]}>
         <StatusBar style="light" />
-        <TestWatermarkOverlay studentText={user ? `${user.username || user.rollNumber || user.name || "Student"}${user.rollNumber && !user.username?.includes(user.rollNumber) ? ` (${user.rollNumber})` : ''} • ${user.email || ""}` : "Student"} />
+        <TestWatermarkOverlay studentText={getExamWatermarkStudentText(user, students, reviewData?.test, reviewData)} />
         <View style={[styles.header, { backgroundColor: "#2e7d32" }]}>
           <Text style={styles.headerTitle}>{reviewData.testTitle || "Review Answers"}</Text>
           <TouchableOpacity onPress={() => { setReviewMode(false); setReviewData(null); }} style={{ padding: 8 }}>
@@ -27414,7 +29313,7 @@ function MainApp() {
       ]}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: isMobile ? 8 : 10, flex: 1, minWidth: 0, marginRight: 6 }}>
           <View style={[styles.headerLogo, { backgroundColor: "transparent", borderWidth: 0, flexShrink: 0 }]}>
-            <Image source={require("./assets/logo.png")} style={{ width: 34, height: 34, borderRadius: 17 }} />
+            <Image source={require("./assets/logo.webp")} style={{ width: 34, height: 34, borderRadius: 17 }} />
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={[styles.headerTitle, darkMode && { color: "#f5f5f5" }, isMobile && { fontSize: 14 }]} numberOfLines={1}>Nermai IAS</Text>
@@ -28394,7 +30293,7 @@ function MainApp() {
                                           style={{ backgroundColor: "#1565c0", paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8, flexDirection: "row", alignItems: "center", gap: 6 }}
                                         >
                                           <Ionicons name="people-outline" size={16} color="#fff" />
-                                          <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 13 }}>View Attendance</Text>
+                                          <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 13 }}>View Attendance{session.attendedCount != null || session.totalAttended != null ? ` (${session.attendedCount ?? session.totalAttended})` : (session.liveSession?.joinedParticipantsDetails ? ` (${Object.keys(session.liveSession.joinedParticipantsDetails).length})` : "")}</Text>
                                         </TouchableOpacity>
                                       </View>
                                     </View>
@@ -28580,7 +30479,7 @@ function MainApp() {
 
                         if (hasRejected) {
                           return (
-                            <TouchableOpacity onPress={() => { changeErpSub("my-profile"); setActiveTab("erp"); }} style={[styles.card, { borderLeftWidth: 4, borderLeftColor: "#c62828", backgroundColor: darkMode ? "#3e1c1c" : "#ffebee", cursor: "pointer" }]}>
+                            <TouchableOpacity onPress={() => { changeErpSub("my-profile"); setActiveTab("erp"); }} style={[styles.card, { borderLeftWidth: 4, borderLeftColor: "#c62828", backgroundColor: darkMode ? "#3e1c1c" : "#ffebee" }]}>
                               <Text style={{ color: "#c62828", fontWeight: "bold", fontSize: 13 }}>❌ ACTION REQUIRED: PROFILE REQUEST REJECTED</Text>
                               <Text style={{ color: darkMode ? "#e0e0e0" : "#424242", fontSize: 12, marginTop: 4 }}>Profile submission was rejected. Reason: {myProfileRequest.rejectionReason || "Please check submitted documents."}. Click here to resubmit.</Text>
                             </TouchableOpacity>
@@ -28597,7 +30496,7 @@ function MainApp() {
                           );
                         } else if (hasNoRequest) {
                           return (
-                            <TouchableOpacity onPress={() => { changeErpSub("my-profile"); setActiveTab("erp"); }} style={[styles.card, { borderLeftWidth: 4, borderLeftColor: "#c62828", backgroundColor: darkMode ? "#3e1c1c" : "#ffebee", cursor: "pointer" }]}>
+                            <TouchableOpacity onPress={() => { changeErpSub("my-profile"); setActiveTab("erp"); }} style={[styles.card, { borderLeftWidth: 4, borderLeftColor: "#c62828", backgroundColor: darkMode ? "#3e1c1c" : "#ffebee" }]}>
                               <Text style={{ color: "#c62828", fontWeight: "bold", fontSize: 13 }}>⚠️ ACTION REQUIRED: INCOMPLETE PROFILE</Text>
                               <Text style={{ color: darkMode ? "#e0e0e0" : "#424242", fontSize: 12, marginTop: 4 }}>Your student profile is incomplete. Please go to the "My Profile" tab to complete your details and upload required documents.</Text>
                             </TouchableOpacity>
@@ -28918,8 +30817,12 @@ function MainApp() {
                             </View>
                           ))}
 
-                          <TouchableOpacity onPress={submitLmsQuiz} style={[styles.primaryBtn, { marginTop: 15 }]}>
-                            <Text style={styles.primaryBtnTxt}>Submit Quiz</Text>
+                          <TouchableOpacity
+                            onPress={submitLmsQuiz}
+                            disabled={isSubmittingQuiz}
+                            style={[styles.primaryBtn, { marginTop: 15, opacity: isSubmittingQuiz ? 0.6 : 1 }]}
+                          >
+                            <Text style={styles.primaryBtnTxt}>{isSubmittingQuiz ? "Submitting Quiz..." : "Submit Quiz"}</Text>
                           </TouchableOpacity>
                         </View>
                       )}
@@ -29115,7 +31018,7 @@ function MainApp() {
                       >
                         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                           <Image
-                            source={require("./assets/logo.png")}
+                            source={require("./assets/logo.webp")}
                             style={{ width: 24, height: 24, borderRadius: 12 }}
                           />
                           <View>
@@ -29714,6 +31617,8 @@ function MainApp() {
                                                   onPress={async () => {
                                                     const cleanSId = String(myStudent?.id || user?.userId || user?.username || "std").toLowerCase().replace(/[^a-z0-9_-]/g, "");
                                                     const reqDocId = `req_${t.id}_${cleanSId}`;
+                                                    const isSpecialTestReq = Boolean(t.isSpecialBatchTest || t.isSpecialMock || t.testType === "special_mock" || t.targetAudience === "special_mock" || (t.mockConfig?.mockRollNumbers && Object.keys(t.mockConfig.mockRollNumbers).length > 0));
+                                                    const effectiveRollReq = isSpecialTestReq ? (t.mockConfig?.mockRollNumbers?.[myStudent?.id || ""] || t.mockConfig?.mockRollNumbers?.[user?.userId || ""] || myStudent?.mockRollNumber || myStudent?.specialRollNo || user?.mockRollNumber || user?.specialRollNo || myStudent?.rollNumber || user?.username || "—") : (myStudent?.rollNumber || user?.username || "—");
 
                                                     const reqObj = {
                                                       id: reqDocId,
@@ -29721,7 +31626,7 @@ function MainApp() {
                                                       testTitle: t.title,
                                                       studentId: myStudent?.id || user?.userId || user?.username || cleanSId,
                                                       studentName: getStudentName(myStudent) || user?.fullName || user?.username || (isRecordedStudent ? "Recorded Student" : isOnlineStudent ? "Online Student" : "Offline Student"),
-                                                      rollNumber: myStudent?.rollNumber || user?.username || "—",
+                                                      rollNumber: effectiveRollReq,
                                                       batch: myStudent?.batch || myStudent?.batchName || "General",
                                                       username: user?.username || "",
                                                       status: "pending",
@@ -29914,9 +31819,48 @@ function MainApp() {
                                             </View>
                                             <Text style={styles.noticeMeta}>Duration: {t.durationMinutes} Mins | Passing: {t.passingMarks}</Text>
                                             {isAdmin ? (
-                                              <TouchableOpacity disabled style={[styles.primaryBtn, { marginTop: 10, backgroundColor: "#bdbdbd" }]}>
-                                                <Ionicons name="time-outline" size={15} color="#fff" style={{ marginRight: 6 }} />
-                                                <Text style={styles.primaryBtnTxt}>Not Started Yet</Text>
+                                              <View style={{ flexDirection: "row", gap: 8, marginTop: 10, alignItems: "center" }}>
+                                                <TouchableOpacity
+                                                  onPress={() => openEditTestModal(t)}
+                                                  style={{
+                                                    flex: 1,
+                                                    backgroundColor: "#0284c7",
+                                                    paddingVertical: 10,
+                                                    borderRadius: 8,
+                                                    flexDirection: "row",
+                                                    alignItems: "center",
+                                                    justifyContent: "center",
+                                                    gap: 6
+                                                  }}
+                                                >
+                                                  <Ionicons name="create-outline" size={16} color="#fff" />
+                                                  <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 13 }}>Edit Test / Schedule</Text>
+                                                </TouchableOpacity>
+                                                <TouchableOpacity
+                                                  onPress={() => {
+                                                    executeDelete("tests", t.id, async () => {
+                                                      try {
+                                                        await api.delete(`/test-portal/test-creation/${t.id}`);
+                                                        Alert.alert("Success", "Test deleted successfully.");
+                                                        loadTests();
+                                                      } catch (e: any) {
+                                                        Alert.alert("Error", e.message || "Failed to delete test.");
+                                                      }
+                                                    });
+                                                  }}
+                                                  style={{ width: 44, height: 44, borderRadius: 8, backgroundColor: "#ffebee", justifyContent: "center", alignItems: "center" }}
+                                                >
+                                                  <Ionicons name="trash-outline" size={20} color="#c62828" />
+                                                </TouchableOpacity>
+                                              </View>
+                                            ) : statusInfo.status === "completed" ? (
+                                              <TouchableOpacity
+                                                disabled={reviewLoading}
+                                                onPress={() => launchReview(statusInfo.attemptId)}
+                                                style={[styles.primaryBtn, { marginTop: 10, backgroundColor: "#2e7d32", flexDirection: "row", gap: 6, justifyContent: "center" }]}
+                                              >
+                                                <Ionicons name="eye-outline" size={18} color="#fff" />
+                                                <Text style={styles.primaryBtnTxt}>📊 View Score & Review Answers</Text>
                                               </TouchableOpacity>
                                             ) : (
                                               requiresPermissionRequest && req?.status !== "approved" ? (
@@ -29932,6 +31876,8 @@ function MainApp() {
                                                     onPress={async () => {
                                                       const cleanSId = String(myStudent?.id || user?.userId || user?.username || "std").toLowerCase().replace(/[^a-z0-9_-]/g, "");
                                                       const reqDocId = `req_${t.id}_${cleanSId}`;
+                                                      const isSpecialTestReq = Boolean(t.isSpecialBatchTest || t.isSpecialMock || t.testType === "special_mock" || t.targetAudience === "special_mock" || (t.mockConfig?.mockRollNumbers && Object.keys(t.mockConfig.mockRollNumbers).length > 0));
+                                                      const effectiveRollReq = isSpecialTestReq ? (t.mockConfig?.mockRollNumbers?.[myStudent?.id || ""] || t.mockConfig?.mockRollNumbers?.[user?.userId || ""] || myStudent?.mockRollNumber || myStudent?.specialRollNo || user?.mockRollNumber || user?.specialRollNo || myStudent?.rollNumber || user?.username || "—") : (myStudent?.rollNumber || user?.username || "—");
 
                                                       const reqObj = {
                                                         id: reqDocId,
@@ -29939,7 +31885,7 @@ function MainApp() {
                                                         testTitle: t.title,
                                                         studentId: myStudent?.id || user?.userId || user?.username || cleanSId,
                                                         studentName: getStudentName(myStudent) || user?.fullName || user?.username || (isRecordedStudent ? "Recorded Student" : isOnlineStudent ? "Online Student" : "Offline Student"),
-                                                        rollNumber: myStudent?.rollNumber || user?.username || "—",
+                                                        rollNumber: effectiveRollReq,
                                                         batch: myStudent?.batch || myStudent?.batchName || "General",
                                                         username: user?.username || "",
                                                         status: "pending",
@@ -32173,10 +34119,51 @@ SOURCE QUESTION PAPER:
                             // Student batch filtering (non-admin)
                             const isAdminUser = user?.role === "super_admin" || user?.role === "developer" || user?.role === "admin";
                             if (!isAdminUser) {
-                              const studentBatch = String(user?.batch || user?.batchId || user?.batchName || "").trim().toLowerCase();
-                              const testBatch = String(t.batch || t.batchId || t.targetBatch || t.batchName || "").trim().toLowerCase();
-                              if (testBatch && testBatch !== "all" && studentBatch && !testBatch.includes(studentBatch) && !studentBatch.includes(testBatch)) {
-                                return false;
+                              // FIX: If student already attempted this test, ALWAYS show in Results Log
+                              const hasAttemptForTest = studentAttempts.some((a: any) => a.testId === t.id);
+                              if (!hasAttemptForTest) {
+                                // Use full student record for batch matching (user object often lacks batch info)
+                                const myStudentRec = getLoggedInStudent(user, students);
+                                const studentBatches: string[] = [];
+                                if (myStudentRec?.batch) studentBatches.push(String(myStudentRec.batch).trim().toLowerCase());
+                                if (myStudentRec?.batchName) studentBatches.push(String(myStudentRec.batchName).trim().toLowerCase());
+                                if (user?.batch) studentBatches.push(String(user.batch).trim().toLowerCase());
+                                if (user?.batchId) studentBatches.push(String(user.batchId).trim().toLowerCase());
+                                if (user?.batchName) studentBatches.push(String(user.batchName).trim().toLowerCase());
+                                const arrBatches = myStudentRec?.batches || user?.batches;
+                                if (Array.isArray(arrBatches)) {
+                                  arrBatches.forEach((b: any) => { if (b) studentBatches.push(String(b).trim().toLowerCase()); });
+                                }
+
+                                const isSpecialMockTest = t.targetAudience === "special_mock" || t.isSpecialMock || t.testType === "special_mock";
+                                const targetAudience = String(t.targetAudience || "").toLowerCase();
+
+                                if (isSpecialMockTest) {
+                                  const smId = String(myStudentRec?.id || user?.userId || user?.username || "").toLowerCase();
+                                  const smAllowed = String(t.targetBatch || "").split(",").map((b: string) => b.trim().toLowerCase()).filter(Boolean);
+                                  const inBatch = smAllowed.length === 0 || studentBatches.some((sb: string) => smAllowed.includes(sb));
+                                  const inRollMap = !!(smId && t.mockConfig?.mockRollNumbers?.[smId]);
+                                  if (!inBatch && !inRollMap) return false;
+                                } else if (targetAudience === "all" || targetAudience === "paid" || !targetAudience) {
+                                  // Visible to all enrolled students — no filtering
+                                } else {
+                                  const testBatches = String(t.batch || t.batchId || t.targetBatch || t.batchName || "")
+                                    .split(",").map((b: string) => b.trim().toLowerCase()).filter(Boolean);
+                                  if (testBatches.length > 0 && !testBatches.includes("all")) {
+                                    const expandedAllowed = new Set(testBatches);
+                                    const sId = String(myStudentRec?.id || user?.userId || "").toLowerCase();
+                                    let hasSpecialAccess = false;
+                                    (batchesRef.current || []).forEach((b: any) => {
+                                      if (b?.isSpecial && testBatches.includes(String(b.batchName || "").trim().toLowerCase())) {
+                                        const subs = (b.orderedBatches?.length > 0 ? b.orderedBatches : (b.subBatches || []));
+                                        subs.forEach((subName: string) => { if (subName) expandedAllowed.add(String(subName).trim().toLowerCase()); });
+                                        if (sId && b.studentRollMap?.[sId]) hasSpecialAccess = true;
+                                        if (myStudentRec?.specialRollNumbers?.[b.batchName]) hasSpecialAccess = true;
+                                      }
+                                    });
+                                    if (!hasSpecialAccess && !studentBatches.some((sb: string) => expandedAllowed.has(sb))) return false;
+                                  }
+                                }
                               }
                             }
 
@@ -32504,7 +34491,7 @@ SOURCE QUESTION PAPER:
                                         )}
                                       </View>
                                       {closedTests.map((t: any) => {
-                                        const hasAttempt = studentAttempts.find((a: any) => a.testId === t.id);
+                                        const hasAttempt = studentAttempts.find((a: any) => a.testId === t.id && !a.isOffline);
                                         const tType = (t.testType || t.category || "").toLowerCase();
                                         const isWeeklyOrMock = tType === "weekly" || tType === "mock" || String(t.title || "").toLowerCase().includes("weekly") || String(t.title || "").toLowerCase().includes("mock");
                                         const hasSubjects = isWeeklyOrMock && Array.isArray(t.subjectSections) && t.subjectSections.length > 0;
@@ -32532,6 +34519,24 @@ SOURCE QUESTION PAPER:
                                                     </Text>
                                                   </View>
                                                 ))}
+                                              </View>
+                                            )}
+
+                                            {/* Explanation Status Badges */}
+                                            {(t.explanationDoc?.url || t.explanationVideo?.url) && (
+                                              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 6, alignItems: "center" }}>
+                                                {t.explanationDoc?.url && (
+                                                  <View style={{ backgroundColor: darkMode ? "#2e1065" : "#ede9fe", borderColor: darkMode ? "#5b21b6" : "#c4b5fd", borderWidth: 1, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 4, flexDirection: "row", alignItems: "center", gap: 4 }}>
+                                                    <Ionicons name="document-text" size={11} color={darkMode ? "#c4b5fd" : "#6d28d9"} />
+                                                    <Text style={{ fontSize: 10, fontWeight: "600", color: darkMode ? "#c4b5fd" : "#6d28d9" }}>Doc Attached</Text>
+                                                  </View>
+                                                )}
+                                                {t.explanationVideo?.url && (
+                                                  <View style={{ backgroundColor: darkMode ? "#831843" : "#fce7f3", borderColor: darkMode ? "#9d174d" : "#fbcfe8", borderWidth: 1, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 4, flexDirection: "row", alignItems: "center", gap: 4 }}>
+                                                    <Ionicons name="videocam" size={11} color={darkMode ? "#f472b6" : "#be185d"} />
+                                                    <Text style={{ fontSize: 10, fontWeight: "600", color: darkMode ? "#f472b6" : "#be185d" }}>Video Attached</Text>
+                                                  </View>
+                                                )}
                                               </View>
                                             )}
 
@@ -32569,6 +34574,13 @@ SOURCE QUESTION PAPER:
                                                       >
                                                         <Ionicons name="warning-outline" size={14} color="#fff" />
                                                         <Text style={{ color: "#fff", fontSize: 11, fontWeight: "700" }}>Reports</Text>
+                                                      </TouchableOpacity>
+                                                      <TouchableOpacity
+                                                        onPress={() => openAdminExplanationModal(t)}
+                                                        style={{ flex: 1, backgroundColor: "#7c3aed", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 4 }}
+                                                      >
+                                                        <Ionicons name="school-outline" size={14} color="#fff" />
+                                                        <Text style={{ color: "#fff", fontSize: 11, fontWeight: "700" }}>Explanations</Text>
                                                       </TouchableOpacity>
                                                     </View>
 
@@ -32639,6 +34651,13 @@ SOURCE QUESTION PAPER:
                                                   >
                                                     <Ionicons name="warning-outline" size={14} color="#fff" />
                                                     <Text style={{ color: "#fff", fontSize: 11, fontWeight: "700" }}>Reports</Text>
+                                                  </TouchableOpacity>
+                                                  <TouchableOpacity
+                                                    onPress={() => openAdminExplanationModal(t)}
+                                                    style={{ backgroundColor: "#7c3aed", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 4 }}
+                                                  >
+                                                    <Ionicons name="school-outline" size={14} color="#fff" />
+                                                    <Text style={{ color: "#fff", fontSize: 11, fontWeight: "700" }}>Explanations</Text>
                                                   </TouchableOpacity>
                                                   <TouchableOpacity
                                                     onPress={() => monitorTest(t.id)}
@@ -32727,6 +34746,38 @@ SOURCE QUESTION PAPER:
                                                 </>
                                               )}
                                             </View>
+
+                                            {/* Explanation Actions for Students (Doc & Video) */}
+                                            {!isAdmin && (t.explanationDoc?.url || t.explanationVideo?.url) && (
+                                              <View style={{ flexDirection: "row", gap: 8, marginTop: 8, alignItems: "center" }}>
+                                                {t.explanationDoc?.url && (
+                                                  <TouchableOpacity
+                                                    onPress={() => setViewingExplanationDoc({
+                                                      url: t.explanationDoc.url,
+                                                      title: t.title || "Test Explanation Document",
+                                                      name: t.explanationDoc.name || "Explanation Document"
+                                                    })}
+                                                    style={{ flex: 1, backgroundColor: "#6d28d9", borderRadius: 8, paddingVertical: 8, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 6 }}
+                                                  >
+                                                    <Ionicons name="document-text-outline" size={14} color="#fff" />
+                                                    <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>Explanation Doc</Text>
+                                                  </TouchableOpacity>
+                                                )}
+                                                {t.explanationVideo?.url && (
+                                                  <TouchableOpacity
+                                                    onPress={() => setViewingExplanationVideo({
+                                                      url: t.explanationVideo.url,
+                                                      videoId: t.explanationVideo.videoId || extractYtId(t.explanationVideo.url),
+                                                      title: t.title || "Test Explanation Video"
+                                                    })}
+                                                    style={{ flex: 1, backgroundColor: "#be185d", borderRadius: 8, paddingVertical: 8, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 6 }}
+                                                  >
+                                                    <Ionicons name="play-circle-outline" size={14} color="#fff" />
+                                                    <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>Explanation Video</Text>
+                                                  </TouchableOpacity>
+                                                )}
+                                              </View>
+                                            )}
 
                                             {/* In-Line Subject Pie Chart & 30% Diagnostics for Closed Tests */}
                                             {isAdmin && hasSubjects && isDiagExpanded && (
@@ -33033,7 +35084,7 @@ SOURCE QUESTION PAPER:
                       >
                         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                           <Image
-                            source={require("./assets/logo.png")}
+                            source={require("./assets/logo.webp")}
                             style={{ width: 24, height: 24, borderRadius: 12 }}
                           />
                           <View>
@@ -33298,6 +35349,17 @@ SOURCE QUESTION PAPER:
                                             <TextInput style={[styles.input, { textTransform: "uppercase" }]} placeholder="Username / Roll Number *" placeholderTextColor="#999" value={editingStudent.loginUsername} onChangeText={u => setEditingStudent({ ...editingStudent, loginUsername: u.toUpperCase() })} autoCapitalize="characters" />
                                             <TextInput style={styles.input} placeholder="Password (leave empty to keep current)" secureTextEntry placeholderTextColor="#999" value={editingStudent.loginPassword || ""} onChangeText={pw => setEditingStudent({ ...editingStudent, loginPassword: pw })} />
 
+                                            {/* Special Mock Roll Number Input */}
+                                            <Text style={{ fontWeight: "bold", color: "#7b1fa2", marginBottom: 6, marginTop: 8, fontSize: 13 }}>⭐ Special Mock Roll Number (Optional)</Text>
+                                            <TextInput
+                                              style={[styles.input, { borderColor: "#ce93d8", backgroundColor: darkMode ? "#2a1b3d" : "#faf5fc" }]}
+                                              placeholder="e.g. 180013, 180261 (Leave empty if not in Special Mock)"
+                                              placeholderTextColor="#999"
+                                              value={editingStudent.mockRollNumber || editingStudent.specialRollNo || ""}
+                                              onChangeText={mr => setEditingStudent({ ...editingStudent, mockRollNumber: mr.trim(), specialRollNo: mr.trim() })}
+                                              keyboardType="numeric"
+                                            />
+
                                             {/* Contact Details */}
                                             <Text style={{ fontWeight: "bold", color: "#0288d1", marginBottom: 6, marginTop: 6, fontSize: 13 }}>Contact Details</Text>
                                             <TextInput style={styles.input} placeholder="Phone Number" placeholderTextColor="#999" value={editingStudent.phone} onChangeText={p => setEditingStudent({ ...editingStudent, phone: cleanPhone(p) })} maxLength={10} keyboardType="phone-pad" />
@@ -33544,6 +35606,17 @@ SOURCE QUESTION PAPER:
                                                 🔑 Password: {newStudent.loginUsername && newStudent.phone ? (newStudent.loginUsername.trim() + newStudent.phone.trim().slice(-4)) : "(Generated from Username + Last 4 digits of Phone)"}
                                               </Text>
                                             </View>
+
+                                            {/* Special Mock Roll Number Input */}
+                                            <Text style={{ fontWeight: "bold", color: "#7b1fa2", marginBottom: 6, fontSize: 13 }}>⭐ Special Mock Roll Number (Optional)</Text>
+                                            <TextInput
+                                              style={[styles.input, { borderColor: "#ce93d8", backgroundColor: darkMode ? "#2a1b3d" : "#faf5fc" }]}
+                                              placeholder="e.g. 180013, 180261 (Leave empty if not in Special Mock)"
+                                              placeholderTextColor="#999"
+                                              value={newStudent.mockRollNumber || newStudent.specialRollNo || ""}
+                                              onChangeText={mr => setNewStudent({ ...newStudent, mockRollNumber: mr.trim(), specialRollNo: mr.trim() })}
+                                              keyboardType="numeric"
+                                            />
 
                                             {/* Batch & Course */}
                                             <Text style={{ fontWeight: "bold", color: "#c62828", marginBottom: 6, marginTop: 10, fontSize: 13 }}>Batches & Class Modes *</Text>
@@ -33962,6 +36035,18 @@ SOURCE QUESTION PAPER:
                                           return true;
                                         });
 
+                                        // Sort by roll number ascending when a specific batch is selected
+                                        if (filterDirBatch !== "all") {
+                                          filtered.sort((a: any, b: any) => {
+                                            const rollA = String(a.rollNumber || a.loginUsername || "");
+                                            const rollB = String(b.rollNumber || b.loginUsername || "");
+                                            if (!rollA && !rollB) return 0;
+                                            if (!rollA) return 1;
+                                            if (!rollB) return -1;
+                                            return rollA.localeCompare(rollB, undefined, { numeric: true, sensitivity: "base" });
+                                          });
+                                        }
+
                                         if (filtered.length === 0) {
                                           return <Text style={styles.emptyText}>No matching students found.</Text>;
                                         }
@@ -33973,7 +36058,8 @@ SOURCE QUESTION PAPER:
                                         const startDirIndex = (safeDirPage - 1) * DIR_ITEMS_PER_PAGE;
                                         const paginatedList = filtered.slice(startDirIndex, startDirIndex + DIR_ITEMS_PER_PAGE);
 
-                                        return paginatedList.map((s) => {
+                                        return paginatedList.map((s, idx) => {
+                                          const serialNo = startDirIndex + idx + 1;
                                           const isSelected = selectedDirectoryStudent?.id === s.id;
                                           const isPending = s.status === "pending";
                                           return (
@@ -33992,6 +36078,9 @@ SOURCE QUESTION PAPER:
                                               <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                                                 <View style={{ flex: 1, paddingRight: 8 }}>
                                                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                                    <View style={{ backgroundColor: darkMode ? "#333333" : "#eceff1", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1, borderWidth: 1, borderColor: darkMode ? "#444444" : "#cfd8dc" }}>
+                                                      <Text style={{ fontSize: 10, fontWeight: "bold", color: darkMode ? "#90caf9" : "#37474f" }}>#{serialNo}</Text>
+                                                    </View>
                                                     <Text style={{ fontWeight: "bold", color: "#212121", fontSize: 13 }}>{getStudentName(s)}</Text>
                                                     {isPending && (
                                                       <View style={{ backgroundColor: "#ffe0b2", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
@@ -34003,7 +36092,7 @@ SOURCE QUESTION PAPER:
                                                     👤 Created By Admin: <Text style={{ fontWeight: "bold" }}>{s.createdBy || s.createdByAdmin || "Super Admin"}</Text>
                                                   </Text>
                                                   <Text style={{ fontSize: 11, color: "#757575", marginTop: 2 }}>
-                                                    Roll: {s.rollNumber || s.loginUsername || "N/A"} | {(() => {
+                                                    Roll: {s.rollNumber || s.loginUsername || "N/A"}{(s.mockRollNumber || s.specialRollNo) ? ` | Mock: ${s.mockRollNumber || s.specialRollNo}` : ""} | {(() => {
                                                       const bList = Array.isArray(s.batches) ? s.batches : (s.batch ? [s.batch] : []);
                                                       if (bList.length === 0) return "No Batch";
                                                       return bList.map((bName: string) => {
@@ -34052,6 +36141,18 @@ SOURCE QUESTION PAPER:
                                         }
                                         return true;
                                       });
+
+                                      // Sort by roll number ascending when a specific batch is selected
+                                      if (filterDirBatch !== "all") {
+                                        filtered.sort((a: any, b: any) => {
+                                          const rollA = String(a.rollNumber || a.loginUsername || "");
+                                          const rollB = String(b.rollNumber || b.loginUsername || "");
+                                          if (!rollA && !rollB) return 0;
+                                          if (!rollA) return 1;
+                                          if (!rollB) return -1;
+                                          return rollA.localeCompare(rollB, undefined, { numeric: true, sensitivity: "base" });
+                                        });
+                                      }
 
                                       const DIR_ITEMS_PER_PAGE = 20;
                                       const totalDirPages = Math.ceil(filtered.length / DIR_ITEMS_PER_PAGE) || 1;
@@ -34186,6 +36287,14 @@ SOURCE QUESTION PAPER:
 
                                                 <View style={{ gap: 8, borderTopWidth: 1, borderTopColor: darkMode ? "#444" : "#eeeeee", paddingTop: 10 }}>
                                                   <Text style={{ fontSize: 13, color: darkMode ? "#ccc" : "#555" }}><Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#212121" }}>Roll Number:</Text> {s.rollNumber || s.loginUsername || "N/A"}</Text>
+                                                  {(s.mockRollNumber || s.specialRollNo) ? (
+                                                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: darkMode ? "#2a1b3d" : "#f3e5f5", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6, alignSelf: "flex-start", borderWidth: 1, borderColor: "#ce93d8" }}>
+                                                      <Ionicons name="ribbon-outline" size={16} color="#7b1fa2" />
+                                                      <Text style={{ fontSize: 13, color: "#7b1fa2", fontWeight: "bold" }}>
+                                                        Special Mock Roll No: <Text style={{ fontSize: 14, fontWeight: "900", color: "#4a148c" }}>{s.mockRollNumber || s.specialRollNo}</Text>
+                                                      </Text>
+                                                    </View>
+                                                  ) : null}
                                                   <Text style={{ fontSize: 13, color: darkMode ? "#ccc" : "#555" }}><Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#212121" }}>Login:</Text> Username: <Text style={{ fontWeight: "bold" }}>{s.loginUsername || s.rollNumber || "N/A"}</Text> | Password: <Text style={{ fontWeight: "bold", color: "#c62828" }}>{s.loginPassword || "N/A"}</Text></Text>
                                                   <Text style={{ fontSize: 13, color: darkMode ? "#ccc" : "#555" }}><Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#212121" }}>Initial:</Text> {s.initial || "N/A"}</Text>
                                                   <Text style={{ fontSize: 13, color: darkMode ? "#ccc" : "#555" }}><Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#212121" }}>Course:</Text> {s.course || "N/A"}</Text>
@@ -34287,7 +36396,7 @@ SOURCE QUESTION PAPER:
                                                         </div>
                                                         <div style="text-align: right; font-size: 12px; color: #444;">
                                                           Date: ${new Date().toLocaleDateString()}<br/>
-                                                          Roll No: <strong>${s.rollNumber || s.loginUsername || "N/A"}</strong>
+                                                          Roll No: <strong>${s.rollNumber || s.loginUsername || "N/A"}</strong>${(s.mockRollNumber || s.specialRollNo) ? ` | Mock: <strong>${s.mockRollNumber || s.specialRollNo}</strong>` : ''}
                                                         </div>
                                                       </div>
 
@@ -34302,6 +36411,7 @@ SOURCE QUESTION PAPER:
 
                                                       <div class="info-grid">
                                                         <div class="info-item"><span class="label">Roll Number:</span><span class="value">${s.rollNumber || s.loginUsername || "N/A"}</span></div>
+                                                        ${(s.mockRollNumber || s.specialRollNo) ? `<div class="info-item" style="background:#f3e5f5; border:1px solid #ce93d8;"><span class="label" style="color:#7b1fa2; font-weight:bold;">Special Mock Roll:</span><span class="value" style="color:#4a148c; font-weight:bold;">${s.mockRollNumber || s.specialRollNo}</span></div>` : ''}
                                                         <div class="info-item"><span class="label">Initial:</span><span class="value">${s.initial || "N/A"}</span></div>
                                                         <div class="info-item"><span class="label">Username:</span><span class="value">${s.loginUsername || "N/A"}</span></div>
                                                         <div class="info-item"><span class="label">Password:</span><span class="value">${s.loginPassword || "N/A"}</span></div>
@@ -34387,8 +36497,26 @@ SOURCE QUESTION PAPER:
                         )}
 
                         {erpSub === "announcements" && isAdmin && (() => {
-                          // filter announcements
+                          // helper to detect individual student reminder alerts (profile & fee alerts)
+                          const isStudentActionAlert = (notice: any) => {
+                            const t = (notice.title || "").toLowerCase();
+                            const c = (notice.content || "").toLowerCase();
+                            return t.includes("complete your profile") ||
+                              c.includes("complete your profile") ||
+                              t.includes("fee payment alert") ||
+                              c.includes("pay your pending") ||
+                              c.includes("pending tuition fee");
+                          };
+
+                          const generalCount = announcements.filter(n => !isStudentActionAlert(n)).length;
+                          const studentAlertCount = announcements.filter(n => isStudentActionAlert(n)).length;
+
+                          // filter announcements by category, search query, and date
                           const filteredNotices = announcements.filter(notice => {
+                            const isAlert = isStudentActionAlert(notice);
+                            if (noticeCategoryFilter === "general" && isAlert) return false;
+                            if (noticeCategoryFilter === "student_alerts" && !isAlert) return false;
+
                             const q = searchNoticeQuery.toLowerCase();
                             const matchesKeyword = notice.title.toLowerCase().includes(q) ||
                               notice.content.toLowerCase().includes(q) ||
@@ -34755,7 +36883,66 @@ SOURCE QUESTION PAPER:
 
                               {/* Search & Notice Registry */}
                               <View style={styles.card}>
-                                <Text style={styles.sectionTitle}>Active Notice Registry ({filteredNotices.length})</Text>
+                                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+                                  <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Active Notice Registry ({filteredNotices.length})</Text>
+
+                                  {/* Category Filter Tabs */}
+                                  <View style={{ flexDirection: "row", backgroundColor: darkMode ? "#1e293b" : "#f1f5f9", borderRadius: 8, padding: 3, gap: 4, flexWrap: "wrap" }}>
+                                    <TouchableOpacity
+                                      onPress={() => setNoticeCategoryFilter("general")}
+                                      style={{
+                                        paddingHorizontal: 12,
+                                        paddingVertical: 6,
+                                        borderRadius: 6,
+                                        backgroundColor: noticeCategoryFilter === "general" ? (darkMode ? "#334155" : "#ffffff") : "transparent"
+                                      }}
+                                    >
+                                      <Text style={{
+                                        fontSize: 12,
+                                        fontWeight: noticeCategoryFilter === "general" ? "bold" : "600",
+                                        color: noticeCategoryFilter === "general" ? (darkMode ? "#ffffff" : "#1e293b") : (darkMode ? "#94a3b8" : "#64748b")
+                                      }}>
+                                        General Notices ({generalCount})
+                                      </Text>
+                                    </TouchableOpacity>
+
+                                    <TouchableOpacity
+                                      onPress={() => setNoticeCategoryFilter("student_alerts")}
+                                      style={{
+                                        paddingHorizontal: 12,
+                                        paddingVertical: 6,
+                                        borderRadius: 6,
+                                        backgroundColor: noticeCategoryFilter === "student_alerts" ? (darkMode ? "#334155" : "#ffffff") : "transparent"
+                                      }}
+                                    >
+                                      <Text style={{
+                                        fontSize: 12,
+                                        fontWeight: noticeCategoryFilter === "student_alerts" ? "bold" : "600",
+                                        color: noticeCategoryFilter === "student_alerts" ? "#e65100" : (darkMode ? "#94a3b8" : "#64748b")
+                                      }}>
+                                        Student Reminders ({studentAlertCount})
+                                      </Text>
+                                    </TouchableOpacity>
+
+                                    <TouchableOpacity
+                                      onPress={() => setNoticeCategoryFilter("all")}
+                                      style={{
+                                        paddingHorizontal: 12,
+                                        paddingVertical: 6,
+                                        borderRadius: 6,
+                                        backgroundColor: noticeCategoryFilter === "all" ? (darkMode ? "#334155" : "#ffffff") : "transparent"
+                                      }}
+                                    >
+                                      <Text style={{
+                                        fontSize: 12,
+                                        fontWeight: noticeCategoryFilter === "all" ? "bold" : "600",
+                                        color: noticeCategoryFilter === "all" ? (darkMode ? "#ffffff" : "#1e293b") : (darkMode ? "#94a3b8" : "#64748b")
+                                      }}>
+                                        All ({announcements.length})
+                                      </Text>
+                                    </TouchableOpacity>
+                                  </View>
+                                </View>
 
                                 {/* Search Controls */}
                                 <View style={{ flexDirection: "row", gap: 8, marginBottom: 15 }}>
@@ -34778,6 +36965,44 @@ SOURCE QUESTION PAPER:
                                     />
                                   </View>
                                 </View>
+
+                                {/* Clear All Reminders Quick Action */}
+                                {noticeCategoryFilter === "student_alerts" && studentAlertCount > 0 && (
+                                  <View style={{ marginBottom: 12, flexDirection: "row", justifyContent: "flex-end" }}>
+                                    <TouchableOpacity
+                                      onPress={() => {
+                                        confirmAction("Clear All Student Reminders", `Are you sure you want to delete all ${studentAlertCount} student reminder notices at once?`, async () => {
+                                          try {
+                                            const alertsToDelete = announcements.filter(n => isStudentActionAlert(n));
+                                            for (const a of alertsToDelete) {
+                                              await api.delete(`/announcement/${a.id}`);
+                                            }
+                                            Alert.alert("Success", `Deleted ${alertsToDelete.length} student reminder notices.`);
+                                            loadAnnouncements();
+                                          } catch (err: any) {
+                                            Alert.alert("Error", err.message || "Failed to clear reminders.");
+                                          }
+                                        });
+                                      }}
+                                      style={{
+                                        flexDirection: "row",
+                                        alignItems: "center",
+                                        gap: 6,
+                                        backgroundColor: "#ffebee",
+                                        paddingHorizontal: 12,
+                                        paddingVertical: 7,
+                                        borderRadius: 6,
+                                        borderWidth: 1,
+                                        borderColor: "#ef9a9a"
+                                      }}
+                                    >
+                                      <Ionicons name="trash-bin-outline" size={14} color="#c62828" />
+                                      <Text style={{ fontSize: 12, fontWeight: "bold", color: "#c62828" }}>
+                                        Clear All Student Reminders ({studentAlertCount})
+                                      </Text>
+                                    </TouchableOpacity>
+                                  </View>
+                                )}
 
                                 {filteredNotices.length === 0 ? (
                                   <Text style={styles.emptyText}>No notices match your filters.</Text>
@@ -35728,11 +37953,15 @@ SOURCE QUESTION PAPER:
                                                     onPress={async () => {
                                                       try {
                                                         await api.post("/announcement", {
-                                                          title: ` Action Required: Complete Your Profile - ${getStudentName(s)}`,
-                                                          content: `Dear ${getStudentName(s)}, your profile setup is incomplete. Please log in and complete your profile form & upload required documents soon.`,
+                                                          title: ` Action Required: Complete Your Profile (Roll: ${s.rollNumber || s.loginUsername || "N/A"})`,
+                                                          content: `Dear Student (${s.rollNumber || s.loginUsername || "Action Required"}), your profile setup is incomplete. Please log in and complete your profile form & upload required documents soon.`,
                                                           priority: "high",
                                                           targetDashboard: "student",
                                                           targetBatch: s.batch || "",
+                                                          targetStudentId: s.id || s.studentId || null,
+                                                          studentUsername: s.loginUsername || s.username || null,
+                                                          studentRoll: s.rollNumber || null,
+                                                          studentName: getStudentName(s),
                                                           createdBy: user?.name || "admin"
                                                         });
                                                         loadAnnouncements();
@@ -35778,11 +38007,15 @@ SOURCE QUESTION PAPER:
                                                   onPress={async () => {
                                                     try {
                                                       await api.post("/announcement", {
-                                                        title: ` Action Required: Complete Your Profile - ${getStudentName(s)}`,
-                                                        content: `Dear ${getStudentName(s)}, your profile setup is incomplete. Please log in and complete your profile form & upload required documents soon.`,
+                                                        title: ` Action Required: Complete Your Profile (Roll: ${s.rollNumber || s.loginUsername || "N/A"})`,
+                                                        content: `Dear Student (${s.rollNumber || s.loginUsername || "Action Required"}), your profile setup is incomplete. Please log in and complete your profile form & upload required documents soon.`,
                                                         priority: "high",
                                                         targetDashboard: "student",
                                                         targetBatch: s.batch || "",
+                                                        targetStudentId: s.id || s.studentId || null,
+                                                        studentUsername: s.loginUsername || s.username || null,
+                                                        studentRoll: s.rollNumber || null,
+                                                        studentName: getStudentName(s),
                                                         createdBy: user?.name || "admin"
                                                       });
                                                       loadAnnouncements();
@@ -36327,6 +38560,10 @@ SOURCE QUESTION PAPER:
                                     <View style={{ gap: 8 }}>
                                       {[
                                         { label: "Full Name", value: myStudent?.name || myProfileRequest.name },
+                                        { label: "Roll Number", value: myStudent?.rollNumber || myStudent?.loginUsername || user?.username || "—" },
+                                        ...(myStudent?.mockRollNumber || myStudent?.specialRollNo || user?.mockRollNumber || user?.specialRollNo ? [
+                                          { label: "Special Mock Roll No", value: String(myStudent?.mockRollNumber || myStudent?.specialRollNo || user?.mockRollNumber || user?.specialRollNo) }
+                                        ] : []),
                                         { label: "Initial", value: myStudent?.initial || myProfileRequest.initial || "—" },
                                         { label: "Course", value: myStudent?.course || user.course || myProfileRequest.course || "—" },
                                         { label: "Batch", value: myStudent?.batch || user.batch || myProfileRequest.batch || "—" },
@@ -36463,7 +38700,20 @@ SOURCE QUESTION PAPER:
                                     <View style={[styles.card, { borderLeftWidth: 4, borderLeftColor: "#f57c00" }]}>
                                       <Text style={{ fontWeight: "bold", fontSize: 14, color: "#f57c00", marginBottom: 8 }}>ℹ Profile Already Submitted</Text>
                                       <Text style={{ color: "#424242", fontSize: 13, marginBottom: 6 }}>Your data has been submitted for admin review.</Text>
-                                      <Text style={{ color: "#757575", fontSize: 12 }}>If anything needs to be changed, please contact the administrator.</Text>
+                                      {myStudent?.rollNumber && (
+                                          <Text style={{ color: "#555", fontSize: 13, marginBottom: 4 }}>
+                                            Roll Number: <Text style={{ fontWeight: "bold", color: "#212121" }}>{myStudent.rollNumber}</Text>
+                                          </Text>
+                                        )}
+                                        {(myStudent?.mockRollNumber || myStudent?.specialRollNo) && (
+                                          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#f3e5f5", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, alignSelf: "flex-start", marginBottom: 6 }}>
+                                            <Ionicons name="ribbon-outline" size={15} color="#7b1fa2" />
+                                            <Text style={{ fontSize: 12, color: "#7b1fa2", fontWeight: "bold" }}>
+                                              Special Mock Roll No: <Text style={{ fontSize: 13, fontWeight: "900", color: "#4a148c" }}>{myStudent.mockRollNumber || myStudent.specialRollNo}</Text>
+                                            </Text>
+                                          </View>
+                                        )}
+                                        <Text style={{ color: "#757575", fontSize: 12 }}>If anything needs to be changed, please contact the administrator.</Text>
                                     </View>
                                   );
                                 }
@@ -38052,7 +40302,10 @@ SOURCE QUESTION PAPER:
                                   <View style={[styles.card, { borderLeftWidth: 4, borderLeftColor: "#c62828" }]}>
                                     <Text style={styles.sectionTitle}>My Profile</Text>
                                     <Text style={{ color: "#212121", fontWeight: "bold" }}>{myStudent.firstName} {myStudent.lastName}</Text>
-                                    <Text style={{ color: "#757575", fontSize: 12, marginTop: 2 }}>Roll: {myStudent.rollNumber} | Batch: {myStudent.batch || "N/A"}</Text>
+                                    <Text style={{ color: "#757575", fontSize: 12, marginTop: 2 }}>
+                                      Roll: {myStudent.rollNumber} | Batch: {myStudent.batch || "N/A"}
+                                      {(myStudent.mockRollNumber || myStudent.specialRollNo) ? ` | Special Mock Roll: ${myStudent.mockRollNumber || myStudent.specialRollNo}` : ""}
+                                    </Text>
                                     <Text style={{ color: "#757575", fontSize: 12 }}>Course: {myStudent.course}</Text>
                                   </View>
 
@@ -40742,7 +42995,7 @@ SOURCE QUESTION PAPER:
                                           <Text style={styles.emptyText}>No students in this batch.</Text>
                                         </View>
                                       ) : (
-                                        studentsInBatch.map((student: any) => {
+                                        studentsInBatch.map((student: any, sIdx: number) => {
                                           const mark = offlineAttendanceMarks[student.id] || null;
                                           const isSaving = offlineAttendanceSaving[student.id] || false;
                                           const rollNo = student.rollNumber || student.admissionNumber || student.id.substring(0, 6);
@@ -40774,6 +43027,9 @@ SOURCE QUESTION PAPER:
                                                 </View>
                                                 <View style={{ flex: 1 }}>
                                                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                                                    <View style={{ backgroundColor: darkMode ? "#333333" : "#eceff1", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                                                      <Text style={{ fontSize: 10, fontWeight: "bold", color: darkMode ? "#90caf9" : "#37474f" }}>#{sIdx + 1}</Text>
+                                                    </View>
                                                     <Text style={{ fontWeight: "bold", color: "#212121", fontSize: 14 }} numberOfLines={1}>{name || "Unnamed"}</Text>
                                                     <View style={{ backgroundColor: isStudentOnline(student) ? "#e3f2fd" : "#fbe9e7", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1 }}>
                                                       <Text style={{ color: isStudentOnline(student) ? "#1565c0" : "#d84315", fontSize: 10, fontWeight: "bold" }}>
@@ -42545,7 +44801,7 @@ SOURCE QUESTION PAPER:
                       >
                         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                           <Image
-                            source={require("./assets/logo.png")}
+                            source={require("./assets/logo.webp")}
                             style={{ width: 24, height: 24, borderRadius: 12 }}
                           />
                           <View>
@@ -42714,18 +44970,19 @@ SOURCE QUESTION PAPER:
                               ) : user?.role !== "student" ? (
                                 <View>
                                   <Text style={{ color: "#c62828", fontSize: 12, marginBottom: 12, fontWeight: "bold" }}>Quiz Date: {todayQuiz.quizDate}</Text>
-                                  {todayQuiz.questions.map((q: any, idx: number) => (
+                                  {(todayQuiz.questions || []).map((q: any, idx: number) => (
                                     <View key={idx} style={{ padding: 12, backgroundColor: darkMode ? "#2a2a2a" : "#f9f9f9", borderRadius: 8, borderLeftWidth: 4, borderLeftColor: "#c62828", marginBottom: 15 }}>
                                       <Text style={{ color: darkMode ? "#e0e0e0" : "#212121", fontWeight: "700", fontSize: 14, marginBottom: 8 }}>{idx + 1}. {q.questionText}</Text>
                                       <View style={{ gap: 8, marginVertical: 6 }}>
-                                        {q.options.map((opt: string, oIdx: number) => {
+                                        {(q.options || []).map((opt: string, oIdx: number) => {
                                           const isCorrect = oIdx === q.correctOptionIndex;
-                                          const pct = q.optionPercentages ? q.optionPercentages[oIdx] : 0;
+                                          const rawPct = (q.optionPercentages && typeof q.optionPercentages[oIdx] === "number") ? q.optionPercentages[oIdx] : 0;
+                                          const pct = isNaN(rawPct) ? 0 : Math.max(0, Math.min(100, rawPct));
                                           return (
                                             <View key={oIdx} style={{ backgroundColor: darkMode ? "#1e1e1e" : "#ffffff", borderWidth: 1, borderColor: isCorrect ? "#2e7d32" : darkMode ? "#333" : "#e0e0e0", borderRadius: 6, padding: 8 }}>
                                               <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
                                                 <Text style={{ fontSize: 12, color: isCorrect ? "#2e7d32" : darkMode ? "#e0e0e0" : "#212121", fontWeight: isCorrect ? "bold" : "normal" }}>
-                                                  {opt}{isCorrect ? "(Correct)" : ""}
+                                                  {opt}{isCorrect ? " (Correct)" : ""}
                                                 </Text>
                                                 <Text style={{ fontSize: 11, color: "#757575", fontWeight: "bold" }}>{pct}%</Text>
                                               </View>
@@ -42745,7 +45002,7 @@ SOURCE QUESTION PAPER:
                                     <Ionicons name="trophy" size={36} color="#FFA000" />
                                   </View>
                                   <Text style={{ fontSize: 18, fontWeight: "bold", color: darkMode ? "#e0e0e0" : "#212121", marginBottom: 6 }}>Quiz Completed!</Text>
-                                  <Text style={{ fontSize: 20, color: "#c62828", fontWeight: "bold" }}>Score: {quizScore} / {todayQuiz.questions.length}</Text>
+                                  <Text style={{ fontSize: 20, color: "#c62828", fontWeight: "bold" }}>Score: {quizScore} / {Array.isArray(todayQuiz.questions) ? todayQuiz.questions.length : (quizFeedbackQuestions || []).length}</Text>
                                   <View style={{ width: "100%", marginTop: 20, gap: 15 }}>
                                     {/* Toggle button row */}
                                     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
@@ -42771,7 +45028,7 @@ SOURCE QUESTION PAPER:
                                         <Text style={{ fontSize: 11, color: "#1565c0", flex: 1 }}>Reviewing without answers — try to recall each answer on your own for better retention!</Text>
                                       </View>
                                     )}
-                                    {quizFeedbackQuestions.map((q, idx) => (
+                                    {(quizFeedbackQuestions || []).map((q, idx) => (
                                       <View key={idx} style={{ padding: 12, backgroundColor: darkMode ? "#2a2a2a" : "#f9f9f9", borderRadius: 8, borderLeftWidth: 4, borderLeftColor: "#c62828" }}>
                                         <Text style={{ color: darkMode ? "#e0e0e0" : "#212121", fontWeight: "700", fontSize: 14, marginBottom: 8 }}>{idx + 1}. {q.questionText}</Text>
                                         <View style={{ gap: 8, marginVertical: 6 }}>
@@ -42779,7 +45036,9 @@ SOURCE QUESTION PAPER:
                                             const isCorrect = showAnswers && oIdx === q.correctOptionIndex;
                                             const isUserChoice = oIdx === q.userAnswer;
                                             const isWrong = showAnswers && isUserChoice && oIdx !== q.correctOptionIndex;
-                                            const pct = showAnswers && q.optionPercentages ? q.optionPercentages[oIdx] : null;
+                                            const hasPct = showAnswers && q.optionPercentages && typeof q.optionPercentages[oIdx] === "number";
+                                            const rawPct = hasPct ? q.optionPercentages[oIdx] : null;
+                                            const pct = (rawPct !== null && !isNaN(rawPct)) ? Math.max(0, Math.min(100, rawPct)) : null;
                                             return (
                                               <View key={oIdx} style={{ borderWidth: 1.5, borderColor: isCorrect ? "#2e7d32" : isWrong ? "#c62828" : isUserChoice ? "#1565c0" : darkMode ? "#333" : "#e0e0e0", borderRadius: 6, padding: 8, backgroundColor: isCorrect ? "#e8f5e9" : isWrong ? "#ffebee" : isUserChoice ? (darkMode ? "#0d1e35" : "#e3f2fd") : darkMode ? "#1e1e1e" : "#ffffff" }}>
                                                 <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: pct !== null ? 4 : 0 }}>
@@ -42809,15 +45068,15 @@ SOURCE QUESTION PAPER:
                               ) : (
                                 // Active Quiz Attempt (Student)
                                 (() => {
-                                  const allQIds = todayQuiz.questions.map((_: any, i: number) => i);
+                                  const allQIds = (todayQuiz.questions || []).map((_: any, i: number) => i);
                                   const answered = Object.keys(quizAnswers).length;
                                   return (
                                     <View>
                                       <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 10 }}>
                                         <Text style={{ color: "#c62828", fontWeight: "bold", fontSize: 12 }}>Date: {todayQuiz.quizDate}</Text>
-                                        <Text style={{ color: darkMode ? "#9e9e9e" : "#757575", fontSize: 12 }}>{answered}/{todayQuiz.questions.length} answered</Text>
+                                        <Text style={{ color: darkMode ? "#9e9e9e" : "#757575", fontSize: 12 }}>{answered}/{(todayQuiz.questions || []).length} answered</Text>
                                       </View>
-                                      {todayQuiz.questions.map((q: any, idx: number) => (
+                                      {(todayQuiz.questions || []).map((q: any, idx: number) => (
                                         <View key={idx} style={{ padding: 12, backgroundColor: darkMode ? "#2a2a2a" : "#f9f9f9", borderRadius: 10, marginBottom: 14, borderLeftWidth: 4, borderLeftColor: quizAnswers[idx] !== undefined ? "#2e7d32" : "#e0e0e0" }}>
                                           <Text style={{ color: darkMode ? "#e0e0e0" : "#212121", fontWeight: "700", fontSize: 14, marginBottom: 10 }}>{idx + 1}. {q.questionText}</Text>
                                           <View style={{ gap: 8 }}>
@@ -42835,8 +45094,12 @@ SOURCE QUESTION PAPER:
                                           </View>
                                         </View>
                                       ))}
-                                      <TouchableOpacity onPress={submitLmsQuiz} style={[styles.primaryBtn, { width: "100%", marginTop: 10 }]}>
-                                        <Text style={styles.primaryBtnTxt}>Submit Quiz</Text>
+                                      <TouchableOpacity
+                                        onPress={submitLmsQuiz}
+                                        disabled={isSubmittingQuiz}
+                                        style={[styles.primaryBtn, { width: "100%", marginTop: 10, opacity: isSubmittingQuiz ? 0.6 : 1 }]}
+                                      >
+                                        <Text style={styles.primaryBtnTxt}>{isSubmittingQuiz ? "Submitting Quiz..." : "Submit Quiz"}</Text>
                                       </TouchableOpacity>
                                     </View>
                                   );
@@ -42931,6 +45194,20 @@ SOURCE QUESTION PAPER:
                                     </Text>
                                   </TouchableOpacity>
                                 ))}
+
+                                {/* Subject Filter Dropdown */}
+                                <View style={{ minWidth: 160 }}>
+                                  <UniversalDropdown
+                                    value={lmsResourceSubject}
+                                    darkMode={darkMode}
+                                    placeholder="Filter by Subject..."
+                                    options={[
+                                      { label: "All Subjects", value: "All" },
+                                      ...SUBJECT_OPTIONS.map(s => ({ label: s, value: s }))
+                                    ]}
+                                    onSelect={val => setLmsResourceSubject(val || "All")}
+                                  />
+                                </View>
                               </View>
                               {isAdmin && (
                                 <View style={{ flexDirection: "row", gap: 10 }}>
@@ -42941,6 +45218,7 @@ SOURCE QUESTION PAPER:
                                       setResourceForm({
                                         title: "",
                                         description: "",
+                                        subject: "",
                                         type: "PDF",
                                         categoryId: "reference",
                                         displayGroup: "normal",
@@ -42952,6 +45230,9 @@ SOURCE QUESTION PAPER:
                                         uploadMode: "file",
                                         file: null,
                                         fileName: "",
+                                        audioFile: null,
+                                        audioFileName: "",
+                                        audioUrl: "",
                                         externalUrl: "",
                                         distributions: []
                                       });
@@ -42980,7 +45261,8 @@ SOURCE QUESTION PAPER:
                               const filteredResources = lmsResources.filter(r => {
                                 const matchSearch = !lmsResourceSearch || (r.title || r.name || "").toLowerCase().includes(lmsResourceSearch.toLowerCase());
                                 const matchCat = lmsResourceCategory === "All" || (r.type || r.fileType || "").toLowerCase() === lmsResourceCategory.toLowerCase();
-                                if (!matchSearch || !matchCat) return false;
+                                const matchSubject = lmsResourceSubject === "All" || (r.subject || r.subjectName || "").toLowerCase() === lmsResourceSubject.toLowerCase();
+                                if (!matchSearch || !matchCat || !matchSubject) return false;
 
                                 if (user?.role === "student") {
                                   const myStudent = getLoggedInStudent(user, studentsRef.current);
@@ -43087,6 +45369,7 @@ SOURCE QUESTION PAPER:
                                                     setResourceForm({
                                                       title: res.title || res.name || "",
                                                       description: res.description || "",
+                                                      subject: res.subject || res.subjectName || "",
                                                       type: res.type || res.fileType || "PDF",
                                                       categoryId: res.categoryId || "reference",
                                                       displayGroup: res.displayGroup || "normal",
@@ -43100,6 +45383,9 @@ SOURCE QUESTION PAPER:
                                                       uploadMode: res.sourceUrl ? "link" : "file",
                                                       file: null,
                                                       fileName: "",
+                                                      audioFile: null,
+                                                      audioFileName: res.audioUrl ? "Audio Attached" : "",
+                                                      audioUrl: res.audioUrl || "",
                                                       externalUrl: res.sourceUrl || "",
                                                       distributions: []
                                                     });
@@ -43122,8 +45408,20 @@ SOURCE QUESTION PAPER:
                                           <Text style={{ fontSize: 12, color: darkMode ? "#aaa" : "#757575" }} numberOfLines={2}>{res.description}</Text>
                                         ) : null}
                                         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderTopWidth: 1, borderColor: darkMode ? "#2a2a2a" : "#eee", paddingTop: 10, marginTop: 4 }}>
-                                          <View>
-                                            {resSubject ? <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#757575", fontWeight: "500" }}>{resSubject}</Text> : null}
+                                          <View style={{ gap: 4 }}>
+                                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                              {resSubject ? (
+                                                <View style={{ backgroundColor: darkMode ? "#311b92" : "#ede7f6", paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4 }}>
+                                                  <Text style={{ fontSize: 10, color: darkMode ? "#d1c4e9" : "#512da8", fontWeight: "bold" }}>{resSubject}</Text>
+                                                </View>
+                                              ) : null}
+                                              {(res.hasAudio || res.audioUrl) ? (
+                                                <View style={{ flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: darkMode ? "#1b5e20" : "#e8f5e9", paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4 }}>
+                                                  <Ionicons name="musical-notes" size={10} color={darkMode ? "#a5d6a7" : "#2e7d32"} />
+                                                  <Text style={{ fontSize: 10, color: darkMode ? "#a5d6a7" : "#2e7d32", fontWeight: "bold" }}>Audio</Text>
+                                                </View>
+                                              ) : null}
+                                            </View>
                                             <Text style={{ fontSize: 10, color: darkMode ? "#777" : "#9e9e9e" }}>{[resSize, resDate].filter(Boolean).join(" • ")}</Text>
                                           </View>
                                           {/* SACS 3-state: access field only present for student from /students/me/lms-resources */}
@@ -43590,7 +45888,9 @@ SOURCE QUESTION PAPER:
                                                   style={{ backgroundColor: "#2e7d32", paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8, flexDirection: "row", alignItems: "center", gap: 6 }}
                                                 >
                                                   <Ionicons name="people-outline" size={16} color="#fff" />
-                                                  <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 13 }}>View Attendance</Text>
+                                                  <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 13 }}>
+                                             View Attendance{session.attendedCount != null || session.totalAttended != null ? ` (${session.attendedCount ?? session.totalAttended})` : (session.liveSession?.joinedParticipantsDetails ? ` (${Object.keys(session.liveSession.joinedParticipantsDetails).length})` : '')}
+                                           </Text>
                                                 </TouchableOpacity>
                                               )}
                                             </React.Fragment>
@@ -45565,7 +47865,7 @@ SOURCE QUESTION PAPER:
                       >
                         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                           <Image
-                            source={require("./assets/logo.png")}
+                            source={require("./assets/logo.webp")}
                             style={{ width: 24, height: 24, borderRadius: 12 }}
                           />
                           <View>
@@ -47284,7 +49584,29 @@ SOURCE QUESTION PAPER:
                             return s === "student" || s === "guest" || s === "guest user" || s === "n/a" || s.startsWith("guest:") || s.startsWith("guest ") || s.startsWith("student (") || s.startsWith("stu-");
                           };
 
-                          const resolvedStudent = students.find((s: any) => s.id === entry.studentId || s.userId === entry.studentId);
+                          const entryRollStr = String(entry.rollNumber || "").trim().toLowerCase();
+                          const entryMockStr = String(entry.mockRollNumber || "").trim().toLowerCase();
+
+                          const resolvedStudent = students.find((s: any) => {
+                            if (entry.studentId && (s.id === entry.studentId || s.userId === entry.studentId)) return true;
+                            const sRoll = String(s.rollNumber || "").trim().toLowerCase();
+                            const sRollNo = String(s.rollNo || "").trim().toLowerCase();
+                            const sMock = String(s.mockRollNumber || "").trim().toLowerCase();
+                            const sSpec = String(s.specialRollNo || "").trim().toLowerCase();
+                            const sUser = String(s.loginUsername || "").trim().toLowerCase();
+
+                            if (entryRollStr && entryRollStr !== "guest") {
+                              if (sRoll === entryRollStr || sRollNo === entryRollStr || sMock === entryRollStr || sSpec === entryRollStr || sUser === entryRollStr) return true;
+                              if (s.specialRollNumbers && typeof s.specialRollNumbers === "object") {
+                                if (Object.values(s.specialRollNumbers).some((v: any) => String(v).trim().toLowerCase() === entryRollStr)) return true;
+                              }
+                            }
+                            if (entryMockStr && entryMockStr !== "guest") {
+                              if (sMock === entryMockStr || sSpec === entryMockStr || sRoll === entryMockStr || sRollNo === entryMockStr) return true;
+                            }
+                            return false;
+                          });
+
                           const resolvedLead = leads.find((ld: any) => ld.id === entry.studentId || ld.userId === entry.studentId);
                           const resolvedUser = user && (user.id === entry.studentId || user.userId === entry.studentId || user.leadId === entry.studentId || user.email === entry.studentId) ? user : null;
 
@@ -47297,7 +49619,7 @@ SOURCE QUESTION PAPER:
                             studentName = resolvedUser.name || resolvedUser.username || resolvedUser.email?.split("@")[0];
                           }
 
-                          if (isGenericName(studentName) && entry.studentName && !isGenericName(entry.studentName)) {
+                          if (isGenericName(studentName) && entry.studentName && !isGenericName(entry.studentName) && entry.studentName !== "Offline Student") {
                             studentName = entry.studentName;
                           }
 
@@ -47315,7 +49637,6 @@ SOURCE QUESTION PAPER:
                           let rollNo = "";
 
                           if (isSpecialBatchTest) {
-                            // Check special batch roll map by student id
                             if (entry.studentId && specialBatchRollMap[entry.studentId]) {
                               rollNo = String(specialBatchRollMap[entry.studentId]);
                             } else if (resolvedStudent?.id && specialBatchRollMap[resolvedStudent.id]) {
@@ -47332,7 +49653,6 @@ SOURCE QUESTION PAPER:
                               rollNo = entry.rollNumber;
                             }
                           } else {
-                            // Standard Test: STRICTLY use normal student roll number!
                             if (entry.rollNumber && !isGenericName(entry.rollNumber) && !isPhoneNum(entry.rollNumber)) {
                               rollNo = entry.rollNumber;
                             }
@@ -47340,6 +49660,13 @@ SOURCE QUESTION PAPER:
 
                           if (!rollNo && resolvedStudent) rollNo = resolvedStudent.rollNumber || resolvedStudent.rollNo || resolvedStudent.loginUsername;
                           if (!rollNo || isGenericName(rollNo) || isPhoneNum(rollNo) || rollNo === studentName || resolvedLead) rollNo = "Guest";
+
+                          const mockRoll = entry.mockRollNumber || resolvedStudent?.mockRollNumber || resolvedStudent?.specialRollNo || (isSpecialBatchTest ? rollNo : "");
+
+                          const correctCount = entry.correct ?? entry.correctCount ?? 0;
+                          const wrongCount = entry.wrong ?? entry.wrongCount ?? 0;
+                          const totalQ = entry.totalQuestions || (tObj?.totalQuestions || (Array.isArray(tObj?.questionIds) ? tObj.questionIds.length : (correctCount + wrongCount)));
+                          const notAttemptedCount = entry.skipped ?? entry.skippedCount ?? entry.unattended ?? (totalQ > (correctCount + wrongCount) ? totalQ - (correctCount + wrongCount) : 0);
 
                           return (
                             <View key={entry.id || index} style={{
@@ -47352,11 +49679,26 @@ SOURCE QUESTION PAPER:
                               <Text style={{ width: 32, fontWeight: "bold", color: index === 0 ? "#fbc02d" : index === 1 ? "#9e9e9e" : index === 2 ? "#b5651d" : "#757575", fontSize: 14 }}>
                                 #{index + 1}
                               </Text>
-                              <View style={{ flex: 1 }}>
-                                <Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#212121", fontSize: 13 }}>{studentName}</Text>
-                                <Text style={{ fontSize: 11, color: "#1565c0", marginTop: 1 }}>Roll No: {rollNo}</Text>
+                              <View style={{ flex: 1, marginRight: 10 }}>
+                                <Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#212121", fontSize: 13 }}>
+                                  {studentName} {mockRoll ? `(${mockRoll})` : (rollNo && rollNo !== "Guest" && rollNo !== studentName ? `(${rollNo})` : "")}
+                                </Text>
+                                <Text style={{ fontSize: 11, color: "#1565c0", marginTop: 1 }}>
+                                  {mockRoll ? `Mock Roll: ${mockRoll}${rollNo && rollNo !== mockRoll && rollNo !== "Guest" ? ` · Roll: ${rollNo}` : ""}` : `Roll No: ${rollNo}`}
+                                </Text>
+                                <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 4 }}>
+                                  <Text style={{ fontSize: 11, color: "#2e7d32", fontWeight: "600" }}>
+                                    Correct: <Text style={{ fontWeight: "bold" }}>{correctCount}</Text>
+                                  </Text>
+                                  <Text style={{ fontSize: 11, color: "#c62828", fontWeight: "600" }}>
+                                    Wrong: <Text style={{ fontWeight: "bold" }}>{wrongCount}</Text>
+                                  </Text>
+                                  <Text style={{ fontSize: 11, color: darkMode ? "#a1a1aa" : "#757575", fontWeight: "600" }}>
+                                    Not Attempted: <Text style={{ fontWeight: "bold" }}>{notAttemptedCount}</Text>
+                                  </Text>
+                                </View>
                               </View>
-                              <View style={{ alignItems: "flex-end" }}>
+                              <View style={{ alignItems: "flex-end", minWidth: 90 }}>
                                 <Text style={{ fontWeight: "bold", color: "#2e7d32", fontSize: 14 }}>
                                   {entry.obtainedMarks} / {entry.totalMarks}
                                 </Text>
@@ -47676,6 +50018,814 @@ SOURCE QUESTION PAPER:
           </View>
         </Modal>
       )}
+
+      {/* ── ADMIN TEST EXPLANATION MANAGEMENT MODAL ── */}
+      {adminExplanationModalTest && (
+        <Modal visible={true} transparent animationType="fade" onRequestClose={() => setAdminExplanationModalTest(null)}>
+          <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.65)", justifyContent: "center", alignItems: "center", padding: 16 }}>
+            <View style={{ backgroundColor: darkMode ? "#18181b" : "#ffffff", borderRadius: 16, width: "100%", maxWidth: 540, padding: 22, shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 10, borderWidth: 1, borderColor: darkMode ? "#27272a" : "#e4e4e7" }}>
+              {/* Header */}
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <View style={{ flex: 1, marginRight: 10 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <Ionicons name="school" size={20} color="#7c3aed" />
+                    <Text style={{ fontSize: 16, fontWeight: "900", color: darkMode ? "#fff" : "#18181b" }}>Test Explanations</Text>
+                  </View>
+                  <Text style={{ fontSize: 12, color: darkMode ? "#a1a1aa" : "#71717a", marginTop: 3 }} numberOfLines={1}>
+                    {adminExplanationModalTest.title || "Selected Test"}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => setAdminExplanationModalTest(null)} style={{ padding: 4 }}>
+                  <Ionicons name="close-circle" size={24} color={darkMode ? "#a1a1aa" : "#71717a"} />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView style={{ maxHeight: 480 }} showsVerticalScrollIndicator={false}>
+                {/* Section 1: Explanation Document */}
+                <View style={{ backgroundColor: darkMode ? "#27272a" : "#f5f3ff", borderRadius: 12, padding: 14, marginBottom: 14, borderWidth: 1, borderColor: darkMode ? "#3f3f46" : "#ddd6fe" }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Ionicons name="document-text" size={16} color="#7c3aed" />
+                      <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#4c1d95" }}>Explanation Document (PDF / Doc)</Text>
+                    </View>
+                    {adminExpDocUrl ? (
+                      <View style={{ backgroundColor: "#dcfce7", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                        <Text style={{ fontSize: 10, fontWeight: "700", color: "#15803d" }}>Attached</Text>
+                      </View>
+                    ) : null}
+                  </View>
+
+                  <Text style={{ fontSize: 11, color: darkMode ? "#a1a1aa" : "#64748b", marginBottom: 8 }}>
+                    Provide a Google Drive preview link, external document URL, or upload directly to Google Drive.
+                  </Text>
+
+                  <TextInput
+                    style={[styles.input, { backgroundColor: darkMode ? "#18181b" : "#fff", color: darkMode ? "#fff" : "#000", marginBottom: 8, fontSize: 12 }]}
+                    placeholder="Document Title (e.g. Polity Day 1 Explanation Doc)"
+                    placeholderTextColor="#9ca3af"
+                    value={adminExpDocName}
+                    onChangeText={setAdminExpDocName}
+                  />
+
+                  <TextInput
+                    style={[styles.input, { backgroundColor: darkMode ? "#18181b" : "#fff", color: darkMode ? "#fff" : "#000", marginBottom: 8, fontSize: 12 }]}
+                    placeholder="https://drive.google.com/file/d/... or document URL"
+                    placeholderTextColor="#9ca3af"
+                    value={adminExpDocUrl}
+                    onChangeText={setAdminExpDocUrl}
+                  />
+
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    {Platform.OS === "web" && (
+                      <input
+                        type="file"
+                        accept=".pdf,.doc,.docx"
+                        id="admin-exp-doc-upload"
+                        style={{ display: "none" }}
+                        onChange={handleAdminDocFileUpload}
+                      />
+                    )}
+                    <TouchableOpacity
+                      onPress={handleAdminPickDocFile}
+                      disabled={adminExpUploadingDoc}
+                      style={{ backgroundColor: "#7c3aed", paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, flexDirection: "row", alignItems: "center", gap: 6 }}
+                    >
+                      {adminExpUploadingDoc ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <Ionicons name="cloud-upload-outline" size={14} color="#fff" />
+                      )}
+                      <Text style={{ color: "#fff", fontSize: 11, fontWeight: "700" }}>
+                        {adminExpUploadingDoc ? "Uploading to Drive..." : "Choose File from Device"}
+                      </Text>
+                    </TouchableOpacity>
+                    {adminExpDocUrl ? (
+                      <TouchableOpacity
+                        onPress={() => { setAdminExpDocUrl(""); setAdminExpDocName(""); }}
+                        style={{ paddingHorizontal: 10, paddingVertical: 7, backgroundColor: "#fee2e2", borderRadius: 8 }}
+                      >
+                        <Text style={{ color: "#b91c1c", fontSize: 11, fontWeight: "700" }}>Clear Doc</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                </View>
+
+                {/* Section 2: Explanation Video */}
+                <View style={{ backgroundColor: darkMode ? "#27272a" : "#fdf2f8", borderRadius: 12, padding: 14, marginBottom: 14, borderWidth: 1, borderColor: darkMode ? "#3f3f46" : "#fbcfe8" }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Ionicons name="videocam" size={16} color="#be185d" />
+                      <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#831843" }}>Explanation Video (YouTube / Link)</Text>
+                    </View>
+                    {adminExpVideoUrl ? (
+                      <View style={{ backgroundColor: "#dcfce7", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                        <Text style={{ fontSize: 10, fontWeight: "700", color: "#15803d" }}>Attached</Text>
+                      </View>
+                    ) : null}
+                  </View>
+
+                  <Text style={{ fontSize: 11, color: darkMode ? "#a1a1aa" : "#64748b", marginBottom: 8 }}>
+                    Paste YouTube URL (unlisted or public). Students watch with active dynamic anti-piracy watermarks.
+                  </Text>
+
+                  <TextInput
+                    style={[styles.input, { backgroundColor: darkMode ? "#18181b" : "#fff", color: darkMode ? "#fff" : "#000", marginBottom: 8, fontSize: 12 }]}
+                    placeholder="https://www.youtube.com/watch?v=... or https://youtu.be/..."
+                    placeholderTextColor="#9ca3af"
+                    value={adminExpVideoUrl}
+                    onChangeText={setAdminExpVideoUrl}
+                  />
+
+                  {adminExpVideoUrl ? (
+                    <TouchableOpacity
+                      onPress={() => setAdminExpVideoUrl("")}
+                      style={{ alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 7, backgroundColor: "#fee2e2", borderRadius: 8 }}
+                    >
+                      <Text style={{ color: "#b91c1c", fontSize: 11, fontWeight: "700" }}>Clear Video</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              </ScrollView>
+
+              {/* Action Buttons */}
+              <View style={{ flexDirection: "row", gap: 10, marginTop: 14, justifyContent: "flex-end" }}>
+                <TouchableOpacity
+                  onPress={() => setAdminExplanationModalTest(null)}
+                  disabled={adminExpSaving}
+                  style={{ paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: darkMode ? "#3f3f46" : "#d1d5db" }}
+                >
+                  <Text style={{ color: darkMode ? "#d4d4d8" : "#4b5563", fontSize: 12, fontWeight: "700" }}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={handleSaveAdminExplanations}
+                  disabled={adminExpSaving}
+                  style={{ backgroundColor: "#7c3aed", paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8, flexDirection: "row", alignItems: "center", gap: 6 }}
+                >
+                  {adminExpSaving ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Ionicons name="checkmark-done-circle" size={16} color="#fff" />
+                  )}
+                  <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>
+                    {adminExpSaving ? "Saving..." : "Save Explanations"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* ── ADMIN TEST SCHEDULE & DETAILS EDIT MODAL ── */}
+      {editingTestModalItem && (
+        <Modal visible={true} transparent animationType="fade" onRequestClose={() => setEditingTestModalItem(null)}>
+          <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.65)", justifyContent: "center", alignItems: "center", padding: 16 }}>
+            <View style={{
+              backgroundColor: darkMode ? "#18181b" : "#ffffff",
+              borderRadius: 16,
+              width: "100%",
+              maxWidth: 580,
+              maxHeight: "90%",
+              padding: 22,
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.3,
+              shadowRadius: 8,
+              elevation: 10,
+              borderWidth: 1,
+              borderColor: darkMode ? "#27272a" : "#e4e4e7"
+            }}>
+              {/* Header */}
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12, borderBottomWidth: 1, borderBottomColor: darkMode ? "#27272a" : "#f0f0f0", paddingBottom: 10 }}>
+                <View style={{ flex: 1, marginRight: 10 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <Ionicons name="create" size={20} color="#0284c7" />
+                    <Text style={{ fontSize: 16, fontWeight: "900", color: darkMode ? "#fff" : "#18181b" }}>Edit Test / Schedule</Text>
+                  </View>
+                  <Text style={{ fontSize: 11, color: darkMode ? "#a1a1aa" : "#71717a", marginTop: 2 }} numberOfLines={1}>
+                    Update schedule timing, settings, and questions
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => setEditingTestModalItem(null)} style={{ padding: 4 }}>
+                  <Ionicons name="close-circle" size={24} color={darkMode ? "#a1a1aa" : "#71717a"} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Tabs Switcher */}
+              <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
+                <TouchableOpacity
+                  onPress={() => setEditingTestActiveTab("schedule")}
+                  style={{
+                    flex: 1,
+                    paddingVertical: 9,
+                    borderRadius: 8,
+                    backgroundColor: editingTestActiveTab === "schedule" ? "#0284c7" : (darkMode ? "#27272a" : "#f4f4f5"),
+                    borderWidth: 1,
+                    borderColor: editingTestActiveTab === "schedule" ? "#0284c7" : (darkMode ? "#3f3f46" : "#e4e4e7"),
+                    alignItems: "center",
+                    flexDirection: "row",
+                    justifyContent: "center",
+                    gap: 6
+                  }}
+                >
+                  <Ionicons name="time-outline" size={16} color={editingTestActiveTab === "schedule" ? "#fff" : (darkMode ? "#a1a1aa" : "#71717a")} />
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: editingTestActiveTab === "schedule" ? "#fff" : (darkMode ? "#e4e4e7" : "#3f3f46") }}>
+                    Schedule & Settings
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => setEditingTestActiveTab("questions")}
+                  style={{
+                    flex: 1,
+                    paddingVertical: 9,
+                    borderRadius: 8,
+                    backgroundColor: editingTestActiveTab === "questions" ? "#0284c7" : (darkMode ? "#27272a" : "#f4f4f5"),
+                    borderWidth: 1,
+                    borderColor: editingTestActiveTab === "questions" ? "#0284c7" : (darkMode ? "#3f3f46" : "#e4e4e7"),
+                    alignItems: "center",
+                    flexDirection: "row",
+                    justifyContent: "center",
+                    gap: 6
+                  }}
+                >
+                  <Ionicons name="help-circle-outline" size={16} color={editingTestActiveTab === "questions" ? "#fff" : (darkMode ? "#a1a1aa" : "#71717a")} />
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: editingTestActiveTab === "questions" ? "#fff" : (darkMode ? "#e4e4e7" : "#3f3f46") }}>
+                    Questions ({editingTestLoadingQuestions ? "..." : (() => { try { const p = JSON.parse(editingTestQuestionsJson); return Array.isArray(p) ? p.length : 0; } catch(_) { return 0; } })()})
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={true} contentContainerStyle={{ paddingBottom: 20 }}>
+                {editingTestActiveTab === "schedule" ? (
+                  <>
+                {/* Test Title */}
+                <Text style={[styles.label, darkMode && styles.labelDark]}>Test Title:</Text>
+                <TextInput
+                  style={[styles.input, darkMode && styles.inputDark]}
+                  placeholder="Test Title"
+                  placeholderTextColor="#999"
+                  value={editingTestForm.title}
+                  onChangeText={t => setEditingTestForm({ ...editingTestForm, title: t })}
+                />
+
+                {/* Scheduled Times */}
+                <View style={{ backgroundColor: darkMode ? "#1e293b" : "#f0f9ff", padding: 12, borderRadius: 10, marginBottom: 14, borderWidth: 1, borderColor: darkMode ? "#334155" : "#bae6fd" }}>
+                  <Text style={{ fontWeight: "bold", color: darkMode ? "#38bdf8" : "#0284c7", fontSize: 12, marginBottom: 8 }}>
+                    ⏰ SCHEDULE TIMING (Modify start & end)
+                  </Text>
+                  <DateTimePickerSelect
+                    label="Scheduled Start Time:"
+                    value={editingTestForm.startTime}
+                    onChange={(t: string) => setEditingTestForm({ ...editingTestForm, startTime: t })}
+                    darkMode={darkMode}
+                  />
+                  <DateTimePickerSelect
+                    label="Scheduled End Time:"
+                    value={editingTestForm.endTime}
+                    onChange={(t: string) => setEditingTestForm({ ...editingTestForm, endTime: t })}
+                    darkMode={darkMode}
+                  />
+                </View>
+
+                {/* Duration & Passing Marks */}
+                <View style={{ flexDirection: "row", gap: 10, marginBottom: 12 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.label, darkMode && styles.labelDark]}>Duration (Mins):</Text>
+                    <TextInput
+                      style={[styles.input, darkMode && styles.inputDark]}
+                      placeholder="60"
+                      placeholderTextColor="#999"
+                      keyboardType="numeric"
+                      value={editingTestForm.duration}
+                      onChangeText={d => setEditingTestForm({ ...editingTestForm, duration: d })}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.label, darkMode && styles.labelDark]}>Passing Marks:</Text>
+                    <TextInput
+                      style={[styles.input, darkMode && styles.inputDark]}
+                      placeholder="0"
+                      placeholderTextColor="#999"
+                      keyboardType="numeric"
+                      value={editingTestForm.passingMarks}
+                      onChangeText={p => setEditingTestForm({ ...editingTestForm, passingMarks: p })}
+                    />
+                  </View>
+                </View>
+
+                {/* Test Category */}
+                <Text style={[styles.label, darkMode && styles.labelDark]}>Test Category:</Text>
+                <View style={{ flexDirection: "row", gap: 6, marginBottom: 12 }}>
+                  {[{ label: "📅 Daily", value: "daily" }, { label: "📆 Weekly", value: "weekly" }, { label: "🏆 Mock", value: "mock" }].map(cat => (
+                    <TouchableOpacity
+                      key={cat.value}
+                      onPress={() => setEditingTestForm({ ...editingTestForm, testType: cat.value })}
+                      style={{
+                        flex: 1,
+                        paddingVertical: 8,
+                        borderRadius: 8,
+                        backgroundColor: (editingTestForm.testType || "mock") === cat.value ? "#0284c7" : (darkMode ? "#2a2a2a" : "#f5f5f5"),
+                        borderWidth: 1,
+                        borderColor: (editingTestForm.testType || "mock") === cat.value ? "#0284c7" : (darkMode ? "#444" : "#e0e0e0"),
+                        alignItems: "center"
+                      }}
+                    >
+                      <Text style={{ fontSize: 11, fontWeight: "bold", color: (editingTestForm.testType || "mock") === cat.value ? "#fff" : (darkMode ? "#aaa" : "#555") }}>{cat.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* Test Mode */}
+                <Text style={[styles.label, darkMode && styles.labelDark]}>Test Mode:</Text>
+                <View style={{ flexDirection: "row", gap: 6, marginBottom: 12 }}>
+                  {[{ label: "🌐 Online", value: "online" }, { label: "🎥 Recorded", value: "recorded" }, { label: "🌐+🎥 Both", value: "both" }].map(mOpt => (
+                    <TouchableOpacity
+                      key={mOpt.value}
+                      onPress={() => setEditingTestForm({ ...editingTestForm, testMode: mOpt.value })}
+                      style={{
+                        flex: 1,
+                        paddingVertical: 8,
+                        borderRadius: 8,
+                        backgroundColor: (editingTestForm.testMode || "online") === mOpt.value ? "#0284c7" : (darkMode ? "#2a2a2a" : "#f5f5f5"),
+                        borderWidth: 1,
+                        borderColor: (editingTestForm.testMode || "online") === mOpt.value ? "#0284c7" : (darkMode ? "#444" : "#e0e0e0"),
+                        alignItems: "center"
+                      }}
+                    >
+                      <Text style={{ fontSize: 11, fontWeight: "bold", color: (editingTestForm.testMode || "online") === mOpt.value ? "#fff" : (darkMode ? "#aaa" : "#555") }}>{mOpt.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* Target Audience */}
+                <Text style={[styles.label, darkMode && styles.labelDark]}>Target Audience:</Text>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+                  {[
+                    { label: "All Users", value: "all" },
+                    { label: "Enrolled (All)", value: "paid" },
+                    { label: "Enrolled (Batch)", value: "batch" },
+                    { label: "Free (Guest)", value: "free" }
+                  ].map((aud) => (
+                    <TouchableOpacity
+                      key={aud.value}
+                      onPress={() => setEditingTestForm({ ...editingTestForm, targetAudience: aud.value })}
+                      style={{
+                        flex: 1,
+                        paddingVertical: 8,
+                        borderRadius: 6,
+                        backgroundColor: (editingTestForm.targetAudience || "all") === aud.value ? "#0284c7" : (darkMode ? "#2a2a2a" : "#ffffff"),
+                        borderWidth: 1,
+                        borderColor: (editingTestForm.targetAudience || "all") === aud.value ? "#0284c7" : (darkMode ? "#444" : "#e0e0e0"),
+                        alignItems: "center",
+                        minWidth: 70
+                      }}
+                    >
+                      <Text style={{ fontSize: 10, fontWeight: "bold", color: (editingTestForm.targetAudience || "all") === aud.value ? "#fff" : (darkMode ? "#aaa" : "#616161") }}>
+                        {aud.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* Target Batch Dropdown */}
+                {editingTestForm.targetAudience === "batch" && (
+                  <View style={{ marginBottom: 12 }}>
+                    <Text style={[styles.label, darkMode && styles.labelDark]}>Select Batch:</Text>
+                    <TouchableOpacity
+                      onPress={() => setShowEditingTestBatchDropdown(!showEditingTestBatchDropdown)}
+                      style={{
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        borderWidth: 1,
+                        borderColor: darkMode ? "#444" : "#ccc",
+                        borderRadius: 8,
+                        padding: 10,
+                        backgroundColor: darkMode ? "#222" : "#fff"
+                      }}
+                    >
+                      <Text style={{ color: darkMode ? "#fff" : "#212121", fontSize: 12, fontWeight: "bold" }}>
+                        {editingTestForm.targetBatch || "Select Target Batches..."}
+                      </Text>
+                      <Ionicons name={showEditingTestBatchDropdown ? "chevron-up" : "chevron-down"} size={16} color={darkMode ? "#aaa" : "#555"} />
+                    </TouchableOpacity>
+
+                    {showEditingTestBatchDropdown && (
+                      <View style={{
+                        marginTop: 4,
+                        borderWidth: 1,
+                        borderColor: darkMode ? "#444" : "#ccc",
+                        borderRadius: 8,
+                        backgroundColor: darkMode ? "#222" : "#fff",
+                        maxHeight: 180,
+                        overflow: "hidden"
+                      }}>
+                        <ScrollView nestedScrollEnabled style={{ maxHeight: 180 }}>
+                          {batches.map((b: any) => {
+                            const list = editingTestForm.targetBatch ? editingTestForm.targetBatch.split(",").map((s: string) => s.trim()) : [];
+                            const isSelected = list.includes(b.batchName);
+                            const toggleBatch = () => {
+                              let newList: string[];
+                              if (isSelected) {
+                                newList = list.filter((item: string) => item !== b.batchName);
+                              } else {
+                                newList = [...list, b.batchName];
+                              }
+                              setEditingTestForm({ ...editingTestForm, targetBatch: newList.join(", ") });
+                            };
+
+                            return (
+                              <TouchableOpacity
+                                key={b.id}
+                                onPress={toggleBatch}
+                                style={{
+                                  padding: 10,
+                                  flexDirection: "row",
+                                  alignItems: "center",
+                                  gap: 8,
+                                  borderBottomWidth: 1,
+                                  borderBottomColor: darkMode ? "#333" : "#f0f0f0",
+                                  backgroundColor: isSelected ? (darkMode ? "#1e293b" : "#e0f2fe") : "transparent"
+                                }}
+                              >
+                                <Ionicons
+                                  name={isSelected ? "checkbox" : "square-outline"}
+                                  size={16}
+                                  color={isSelected ? "#0284c7" : (darkMode ? "#aaa" : "#757575")}
+                                />
+                                <Text style={{ color: isSelected ? "#0284c7" : (darkMode ? "#fff" : "#212121"), fontSize: 12, fontWeight: isSelected ? "bold" : "normal" }}>
+                                  {b.batchName} ({b.course})
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </ScrollView>
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                {/* Test Description */}
+                <Text style={[styles.label, darkMode && styles.labelDark]}>Test Description:</Text>
+                <TextInput
+                  style={[styles.input, darkMode && styles.inputDark, { height: 60, textAlignVertical: "top" }]}
+                  placeholder="Test Description (optional)"
+                  placeholderTextColor="#999"
+                  multiline
+                  value={editingTestForm.description}
+                  onChangeText={d => setEditingTestForm({ ...editingTestForm, description: d })}
+                />
+
+                    {/* Quick Button to Switch to Questions */}
+                    <TouchableOpacity
+                      onPress={() => setEditingTestActiveTab("questions")}
+                      style={{
+                        backgroundColor: darkMode ? "#1e293b" : "#f0fdf4",
+                        borderWidth: 1,
+                        borderColor: darkMode ? "#334155" : "#86efac",
+                        padding: 12,
+                        borderRadius: 8,
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginTop: 12,
+                        marginBottom: 6
+                      }}
+                    >
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                        <Ionicons name="document-text" size={18} color="#16a34a" />
+                        <Text style={{ fontSize: 12, fontWeight: "700", color: darkMode ? "#86efac" : "#15803d" }}>
+                          Edit Test Questions ({editingTestLoadingQuestions ? "Loading..." : `${(() => { try { const p = JSON.parse(editingTestQuestionsJson); return Array.isArray(p) ? p.length : 0; } catch(_) { return 0; } })()} questions`})
+                        </Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={16} color="#16a34a" />
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                      <Text style={{ fontSize: 12, fontWeight: "bold", color: darkMode ? "#fff" : "#111827" }}>
+                        Questions JSON ({editingTestLoadingQuestions ? "Loading..." : `${(() => { try { const p = JSON.parse(editingTestQuestionsJson); return Array.isArray(p) ? p.length : 0; } catch(_) { return 0; } })()} questions`}):
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => {
+                          try {
+                            const p = JSON.parse(editingTestQuestionsJson);
+                            setEditingTestQuestionsJson(JSON.stringify(p, null, 2));
+                          } catch (e: any) {
+                            Alert.alert("Invalid JSON", e.message);
+                          }
+                        }}
+                        style={{
+                          paddingHorizontal: 8,
+                          paddingVertical: 4,
+                          borderRadius: 6,
+                          backgroundColor: darkMode ? "#27272a" : "#e5e7eb"
+                        }}
+                      >
+                        <Text style={{ fontSize: 11, fontWeight: "600", color: darkMode ? "#e4e4e7" : "#374151" }}>Prettify JSON</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {editingTestLoadingQuestions ? (
+                      <View style={{ padding: 40, alignItems: "center", justifyContent: "center" }}>
+                        <ActivityIndicator size="large" color="#0284c7" />
+                        <Text style={{ marginTop: 10, fontSize: 12, color: darkMode ? "#9ca3af" : "#6b7280" }}>
+                          Loading test questions from database...
+                        </Text>
+                      </View>
+                    ) : (
+                      <>
+                        <Text style={{ fontSize: 11, color: darkMode ? "#9ca3af" : "#6b7280", marginBottom: 8, lineHeight: 16 }}>
+                          Edit question text, choices (option a, b, c, d), correct option ("A", "B", "C", "D"), or add/delete questions. When done, click "Save Changes" below.
+                        </Text>
+                        <TextInput
+                          style={[
+                            styles.input,
+                            darkMode && styles.inputDark,
+                            {
+                              height: 380,
+                              textAlignVertical: "top",
+                              fontFamily: Platform.OS === "web" ? "Consolas, Monaco, monospace" : undefined,
+                              fontSize: 12,
+                              lineHeight: 18
+                            }
+                          ]}
+                          multiline
+                          placeholder='[&#10;  {&#10;    "question": "What is ...?",&#10;    "option a": "Option A",&#10;    "option b": "Option B",&#10;    "option c": "Option C",&#10;    "option d": "Option D",&#10;    "correct option": "A",&#10;    "explanation": "..."&#10;  }&#10;]'
+                          placeholderTextColor="#999"
+                          value={editingTestQuestionsJson}
+                          onChangeText={setEditingTestQuestionsJson}
+                        />
+                      </>
+                    )}
+                  </View>
+                )}
+              </ScrollView>
+
+              {/* Action Buttons */}
+              <View style={{ flexDirection: "row", gap: 10, marginTop: 14, justifyContent: "flex-end" }}>
+                <TouchableOpacity
+                  onPress={() => setEditingTestModalItem(null)}
+                  disabled={editingTestSaving}
+                  style={{ paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: darkMode ? "#3f3f46" : "#d1d5db" }}
+                >
+                  <Text style={{ color: darkMode ? "#d4d4d8" : "#4b5563", fontSize: 12, fontWeight: "700" }}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={handleSaveEditTest}
+                  disabled={editingTestSaving}
+                  style={{ backgroundColor: "#0284c7", paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8, flexDirection: "row", alignItems: "center", gap: 6 }}
+                >
+                  {editingTestSaving ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Ionicons name="checkmark-done-circle" size={16} color="#fff" />
+                  )}
+                  <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>
+                    {editingTestSaving ? "Saving..." : "Save Changes"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* ── EXPLANATION DOCUMENT VIEWER MODAL ── */}
+      {viewingExplanationDoc && (
+        // Full-screen secure viewer — matches LMS SecurePDFViewer layout exactly
+        // transparent={false} + SafeAreaView gives the same secure full-screen window
+        <Modal visible={true} transparent={false} animationType="fade" onRequestClose={() => setViewingExplanationDoc(null)}>
+          <SafeAreaView style={{ flex: 1, backgroundColor: "#0f1219" }}>
+            {/* Header — same style as LMS SecurePDFViewer header */}
+            <View style={{
+              height: 60,
+              borderBottomWidth: 1,
+              borderBottomColor: "rgba(255,255,255,0.08)",
+              backgroundColor: "#151923",
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              paddingHorizontal: 16
+            }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1, marginRight: 8 }}>
+                <TouchableOpacity onPress={() => setViewingExplanationDoc(null)} style={{ padding: 6, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.06)" }}>
+                  <Ionicons name="close" size={20} color="#fff" />
+                </TouchableOpacity>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 14, flexShrink: 1 }} numberOfLines={1}>
+                      {viewingExplanationDoc.name || viewingExplanationDoc.title || "Explanation Document"}
+                    </Text>
+                    <View style={{ backgroundColor: "rgba(16,185,129,0.2)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, flexDirection: "row", alignItems: "center", gap: 3 }}>
+                      <Ionicons name="shield-checkmark" size={10} color="#34d399" />
+                      <Text style={{ color: "#34d399", fontSize: 9, fontWeight: "bold" }}>SECURE</Text>
+                    </View>
+                  </View>
+                  <Text style={{ color: "#9ca3af", fontSize: 11 }}>PDF • In-App Secure Viewer</Text>
+                </View>
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <View style={{ backgroundColor: "rgba(239,68,68,0.15)", borderWidth: 1, borderColor: "rgba(239,68,68,0.3)", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 4 }}>
+                  <Ionicons name="eye-off-outline" size={12} color="#f87171" />
+                  <Text style={{ color: "#f87171", fontSize: 10, fontWeight: "bold" }}>No Download</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Content — flex: 1 fills remaining screen just like LMS */}
+            <View style={{ flex: 1, backgroundColor: "#000", width: "100%", position: "relative" }}>
+              {Platform.OS === "web" ? (
+                <iframe
+                  src={viewingExplanationDoc.url}
+                  style={{ width: "100%", height: "100%", border: "none" } as any}
+                  allow="fullscreen"
+                />
+              ) : (
+                // Native: WebView — Drive links use preview URL + hidePopOutJs, others use buildNativePdfViewerHtml
+                (() => {
+                  const { WebView } = require("react-native-webview");
+                  const docUrl = viewingExplanationDoc.url || "";
+                  const driveMatch = docUrl.match(/\/file\/d\/([-\w]{25,})/) || docUrl.match(/[?&]id=([-\w]{25,})/);
+                  const driveId = driveMatch ? (driveMatch[1] || driveMatch[2] || null) : null;
+                  const drivePreviewUrl = driveId ? `https://drive.google.com/file/d/${driveId}/preview` : null;
+                  const isExternalHttp = docUrl.startsWith("http://") || docUrl.startsWith("https://");
+                  const uName = user?.name || user?.username || user?.displayName || "Student";
+                  const uPhone = user?.phone || user?.mobile || user?.phoneNumber || user?.email || "";
+                  const watermark = uPhone ? `${uName} • ${uPhone}` : uName;
+                  const webViewSrc = drivePreviewUrl
+                    ? { uri: drivePreviewUrl }
+                    : isExternalHttp
+                      ? { uri: docUrl.includes('drive.google.com') ? docUrl : `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(docUrl)}` }
+                      : { html: buildNativePdfViewerHtml(docUrl, viewingExplanationDoc.name || "Explanation Document", watermark) };
+
+                  return (
+                    <View style={{ flex: 1, width: "100%", height: "100%", position: "relative" }}>
+                      <WebView
+                        key={docUrl}
+                        source={webViewSrc}
+                        style={{ flex: 1, width: "100%", height: "100%", backgroundColor: "#0b0e17" }}
+                        javaScriptEnabled={true}
+                        domStorageEnabled={true}
+                        thirdPartyCookiesEnabled={true}
+                        sharedCookiesEnabled={true}
+                        allowFileAccess={true}
+                        allowFileAccessFromFileURLs={true}
+                        allowUniversalAccessFromFileURLs={true}
+                        userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                        injectedJavaScript={drivePreviewUrl ? hidePopOutJs : undefined}
+                        onShouldStartLoadWithRequest={(req) => {
+                          if (!drivePreviewUrl) return true;
+                          return (
+                            req.url === drivePreviewUrl ||
+                            req.url.startsWith("https://drive.google.com/file/d/") ||
+                            req.url.startsWith("https://docs.google.com") ||
+                            req.url.startsWith("https://accounts.google.com") ||
+                            req.url.startsWith("about:blank")
+                          );
+                        }}
+                        startInLoadingState={true}
+                        renderLoading={() => (
+                          <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "center", alignItems: "center", backgroundColor: "#0f1219" }}>
+                            <ActivityIndicator size="large" color="#7c3aed" />
+                            <Text style={{ color: "#ccc", marginTop: 10, fontSize: 12 }}>Loading document…</Text>
+                          </View>
+                        )}
+                      />
+                      {/* Security overlay blocking Drive pop-out button */}
+                      {drivePreviewUrl && (
+                        <View
+                          pointerEvents="auto"
+                          style={{
+                            position: "absolute",
+                            top: 0,
+                            right: 0,
+                            width: 76,
+                            height: 58,
+                            backgroundColor: "#151923",
+                            zIndex: 9999,
+                            justifyContent: "center",
+                            alignItems: "center",
+                            borderBottomLeftRadius: 10,
+                            borderLeftWidth: 1,
+                            borderBottomWidth: 1,
+                            borderColor: "rgba(255,255,255,0.08)"
+                          }}
+                        >
+                          <Ionicons name="shield-checkmark" size={16} color="#34d399" />
+                          <Text style={{ color: "#9ca3af", fontSize: 9, fontWeight: "bold", marginTop: 2 }}>PROTECTED</Text>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })()
+              )}
+            </View>
+          </SafeAreaView>
+        </Modal>
+      )}
+
+
+      {/* ── EXPLANATION VIDEO VIEWER MODAL WITH WATERMARK ── */}
+      {viewingExplanationVideo && (
+        // Full-screen layout matching LMS videoPlayerModal exactly
+        // width: "95%", height: "90%" card with flex:1 WebView inside
+        <Modal visible={true} transparent animationType="fade" onRequestClose={() => setViewingExplanationVideo(null)}>
+          <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", alignItems: "center", padding: 20 }}>
+            <View style={{ width: "95%", height: "90%", backgroundColor: "#000", borderRadius: 14, overflow: "hidden", borderWidth: 1, borderColor: "#333" }}>
+              {/* Header */}
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 12, backgroundColor: "#222" }}>
+                <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 13 }} numberOfLines={1}>
+                  🎥 {viewingExplanationVideo.title || "Explanation Video"}
+                </Text>
+                <TouchableOpacity onPress={() => setViewingExplanationVideo(null)}>
+                  <Ionicons name="close" size={24} color="#fff" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Player — flex: 1 fills remaining height, same as LMS videoPlayerModal */}
+              <View style={{ flex: 1, position: "relative" }}>
+                {(() => {
+                  const yId = viewingExplanationVideo.videoId || extractYtId(viewingExplanationVideo.url);
+                  const playerName = (user as any)?.name || (user as any)?.displayName || 'NERMAI IAS';
+                  const playerEmail = (user as any)?.email || (user as any)?.phone || 'Explanation Video';
+                  const playerHtml = yId ? buildExplanationPlayerHtml(yId, viewingExplanationVideo.title, playerName, playerEmail) : '';
+
+                  if (!yId) {
+                    if (Platform.OS === "web") {
+                      return (
+                        <iframe
+                          key={viewingExplanationVideo.url}
+                          src={viewingExplanationVideo.url}
+                          style={{ width: "100%", height: "100%", border: "none", backgroundColor: "black" } as any}
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                        />
+                      );
+                    }
+                    const { WebView } = require("react-native-webview");
+                    return (
+                      <WebView
+                        key={viewingExplanationVideo.url}
+                        source={{ uri: viewingExplanationVideo.url }}
+                        style={{ flex: 1, width: "100%", height: "100%", backgroundColor: "#000" }}
+                        javaScriptEnabled={true}
+                        domStorageEnabled={true}
+                        allowsFullscreenVideo={true}
+                        mediaPlaybackRequiresUserAction={false}
+                        allowsInlineMediaPlayback={true}
+                        originWhitelist={['*']}
+                      />
+                    );
+                  }
+
+                  if (Platform.OS === "web") {
+                    return (
+                      <iframe
+                        key={yId}
+                        srcDoc={playerHtml}
+                        title={viewingExplanationVideo.title}
+                        style={{ flex: 1, width: "100%", height: "100%", border: "none", backgroundColor: "black" } as any}
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                        allowFullScreen
+                      />
+                    );
+                  }
+
+                  const { WebView } = require("react-native-webview");
+                  return (
+                    <WebView
+                      key={yId}
+                      source={{ html: playerHtml, baseUrl: 'https://nermaiias.in' }}
+                      userAgent="Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+                      style={{ flex: 1, width: "100%", height: "100%", backgroundColor: "#000" }}
+                      javaScriptEnabled={true}
+                      domStorageEnabled={true}
+                      allowsFullscreenVideo={true}
+                      mediaPlaybackRequiresUserAction={false}
+                      allowsInlineMediaPlayback={true}
+                      originWhitelist={['*']}
+                      mixedContentMode="always"
+                      startInLoadingState={true}
+                      renderLoading={() => (
+                        <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "center", alignItems: "center", backgroundColor: "#000" }}>
+                          <ActivityIndicator size="large" color="#be185d" />
+                          <Text style={{ color: "#fff", marginTop: 10, fontSize: 13 }}>Loading video player...</Text>
+                        </View>
+                      )}
+                    />
+                  );
+                })()}
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+
 
       {/* ── MOBILE SEPARATE WINDOW / MODAL FOR SUBJECT ANALYTICS ── */}
       {mobileSubjectAnalyticsModalTest && (
@@ -48981,6 +52131,11 @@ SOURCE QUESTION PAPER:
                 }
 
                 const renderEntryRoll = (entry: any, resolvedStudent: any) => {
+                  const isGenericName = (name: string) => {
+                    if (!name) return true;
+                    const s = String(name).trim().toLowerCase();
+                    return s === "student" || s === "guest" || s === "guest user" || s === "n/a" || s.startsWith("guest:") || s.startsWith("guest ") || s.startsWith("student (") || s.startsWith("stu-");
+                  };
                   const isPhoneNum = (val: string) => /^\d{7,15}$/.test(String(val || "").trim().replace(/[\s\-\+\(\)]/g, ""));
                   let validRoll = "";
                   if (slIsSpecialBatchTest) {
@@ -49000,7 +52155,11 @@ SOURCE QUESTION PAPER:
                       validRoll = entry.rollNumber;
                     }
                   } else {
-                    if (entry.rollNumber && !isGenericName(entry.rollNumber) && !isPhoneNum(entry.rollNumber)) {
+                    if (entry.mockRollNumber) {
+                      validRoll = String(entry.mockRollNumber);
+                    } else if (resolvedStudent?.mockRollNumber) {
+                      validRoll = String(resolvedStudent.mockRollNumber);
+                    } else if (entry.rollNumber && !isGenericName(entry.rollNumber) && !isPhoneNum(entry.rollNumber)) {
                       validRoll = entry.rollNumber;
                     }
                   }
@@ -49016,7 +52175,7 @@ SOURCE QUESTION PAPER:
                       const skipped = entry.skipped ?? entry.unattended ?? entry.skippedCount ?? 0;
                       const attended = correct + wrong;
 
-                      const resolvedStudent = students.find((s: any) => s.id === entry.studentId || s.userId === entry.studentId || s.loginUsername === entry.rollNumber || s.rollNumber === entry.rollNumber);
+                      const resolvedStudent = students.find((s: any) => s.id === entry.studentId || s.userId === entry.studentId || s.loginUsername === entry.rollNumber || s.rollNumber === entry.rollNumber || s.mockRollNumber === entry.rollNumber || s.specialRollNo === entry.rollNumber || (entry.mockRollNumber && (s.mockRollNumber === entry.mockRollNumber || s.specialRollNo === entry.mockRollNumber)));
                       const resolvedLead = leads.find((ld: any) => ld.id === entry.studentId || ld.userId === entry.studentId);
                       const resolvedUser = user && (user.id === entry.studentId || user.userId === entry.studentId || user.username === entry.studentId) ? user : null;
 
@@ -49025,10 +52184,9 @@ SOURCE QUESTION PAPER:
                           : resolvedUser ? (resolvedUser.name || resolvedUser.username || resolvedUser.email?.split("@")[0])
                             : (entry.studentName && entry.studentName !== "Student" && !entry.studentName.startsWith("Student (") ? entry.studentName : (entry.username || entry.name || "Guest User"));
 
+                      const isStudentViewer = Boolean(user && (user.role === "student" || user.role === "user"));
                       const rollVal = renderEntryRoll(entry, resolvedStudent);
-                      const studentLabel = sName
-                        ? (rollVal && rollVal !== sName && rollVal !== "N/A" && rollVal !== "Guest" && rollVal !== "Student" ? `${sName} (${rollVal})` : sName)
-                        : rollVal;
+                      const studentLabel = isStudentViewer ? rollVal : (sName ? (rollVal && rollVal !== sName && rollVal !== "N/A" && rollVal !== "Guest" && rollVal !== "Student" ? `${sName} (${rollVal})` : sName) : rollVal);
 
                       const obtainedMarks = entry.obtainedMarks ?? entry.score ?? 0;
                       const totalMarks = entry.totalMarks ?? entry.totalScore ?? 0;
@@ -49060,9 +52218,9 @@ SOURCE QUESTION PAPER:
                             </View>
                           </View>
                           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 8, paddingTop: 6, borderTopWidth: 1, borderTopColor: darkMode ? "#2a2a2a" : "#f0f0f0" }}>
-                            <Text style={{ fontSize: 11, color: "#1565c0", fontWeight: "600" }}>Attended: <Text style={{ fontWeight: "bold" }}>{attended}</Text></Text>
                             <Text style={{ fontSize: 11, color: "#2e7d32", fontWeight: "600" }}>Correct: <Text style={{ fontWeight: "bold" }}>{correct}</Text></Text>
                             <Text style={{ fontSize: 11, color: "#c62828", fontWeight: "600" }}>Wrong: <Text style={{ fontWeight: "bold" }}>{wrong}</Text></Text>
+                            <Text style={{ fontSize: 11, color: darkMode ? "#a1a1aa" : "#757575", fontWeight: "600" }}>Not Attempted: <Text style={{ fontWeight: "bold" }}>{skipped}</Text></Text>
                             <Text style={{ fontSize: 11, fontWeight: "bold", color: darkMode ? "#81c784" : "#1a237e" }}>{obtainedMarks}/{totalMarks}</Text>
                           </View>
                         </View>
@@ -49075,11 +52233,10 @@ SOURCE QUESTION PAPER:
                       {/* Table Header */}
                       <View style={{ flexDirection: "row", backgroundColor: darkMode ? "#2a2a2a" : "#f5f5f5", paddingVertical: 10, paddingHorizontal: 12, borderRadius: 8, marginBottom: 6, alignItems: "center" }}>
                         <Text style={{ width: 45, fontWeight: "bold", fontSize: 11, color: darkMode ? "#fff" : "#555" }}>#</Text>
-                        <Text style={{ flex: 1, minWidth: 180, fontWeight: "bold", fontSize: 11, color: darkMode ? "#fff" : "#555" }}>Student / Roll No</Text>
-                        <Text style={{ width: 85, fontWeight: "bold", fontSize: 11, color: darkMode ? "#fff" : "#555", textAlign: "center" }}>Attended</Text>
-                        <Text style={{ width: 95, fontWeight: "bold", fontSize: 11, color: darkMode ? "#fff" : "#555", textAlign: "center" }}>Not Attended</Text>
-                        <Text style={{ width: 90, fontWeight: "bold", fontSize: 11, color: darkMode ? "#fff" : "#555", textAlign: "center" }}>Correct Ans</Text>
-                        <Text style={{ width: 90, fontWeight: "bold", fontSize: 11, color: darkMode ? "#fff" : "#555", textAlign: "center" }}>Wrong Ans</Text>
+                        <Text style={{ flex: 1, minWidth: 180, fontWeight: "bold", fontSize: 11, color: darkMode ? "#fff" : "#555" }}>{Boolean(user && (user.role === "student" || user.role === "user")) ? (slIsSpecialBatchTest ? "Mock Roll No" : "Roll No") : "Student / Roll No"}</Text>
+                        <Text style={{ width: 95, fontWeight: "bold", fontSize: 11, color: darkMode ? "#fff" : "#555", textAlign: "center" }}>Correct Ans</Text>
+                        <Text style={{ width: 95, fontWeight: "bold", fontSize: 11, color: darkMode ? "#fff" : "#555", textAlign: "center" }}>Wrong Ans</Text>
+                        <Text style={{ width: 105, fontWeight: "bold", fontSize: 11, color: darkMode ? "#fff" : "#555", textAlign: "center" }}>Not Attempted</Text>
                         <Text style={{ width: 100, fontWeight: "bold", fontSize: 11, color: darkMode ? "#fff" : "#555", textAlign: "center" }}>Total Marks</Text>
                         {(!user || (user.role !== "student" && user.role !== "user")) && (
                           <Text style={{ width: 140, fontWeight: "bold", fontSize: 11, color: darkMode ? "#fff" : "#555", textAlign: "center" }}>Status</Text>
@@ -49094,7 +52251,7 @@ SOURCE QUESTION PAPER:
                           const skipped = entry.skipped ?? entry.unattended ?? entry.skippedCount ?? 0;
                           const attended = correct + wrong;
 
-                          const resolvedStudent = students.find((s: any) => s.id === entry.studentId || s.userId === entry.studentId || s.loginUsername === entry.rollNumber || s.rollNumber === entry.rollNumber);
+                          const resolvedStudent = students.find((s: any) => s.id === entry.studentId || s.userId === entry.studentId || s.loginUsername === entry.rollNumber || s.rollNumber === entry.rollNumber || s.mockRollNumber === entry.rollNumber || s.specialRollNo === entry.rollNumber || (entry.mockRollNumber && (s.mockRollNumber === entry.mockRollNumber || s.specialRollNo === entry.mockRollNumber)));
                           const resolvedLead = leads.find((ld: any) => ld.id === entry.studentId || ld.userId === entry.studentId);
                           const resolvedUser = user && (user.id === entry.studentId || user.userId === entry.studentId || user.username === entry.studentId) ? user : null;
 
@@ -49103,10 +52260,9 @@ SOURCE QUESTION PAPER:
                               : resolvedUser ? (resolvedUser.name || resolvedUser.username || resolvedUser.email?.split("@")[0])
                                 : (entry.studentName && entry.studentName !== "Student" && !entry.studentName.startsWith("Student (") ? entry.studentName : (entry.username || entry.name || "Guest User"));
 
+                          const isStudentViewer = Boolean(user && (user.role === "student" || user.role === "user"));
                           const rollVal = renderEntryRoll(entry, resolvedStudent);
-                          const studentLabel = sName
-                            ? (rollVal && rollVal !== sName && rollVal !== "N/A" && rollVal !== "Guest" && rollVal !== "Student" ? `${sName} (${rollVal})` : sName)
-                            : rollVal;
+                          const studentLabel = isStudentViewer ? rollVal : (sName ? (rollVal && rollVal !== sName && rollVal !== "N/A" && rollVal !== "Guest" && rollVal !== "Student" ? `${sName} (${rollVal})` : sName) : rollVal);
 
                           const obtainedMarks = entry.obtainedMarks ?? entry.score ?? 0;
                           const totalMarks = entry.totalMarks ?? entry.totalScore ?? 0;
@@ -49141,17 +52297,14 @@ SOURCE QUESTION PAPER:
                               <Text style={{ flex: 1, minWidth: 180, fontSize: 12, fontWeight: nameWeight, color: nameColor }}>
                                 {studentLabel}
                               </Text>
-                              <Text style={{ width: 85, fontSize: 12, color: "#1565c0", fontWeight: "bold", textAlign: "center" }}>
-                                {attended}
-                              </Text>
-                              <Text style={{ width: 95, fontSize: 12, color: darkMode ? "#aaa" : "#757575", textAlign: "center" }}>
-                                {skipped}
-                              </Text>
-                              <Text style={{ width: 90, fontSize: 12, color: "#2e7d32", fontWeight: "bold", textAlign: "center" }}>
+                              <Text style={{ width: 95, fontSize: 12, color: "#2e7d32", fontWeight: "bold", textAlign: "center" }}>
                                 {correct}
                               </Text>
-                              <Text style={{ width: 90, fontSize: 12, color: "#c62828", fontWeight: "bold", textAlign: "center" }}>
+                              <Text style={{ width: 95, fontSize: 12, color: "#c62828", fontWeight: "bold", textAlign: "center" }}>
                                 {wrong}
+                              </Text>
+                              <Text style={{ width: 105, fontSize: 12, color: darkMode ? "#aaa" : "#757575", textAlign: "center" }}>
+                                {skipped}
                               </Text>
                               <Text style={{ width: 100, fontSize: 12, fontWeight: "bold", color: darkMode ? "#81c784" : "#1a237e", textAlign: "center" }}>
                                 {obtainedMarks} / {totalMarks}
@@ -49558,7 +52711,7 @@ SOURCE QUESTION PAPER:
         if (Platform.OS !== "web" || !user || !isProtectedRole) return null;
         const loggedInStudent = getLoggedInStudent(user, students);
         const studentName = getStudentName(loggedInStudent) || user?.name || user?.username || "NERMAI Student";
-        const roll = loggedInStudent?.mockRollNumber || loggedInStudent?.rollNumber || user?.username || "";
+        const roll = loggedInStudent?.mockRollNumber || loggedInStudent?.specialRollNo || user?.mockRollNumber || user?.specialRollNo || loggedInStudent?.rollNumber || user?.username || "";
         const phone = loggedInStudent?.phone || loggedInStudent?.mobile || user?.phone || "";
         const watermarkText = `${studentName}${roll ? ` • ${roll}` : ""}${phone ? ` • ${phone}` : ""} • NERMAI IAS`;
         const textColor = darkMode ? "rgba(255, 255, 255, 0.08)" : "rgba(15, 23, 42, 0.07)";
@@ -49597,6 +52750,10 @@ export default function App() {
     if (Platform.OS !== "web") {
       try {
         ScreenCapture.preventScreenCaptureAsync().catch(() => { });
+      } catch (_) { }
+      // Preload icon fonts once at startup to prevent concurrent download collisions
+      try {
+        Font.loadAsync(Ionicons.font).catch(() => { });
       } catch (_) { }
     } else {
       // Phone View Website only: clear old CacheStorage so fresh bundles load seamlessly

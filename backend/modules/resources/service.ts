@@ -24,7 +24,7 @@ export class ResourceService {
     return storage.bucket(bucketName);
   }
 
-  async createResource(data: any, file: any, userId: string, tenantId: string) {
+  async createResource(data: any, file: any, userId: string, tenantId: string, audioFile?: any) {
     let finalStoragePath = '';
     let checksum = '';
     let fileSize = data.fileSize ? parseInt(data.fileSize) : 0;
@@ -90,6 +90,46 @@ export class ResourceService {
       throw new AppError('Must provide a file, googleDriveUrl, or externalUrl', 400);
     }
 
+    // ── Audio File Upload (optional) ──────────────────────────────────────────
+    let audioUrl = data.audioUrl || '';
+    let audioStoragePath = '';
+    if (audioFile) {
+      let audioDriveSuccess = false;
+      try {
+        const audioDriveResult = await uploadFileToGoogleDrive({
+          fileName: `audio_${Date.now()}_${audioFile.originalname}`,
+          mimeType: audioFile.mimetype,
+          buffer: audioFile.buffer,
+          subPath: 'LMS/Resources/Audio'
+        });
+        if (audioDriveResult && (audioDriveResult.fileId || audioDriveResult.previewUrl)) {
+          audioStoragePath = audioDriveResult.fileId || audioDriveResult.previewUrl;
+          // Use export=download — returns raw binary that <audio> elements can stream
+          audioUrl = `https://drive.google.com/uc?export=download&id=${audioStoragePath}`;
+          audioDriveSuccess = true;
+          console.log(`[Drive] Audio uploaded: ${audioStoragePath}`);
+        }
+      } catch (audioErr: any) {
+        console.warn('[Drive] Audio upload failed, falling back to Firebase Storage:', audioErr?.message);
+      }
+      if (!audioDriveSuccess) {
+        const bucket = this.getBucket();
+        const audioDestPath = `resources/${tenantId}/audio/${Date.now()}_${audioFile.originalname}`;
+        const audioBucketFile = bucket.file(audioDestPath);
+        await audioBucketFile.save(audioFile.buffer, {
+          metadata: { contentType: audioFile.mimetype },
+          public: false
+        });
+        audioStoragePath = audioDestPath;
+        // Generate a signed URL valid for 7 days for the student audio player
+        const [signedAudioUrl] = await audioBucketFile.getSignedUrl({
+          action: 'read',
+          expires: Date.now() + 7 * 24 * 60 * 60 * 1000
+        });
+        audioUrl = signedAudioUrl;
+      }
+    }
+
     const provider = resolvedProvider || data.provider || (data.googleDriveUrl ? 'google_drive' : 'firebase_storage');
 
     const resourceData: IResource = {
@@ -141,6 +181,14 @@ export class ResourceService {
       batchIds: data.batchIds || [],
       isGeneral: data.isGeneral || false,
 
+      // Audio attachment
+      hasAudio: !!(audioUrl),
+      audioUrl: audioUrl || undefined,
+      audioStoragePath: audioStoragePath ? encrypt(audioStoragePath) : undefined,
+
+      // Subject label
+      subject: data.subject || undefined,
+
       // Access Targets
       targetBatchIds: data.targetBatchIds || [],
       targetStudentIds: data.targetStudentIds || [],
@@ -168,8 +216,8 @@ export class ResourceService {
     if (!resource) throw new AppError('Resource not found', 404);
     const decrypted = decrypt(resource.storagePath);
     if (
-      resource.provider === 'google_drive' || 
-      resource.provider === 'external_link' || 
+      resource.provider === 'google_drive' ||
+      resource.provider === 'external_link' ||
       resource.provider === 'firebase_asset' ||
       (decrypted && decrypted.startsWith('http'))
     ) {
@@ -231,6 +279,12 @@ export class ResourceService {
       } catch (err) {
         console.warn('[ResourceService] Batch filter fallback error:', err);
       }
+    }
+
+    // ── Subject filter (simple label match, case-insensitive) ──────────────────
+    if (filters?.subject && filters.subject !== 'all') {
+      const filterSubject = String(filters.subject).trim().toLowerCase();
+      list = list.filter((res: any) => (res.subject || '').trim().toLowerCase() === filterSubject);
     }
 
     // Lazy load repositories to avoid circular dependency
@@ -380,12 +434,15 @@ export class ResourceService {
 
     let viewerUrl = access.signedUrl;
     let viewerType = 'webview';
-    const isImageResource = resource.type?.toLowerCase() === 'image' || 
-                            resource.type?.toLowerCase() === 'png' || 
-                            resource.type?.toLowerCase() === 'jpg' || 
-                            resource.mimeType?.toLowerCase()?.startsWith('image/');
+    // driveFileId is hoisted to function scope so it can be included in the access response.
+    // The mobile app reads this field to skip the costly 56MB download and use Drive cloud preview.
+    let driveFileId: string | null = null;
+    const isImageResource = resource.type?.toLowerCase() === 'image' ||
+      resource.type?.toLowerCase() === 'png' ||
+      resource.type?.toLowerCase() === 'jpg' ||
+      resource.mimeType?.toLowerCase()?.startsWith('image/');
 
-    const isDriveResource = resource.provider === 'google_drive' || 
+    const isDriveResource = resource.provider === 'google_drive' ||
       (decryptedPath && (decryptedPath.includes('drive.google.com') || decryptedPath.includes('docs.google.com') || decryptedPath.includes('googleusercontent.com')));
 
     if (isDriveResource && decryptedPath) {
@@ -394,6 +451,7 @@ export class ResourceService {
         const match = decryptedPath.match(/[-\w]{25,}/);
         if (match) fileId = match[0];
       }
+      driveFileId = fileId; // expose to return object
       if (isImageResource) {
         viewerUrl = `https://lh3.googleusercontent.com/d/${fileId}`;
         viewerType = 'image';
@@ -404,6 +462,11 @@ export class ResourceService {
       }
     } else if (resource.provider === 'firebase_storage' || access.signedUrl) {
       // Use the absolute backend proxy secure-stream path to bypass CORS issues on the client browser.
+      // Also check if the storage path secretly holds a Drive URL (mislabeled provider).
+      if (decryptedPath && (decryptedPath.includes('drive.google.com') || decryptedPath.includes('docs.google.com'))) {
+        const match = decryptedPath.match(/[-\w]{25,}/);
+        if (match) driveFileId = match[0];
+      }
       const baseUrl = (protocol && host) ? `${protocol}://${host}` : '';
       viewerUrl = `${baseUrl}/api/resources/${resource.id}/secure-stream?token=${access.token}`;
       viewerType = isImageResource ? 'image' : 'pdf';
@@ -437,8 +500,25 @@ export class ResourceService {
       viewerUrl,
       viewerType,
       cdnUrl: toDriveCdnUrl(viewerUrl || decryptedPath),
+      // driveId: authoritative Google Drive file ID, null for non-Drive resources.
+      // Mobile app uses this to open via Drive cloud preview (instant) instead of
+      // downloading the full file (slow for large PDFs like monthly magazines).
+      driveId: driveFileId,
+
+      // Audio attachment — served through our backend proxy (/api/resources/:id/audio)
+      // This bypasses Drive CORS restrictions and virus-scan interstitials entirely.
+      hasAudio: !!(resource.hasAudio || resource.audioUrl || resource.audioStoragePath),
+      audioUrl: (() => {
+        const hasAudioFile = !!(resource.audioUrl || resource.audioStoragePath);
+        if (!hasAudioFile) return null;
+        // Return backend proxy URL with the viewer token so the <audio> element can fetch it
+        const baseUrl = (protocol && host) ? `${protocol}://${host}` : '';
+        return `${baseUrl}/api/resources/${resource.id}/audio?token=${access.token}`;
+      })(),
+      subject: resource.subject || null,
     };
   }
+
 
   private getProvider(resourceOrName: IResource | string): IResourceProvider {
     if (typeof resourceOrName === 'object' && resourceOrName) {
@@ -536,13 +616,13 @@ export class ResourceService {
 
     const { stream } = streamResult;
 
-    const isImageRes = resource.type?.toLowerCase() === 'image' || 
-                       resource.type?.toLowerCase() === 'png' || 
-                       resource.type?.toLowerCase() === 'jpg' || 
-                       resource.type?.toLowerCase() === 'jpeg' || 
-                       resource.mimeType?.toLowerCase()?.startsWith('image/');
+    const isImageRes = resource.type?.toLowerCase() === 'image' ||
+      resource.type?.toLowerCase() === 'png' ||
+      resource.type?.toLowerCase() === 'jpg' ||
+      resource.type?.toLowerCase() === 'jpeg' ||
+      resource.mimeType?.toLowerCase()?.startsWith('image/');
 
-    const responseMimeType = isImageRes 
+    const responseMimeType = isImageRes
       ? (resource.mimeType && resource.mimeType.toLowerCase().startsWith('image/') ? resource.mimeType : 'image/png')
       : (resource.mimeType || 'application/pdf');
 
@@ -618,7 +698,7 @@ YES
     });
   }
 
-  async streamDriveFile(driveId: string, req: any, res: any) {
+  async streamDriveFile(driveId: string, req: any, res: any, overrideMime?: string) {
     if (!driveId || !/^[-\w]{20,}$/.test(driveId)) {
       throw new AppError('Invalid Google Drive ID', 400);
     }
@@ -627,7 +707,7 @@ YES
     const fakeResource: any = {
       storagePath: encrypt(driveId),
       provider: 'google_drive',
-      mimeType: 'application/pdf',
+      mimeType: overrideMime || 'application/pdf',
       fileSize: 0,
       checksum: ''
     };
@@ -641,7 +721,7 @@ YES
 
     const result = await provider.getStream(fakeResource, streamOptions);
     const responseHeaders: any = {
-      'Content-Type': result.mimeType || 'application/pdf',
+      'Content-Type': overrideMime || result.mimeType || 'application/pdf',
       'Accept-Ranges': 'bytes',
       'Access-Control-Allow-Origin': '*',
       'Cross-Origin-Resource-Policy': 'cross-origin',
@@ -664,6 +744,46 @@ YES
       }
     });
   }
+
+  async streamResourceAudio(resourceId: string, req: any, res: any) {
+    const resource = await this.repo.findById(resourceId);
+    if (!resource) throw new AppError('Resource not found', 404);
+
+    // Determine the audio Drive ID from audioStoragePath or audioUrl
+    let driveId: string | null = null;
+
+    if (resource.audioStoragePath) {
+      try {
+        const decrypted = decrypt(resource.audioStoragePath);
+        // It's a raw Drive file ID (no slashes, no http) or a Drive URL
+        if (decrypted && !decrypted.startsWith('resources/')) {
+          const m = decrypted.match(/[-\w]{25,}/);
+          if (m) driveId = m[0];
+        }
+      } catch (_) { }
+    }
+
+    if (!driveId && resource.audioUrl) {
+      const m = resource.audioUrl.match(/[?&]id=([-\w]{25,})/) || resource.audioUrl.match(/\/d\/([-\w]{25,})/);
+      if (m) driveId = m[1];
+    }
+
+    if (driveId) {
+      // Proxy through backend — correct audio MIME, Range support, no CORS issues
+      const audioMime = resource.audioMimeType || 'audio/mpeg';
+      return this.streamDriveFile(driveId, req, res, audioMime);
+    }
+
+    // Fallback: if audio is in Firebase Storage, generate a fresh signed URL and redirect
+    if (resource.audioUrl && resource.audioUrl.startsWith('http')) {
+      res.redirect(302, resource.audioUrl);
+      return;
+    }
+
+    throw new AppError('Audio not found for this resource', 404);
+  }
+
+
 
   async getCourseHierarchyResources(courseId: string, tenantId: string, userContext?: { userId: string; role: string; tenantId: string }) {
     // We fetch all resources for the tenant, then group them in memory.
@@ -842,6 +962,11 @@ YES
       collectionItemIds: data.collectionItemIds,
       tags: data.tags,
       thumbnail: data.thumbnail,
+
+      // Subject label & audio attachment
+      ...(data.subject !== undefined && { subject: data.subject || undefined }),
+      ...(data.hasAudio !== undefined && { hasAudio: data.hasAudio === 'true' || data.hasAudio === true }),
+      ...(data.audioUrl !== undefined && { audioUrl: data.audioUrl || undefined }),
 
       updatedBy: userId,
       updatedAt: new Date().toISOString()

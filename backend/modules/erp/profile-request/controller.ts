@@ -80,6 +80,29 @@ export class ProfileRequestController {
 
             const studentData = studentDoc.data()!;
             const targetStudentId = studentData.id || studentDoc.id || studentId;
+
+            // Enforce caller ownership: students cannot submit on behalf of other students
+            const adminRoles = ["super_admin", "admin", "staff", "coordinator", "developer"];
+            const caller = (req as any).user;
+            if (caller && !adminRoles.includes(caller.role)) {
+                const callerUserId = caller.userId;
+                const callerStudentId = caller.studentId;
+                const callerUsername = caller.username;
+                const callerEmail = caller.email;
+
+                const isOwner =
+                    (callerStudentId && (studentDoc.id === callerStudentId || studentData.id === callerStudentId || studentData.studentId === callerStudentId)) ||
+                    (callerUserId && (studentDoc.id === callerUserId || studentData.userId === callerUserId || studentData.id === callerUserId)) ||
+                    (callerUsername && (studentData.loginUsername === callerUsername || studentData.rollNumber === callerUsername)) ||
+                    (callerEmail && studentData.email === callerEmail);
+
+                if (!isOwner) {
+                    return res.status(403).json({
+                        success: false,
+                        message: "Access denied: you can only submit profile requests for your own student account."
+                    });
+                }
+            }
             const submitCount = studentData.profileSubmitCount || 0;
             let currentCount = 0;
             if (typeof submitCount === "number") {
@@ -246,6 +269,7 @@ export class ProfileRequestController {
                 const studentUsername = (studentData.loginUsername || username || "").trim().toLowerCase();
                 const studentRoll = (studentData.rollNumber || "").trim().toLowerCase();
 
+                const currentStdId = String(studentDoc.id || studentData.id || studentId || "");
                 const alertsSnapshot = await db.collection("announcements")
                     .where("isDeleted", "==", false)
                     .get();
@@ -257,11 +281,15 @@ export class ProfileRequestController {
                     const data = alertDoc.data();
                     const title = (data.title || "").toLowerCase();
                     const content = (data.content || "").toLowerCase();
-                    const targetStudentId = data.targetStudentId;
+                    const targetStudentId = data.targetStudentId ? String(data.targetStudentId) : "";
+                    const annUsername = data.studentUsername ? String(data.studentUsername).toLowerCase() : "";
+                    const annRoll = data.studentRoll ? String(data.studentRoll).toLowerCase() : "";
 
                     const isProfileAlert = title.includes("complete your profile") || content.includes("complete your profile");
 
-                    const matchesStudent = (targetStudentId && String(targetStudentId) === String(targetStudentId)) ||
+                    const matchesStudent = (targetStudentId && targetStudentId === currentStdId) ||
+                        (annUsername && (annUsername === studentUsername || annUsername === studentRoll)) ||
+                        (annRoll && (annRoll === studentRoll || annRoll === studentUsername)) ||
                         (isProfileAlert && (
                             (studentName && (title.includes(studentName) || content.includes(studentName))) ||
                             (studentUsername && (title.includes(studentUsername) || content.includes(studentUsername))) ||
@@ -359,6 +387,27 @@ export class ProfileRequestController {
         try {
             const { studentId } = req.params;
             const { username } = req.query;
+
+            // Enforce caller ownership for student users
+            const adminRoles = ["super_admin", "admin", "staff", "coordinator", "developer"];
+            const caller = (req as any).user;
+            if (caller && !adminRoles.includes(caller.role)) {
+                const callerUserId = caller.userId;
+                const callerStudentId = caller.studentId;
+                const callerUsername = caller.username;
+
+                const isOwner =
+                    (callerStudentId && callerStudentId === studentId) ||
+                    (callerUserId && callerUserId === studentId) ||
+                    (callerUsername && (callerUsername === studentId || callerUsername === username));
+
+                if (!isOwner) {
+                    return res.status(403).json({
+                        success: false,
+                        message: "Access denied: you can only view your own profile request."
+                    });
+                }
+            }
 
             let snapshot = await db.collection(COLLECTION)
                 .where("studentId", "==", studentId)

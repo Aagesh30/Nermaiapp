@@ -70,6 +70,24 @@ export class InquiryController {
                 }).catch(err => console.log("[Push] Website inquiry push note:", err?.message));
             } catch (_) {}
 
+            // Emit live admin alert for new website inquiry (Server Admin SDK)
+            try {
+                const inquiryAlertId = `crm_inquiry_${id}`;
+                await db.collection("admin_alerts").doc(inquiryAlertId).set({
+                    id: inquiryAlertId,
+                    type: "crm_inquiry",
+                    title: "New CRM Website Inquiry",
+                    subtitle: `${name} (${phone})`,
+                    message: `Inquiry details: "${(message || "").substring(0, 100)}${(message || "").length > 100 ? '...' : ''}"`,
+                    targetTab: "crm",
+                    targetSub: "enquiries",
+                    createdAt: new Date().toISOString(),
+                    isDismissed: false
+                }, { merge: true });
+            } catch (err: any) {
+                console.log("[Alert] Website inquiry admin_alert write note:", err?.message);
+            }
+
             return res.status(201).json({
                 success: true,
                 message: "Enquiry submitted successfully",

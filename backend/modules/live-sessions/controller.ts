@@ -26,7 +26,8 @@ export class LiveSessionController {
     try {
       const { 
         classId, provider, customProviderId, providerPasscode, scheduledStartTime, expectedDurationMinutes,
-        providerAccountId, meetingMode, hostUrl, participantUrl, hostKey, meetingCode 
+        providerAccountId, meetingMode, hostUrl, participantUrl, hostKey, meetingCode,
+        participantAdminIds, participantTeacherIds, host, coHosts
       } = req.body;
       const teacherId = req.user?.userId;
 
@@ -36,12 +37,18 @@ export class LiveSessionController {
 
       const session = await LiveSessionService.createSession({ 
         classId, provider, teacherId, customProviderId, providerPasscode,
-        providerAccountId, meetingMode, hostUrl, participantUrl, hostKey, meetingCode 
+        providerAccountId, meetingMode, hostUrl, participantUrl, hostKey, meetingCode,
+        participantAdminIds, participantTeacherIds, host, coHosts
       });
       
       // If we are passing scheduling info on create, we can update it immediately
       if (scheduledStartTime) {
-        await LiveSessionService.editSession(session.id!, { scheduledStartTime, expectedDurationMinutes }, teacherId || 'system');
+        await LiveSessionService.editSession(session.id!, { 
+          scheduledStartTime, 
+          expectedDurationMinutes,
+          participantAdminIds,
+          participantTeacherIds
+        }, teacherId || 'system');
       }
 
       // Invalidate list cache so students see new session on next poll
@@ -842,8 +849,9 @@ export class LiveSessionController {
         }
       }
       const finalResult = Array.from(finalMap.values());
+      const totalAttended = finalResult.filter(r => r.status !== 'ABSENT').length;
 
-      res.status(200).json({ success: true, data: finalResult });
+      res.status(200).json({ success: true, data: finalResult, count: totalAttended, totalAttended });
     } catch (error: any) {
       console.error('Error fetching attendance:', error);
       res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Internal server error' });

@@ -25,7 +25,7 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
       }
     }
 
-    const data = await service.createResource(normalizedBody, req.file, userId, tenantId);
+    const data = await service.createResource(normalizedBody, (req.files as any)?.file?.[0] || null, userId, tenantId, (req.files as any)?.audioFile?.[0] || null);
 
     const rawBatches = Array.isArray(normalizedBody.targetBatchIds)
       ? normalizedBody.targetBatchIds
@@ -103,6 +103,7 @@ export const list = async (req: Request, res: Response, next: NextFunction) => {
       batchId: req.query.batchId as string,
       categoryId: req.query.categoryId as string,
       search: req.query.search as string,
+      subject: req.query.subject as string,
       tenantId: req.user!.tenantId
     };
     const userContext = req.user ? { userId: req.user.userId, role: req.user.role, tenantId: req.user.tenantId } : undefined;
@@ -163,6 +164,14 @@ export const streamDriveContent = async (req: Request, res: Response, next: Next
   }
 };
 
+export const streamAudio = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    await service.streamResourceAudio(req.params.id as string, req, res);
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const update = async (req: Request, res: Response, next: NextFunction) => {
   try {
     // Normalize array fields from multipart/form-data (in case they send it as form-data instead of JSON)
@@ -190,7 +199,7 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
 
 export const uploadVersion = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const data = await service.uploadNewVersion(req.params.id as string, req.file, req.user!.userId, req.user!.tenantId);
+    const data = await service.uploadNewVersion(req.params.id as string, (req.files as any)?.file?.[0] || null, req.user!.userId, req.user!.tenantId);
     res.json({ success: true, data });
   } catch (error) {
     next(error);

@@ -308,6 +308,9 @@ export const registerForPushNotificationsAsync = async (user?: any, forcePrompt:
         batches: role === "student" ? studentBatchesArr : [],
         platform: Platform.OS,  // "android" or "ios"
         updatedAt: serverTimestamp(),
+        // username and rollNumber saved so backend can find this token by any student identifier
+        username: user?.username || user?.loginUsername || null,
+        rollNumber: user?.rollNumber || null,
         // assignedBatches: for admin users, which batches they manage.
         // Empty array = super admin / manages all batches.
         assignedBatches: Array.isArray(user?.assignedBatches)
@@ -316,6 +319,27 @@ export const registerForPushNotificationsAsync = async (user?: any, forcePrompt:
               ? user.batches.map(String)
               : []),
       }, { merge: true });
+
+      // Secondary registration via backend Admin API with root Firebase privileges
+      try {
+        const apiUrl = ((globalThis as any).process?.env?.EXPO_PUBLIC_API_URL) || "https://nermaiiasacademy-519c8.web.app/api";
+        fetch(`${apiUrl}/notification/register-token`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            token: pushToken,
+            userId: String(userId),
+            studentId: studentId ? String(studentId) : null,
+            role: String(role),
+            batch: batch ? String(batch) : null,
+            batches: role === "student" ? studentBatchesArr : [],
+            platform: Platform.OS,
+            assignedBatches: Array.isArray(user?.assignedBatches)
+              ? user.assignedBatches.map(String)
+              : (Array.isArray(user?.batches) && role !== "student" ? user.batches.map(String) : [])
+          })
+        }).catch(() => {});
+      } catch (_) {}
     } catch (dbErr) {
       console.log("[Notifications] Failed saving FCM token to Firestore:", dbErr);
     }

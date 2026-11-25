@@ -40,15 +40,50 @@ export class ExaminationController {
         return String(studentId || userId);
     }
 
+    public static isAttemptOwner(req: Request, attempt: any): boolean {
+        if (!req.user) return false;
+        const { role, userId, studentId } = req.user;
+        if (role === "admin" || role === "super_admin" || role === "staff") return true;
+        const attemptStudentId = String(attempt.studentId || "");
+        if (!attemptStudentId) return false;
+        if (attemptStudentId === String(studentId) || attemptStudentId === String(userId)) {
+            return true;
+        }
+        const userRoll = (req.user as any).rollNumber || (req.user as any).username;
+        if (userRoll && attempt.rollNumber && String(attempt.rollNumber).toLowerCase() === String(userRoll).toLowerCase()) {
+            return true;
+        }
+        return false;
+    }
+
     private static async handleAutoSubmit(attemptId: string) {
-        attemptCache.delete(`attempt_${attemptId}`); // Clear cache before writing to DB
+        let attempt = attemptCache.get<any>(`attempt_${attemptId}`);
         const attemptRef = db.collection("student_attempts").doc(attemptId);
-        await attemptRef.update({
+        if (!attempt) {
+            const attemptDoc = await attemptRef.get();
+            if (attemptDoc.exists) attempt = attemptDoc.data()!;
+        }
+
+        const updatePayload: Record<string, any> = {
             status: "submitted",
             isSubmitted: true,
             submittedAt: admin.firestore.FieldValue.serverTimestamp(),
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
+        };
+
+        // Guarantee all cached answers are saved to Firestore on auto-submit
+        if (attempt?.answers && typeof attempt.answers === 'object') {
+            for (const [qId, ans] of Object.entries(attempt.answers)) {
+                if (qId) {
+                    updatePayload[`answers.${qId}`] = (ans !== undefined && ans !== null && ans !== "")
+                        ? ans
+                        : admin.firestore.FieldValue.delete();
+                }
+            }
+        }
+
+        attemptCache.delete(`attempt_${attemptId}`);
+        await attemptRef.update(updatePayload);
 
         // Auto-evaluate attempt so result document exists immediately
         try {
@@ -145,15 +180,51 @@ export class ExaminationController {
                 }
             }
 
-            // Check existing attempts
-            const attemptsSnapshot = await db.collection("student_attempts")
-                .where("testId", "==", testId)
-                .where("studentId", "==", studentId)
-                .where("isDeleted", "==", false)
-                .get();
+            // Resolve all linked IDs for this student (both students docId and users docId)
+            const candidateStudentIds = new Set<string>([studentId]);
+            if (req.user?.userId) candidateStudentIds.add(String(req.user.userId));
+            if (req.user?.studentId) candidateStudentIds.add(String(req.user.studentId));
+
+            try {
+                const sDoc = await db.collection("students").doc(studentId).get();
+                if (sDoc.exists) {
+                    const s = sDoc.data()!;
+                    if (s.userId) candidateStudentIds.add(String(s.userId));
+                }
+            } catch (_) {}
+
+            try {
+                const uDoc = await db.collection("users").doc(studentId).get();
+                if (uDoc.exists) {
+                    const u = uDoc.data()!;
+                    if (u.studentId) candidateStudentIds.add(String(u.studentId));
+                }
+            } catch (_) {}
+
+            // Check existing attempts & results across ALL candidate IDs
+            const candidateList = Array.from(candidateStudentIds).filter(Boolean);
+            const [attemptsSnapshots, resultsSnapshots] = await Promise.all([
+                Promise.all(candidateList.map(cid =>
+                    db.collection("student_attempts")
+                        .where("testId", "==", testId)
+                        .where("studentId", "==", cid)
+                        .where("isDeleted", "==", false)
+                        .get()
+                )),
+                Promise.all(candidateList.map(cid =>
+                    db.collection("results")
+                        .where("testId", "==", testId)
+                        .where("studentId", "==", cid)
+                        .where("isDeleted", "==", false)
+                        .get()
+                ))
+            ]);
+
+            const allAttemptDocs = attemptsSnapshots.flatMap(s => s.docs);
+            const allResultDocs = resultsSnapshots.flatMap(s => s.docs);
 
             // Auto-resume existing active attempt if found
-            const ongoingAttemptDoc = attemptsSnapshot.docs.find(
+            const ongoingAttemptDoc = allAttemptDocs.find(
                 doc => doc.data().status === "started" && !doc.data().isSubmitted
             );
             if (ongoingAttemptDoc) {
@@ -178,12 +249,14 @@ export class ExaminationController {
                 }
             }
 
-            const completedAttemptsCount = attemptsSnapshot.docs.filter(
+            const completedAttemptsCount = allAttemptDocs.filter(
                 doc => doc.data().status === "submitted" || doc.data().status === "evaluated" || doc.data().isSubmitted === true
             ).length;
 
+            const completedResultsCount = allResultDocs.length;
+
             const maxAttempts = test.maxAttempts !== undefined ? Number(test.maxAttempts) : (test.allowMultipleAttempts ? 999 : 1);
-            if (completedAttemptsCount >= maxAttempts) {
+            if (completedAttemptsCount >= maxAttempts || completedResultsCount >= maxAttempts) {
                 return res.status(400).json({
                     success: false,
                     message: `You have already completed this test. Use "Review Answers" to revisit your submission.`
@@ -226,12 +299,18 @@ export class ExaminationController {
                     studentName = `${sData.firstName || ""} ${sData.lastName || ""}`.trim() || sData.fullName || sData.name || "";
                     rollNumber = sData.rollNumber || sData.rollNo || sData.admissionNumber || sData.loginUsername || "";
                 }
-                if (!studentName) {
+                if (!studentName || !sData) {
                     const userDoc = await db.collection("users").doc(studentId).get();
                     if (userDoc.exists) {
                         const uData = userDoc.data()!;
                         studentName = uData.name || uData.fullName || uData.username || uData.loginUsername || uData.email?.split("@")[0] || uData.phone || "";
                         rollNumber = uData.username || uData.loginUsername || uData.rollNumber || uData.phone || studentName || "";
+                        if (uData.studentId) {
+                            try {
+                                const sRef = await db.collection("students").doc(uData.studentId).get();
+                                if (sRef.exists) sData = sRef.data();
+                            } catch (_) {}
+                        }
                     }
                 }
                 if (!studentName) {
@@ -254,8 +333,12 @@ export class ExaminationController {
             if (!rollNumber || rollNumber === "N/A" || rollNumber === "Guest" || rollNumber === "Student") rollNumber = studentName;
 
             // Check if this test is targeted to a Special Batch
-            let isSpecialBatchTest = false;
+            let isSpecialBatchTest = !!test.isSpecialBatchTest;
             let specialRollNumber: string | null = null;
+            if (test.mockConfig?.mockRollNumbers?.[studentId]) {
+                specialRollNumber = String(test.mockConfig.mockRollNumbers[studentId]);
+                isSpecialBatchTest = true;
+            }
             if (test.targetAudience === "batch" && test.targetBatch) {
                 const targetBatchNames = String(test.targetBatch).split(",").map(b => b.trim().toLowerCase());
                 try {
@@ -280,13 +363,15 @@ export class ExaminationController {
                 }
             }
 
-            const isMockOrSpecialTest = Boolean(test.targetAudience === "special_mock" || test.testType === "special_mock" || test.isSpecialMock || isSpecialBatchTest);
+            const isMockOrSpecialTest = Boolean(test.targetAudience === "special_mock" || test.testType === "special_mock" || test.isSpecialMock || isSpecialBatchTest || test.isSpecialBatchTest);
 
             if (isMockOrSpecialTest) {
                 if (specialRollNumber) {
                     rollNumber = specialRollNumber;
-                } else if (sData && sData.mockRollNumber) {
-                    rollNumber = String(sData.mockRollNumber);
+                } else if (sData && (sData.mockRollNumber || sData.specialRollNo)) {
+                    rollNumber = String(sData.mockRollNumber || sData.specialRollNo);
+                } else if (req.user && ((req.user as any).mockRollNumber || (req.user as any).specialRollNo)) {
+                    rollNumber = String((req.user as any).mockRollNumber || (req.user as any).specialRollNo);
                 }
             }
 
@@ -297,8 +382,8 @@ export class ExaminationController {
                 studentName,
                 rollNumber,
                 isSpecialBatchTest,
-                specialRollNo: specialRollNumber || null,
-                mockRollNumber: (sData && sData.mockRollNumber) ? String(sData.mockRollNumber) : null,
+                specialRollNo: specialRollNumber || (sData ? (sData.mockRollNumber || sData.specialRollNo) : null) || null,
+                mockRollNumber: (sData && (sData.mockRollNumber || sData.specialRollNo)) ? String(sData.mockRollNumber || sData.specialRollNo) : (specialRollNumber || null),
                 status: "started",
                 isSubmitted: false,
                 submittedAt: null,
@@ -371,7 +456,7 @@ export class ExaminationController {
                 });
             }
 
-            if (attempt.studentId !== studentId) {
+            if (!ExaminationController.isAttemptOwner(req, attempt)) {
                 return res.status(403).json({
                     success: false,
                     message: "You are not authorized to access this test attempt"
@@ -480,7 +565,7 @@ export class ExaminationController {
                 attemptCache.set(`attempt_${attemptId}`, attempt, 15);
             }
 
-            if (attempt.isDeleted || attempt.studentId !== studentId) {
+            if (attempt.isDeleted || !ExaminationController.isAttemptOwner(req, attempt)) {
                 return res.status(403).json({
                     success: false,
                     message: "Access denied"
@@ -687,7 +772,7 @@ export class ExaminationController {
                 attemptCache.set(`attempt_${attemptId}`, attempt, 15);
             }
 
-            if (attempt.isDeleted || attempt.studentId !== studentId) {
+            if (attempt.isDeleted || !ExaminationController.isAttemptOwner(req, attempt)) {
                 return res.status(403).json({
                     success: false,
                     message: "Access denied"
@@ -710,16 +795,21 @@ export class ExaminationController {
                 });
             }
 
+            const isAnswerProvided = answer !== undefined && answer !== null && answer !== "";
             const answersUpdate: Record<string, any> = {
                 lastActiveAt: admin.firestore.FieldValue.serverTimestamp(),
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                [`answers.${questionId}`]: answer !== undefined ? answer : null
+                [`answers.${questionId}`]: isAnswerProvided ? answer : admin.firestore.FieldValue.delete()
             };
 
             // Maintain transient answers in attemptCache to throttle database writes
             const cacheKey = `attempt_${attemptId}`;
             const existingAnswers = attempt.answers || {};
-            existingAnswers[questionId] = answer !== undefined ? answer : null;
+            if (isAnswerProvided) {
+                existingAnswers[questionId] = answer;
+            } else {
+                delete existingAnswers[questionId];
+            }
             attempt.answers = existingAnswers;
             attemptCache.set(cacheKey, attempt, 30); // 30s RAM window
 
@@ -777,7 +867,7 @@ export class ExaminationController {
                 attemptCache.set(`attempt_${attemptId}`, attempt, 15);
             }
 
-            if (attempt.isDeleted || attempt.studentId !== studentId) {
+            if (attempt.isDeleted || !ExaminationController.isAttemptOwner(req, attempt)) {
                 return res.status(403).json({
                     success: false,
                     message: "Access denied"
@@ -793,7 +883,9 @@ export class ExaminationController {
                 };
                 for (const item of answers) {
                     if (!item.questionId) continue;
-                    updatePayload[`answers.${item.questionId}`] = item.answer !== undefined ? item.answer : null;
+                    updatePayload[`answers.${item.questionId}`] = (item.answer !== undefined && item.answer !== null && item.answer !== "")
+                        ? item.answer
+                        : admin.firestore.FieldValue.delete();
                 }
                 await db.collection("student_attempts").doc(attemptId).update(updatePayload);
 
@@ -854,7 +946,7 @@ export class ExaminationController {
                 attemptCache.set(`attempt_${attemptId}`, attempt, 15);
             }
 
-            if (attempt.isDeleted || attempt.studentId !== studentId) {
+            if (attempt.isDeleted || !ExaminationController.isAttemptOwner(req, attempt)) {
                 return res.status(403).json({
                     success: false,
                     message: "Access denied"
@@ -935,7 +1027,7 @@ export class ExaminationController {
                 attemptCache.set(`attempt_${attemptId}`, attempt, 15);
             }
 
-            if (attempt.isDeleted || attempt.studentId !== studentId) {
+            if (attempt.isDeleted || !ExaminationController.isAttemptOwner(req, attempt)) {
                 return res.status(403).json({
                     success: false,
                     message: "Access denied"
@@ -954,16 +1046,24 @@ export class ExaminationController {
                 });
             }
 
-            // Invalidate the cache item before writing status update to database
-            attemptCache.delete(`attempt_${attemptId}`);
-
             const submissionTime = admin.firestore.FieldValue.serverTimestamp();
-            await db.collection("student_attempts").doc(attemptId).update({
+            const updatePayload: Record<string, any> = {
                 status: "submitted",
                 isSubmitted: true,
                 submittedAt: submissionTime,
                 updatedAt: submissionTime
-            });
+            };
+
+            // Guarantee any cached answers in RAM are flushed to Firestore before cache deletion
+            if (attempt?.answers && typeof attempt.answers === 'object') {
+                for (const [qId, ans] of Object.entries(attempt.answers)) {
+                    if (qId) updatePayload[`answers.${qId}`] = ans !== undefined ? ans : null;
+                }
+            }
+
+            // Invalidate the cache item
+            attemptCache.delete(`attempt_${attemptId}`);
+            await db.collection("student_attempts").doc(attemptId).update(updatePayload);
 
             // Automatically evaluate attempt so score cards and review answers are created immediately
             try {
@@ -1013,7 +1113,7 @@ export class ExaminationController {
                 attemptCache.set(`attempt_${attemptId}`, attempt, 15);
             }
 
-            if (attempt.isDeleted || attempt.studentId !== studentId) {
+            if (attempt.isDeleted || !ExaminationController.isAttemptOwner(req, attempt)) {
                 return res.status(403).json({
                     success: false,
                     message: "Access denied"
@@ -1143,7 +1243,10 @@ export class ExaminationController {
     static async studyMode(req: Request, res: Response) {
         try {
             const { testId } = req.params;
-            const studentId = req.headers["user-id"] as string || req.query?.studentId as string;
+            const caller = (req as any).user;
+            const adminRoles = ["super_admin", "admin", "staff", "coordinator", "teacher", "developer"];
+            const isPrivileged = caller && adminRoles.includes(caller.role);
+            const studentId = String(caller?.studentId || caller?.userId || req.headers["user-id"] || "");
 
             // Fetch test document
             const testDoc = await db.collection("tests").doc(testId).get();
@@ -1156,63 +1259,148 @@ export class ExaminationController {
                 return res.status(400).json({ success: false, message: "Test is not available" });
             }
 
-            // Validate: test must be expired (endTime < now) OR no endTime
-            if (test.endTime) {
-                const endMs = ExaminationController.getMs(test.endTime);
-                if (Date.now() <= endMs) {
-                    return res.status(400).json({
-                        success: false,
-                        message: "This test is still active. Study mode is only available after the test ends."
-                    });
+            // Gating: Non-privileged users can only view answers/explanations if:
+            // 1. The test has ended (endTime has passed), OR
+            // 2. The student has already submitted/completed their attempt for this test, OR
+            // 3. The test is explicitly flagged as open study material (allowStudyMode === true || isStudyMaterial === true)
+            if (!isPrivileged) {
+                let hasTestEnded = false;
+                if (test.endTime) {
+                    const endMs = ExaminationController.getMs(test.endTime);
+                    if (Date.now() > endMs) {
+                        hasTestEnded = true;
+                    }
+                }
+
+                if (!hasTestEnded) {
+                    const isOpenStudyMaterial = test.allowStudyMode === true || test.isStudyMaterial === true;
+
+                    if (!isOpenStudyMaterial) {
+                        let hasSubmitted = false;
+                        if (studentId) {
+                            const attemptSnap = await db.collection("student_attempts")
+                                .where("testId", "==", testId)
+                                .where("studentId", "==", studentId)
+                                .where("isDeleted", "==", false)
+                                .get();
+
+                            hasSubmitted = attemptSnap.docs.some(doc => {
+                                const d = doc.data();
+                                return d.isSubmitted === true || d.status === "submitted" || d.status === "evaluated" || !!d.submittedAt;
+                            });
+
+                            if (!hasSubmitted && caller?.userId && caller.userId !== studentId) {
+                                const userAttemptSnap = await db.collection("student_attempts")
+                                    .where("testId", "==", testId)
+                                    .where("studentId", "==", caller.userId)
+                                    .where("isDeleted", "==", false)
+                                    .get();
+                                hasSubmitted = userAttemptSnap.docs.some(doc => {
+                                    const d = doc.data();
+                                    return d.isSubmitted === true || d.status === "submitted" || d.status === "evaluated" || !!d.submittedAt;
+                                });
+                            }
+                        }
+
+                        if (!hasSubmitted) {
+                            return res.status(400).json({
+                                success: false,
+                                message: test.endTime
+                                    ? "This test is still active. Study mode is only available after the test ends or after you have submitted your attempt."
+                                    : "Study mode is only available after you have submitted your test attempt."
+                            });
+                        }
+                    }
                 }
             }
 
             // Batch membership validation (if targetAudience is batch-specific)
+            // Skip batch check if the student already has a submitted attempt for this test,
+            // or if the test has already ended (study mode for past / closed tests is open to enrolled students).
             if (studentId && test.targetAudience === "batch" && test.targetBatch) {
                 try {
-                    const usersSnap = await db.collection("users").where("isDeleted", "==", false).get();
-                    let resolvedStudentDbId: string | null = null;
+                    // First: check if student has any attempt — if yes, skip batch gate
+                    const candidateIds = new Set<string>([studentId]);
+                    if (caller?.userId && caller.userId !== studentId) candidateIds.add(caller.userId);
+                    if (caller?.studentId && caller.studentId !== studentId) candidateIds.add(caller.studentId);
 
-                    // Try to resolve studentId → student document
-                    for (const uDoc of usersSnap.docs) {
-                        const u = uDoc.data();
-                        if ((u.id === studentId || uDoc.id === studentId) && u.role === "student" && u.studentId) {
-                            resolvedStudentDbId = u.studentId;
-                            break;
+                    const attemptChecks = await Promise.all(
+                        Array.from(candidateIds).map(cid =>
+                            db.collection("student_attempts")
+                                .where("testId", "==", testId)
+                                .where("studentId", "==", cid)
+                                .where("isDeleted", "==", false)
+                                .get()
+                        )
+                    );
+                    const hasAnyAttempt = attemptChecks.some(snap =>
+                        snap.docs.some(doc => {
+                            const d = doc.data();
+                            return d.isSubmitted === true || d.status === "submitted" || d.status === "evaluated" || !!d.submittedAt;
+                        })
+                    );
+
+                    // If student attempted the test OR if the test has already ended, allow viewing study mode
+                    let isEnded = false;
+                    if (test.endTime) {
+                        const endMs = ExaminationController.getMs(test.endTime);
+                        if (Date.now() > endMs) isEnded = true;
+                    }
+
+                    if (!hasAnyAttempt && !isEnded) {
+                        // Test is still active / not ended and student hasn't attempted: check batch membership
+                        const studentBatches: string[] = [];
+                        let sDocData: any = null;
+
+                        const directDoc = await db.collection("students").doc(studentId).get();
+                        if (directDoc.exists && !directDoc.data()?.isDeleted) {
+                            sDocData = directDoc.data();
+                        } else if (caller?.studentId) {
+                            const callerDoc = await db.collection("students").doc(caller.studentId).get();
+                            if (callerDoc.exists && !callerDoc.data()?.isDeleted) sDocData = callerDoc.data();
+                        } else if (caller?.userId) {
+                            const userStudentSnap = await db.collection("students")
+                                .where("userId", "==", caller.userId)
+                                .where("isDeleted", "==", false)
+                                .limit(1)
+                                .get();
+                            if (!userStudentSnap.empty) {
+                                sDocData = userStudentSnap.docs[0].data();
+                            }
                         }
-                    }
 
-                    const studentBatches: string[] = [];
-                    let sDocData: any = null;
-                    if (resolvedStudentDbId) {
-                        const studentDoc = await db.collection("students").doc(resolvedStudentDbId).get();
-                        if (studentDoc.exists) sDocData = studentDoc.data();
-                    } else {
-                        const studentDoc = await db.collection("students").doc(studentId).get();
-                        if (studentDoc.exists && !studentDoc.data()?.isDeleted) sDocData = studentDoc.data();
-                    }
-                    if (sDocData) {
-                        if (sDocData.batch) studentBatches.push(String(sDocData.batch).trim().toLowerCase());
-                        if (sDocData.batchName) studentBatches.push(String(sDocData.batchName).trim().toLowerCase());
-                        if (Array.isArray(sDocData.batches)) {
-                            sDocData.batches.forEach((b: any) => {
+                        if (sDocData) {
+                            if (sDocData.batch) studentBatches.push(String(sDocData.batch).trim().toLowerCase());
+                            if (sDocData.batchName) studentBatches.push(String(sDocData.batchName).trim().toLowerCase());
+                            if (Array.isArray(sDocData.batches)) {
+                                sDocData.batches.forEach((b: any) => {
+                                    if (b) studentBatches.push(String(b).trim().toLowerCase());
+                                });
+                            }
+                        }
+                        if (caller?.batch) studentBatches.push(String(caller.batch).trim().toLowerCase());
+                        if (caller?.batchName) studentBatches.push(String(caller.batchName).trim().toLowerCase());
+                        if (Array.isArray(caller?.batches)) {
+                            caller.batches.forEach((b: any) => {
                                 if (b) studentBatches.push(String(b).trim().toLowerCase());
                             });
                         }
-                    }
 
-                    const allowedBatches = String(test.targetBatch || "")
-                        .split(",")
-                        .map(b => b.trim().toLowerCase())
-                        .filter(Boolean);
+                        const allowedBatches = String(test.targetBatch || "")
+                            .split(",")
+                            .map(b => b.trim().toLowerCase())
+                            .filter(Boolean);
 
-                    if (allowedBatches.length > 0 && studentBatches.length > 0) {
-                        const hasAccess = studentBatches.some(sb => allowedBatches.includes(sb));
-                        if (!hasAccess) {
-                            return res.status(403).json({
-                                success: false,
-                                message: "This test is not available for your batch."
-                            });
+                        if (allowedBatches.length > 0 && studentBatches.length > 0 && !allowedBatches.includes("all")) {
+                            const hasAccess = allowedBatches.some(ab =>
+                                studentBatches.some(sb => sb === ab || sb.includes(ab) || ab.includes(sb))
+                            );
+                            if (!hasAccess) {
+                                return res.status(403).json({
+                                    success: false,
+                                    message: "This test is not available for your batch."
+                                });
+                            }
                         }
                     }
                 } catch (batchErr) {
@@ -1326,7 +1514,7 @@ export class ExaminationController {
                 attempt = attemptDoc.data()!;
                 attemptCache.set(`attempt_${attemptId}`, attempt, 15);
             }
-            if (attempt.studentId !== studentId) {
+            if (attempt.isDeleted || !ExaminationController.isAttemptOwner(req, attempt)) {
                 return res.status(403).json({
                     success: false,
                     message: "Access denied"

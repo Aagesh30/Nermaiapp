@@ -24,8 +24,27 @@ export const globalRateLimiter = rateLimit({
   skip: (req) => req.method === 'OPTIONS', // Skip CORS preflight
 });
 
-// Login/auth endpoints — disabled rate limiter to allow unlimited login attempts
-export const authRateLimiter = (_req: any, _res: any, next: any) => next();
+// Login/auth endpoints — blocks brute-force, but does NOT penalise correct logins
+export const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15-minute sliding window
+  max: 5,                    // Block after 5 FAILED attempts per IP
+  skipSuccessfulRequests: true, // Correct password → counter is NOT incremented
+  keyGenerator: (req) => {
+    const forwarded = req.headers['x-forwarded-for'];
+    if (typeof forwarded === 'string' && forwarded.length > 0) {
+      return forwarded.split(',')[0].trim();
+    }
+    return req.ip || req.socket?.remoteAddress || 'unknown';
+  },
+  validate: { keyGeneratorIpFallback: false },
+  message: {
+    success: false,
+    message: 'Too many failed login attempts from this IP address. Please try again after 15 minutes.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  store,
+});
 
 // Token refresh / validation — per IP
 export const tokenRateLimiter = rateLimit({

@@ -274,6 +274,31 @@
             role: data.role
         });
 
+        // If user is the Host/Teacher, launch Zoom Desktop App directly for maximum performance
+        if (!isStudent && data.joinUrl) {
+            setStatus('Launching Zoom App for Host…');
+            var nativeZoomUrl = data.joinUrl.replace('https://zoom.us/j/', 'zoomus://zoom.us/join?action=join&confno=');
+            if (data.sdk && data.sdk.zak) {
+                nativeZoomUrl += (nativeZoomUrl.includes('?') ? '&' : '?') + 'zak=' + encodeURIComponent(data.sdk.zak);
+            }
+            window.location.href = nativeZoomUrl;
+            
+            // Show helpful UI in case browser asks for confirmation
+            var overlay = document.getElementById('status-overlay');
+            if (overlay) {
+                overlay.style.display = 'flex';
+                overlay.innerHTML = 
+                    '<div class="error-box" style="border-color:#2e7d32;">'
+                    + '<h3 style="color:#4caf50;">Opening in Zoom Desktop App</h3>'
+                    + '<p>Your meeting is opening in the Zoom Desktop App for optimal screen share performance.</p>'
+                    + '<a href="' + nativeZoomUrl + '" style="display:inline-block; margin-top:12px; margin-bottom:12px; padding:10px 20px; background:#2e7d32; color:#fff; border-radius:6px; font-weight:bold; text-decoration:none;">Click here if Zoom didn\'t open</a><br/>'
+                    + '<button class="btn-return" style="margin-top:6px;" onclick="returnToLMS()">Return to LMS</button>'
+                    + '</div>';
+            }
+            postBridgeEvent('MEETING_STARTED');
+            return;
+        }
+
         // Solution A: Strictly hide Invite, Copy Link, and Meeting Info for Students
         if (isStudent) {
             try {

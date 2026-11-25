@@ -45,6 +45,15 @@ export const UniversalDropdown: React.FC<UniversalDropdownProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const selectedOption = options.find((o) => String(o.value) === String(value));
 
+  // Prevent duplicate placeholder if options already contains an empty option,
+  // an option matching placeholder label, or an "All" option for filters
+  const hasPlaceholderOption = options.some(
+    (o) =>
+      o.value === '' ||
+      (placeholder && o.label && o.label.trim().toLowerCase() === placeholder.trim().toLowerCase()) ||
+      (placeholder && o.value === 'all' && (o.label?.trim().toLowerCase().startsWith('all') || placeholder.trim().toLowerCase().startsWith('all')))
+  );
+
   const bgInput = darkMode ? '#222230' : '#ffffff';
   const textPrimary = darkMode ? '#ffffff' : '#1e293b';
   const textSecondary = darkMode ? '#94a3b8' : '#64748b';
@@ -81,7 +90,7 @@ export const UniversalDropdown: React.FC<UniversalDropdownProps> = ({
               WebkitAppearance: 'none'
             }}
           >
-            {placeholder && !options.some((o) => o.value === '') ? (
+            {placeholder && !hasPlaceholderOption ? (
               <option value="">{placeholder}</option>
             ) : null}
             {options.map((opt) => (
@@ -211,7 +220,7 @@ export const UniversalDropdown: React.FC<UniversalDropdownProps> = ({
                 contentContainerStyle={{ paddingVertical: 4 }}
                 showsVerticalScrollIndicator={true}
               >
-                {placeholder && !options.some((o) => o.value === '') && (
+                {placeholder && !hasPlaceholderOption && (
                   <TouchableOpacity
                     activeOpacity={0.7}
                     onPress={() => {

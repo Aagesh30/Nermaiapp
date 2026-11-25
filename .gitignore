@@ -4,6 +4,7 @@ node_modules/
 .firebase/
 *.zip
 *.xlsx
+*.xls
 *.pdf
 temp_zip_extract/
 temp_zoom_extract/
@@ -19,3 +20,12 @@ serviceAccountKey.json
 *firebase-adminsdk*.json
 *.apk
 *.log
+*.bak
+*.bak*
+*.backup
+
+# Temporary working folders
+friend/
+scratch/
+*/scratch/
+
